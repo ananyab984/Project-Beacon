@@ -109,21 +109,6 @@ function EvaluationBody({ data }: { data: Evaluation; roleLabel: string }) {
             </div>
           </div>
 
-          <div className="w-64 text-right">
-            <div className="flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              <span>Score Trend - 6 Months</span>
-              <span className="text-foreground">0%</span>
-            </div>
-            <div className="mt-2 h-12 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data.scoreHistory} margin={{ top: 4, right: 0, left: 0, bottom: 0 }}>
-                  <XAxis dataKey="month" fontSize={9} tickLine={false} axisLine={false} stroke="var(--muted-foreground)" />
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Area type="monotone" dataKey="score" stroke="var(--accent)" fill="var(--accent)" fillOpacity={0.15} strokeWidth={1.5} dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
         </div>
       </section>
 

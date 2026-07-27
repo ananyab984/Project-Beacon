@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ArrowUpDown } from "lucide-react";
+import { Search, ArrowUpDown, AlertTriangle } from "lucide-react";
+import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/g3/manual-enrichment-dialog";
 
 export const Route = createFileRoute("/contractor/leads")({
   head: () => ({
@@ -29,10 +30,17 @@ function MyLeadsPage() {
   const [sortBy, setSortBy] = useState<SortKey>("submitted");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
+  const [enrichLead, setEnrichLead] = useState<LeadForEnrichment | null>(null);
+  const [version, setVersion] = useState(0);
   const pageSize = 12;
 
   const countries = useMemo(() => Array.from(new Set(all.map((l) => l.country_of_residence).filter(Boolean))), [all]);
   const sources = useMemo(() => Array.from(new Set(all.map((l) => l.source).filter(Boolean))), [all]);
+
+  const onHoldCount = useMemo(
+    () => all.filter((l) => l.enrichment_status === "pending" || l.dup_flagged).length,
+    [all, version]
+  );
 
   const filtered = useMemo(() => {
     const rows = all.filter((l) => {
@@ -55,7 +63,7 @@ function MyLeadsPage() {
       return va < vb ? -dir : va > vb ? dir : 0;
     });
     return rows;
-  }, [all, q, country, source, status, sortBy, sortDir]);
+  }, [all, q, country, source, status, sortBy, sortDir, version]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const view = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -68,8 +76,51 @@ function MyLeadsPage() {
     setQ(""); setCountry("all"); setSource("all"); setStatus("all"); setPage(1);
   }
 
+  const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
+    const targetLead = all.find((x) => x.id === id);
+    if (targetLead) {
+      targetLead.enrichment_status = "complete";
+      targetLead.dup_flagged = false;
+      if (updated.name) targetLead.full_name = updated.name;
+      if (updated.email) targetLead.email_address = updated.email;
+      if (updated.services?.length) targetLead.services = updated.services;
+    }
+    setVersion((v) => v + 1);
+  };
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4">
+      {/* On Hold Notification Alert Banner for Contractors */}
+      {onHoldCount > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+            <span className="text-amber-100">
+              <strong className="font-semibold text-amber-300">{onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment review.</strong>{" "}
+              <span className="text-amber-200/90">Please complete missing details to verify your submitted lead.</span>
+            </span>
+          </div>
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
+            onClick={() => {
+              const firstOnHold = all.find((l) => l.enrichment_status === "pending" || l.dup_flagged);
+              if (firstOnHold) {
+                setEnrichLead({
+                  id: firstOnHold.id,
+                  name: firstOnHold.full_name,
+                  email: firstOnHold.email_address,
+                  language: firstOnHold.target_language || firstOnHold.source_language || "Spanish (LatAm)",
+                  services: firstOnHold.services ?? ["Subtitling"],
+                });
+              }
+            }}
+          >
+            Review Now
+          </Button>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[280px] flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -97,53 +148,69 @@ function MyLeadsPage() {
             <thead className="sticky top-0 z-10 bg-muted/80 text-left text-[11px] uppercase tracking-wide text-muted-foreground backdrop-blur">
               <tr>
                 <SortableTh label="Lead" k="lead" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
+                <th className="px-4 py-3 font-semibold text-foreground">Lead Enrichment Status</th>
                 <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <SortableTh label="Source" k="source" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <th className="px-4 py-3">Contact</th>
                 <th className="px-4 py-3">Languages</th>
                 <th className="px-4 py-3">Services</th>
-                <th className="px-4 py-3">Status</th>
                 <SortableTh label="Submitted" k="submitted" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {view.map((l) => (
-                <tr key={l.id} className="transition-colors hover:bg-muted/40">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{l.full_name}</span>
-                      {l.dup_flagged && (
-                        <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">duplicate</Badge>
+              {view.map((l) => {
+                const isOnHold = l.enrichment_status === "pending" || l.dup_flagged;
+                return (
+                  <tr key={l.id} className="transition-colors hover:bg-muted/40">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{l.full_name}</span>
+                        {l.dup_flagged && (
+                          <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">duplicate</Badge>
+                        )}
+                      </div>
+                      {l.first_name && <div className="text-[11px] text-muted-foreground">{l.first_name}</div>}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isOnHold ? (
+                        <button
+                          onClick={() => setEnrichLead({
+                            id: l.id,
+                            name: l.full_name,
+                            email: l.email_address,
+                            language: l.target_language || l.source_language || "Spanish (LatAm)",
+                            services: l.services ?? ["Subtitling"],
+                          })}
+                          className="inline-flex items-center gap-1 rounded-md bg-warning/15 px-2.5 py-0.5 text-[11px] font-semibold text-warning border border-warning/30 hover:bg-warning/25 transition-colors cursor-pointer"
+                        >
+                          🟡 On Hold
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent border border-accent/30">
+                          🟢 Enriched
+                        </span>
                       )}
-                    </div>
-                    {l.first_name && <div className="text-[11px] text-muted-foreground">{l.first_name}</div>}
-                  </td>
-                  <td className="px-4 py-3 text-foreground/80">{l.country_of_residence || "—"}</td>
-                  <td className="px-4 py-3">
-                    <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">{l.source}</span>
-                  </td>
-                  <td className="px-4 py-3 text-foreground/80">{l.email_address || l.contact_number || "—"}</td>
-                  <td className="px-4 py-3 text-foreground/80">
-                    {l.source_language && l.target_language ? `${l.source_language} → ${l.target_language}` : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1">
-                      {(l.services ?? []).map((s) => (
-                        <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
-                      ))}
-                      {!l.services?.length && <span className="text-xs text-muted-foreground">—</span>}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    {l.enrichment_status === "complete" ? (
-                      <Badge variant="secondary" className="text-[10px]">Enriched</Badge>
-                    ) : (
-                      <Badge variant="outline" className="border-primary/40 text-primary text-[10px]">Enriching</Badge>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground">{new Date(l.created_at).toLocaleDateString()}</td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3 text-foreground/80">{l.country_of_residence || "—"}</td>
+                    <td className="px-4 py-3">
+                      <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">{l.source}</span>
+                    </td>
+                    <td className="px-4 py-3 text-foreground/80">{l.email_address || l.contact_number || "—"}</td>
+                    <td className="px-4 py-3 text-foreground/80">
+                      {l.source_language && l.target_language ? `${l.source_language} → ${l.target_language}` : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex flex-wrap gap-1">
+                        {(l.services ?? []).map((s) => (
+                          <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
+                        ))}
+                        {!l.services?.length && <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-muted-foreground">{new Date(l.created_at).toLocaleDateString()}</td>
+                  </tr>
+                );
+              })}
               {view.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
@@ -168,6 +235,14 @@ function MyLeadsPage() {
           </div>
         </div>
       </div>
+
+      {/* Manual Enrichment Modal for Contractors */}
+      <ManualEnrichmentDialog
+        open={!!enrichLead}
+        onOpenChange={(o) => !o && setEnrichLead(null)}
+        lead={enrichLead}
+        onMarkEnriched={handleMarkEnriched}
+      />
     </div>
   );
 }

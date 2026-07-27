@@ -98,6 +98,37 @@ type Store = {
   weekly: WeeklyChannelStat[];
 };
 
+function seedContractor(
+  first: string, full: string, country: string, source: string, email: string, phone: string,
+  services: string[], sl: string, tl: string, yrs: number, vendor: string,
+  enrichment: RecruiterLeadStatus, dup: boolean
+): RecruiterLead {
+  return {
+    id: `l_${Math.random().toString(36).slice(2, 10)}`,
+    owner_recruiter_id: "",
+    owner_contractor_id: CURRENT_CONTRACTOR_ID,
+    dup_flagged: dup,
+    reachout_date: "2026-07-20",
+    application_date: "2026-07-19",
+    first_name: first,
+    full_name: full,
+    country_of_residence: country,
+    source,
+    profile_link: `https://linkedin.com/in/${first.toLowerCase()}-${yrs}`,
+    contact_number: phone,
+    email_address: email,
+    services,
+    source_language: sl,
+    target_language: tl,
+    secondary_languages: [],
+    years_of_exp: yrs,
+    vendor_experience: vendor,
+    enrichment_status: enrichment,
+    just_enriched_until: null,
+    created_at: Date.now() - Math.random() * 1000 * 60 * 60 * 24 * 12,
+  };
+}
+
 const seedLeads: RecruiterLead[] = [
   seed("Adrian", "Adrian Steiner", "Germany", "LinkedIn", "adrian@example.com", ["Subtitling"], "German", "English", 9, "Netflix, Prime Video", "r_riya"),
   seed("Marta", "Marta Lopez", "Spain", "ProZ", "marta@example.com", ["Dubbing"], "Spanish", "English", 6, "Disney+, HBO", "r_riya"),
@@ -106,6 +137,12 @@ const seedLeads: RecruiterLead[] = [
   seed("Jane", "Jane Doe", "France", "Referral", "jane@example.com", ["AD"], "French", "English", 8, "Various", "r_other"),
   seed("Lena", "Lena Hoffmann", "Austria", "LinkedIn", "lena@example.com", ["Subtitling"], "German", "English", 4, "Sky Deutschland", "r_other"),
   seed("Diego", "Diego Martinez", "Argentina", "ProZ", "diego@example.com", ["Dubbing"], "Spanish", "English", 7, "Netflix LatAm", "r_riya"),
+  seedContractor("Mateo", "Mateo Rossi", "Italy", "LinkedIn", "mateo.rossi@example.com", "+39 06 6987 1234", ["Subtitling", "Dubbing"], "Italian", "English", 7, "Netflix Europe", "complete", false),
+  seedContractor("Hana", "Hana Tanaka", "Japan", "ProZ", "hana.t@example.co.jp", "+81 3 5555 0142", ["Voiceover"], "Japanese", "English", 11, "Sony Pictures, Hulu", "pending", true),
+  seedContractor("Carlos", "Carlos Gomez", "Mexico", "Referral", "carlos.gomez@example.com", "+52 55 1234 5678", ["Subtitling"], "Spanish (LatAm)", "English", 5, "Prime Video LatAm", "pending", false),
+  seedContractor("Freja", "Freja Lind", "Sweden", "LinkedIn", "freja.lind@example.se", "+46 8 123 4567", ["Dubbing", "QA"], "Swedish", "English", 8, "Viaplay", "complete", false),
+  seedContractor("Yusuf", "Yusuf Al-Mansoor", "UAE", "ProZ", "yusuf.m@example.ae", "+971 4 321 9876", ["Voiceover", "Subtitling"], "Arabic", "English", 9, "MBC Group, OSN", "pending", true),
+  seedContractor("Chloe", "Chloe Dubois", "France", "Import", "chloe.dubois@example.fr", "+33 1 42 68 55 00", ["Subtitling"], "French", "English", 4, "Canal+", "complete", false),
 ];
 
 function seed(

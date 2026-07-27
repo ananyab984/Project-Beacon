@@ -325,6 +325,21 @@ function GoogleSheetSyncStrip() {
           </Button>
         </div>
       </div>
+
+      {/* Visual Data Flow Diagram */}
+      <div className="mt-2.5 flex items-center justify-between rounded-md border border-accent/20 bg-background/70 px-2.5 py-1.5 text-[10px] text-muted-foreground">
+        <div className="flex items-center gap-1.5 font-medium">
+          <span className="rounded bg-accent/15 px-1.5 py-0.5 font-semibold text-accent">Google Form</span>
+          <span>→</span>
+          <span className="rounded bg-primary/15 px-1.5 py-0.5 font-semibold text-primary">Google Sheet</span>
+          <span>→</span>
+          <span className="rounded bg-accent/15 px-1.5 py-0.5 font-semibold text-accent">Dashboard Sync</span>
+        </div>
+      </div>
+      <div className="mt-1 text-[10px] text-muted-foreground leading-relaxed">
+        A single intake Google Form is reused across clients &amp; projects. Responses store in a linked Google Sheet and auto-sync to update existing records &amp; add new client demands.
+      </div>
+
       {editing && (
         <div className="mt-2.5 flex gap-2">
           <Input

@@ -6,9 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Activity, Clock } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Activity, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/g3/manual-enrichment-dialog";
 
 export const Route = createFileRoute("/recruiter/leads")({
   head: () => ({
@@ -49,13 +50,24 @@ function LeadsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [enrichLead, setEnrichLead] = useState<LeadForEnrichment | null>(null);
+  const [version, setVersion] = useState(0); // force rerender on lead enrichment
   const pageSize = 12;
 
-  const scoped = useMemo(
-    () => (scope === "mine" ? leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID) : leads),
-    [scope],
+  // Global Leads shows ONLY enriched leads. My Leads shows recruiter's leads including On Hold items.
+  const globalEnrichedLeads = useMemo(
+    () => leads.filter((l) => l.identity_resolved && !l.flags.includes("On Hold")),
+    [version]
   );
-  const mineCount = useMemo(() => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID).length, []);
+  const scoped = useMemo(
+    () => (scope === "mine" ? leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID) : globalEnrichedLeads),
+    [scope, version, globalEnrichedLeads],
+  );
+  const mineCount = useMemo(() => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID).length, [version]);
+  const onHoldCount = useMemo(
+    () => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID && (!l.identity_resolved || l.flags.includes("On Hold"))).length,
+    [version]
+  );
 
   const languages = useMemo(() => Array.from(new Set(leads.map((l) => l.language))), []);
   const services = useMemo(() => Array.from(new Set(leads.flatMap((l) => l.services))), []);
@@ -110,8 +122,50 @@ function LeadsPage() {
     setRec("all"); setStage("all"); setDateRange("all"); setPage(1);
   }
 
+  const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
+    const targetLead = leads.find((x) => x.id === id);
+    if (targetLead) {
+      targetLead.identity_resolved = true;
+      targetLead.display_name = updated.name || targetLead.display_name || "Enriched Lead";
+      targetLead.flags = targetLead.flags.filter((f) => f !== "On Hold");
+      if (updated.services?.length) targetLead.services = updated.services;
+      if (updated.target_language) targetLead.language = updated.target_language;
+    }
+    setVersion((v) => v + 1);
+  };
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4">
+      {/* On Hold Notification Alert Banner */}
+      {scope === "mine" && onHoldCount > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+            <span className="text-amber-100">
+              <strong className="font-semibold text-amber-300">{onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment.</strong>{" "}
+              <span className="text-amber-200/90">Please review missing candidate details to promote {onHoldCount > 1 ? "them" : "it"} to Global Leads.</span>
+            </span>
+          </div>
+          <Button
+            size="sm"
+            className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
+            onClick={() => {
+              const firstOnHold = scoped.find((l) => !l.identity_resolved || l.flags.includes("On Hold"));
+              if (firstOnHold) {
+                setEnrichLead({
+                  id: firstOnHold.id,
+                  name: firstOnHold.display_name ?? firstOnHold.masked_label,
+                  language: firstOnHold.language,
+                  services: firstOnHold.services,
+                });
+              }
+            }}
+          >
+            Review Now
+          </Button>
+        </div>
+      )}
+
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[280px] flex-1 max-w-md">
@@ -127,7 +181,7 @@ function LeadsPage() {
           <BulkUploadDialog />
           {/* Toggle replaces owner's Export slot */}
           <div role="tablist" aria-label="Lead scope" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={leads.length} />
+            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalEnrichedLeads.length} />
             <ScopeTab active={scope === "mine"} onClick={() => { setScope("mine"); setPage(1); setSelected(new Set()); }} label="My Leads" count={mineCount} />
           </div>
         </div>
@@ -188,6 +242,7 @@ function LeadsPage() {
                   <Checkbox checked={allChecked} onCheckedChange={togglePage} aria-label="Select page" />
                 </th>
                 <SortableTh label="Lead" k="lead" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
+                <th className="px-4 py-3 font-semibold text-foreground">Lead Enrichment Status</th>
                 <SortableTh label="Language" k="language" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <th className="px-4 py-3">Services</th>
@@ -204,6 +259,7 @@ function LeadsPage() {
                 const label = l.identity_resolved ? l.display_name ?? l.masked_label : l.masked_label;
                 const c = languageCountry[l.language] ?? "—";
                 const isSel = selected.has(l.id);
+                const isOnHold = !l.identity_resolved || l.flags.includes("On Hold");
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -212,10 +268,28 @@ function LeadsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{label}</span>
-                        {!l.identity_resolved && (
-                          <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">unresolved</Badge>
-                        )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isOnHold ? (
+                        <button
+                          onClick={() => setEnrichLead({
+                            id: l.id,
+                            name: label,
+                            language: l.language,
+                            services: l.services,
+                            years_experience: l.years_experience,
+                            verified_email: l.verified_email,
+                          })}
+                          className="inline-flex items-center gap-1 rounded-md bg-warning/15 px-2.5 py-0.5 text-[11px] font-semibold text-warning border border-warning/30 hover:bg-warning/25 transition-colors cursor-pointer"
+                        >
+                          🟡 On Hold
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent border border-accent/30">
+                          🟢 Enriched
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
@@ -254,7 +328,7 @@ function LeadsPage() {
               })}
               {view.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
                     <button className="ml-2 text-primary hover:underline" onClick={clearFilters}>Clear filters</button>
                   </td>
@@ -276,6 +350,14 @@ function LeadsPage() {
           </div>
         </div>
       </div>
+
+      {/* Manual Enrichment Modal */}
+      <ManualEnrichmentDialog
+        open={!!enrichLead}
+        onOpenChange={(o) => !o && setEnrichLead(null)}
+        lead={enrichLead}
+        onMarkEnriched={handleMarkEnriched}
+      />
     </div>
   );
 }

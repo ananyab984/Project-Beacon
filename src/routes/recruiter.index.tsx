@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRecruiterStore, myLeads, leadsOnboardedCount, leadsOffboardedCount } from "@/lib/recruiter-mock";
-import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio } from "lucide-react";
+import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
 import { outreachBatch, useClientDemands } from "@/lib/g3-mock";
 import { DateRangeToggle, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
 import { useMemo } from "react";
@@ -41,6 +41,35 @@ function DashboardPage() {
           <BatchTile icon={MessageSquare} label="Replied" value={scaleValue(outreachBatch.replied, scale)} tone="accent" />
           <BatchTile icon={Handshake} label="Negotiation" value={scaleValue(outreachBatch.in_negotiation, scale)} tone="warning" />
           <BatchTile icon={ShieldOff} label="DNC" value={scaleValue(outreachBatch.dnc, scale)} tone="destructive" />
+        </div>
+      </section>
+
+      {/* Recruiter Notifications for On Hold Leads */}
+      <section className="rounded-2xl border border-warning/40 bg-warning/5 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 place-items-center rounded-xl bg-warning/15 text-warning font-bold shrink-0">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-warning">
+                Action Required · Manual Enrichment
+              </div>
+              <h2 className="mt-0.5 text-base font-semibold text-foreground">
+                3 leads require manual enrichment review
+              </h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Automated scrape incomplete. Please review and update missing details so leads can move to Global Leads.
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/recruiter/leads"
+            search={{ scope: "mine" }}
+            className="rounded-lg bg-warning px-4 py-2 text-xs font-semibold text-warning-foreground hover:bg-warning/90 transition-colors shrink-0"
+          >
+            Review On Hold Leads
+          </Link>
         </div>
       </section>
 
