@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   recruiters,
-  languageDemand,
+  useClientDemands,
   outreachBatch,
   profileCompleteness,
   escalations,
@@ -40,6 +40,7 @@ export const Route = createFileRoute("/owner/")({
 
 function Overview() {
   const team = teamKpis();
+  const clientDemands = useClientDemands();
   const { scale, label: rangeLabel } = useDateRange();
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -51,7 +52,7 @@ function Overview() {
             <h2 className="mt-1 text-2xl font-semibold tracking-tight">Good morning, Ethan.</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {escalations.length} items need your attention across {recruiters.length} recruiters and{" "}
-              {languageDemand.length} active language demands.
+              {clientDemands.length} active language demands.
             </p>
           </div>
           <div className="flex flex-col items-end gap-1">

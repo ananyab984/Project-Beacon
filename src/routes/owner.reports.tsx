@@ -3,10 +3,10 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Download, FileText, Clock, TrendingUp, Users, Radio } from "lucide-react";
+import { Download, FileText, Clock, TrendingUp, Users, Radio, Sparkles, ArrowDown, PenLine, Wand2 } from "lucide-react";
 import { toast } from "sonner";
-import { recruiters, languageDemand, outreachBatch, KPI_DEFINITIONS, teamKpis, aiDraftStats, type RecruiterKPIs } from "@/lib/g3-mock";
-import { Sparkles, ArrowDown, PenLine, Wand2 } from "lucide-react";
+import { recruiters, useClientDemands, outreachBatch, teamKpis, aiDraftStats } from "@/lib/g3-mock";
+import { RUBRIC, METRIC_GROUPS, formatValue, bandFor, getEvaluation } from "@/lib/evaluation";
 import { FEATURES } from "@/lib/feature-flags";
 
 export const Route = createFileRoute("/owner/reports")({
@@ -21,14 +21,19 @@ export const Route = createFileRoute("/owner/reports")({
 
 function ReportsPage() {
   const [range, setRange] = useState("30d");
+  const clientDemands = useClientDemands();
+
+  const teamScores = useMemo(() => recruiters.map(r => getEvaluation(r.id, r.name).score), []);
+  const teamAvgScore = useMemo(() => Math.round(teamScores.reduce((a, b) => a + b, 0) / (teamScores.length || 1)), [teamScores]);
+  const teamBand = useMemo(() => bandFor(teamAvgScore), [teamAvgScore]);
 
   const summary = useMemo(() => {
-    const totalDemand = languageDemand.reduce((s, d) => s + d.headcount_needed, 0);
-    const totalFilled = languageDemand.reduce((s, d) => s + d.filled, 0);
+    const totalDemand = clientDemands.reduce((s, d) => s + d.headcount_needed, 0);
+    const totalFilled = clientDemands.reduce((s, d) => s + d.filled, 0);
     const fill = totalDemand ? Math.round((totalFilled / totalDemand) * 100) : 0;
     const reachTotal = outreachBatch.contacted + outreachBatch.awaiting_reply + outreachBatch.replied + outreachBatch.in_negotiation + outreachBatch.dnc;
     return { totalDemand, totalFilled, fill, reachTotal };
-  }, []);
+  }, [clientDemands]);
 
   // Time-saved benchmark inputs — configurable constants.
   const timeSaved = useMemo(() => {
@@ -49,12 +54,12 @@ function ReportsPage() {
 
   const langBars = useMemo(() => {
     const map = new Map<string, { needed: number; filled: number }>();
-    for (const d of languageDemand) {
+    for (const d of clientDemands) {
       const cur = map.get(d.language) ?? { needed: 0, filled: 0 };
       map.set(d.language, { needed: cur.needed + d.headcount_needed, filled: cur.filled + d.filled });
     }
     return Array.from(map, ([language, v]) => ({ language, ...v })).sort((a, b) => b.needed - a.needed);
-  }, []);
+  }, [clientDemands]);
 
   const maxNeed = Math.max(...langBars.map(b => b.needed), 1);
 
@@ -187,33 +192,66 @@ function ReportsPage() {
         </ul>
       </section>
 
-      <section className="rounded-2xl border border-border bg-card">
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
+      {/* Evaluation framework section — Project Beacon Rubric */}
+      <section className="rounded-2xl border border-border bg-card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-6 py-4">
           <div>
-            <div className="text-sm font-semibold">Evaluation framework</div>
-            <div className="mt-0.5 text-xs text-muted-foreground">The KPIs that roll up into each recruiter's overall score.</div>
+            <div className="text-sm font-semibold">Project Beacon evaluation framework</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Scored core and watched metrics that roll up into each recruiter's performance evaluation.
+            </div>
           </div>
-          <Badge variant="outline" className="border-accent/30 text-accent">Team score {team.overall_score}</Badge>
+          <Badge variant="outline" className="border-accent/30 text-accent font-medium">
+            Team score {teamAvgScore}/100 · {teamBand.label}
+          </Badge>
         </div>
-        <div className="divide-y divide-border">
-          {KPI_DEFINITIONS.map((def) => {
-            const teamAvg = Math.round(
-              recruiters.reduce((a, r) => a + (r.kpis[def.key] as number), 0) / recruiters.length,
-            );
-            const display =
-              def.unit === "pct" ? `${teamAvg}%` :
-              def.unit === "days" ? `${teamAvg.toFixed(1)}d` :
-              String(teamAvg);
+
+        <div className="p-6 space-y-6">
+          {METRIC_GROUPS.map((group) => {
+            const groupMetrics = RUBRIC.filter((m) => m.group === group);
+            if (!groupMetrics.length) return null;
             return (
-              <div key={def.key} className="grid grid-cols-[1fr_140px_100px] items-center gap-4 px-6 py-3 text-sm">
-                <div className="min-w-0">
-                  <div className="font-medium">{def.label}</div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{def.desc}</div>
+              <div key={group} className="space-y-3">
+                <div className="text-xs font-bold uppercase tracking-widest text-accent">
+                  {group}
                 </div>
-                <div className="text-xs text-muted-foreground">
-                  {def.higherIsBetter ? "Higher is better" : "Lower is better"}
+                <div className="divide-y divide-border/40 rounded-xl border border-border/70 bg-background/40">
+                  {groupMetrics.map((def) => {
+                    const values = recruiters.map((r) => {
+                      const ev = getEvaluation(r.id, r.name);
+                      const snap = ev.metrics.find((x) => x.def.id === def.id);
+                      return snap ? snap.current : 0;
+                    });
+                    const avg = values.reduce((a, b) => a + b, 0) / (values.length || 1);
+                    const display = formatValue(def.unit, avg);
+
+                    return (
+                      <div key={def.id} className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-[1fr_180px_110px] sm:items-center sm:gap-4 text-sm transition-colors hover:bg-muted/20">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-foreground">{def.label}</span>
+                            {def.scored && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-medium">
+                                weight {def.weight}%
+                              </span>
+                            )}
+                          </div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">{def.definition}</div>
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          <div className="font-medium text-foreground">Target</div>
+                          <div>{def.target !== null ? formatValue(def.unit, def.target) : def.targetLabel}</div>
+                        </div>
+
+                        <div className="text-right">
+                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Team Avg</div>
+                          <div className="text-base font-bold tabular-nums text-foreground">{display}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="text-right text-base font-semibold tabular-nums">{display}</div>
               </div>
             );
           })}
@@ -258,8 +296,7 @@ function ReportsPage() {
   );
 }
 
-// keep type imports satisfied
-void ({} as RecruiterKPIs);
+
 
 function Metric({ icon: Icon, label, value, sub }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub: string }) {
   return (

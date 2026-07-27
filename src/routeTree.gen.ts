@@ -9,74 +9,41 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VerifyEmailRouteImport } from './routes/verify-email'
-import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
-import { Route as SignupRouteImport } from './routes/signup'
-import { Route as ResetPasswordRouteImport } from './routes/reset-password'
-import { Route as RecruiterRouteImport } from './routes/recruiter'
-import { Route as OwnerRouteImport } from './routes/owner'
-import { Route as LoginRouteImport } from './routes/login'
-import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
-import { Route as ContractorRouteImport } from './routes/contractor'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as RecruiterIndexRouteImport } from './routes/recruiter.index'
-import { Route as OwnerIndexRouteImport } from './routes/owner.index'
+import { Route as ContractorRouteImport } from './routes/contractor'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as LoginRouteImport } from './routes/login'
+import { Route as OwnerRouteImport } from './routes/owner'
+import { Route as RecruiterRouteImport } from './routes/recruiter'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as SignupRouteImport } from './routes/signup'
+import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
+import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as ContractorIndexRouteImport } from './routes/contractor.index'
-import { Route as RecruiterPerformanceRouteImport } from './routes/recruiter.performance'
-import { Route as RecruiterLeadsRouteImport } from './routes/recruiter.leads'
-import { Route as RecruiterEmailQueueRouteImport } from './routes/recruiter.email-queue'
-import { Route as RecruiterConversationsRouteImport } from './routes/recruiter.conversations'
-import { Route as OwnerSettingsRouteImport } from './routes/owner.settings'
-import { Route as OwnerReportsRouteImport } from './routes/owner.reports'
-import { Route as OwnerRecruitersRouteImport } from './routes/owner.recruiters'
-import { Route as OwnerPipelinesRouteImport } from './routes/owner.pipelines'
-import { Route as OwnerLeadsRouteImport } from './routes/owner.leads'
-import { Route as OwnerClientsRouteImport } from './routes/owner.clients'
-import { Route as ContractorSettingsRouteImport } from './routes/contractor.settings'
-import { Route as ContractorPerformanceRouteImport } from './routes/contractor.performance'
-import { Route as ContractorLeadsRouteImport } from './routes/contractor.leads'
-import { Route as ContractorEmailQueueRouteImport } from './routes/contractor.email-queue'
 import { Route as ContractorConversationsRouteImport } from './routes/contractor.conversations'
+import { Route as ContractorEmailQueueRouteImport } from './routes/contractor.email-queue'
+import { Route as ContractorLeadsRouteImport } from './routes/contractor.leads'
+import { Route as ContractorPerformanceRouteImport } from './routes/contractor.performance'
+import { Route as ContractorRequirementsRouteImport } from './routes/contractor.requirements'
+import { Route as ContractorSettingsRouteImport } from './routes/contractor.settings'
+import { Route as OwnerIndexRouteImport } from './routes/owner.index'
+import { Route as OwnerClientsRouteImport } from './routes/owner.clients'
+import { Route as OwnerLeadsRouteImport } from './routes/owner.leads'
+import { Route as OwnerPipelinesRouteImport } from './routes/owner.pipelines'
+import { Route as OwnerRecruitersRouteImport } from './routes/owner.recruiters'
+import { Route as OwnerReportsRouteImport } from './routes/owner.reports'
+import { Route as OwnerSettingsRouteImport } from './routes/owner.settings'
+import { Route as RecruiterIndexRouteImport } from './routes/recruiter.index'
+import { Route as RecruiterClientsRouteImport } from './routes/recruiter.clients'
+import { Route as RecruiterConversationsRouteImport } from './routes/recruiter.conversations'
+import { Route as RecruiterEmailQueueRouteImport } from './routes/recruiter.email-queue'
+import { Route as RecruiterLeadsRouteImport } from './routes/recruiter.leads'
+import { Route as RecruiterPerformanceRouteImport } from './routes/recruiter.performance'
 import { Route as OwnerRecruiterEvaluationIdRouteImport } from './routes/owner.recruiter-evaluation.$id'
 
-const VerifyEmailRoute = VerifyEmailRouteImport.update({
-  id: '/verify-email',
-  path: '/verify-email',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const UnauthorizedRoute = UnauthorizedRouteImport.update({
-  id: '/unauthorized',
-  path: '/unauthorized',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SignupRoute = SignupRouteImport.update({
-  id: '/signup',
-  path: '/signup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ResetPasswordRoute = ResetPasswordRouteImport.update({
-  id: '/reset-password',
-  path: '/reset-password',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RecruiterRoute = RecruiterRouteImport.update({
-  id: '/recruiter',
-  path: '/recruiter',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OwnerRoute = OwnerRouteImport.update({
-  id: '/owner',
-  path: '/owner',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
-  id: '/forgot-password',
-  path: '/forgot-password',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContractorRoute = ContractorRouteImport.update({
@@ -84,89 +51,54 @@ const ContractorRoute = ContractorRouteImport.update({
   path: '/contractor',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RecruiterIndexRoute = RecruiterIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => RecruiterRoute,
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
 } as any)
-const OwnerIndexRoute = OwnerIndexRouteImport.update({
-  id: '/',
-  path: '/',
-  getParentRoute: () => OwnerRoute,
+const OwnerRoute = OwnerRouteImport.update({
+  id: '/owner',
+  path: '/owner',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecruiterRoute = RecruiterRouteImport.update({
+  id: '/recruiter',
+  path: '/recruiter',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SignupRoute = SignupRouteImport.update({
+  id: '/signup',
+  path: '/signup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UnauthorizedRoute = UnauthorizedRouteImport.update({
+  id: '/unauthorized',
+  path: '/unauthorized',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VerifyEmailRoute = VerifyEmailRouteImport.update({
+  id: '/verify-email',
+  path: '/verify-email',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ContractorIndexRoute = ContractorIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => ContractorRoute,
 } as any)
-const RecruiterPerformanceRoute = RecruiterPerformanceRouteImport.update({
-  id: '/performance',
-  path: '/performance',
-  getParentRoute: () => RecruiterRoute,
-} as any)
-const RecruiterLeadsRoute = RecruiterLeadsRouteImport.update({
-  id: '/leads',
-  path: '/leads',
-  getParentRoute: () => RecruiterRoute,
-} as any)
-const RecruiterEmailQueueRoute = RecruiterEmailQueueRouteImport.update({
-  id: '/email-queue',
-  path: '/email-queue',
-  getParentRoute: () => RecruiterRoute,
-} as any)
-const RecruiterConversationsRoute = RecruiterConversationsRouteImport.update({
+const ContractorConversationsRoute = ContractorConversationsRouteImport.update({
   id: '/conversations',
   path: '/conversations',
-  getParentRoute: () => RecruiterRoute,
-} as any)
-const OwnerSettingsRoute = OwnerSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => OwnerRoute,
-} as any)
-const OwnerReportsRoute = OwnerReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => OwnerRoute,
-} as any)
-const OwnerRecruitersRoute = OwnerRecruitersRouteImport.update({
-  id: '/recruiters',
-  path: '/recruiters',
-  getParentRoute: () => OwnerRoute,
-} as any)
-const OwnerPipelinesRoute = OwnerPipelinesRouteImport.update({
-  id: '/pipelines',
-  path: '/pipelines',
-  getParentRoute: () => OwnerRoute,
-} as any)
-const OwnerLeadsRoute = OwnerLeadsRouteImport.update({
-  id: '/leads',
-  path: '/leads',
-  getParentRoute: () => OwnerRoute,
-} as any)
-const OwnerClientsRoute = OwnerClientsRouteImport.update({
-  id: '/clients',
-  path: '/clients',
-  getParentRoute: () => OwnerRoute,
-} as any)
-const ContractorSettingsRoute = ContractorSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => ContractorRoute,
-} as any)
-const ContractorPerformanceRoute = ContractorPerformanceRouteImport.update({
-  id: '/performance',
-  path: '/performance',
-  getParentRoute: () => ContractorRoute,
-} as any)
-const ContractorLeadsRoute = ContractorLeadsRouteImport.update({
-  id: '/leads',
-  path: '/leads',
   getParentRoute: () => ContractorRoute,
 } as any)
 const ContractorEmailQueueRoute = ContractorEmailQueueRouteImport.update({
@@ -174,10 +106,90 @@ const ContractorEmailQueueRoute = ContractorEmailQueueRouteImport.update({
   path: '/email-queue',
   getParentRoute: () => ContractorRoute,
 } as any)
-const ContractorConversationsRoute = ContractorConversationsRouteImport.update({
+const ContractorLeadsRoute = ContractorLeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => ContractorRoute,
+} as any)
+const ContractorPerformanceRoute = ContractorPerformanceRouteImport.update({
+  id: '/performance',
+  path: '/performance',
+  getParentRoute: () => ContractorRoute,
+} as any)
+const ContractorRequirementsRoute = ContractorRequirementsRouteImport.update({
+  id: '/requirements',
+  path: '/requirements',
+  getParentRoute: () => ContractorRoute,
+} as any)
+const ContractorSettingsRoute = ContractorSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => ContractorRoute,
+} as any)
+const OwnerIndexRoute = OwnerIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerClientsRoute = OwnerClientsRouteImport.update({
+  id: '/clients',
+  path: '/clients',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerLeadsRoute = OwnerLeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerPipelinesRoute = OwnerPipelinesRouteImport.update({
+  id: '/pipelines',
+  path: '/pipelines',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerRecruitersRoute = OwnerRecruitersRouteImport.update({
+  id: '/recruiters',
+  path: '/recruiters',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerReportsRoute = OwnerReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerSettingsRoute = OwnerSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const RecruiterIndexRoute = RecruiterIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => RecruiterRoute,
+} as any)
+const RecruiterClientsRoute = RecruiterClientsRouteImport.update({
+  id: '/clients',
+  path: '/clients',
+  getParentRoute: () => RecruiterRoute,
+} as any)
+const RecruiterConversationsRoute = RecruiterConversationsRouteImport.update({
   id: '/conversations',
   path: '/conversations',
-  getParentRoute: () => ContractorRoute,
+  getParentRoute: () => RecruiterRoute,
+} as any)
+const RecruiterEmailQueueRoute = RecruiterEmailQueueRouteImport.update({
+  id: '/email-queue',
+  path: '/email-queue',
+  getParentRoute: () => RecruiterRoute,
+} as any)
+const RecruiterLeadsRoute = RecruiterLeadsRouteImport.update({
+  id: '/leads',
+  path: '/leads',
+  getParentRoute: () => RecruiterRoute,
+} as any)
+const RecruiterPerformanceRoute = RecruiterPerformanceRouteImport.update({
+  id: '/performance',
+  path: '/performance',
+  getParentRoute: () => RecruiterRoute,
 } as any)
 const OwnerRecruiterEvaluationIdRoute =
   OwnerRecruiterEvaluationIdRouteImport.update({
@@ -201,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/contractor/email-queue': typeof ContractorEmailQueueRoute
   '/contractor/leads': typeof ContractorLeadsRoute
   '/contractor/performance': typeof ContractorPerformanceRoute
+  '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
@@ -208,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/owner/recruiters': typeof OwnerRecruitersRoute
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
+  '/recruiter/clients': typeof RecruiterClientsRoute
   '/recruiter/conversations': typeof RecruiterConversationsRoute
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
@@ -229,6 +243,7 @@ export interface FileRoutesByTo {
   '/contractor/email-queue': typeof ContractorEmailQueueRoute
   '/contractor/leads': typeof ContractorLeadsRoute
   '/contractor/performance': typeof ContractorPerformanceRoute
+  '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
@@ -236,6 +251,7 @@ export interface FileRoutesByTo {
   '/owner/recruiters': typeof OwnerRecruitersRoute
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
+  '/recruiter/clients': typeof RecruiterClientsRoute
   '/recruiter/conversations': typeof RecruiterConversationsRoute
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
@@ -261,6 +277,7 @@ export interface FileRoutesById {
   '/contractor/email-queue': typeof ContractorEmailQueueRoute
   '/contractor/leads': typeof ContractorLeadsRoute
   '/contractor/performance': typeof ContractorPerformanceRoute
+  '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
@@ -268,6 +285,7 @@ export interface FileRoutesById {
   '/owner/recruiters': typeof OwnerRecruitersRoute
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
+  '/recruiter/clients': typeof RecruiterClientsRoute
   '/recruiter/conversations': typeof RecruiterConversationsRoute
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
@@ -294,6 +312,7 @@ export interface FileRouteTypes {
     | '/contractor/email-queue'
     | '/contractor/leads'
     | '/contractor/performance'
+    | '/contractor/requirements'
     | '/contractor/settings'
     | '/owner/clients'
     | '/owner/leads'
@@ -301,6 +320,7 @@ export interface FileRouteTypes {
     | '/owner/recruiters'
     | '/owner/reports'
     | '/owner/settings'
+    | '/recruiter/clients'
     | '/recruiter/conversations'
     | '/recruiter/email-queue'
     | '/recruiter/leads'
@@ -322,6 +342,7 @@ export interface FileRouteTypes {
     | '/contractor/email-queue'
     | '/contractor/leads'
     | '/contractor/performance'
+    | '/contractor/requirements'
     | '/contractor/settings'
     | '/owner/clients'
     | '/owner/leads'
@@ -329,6 +350,7 @@ export interface FileRouteTypes {
     | '/owner/recruiters'
     | '/owner/reports'
     | '/owner/settings'
+    | '/recruiter/clients'
     | '/recruiter/conversations'
     | '/recruiter/email-queue'
     | '/recruiter/leads'
@@ -353,6 +375,7 @@ export interface FileRouteTypes {
     | '/contractor/email-queue'
     | '/contractor/leads'
     | '/contractor/performance'
+    | '/contractor/requirements'
     | '/contractor/settings'
     | '/owner/clients'
     | '/owner/leads'
@@ -360,6 +383,7 @@ export interface FileRouteTypes {
     | '/owner/recruiters'
     | '/owner/reports'
     | '/owner/settings'
+    | '/recruiter/clients'
     | '/recruiter/conversations'
     | '/recruiter/email-queue'
     | '/recruiter/leads'
@@ -385,60 +409,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/verify-email': {
-      id: '/verify-email'
-      path: '/verify-email'
-      fullPath: '/verify-email'
-      preLoaderRoute: typeof VerifyEmailRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/unauthorized': {
-      id: '/unauthorized'
-      path: '/unauthorized'
-      fullPath: '/unauthorized'
-      preLoaderRoute: typeof UnauthorizedRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/signup': {
-      id: '/signup'
-      path: '/signup'
-      fullPath: '/signup'
-      preLoaderRoute: typeof SignupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reset-password': {
-      id: '/reset-password'
-      path: '/reset-password'
-      fullPath: '/reset-password'
-      preLoaderRoute: typeof ResetPasswordRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/recruiter': {
-      id: '/recruiter'
-      path: '/recruiter'
-      fullPath: '/recruiter'
-      preLoaderRoute: typeof RecruiterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/owner': {
-      id: '/owner'
-      path: '/owner'
-      fullPath: '/owner'
-      preLoaderRoute: typeof OwnerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/forgot-password': {
-      id: '/forgot-password'
-      path: '/forgot-password'
-      fullPath: '/forgot-password'
-      preLoaderRoute: typeof ForgotPasswordRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contractor': {
@@ -448,26 +423,61 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContractorRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/forgot-password': {
+      id: '/forgot-password'
+      path: '/forgot-password'
+      fullPath: '/forgot-password'
+      preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/recruiter/': {
-      id: '/recruiter/'
-      path: '/'
-      fullPath: '/recruiter/'
-      preLoaderRoute: typeof RecruiterIndexRouteImport
-      parentRoute: typeof RecruiterRoute
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/owner/': {
-      id: '/owner/'
-      path: '/'
-      fullPath: '/owner/'
-      preLoaderRoute: typeof OwnerIndexRouteImport
-      parentRoute: typeof OwnerRoute
+    '/owner': {
+      id: '/owner'
+      path: '/owner'
+      fullPath: '/owner'
+      preLoaderRoute: typeof OwnerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recruiter': {
+      id: '/recruiter'
+      path: '/recruiter'
+      fullPath: '/recruiter'
+      preLoaderRoute: typeof RecruiterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signup': {
+      id: '/signup'
+      path: '/signup'
+      fullPath: '/signup'
+      preLoaderRoute: typeof SignupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/unauthorized': {
+      id: '/unauthorized'
+      path: '/unauthorized'
+      fullPath: '/unauthorized'
+      preLoaderRoute: typeof UnauthorizedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/verify-email': {
+      id: '/verify-email'
+      path: '/verify-email'
+      fullPath: '/verify-email'
+      preLoaderRoute: typeof VerifyEmailRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/contractor/': {
       id: '/contractor/'
@@ -476,95 +486,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContractorIndexRouteImport
       parentRoute: typeof ContractorRoute
     }
-    '/recruiter/performance': {
-      id: '/recruiter/performance'
-      path: '/performance'
-      fullPath: '/recruiter/performance'
-      preLoaderRoute: typeof RecruiterPerformanceRouteImport
-      parentRoute: typeof RecruiterRoute
-    }
-    '/recruiter/leads': {
-      id: '/recruiter/leads'
-      path: '/leads'
-      fullPath: '/recruiter/leads'
-      preLoaderRoute: typeof RecruiterLeadsRouteImport
-      parentRoute: typeof RecruiterRoute
-    }
-    '/recruiter/email-queue': {
-      id: '/recruiter/email-queue'
-      path: '/email-queue'
-      fullPath: '/recruiter/email-queue'
-      preLoaderRoute: typeof RecruiterEmailQueueRouteImport
-      parentRoute: typeof RecruiterRoute
-    }
-    '/recruiter/conversations': {
-      id: '/recruiter/conversations'
+    '/contractor/conversations': {
+      id: '/contractor/conversations'
       path: '/conversations'
-      fullPath: '/recruiter/conversations'
-      preLoaderRoute: typeof RecruiterConversationsRouteImport
-      parentRoute: typeof RecruiterRoute
-    }
-    '/owner/settings': {
-      id: '/owner/settings'
-      path: '/settings'
-      fullPath: '/owner/settings'
-      preLoaderRoute: typeof OwnerSettingsRouteImport
-      parentRoute: typeof OwnerRoute
-    }
-    '/owner/reports': {
-      id: '/owner/reports'
-      path: '/reports'
-      fullPath: '/owner/reports'
-      preLoaderRoute: typeof OwnerReportsRouteImport
-      parentRoute: typeof OwnerRoute
-    }
-    '/owner/recruiters': {
-      id: '/owner/recruiters'
-      path: '/recruiters'
-      fullPath: '/owner/recruiters'
-      preLoaderRoute: typeof OwnerRecruitersRouteImport
-      parentRoute: typeof OwnerRoute
-    }
-    '/owner/pipelines': {
-      id: '/owner/pipelines'
-      path: '/pipelines'
-      fullPath: '/owner/pipelines'
-      preLoaderRoute: typeof OwnerPipelinesRouteImport
-      parentRoute: typeof OwnerRoute
-    }
-    '/owner/leads': {
-      id: '/owner/leads'
-      path: '/leads'
-      fullPath: '/owner/leads'
-      preLoaderRoute: typeof OwnerLeadsRouteImport
-      parentRoute: typeof OwnerRoute
-    }
-    '/owner/clients': {
-      id: '/owner/clients'
-      path: '/clients'
-      fullPath: '/owner/clients'
-      preLoaderRoute: typeof OwnerClientsRouteImport
-      parentRoute: typeof OwnerRoute
-    }
-    '/contractor/settings': {
-      id: '/contractor/settings'
-      path: '/settings'
-      fullPath: '/contractor/settings'
-      preLoaderRoute: typeof ContractorSettingsRouteImport
-      parentRoute: typeof ContractorRoute
-    }
-    '/contractor/performance': {
-      id: '/contractor/performance'
-      path: '/performance'
-      fullPath: '/contractor/performance'
-      preLoaderRoute: typeof ContractorPerformanceRouteImport
-      parentRoute: typeof ContractorRoute
-    }
-    '/contractor/leads': {
-      id: '/contractor/leads'
-      path: '/leads'
-      fullPath: '/contractor/leads'
-      preLoaderRoute: typeof ContractorLeadsRouteImport
+      fullPath: '/contractor/conversations'
+      preLoaderRoute: typeof ContractorConversationsRouteImport
       parentRoute: typeof ContractorRoute
     }
     '/contractor/email-queue': {
@@ -574,12 +500,124 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContractorEmailQueueRouteImport
       parentRoute: typeof ContractorRoute
     }
-    '/contractor/conversations': {
-      id: '/contractor/conversations'
-      path: '/conversations'
-      fullPath: '/contractor/conversations'
-      preLoaderRoute: typeof ContractorConversationsRouteImport
+    '/contractor/leads': {
+      id: '/contractor/leads'
+      path: '/leads'
+      fullPath: '/contractor/leads'
+      preLoaderRoute: typeof ContractorLeadsRouteImport
       parentRoute: typeof ContractorRoute
+    }
+    '/contractor/performance': {
+      id: '/contractor/performance'
+      path: '/performance'
+      fullPath: '/contractor/performance'
+      preLoaderRoute: typeof ContractorPerformanceRouteImport
+      parentRoute: typeof ContractorRoute
+    }
+    '/contractor/requirements': {
+      id: '/contractor/requirements'
+      path: '/requirements'
+      fullPath: '/contractor/requirements'
+      preLoaderRoute: typeof ContractorRequirementsRouteImport
+      parentRoute: typeof ContractorRoute
+    }
+    '/contractor/settings': {
+      id: '/contractor/settings'
+      path: '/settings'
+      fullPath: '/contractor/settings'
+      preLoaderRoute: typeof ContractorSettingsRouteImport
+      parentRoute: typeof ContractorRoute
+    }
+    '/owner/': {
+      id: '/owner/'
+      path: '/'
+      fullPath: '/owner/'
+      preLoaderRoute: typeof OwnerIndexRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/clients': {
+      id: '/owner/clients'
+      path: '/clients'
+      fullPath: '/owner/clients'
+      preLoaderRoute: typeof OwnerClientsRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/leads': {
+      id: '/owner/leads'
+      path: '/leads'
+      fullPath: '/owner/leads'
+      preLoaderRoute: typeof OwnerLeadsRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/pipelines': {
+      id: '/owner/pipelines'
+      path: '/pipelines'
+      fullPath: '/owner/pipelines'
+      preLoaderRoute: typeof OwnerPipelinesRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/recruiters': {
+      id: '/owner/recruiters'
+      path: '/recruiters'
+      fullPath: '/owner/recruiters'
+      preLoaderRoute: typeof OwnerRecruitersRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/reports': {
+      id: '/owner/reports'
+      path: '/reports'
+      fullPath: '/owner/reports'
+      preLoaderRoute: typeof OwnerReportsRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/settings': {
+      id: '/owner/settings'
+      path: '/settings'
+      fullPath: '/owner/settings'
+      preLoaderRoute: typeof OwnerSettingsRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/recruiter/': {
+      id: '/recruiter/'
+      path: '/'
+      fullPath: '/recruiter/'
+      preLoaderRoute: typeof RecruiterIndexRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
+    '/recruiter/clients': {
+      id: '/recruiter/clients'
+      path: '/clients'
+      fullPath: '/recruiter/clients'
+      preLoaderRoute: typeof RecruiterClientsRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
+    '/recruiter/conversations': {
+      id: '/recruiter/conversations'
+      path: '/conversations'
+      fullPath: '/recruiter/conversations'
+      preLoaderRoute: typeof RecruiterConversationsRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
+    '/recruiter/email-queue': {
+      id: '/recruiter/email-queue'
+      path: '/email-queue'
+      fullPath: '/recruiter/email-queue'
+      preLoaderRoute: typeof RecruiterEmailQueueRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
+    '/recruiter/leads': {
+      id: '/recruiter/leads'
+      path: '/leads'
+      fullPath: '/recruiter/leads'
+      preLoaderRoute: typeof RecruiterLeadsRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
+    '/recruiter/performance': {
+      id: '/recruiter/performance'
+      path: '/performance'
+      fullPath: '/recruiter/performance'
+      preLoaderRoute: typeof RecruiterPerformanceRouteImport
+      parentRoute: typeof RecruiterRoute
     }
     '/owner/recruiter-evaluation/$id': {
       id: '/owner/recruiter-evaluation/$id'
@@ -596,6 +634,7 @@ interface ContractorRouteChildren {
   ContractorEmailQueueRoute: typeof ContractorEmailQueueRoute
   ContractorLeadsRoute: typeof ContractorLeadsRoute
   ContractorPerformanceRoute: typeof ContractorPerformanceRoute
+  ContractorRequirementsRoute: typeof ContractorRequirementsRoute
   ContractorSettingsRoute: typeof ContractorSettingsRoute
   ContractorIndexRoute: typeof ContractorIndexRoute
 }
@@ -605,6 +644,7 @@ const ContractorRouteChildren: ContractorRouteChildren = {
   ContractorEmailQueueRoute: ContractorEmailQueueRoute,
   ContractorLeadsRoute: ContractorLeadsRoute,
   ContractorPerformanceRoute: ContractorPerformanceRoute,
+  ContractorRequirementsRoute: ContractorRequirementsRoute,
   ContractorSettingsRoute: ContractorSettingsRoute,
   ContractorIndexRoute: ContractorIndexRoute,
 }
@@ -638,6 +678,7 @@ const OwnerRouteChildren: OwnerRouteChildren = {
 const OwnerRouteWithChildren = OwnerRoute._addFileChildren(OwnerRouteChildren)
 
 interface RecruiterRouteChildren {
+  RecruiterClientsRoute: typeof RecruiterClientsRoute
   RecruiterConversationsRoute: typeof RecruiterConversationsRoute
   RecruiterEmailQueueRoute: typeof RecruiterEmailQueueRoute
   RecruiterLeadsRoute: typeof RecruiterLeadsRoute
@@ -646,6 +687,7 @@ interface RecruiterRouteChildren {
 }
 
 const RecruiterRouteChildren: RecruiterRouteChildren = {
+  RecruiterClientsRoute: RecruiterClientsRoute,
   RecruiterConversationsRoute: RecruiterConversationsRoute,
   RecruiterEmailQueueRoute: RecruiterEmailQueueRoute,
   RecruiterLeadsRoute: RecruiterLeadsRoute,
@@ -672,3 +714,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

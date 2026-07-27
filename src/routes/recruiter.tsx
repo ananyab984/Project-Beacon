@@ -1,6 +1,6 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { G3Logo } from "@/components/g3/logo";
-import { LayoutGrid, ContactRound, Mail, MessagesSquare, LineChart, Plus, LogOut } from "lucide-react";
+import { LayoutGrid, ContactRound, Building2, Mail, MessagesSquare, LineChart, Plus, LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { RoleGuard } from "@/components/g3/role-guard";
@@ -20,10 +20,11 @@ type NavItem = { to: string; label: string; icon: ComponentType<{ className?: st
 
 const nav: NavItem[] = [
   { to: "/recruiter", label: "Dashboard", icon: LayoutGrid },
+  { to: "/recruiter/clients", label: "Clients & Market", icon: Building2 },
   { to: "/recruiter/leads", label: "Leads", icon: ContactRound },
   { to: "/recruiter/email-queue", label: "Email Queue", icon: Mail },
   { to: "/recruiter/conversations", label: "Conversations", icon: MessagesSquare },
-  { to: "/recruiter/performance", label: "Lead Performance", icon: LineChart },
+  { to: "/recruiter/performance", label: "Recruiter Performance", icon: LineChart },
 ];
 
 function RecruiterLayout() {

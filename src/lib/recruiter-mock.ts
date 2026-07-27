@@ -2,6 +2,7 @@
 // SEARCH fields = filled by recruiter on capture.
 // ENRICHMENT fields = filled by background job (simulated) after submit.
 import { useSyncExternalStore } from "react";
+import { incrementLanguageFilled } from "@/lib/g3-mock";
 
 export type RecruiterLeadStatus = "pending" | "complete";
 
@@ -280,6 +281,11 @@ export function addLead(input: AddLeadInput): RecruiterLead {
   store.leads = [lead, ...store.leads];
   emit();
 
+  const targetLang = input.target_language || input.source_language;
+  if (targetLang) {
+    incrementLanguageFilled(targetLang, input.services[0]);
+  }
+
   // Simulated background enrichment job.
   setTimeout(() => {
     const idx = store.leads.findIndex((l) => l.id === lead.id);
@@ -321,6 +327,12 @@ export function addContractorLead(input: AddLeadInput, opts: { dup_flagged: bool
   };
   store.leads = [lead, ...store.leads];
   emit();
+
+  const cTargetLang = input.target_language || input.source_language;
+  if (cTargetLang) {
+    incrementLanguageFilled(cTargetLang, input.services[0]);
+  }
+
   return lead;
 }
 

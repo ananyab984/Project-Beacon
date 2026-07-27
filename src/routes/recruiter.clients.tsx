@@ -1,25 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useClientDemands, leads, type ClientDemand } from "@/lib/g3-mock";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { LeadCard } from "@/components/g3/lead-card";
-import { openClientDemand } from "@/components/g3/client-demand-dialog";
 
-export const Route = createFileRoute("/owner/clients")({
+export const Route = createFileRoute("/recruiter/clients")({
   head: () => ({
     meta: [
-      { title: "Clients & Market — Global3" },
-      { name: "description", content: "Client demand vs. filled headcount, per language and service." },
+      { title: "Clients & Market — Global3 Recruiter" },
+      { name: "description", content: "Client demand vs. filled headcount per language and service." },
     ],
   }),
-  component: ClientsPage,
+  component: RecruiterClientsPage,
 });
 
-function ClientsPage() {
+function RecruiterClientsPage() {
   const clientDemands = useClientDemands();
   const [q, setQ] = useState("");
   const [client, setClient] = useState("all");
@@ -60,11 +58,10 @@ function ClientsPage() {
             <SelectItem value="paused">Paused</SelectItem>
           </SelectContent>
         </Select>
-        <div className="flex-1" />
-        <Button onClick={openClientDemand} className="bg-primary text-primary-foreground hover:bg-primary/90">
-          <Plus className="h-4 w-4" /> Add Client Demand
-        </Button>
       </div>
+
+      {/* Language demand progress bar summary */}
+      <LanguageSummaryBar demands={filtered} />
 
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <table className="w-full text-sm">
@@ -75,15 +72,18 @@ function ClientsPage() {
               <th className="px-5 py-3 font-medium">Priority</th>
               <th className="px-5 py-3 font-medium">Deadline</th>
               <th className="px-5 py-3 font-medium">Status</th>
-              <th className="px-5 py-3 font-medium text-right">Needed</th>
+              <th className="px-5 py-3 font-medium text-right">Required</th>
               <th className="px-5 py-3 font-medium text-right">Filled</th>
-              <th className="px-5 py-3 font-medium text-right">Gap</th>
-              <th className="px-5 py-3 font-medium w-32">Fill rate</th>
+              <th className="px-5 py-3 font-medium text-right">Remaining</th>
+              <th className="px-5 py-3 font-medium w-32">Progress</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {groupByLanguage(filtered).map(({ language, rows }) => {
               const allServices = Array.from(new Set(rows.flatMap(r => r.services)));
+              const totalNeeded = rows.reduce((s, r) => s + r.headcount_needed, 0);
+              const totalFilled = rows.reduce((s, r) => s + r.filled, 0);
+              const met = totalFilled >= totalNeeded;
               return (
                 <>
                   <tr key={`${language}-header`} className="bg-muted/25">
@@ -91,6 +91,10 @@ function ClientsPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-[13px] font-semibold text-foreground">{language}</span>
                         <span className="text-[10px] text-muted-foreground">· {rows.length} client{rows.length > 1 ? "s" : ""}</span>
+                        {met
+                          ? <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">✓ Hiring complete</span>
+                          : <span className="rounded-md bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning">Still hiring · {totalNeeded - totalFilled} remaining</span>
+                        }
                         <div className="ml-2 flex flex-wrap gap-1">
                           {allServices.map(s => (
                             <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
@@ -99,36 +103,34 @@ function ClientsPage() {
                       </div>
                     </td>
                   </tr>
-                  {rows.map((d) => {
-                    return (
-                      <tr key={d.id} onClick={() => setDrill(d.id)} className="cursor-pointer transition-colors hover:bg-muted/40">
-                        <td className="px-5 py-3.5 pl-8">
-                          <div className="flex flex-wrap gap-1">
-                            {d.services.map(s => (
-                              <span key={s} className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-foreground/70">{s}</span>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <div className="font-medium text-foreground">{d.client}</div>
-                          {d.project_name && <div className="text-[11px] text-muted-foreground">{d.project_name}</div>}
-                        </td>
-                        <td className="px-5 py-3.5"><PriorityPill priority={d.priority} /></td>
-                        <td className="px-5 py-3.5 text-[12px] text-muted-foreground tabular-nums">
-                          {d.deadline ? new Date(d.deadline).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
-                        </td>
-                        <td className="px-5 py-3.5"><StatusBadge status={d.status} /></td>
-                        <td className="px-5 py-3.5 text-right tabular-nums">{d.headcount_needed}</td>
-                        <td className="px-5 py-3.5 text-right tabular-nums">{d.filled}</td>
-                        <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${d.gap > 3 ? "text-warning" : d.gap > 0 ? "text-foreground" : "text-[oklch(0.5_0.14_155)]"}`}>{d.gap}</td>
-                        <td className="px-5 py-3.5">
-                          <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                            <div className="h-full bg-accent" style={{ width: `${(d.filled / d.headcount_needed) * 100}%` }} />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {rows.map((d) => (
+                    <tr key={d.id} onClick={() => setDrill(d.id)} className="cursor-pointer transition-colors hover:bg-muted/40">
+                      <td className="px-5 py-3.5 pl-8">
+                        <div className="flex flex-wrap gap-1">
+                          {d.services.map(s => (
+                            <span key={s} className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-foreground/70">{s}</span>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        <div className="font-medium text-foreground">{d.client}</div>
+                        {d.project_name && <div className="text-[11px] text-muted-foreground">{d.project_name}</div>}
+                      </td>
+                      <td className="px-5 py-3.5"><PriorityPill priority={d.priority} /></td>
+                      <td className="px-5 py-3.5 text-[12px] text-muted-foreground tabular-nums">
+                        {d.deadline ? new Date(d.deadline).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "2-digit" }) : "—"}
+                      </td>
+                      <td className="px-5 py-3.5"><StatusBadge status={d.status} /></td>
+                      <td className="px-5 py-3.5 text-right tabular-nums">{d.headcount_needed}</td>
+                      <td className="px-5 py-3.5 text-right tabular-nums">{d.filled}</td>
+                      <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${d.gap > 3 ? "text-warning" : d.gap > 0 ? "text-foreground" : "text-[oklch(0.5_0.14_155)]"}`}>{d.gap}</td>
+                      <td className="px-5 py-3.5">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                          <div className="h-full bg-accent" style={{ width: `${(d.filled / d.headcount_needed) * 100}%` }} />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </>
               );
             })}
@@ -144,14 +146,12 @@ function ClientsPage() {
                 <SheetTitle>{active.language} — {active.client}</SheetTitle>
               </SheetHeader>
 
-              {/* Summary tiles */}
               <div className="mt-4 grid grid-cols-3 gap-3">
-                <TotalTile label="Needed" value={active.headcount_needed} />
+                <TotalTile label="Required" value={active.headcount_needed} />
                 <TotalTile label="Filled" value={active.filled} tone="ok" />
-                <TotalTile label="Gap" value={active.gap} tone={active.gap > 3 ? "warn" : active.gap > 0 ? "muted" : "ok"} />
+                <TotalTile label="Remaining" value={active.gap} tone={active.gap > 3 ? "warn" : active.gap > 0 ? "muted" : "ok"} />
               </div>
 
-              {/* Meta */}
               <dl className="mt-4 grid grid-cols-2 gap-y-2 rounded-xl border border-border bg-muted/20 p-3 text-[11px]">
                 {active.project_name && <><dt className="text-muted-foreground">Project</dt><dd className="font-medium text-foreground">{active.project_name}</dd></>}
                 <dt className="text-muted-foreground">Priority</dt>
@@ -159,25 +159,25 @@ function ClientsPage() {
                 {active.deadline && <><dt className="text-muted-foreground">Deadline</dt><dd className="font-medium tabular-nums">{new Date(active.deadline).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}</dd></>}
                 <dt className="text-muted-foreground">Status</dt>
                 <dd><StatusBadge status={active.status} /></dd>
-                {active.contact_name && <><dt className="text-muted-foreground">Contact</dt><dd className="font-medium">{active.contact_name}{active.contact_email && <span className="ml-1 text-muted-foreground">· {active.contact_email}</span>}</dd></>}
               </dl>
 
-              <h3 className="mt-6 text-sm font-semibold">Staffing by service</h3>
+              {/* Language-wise demand detail */}
+              <h3 className="mt-6 text-sm font-semibold">Requirements by service</h3>
               <div className="mt-3 space-y-2">
                 {active.service_breakdown.map(sb => {
                   const pct = sb.needed ? Math.min(100, (sb.filled / sb.needed) * 100) : 0;
-                  const metTarget = sb.gap === 0;
+                  const met = sb.gap === 0;
                   return (
                     <div key={sb.service} className="rounded-xl border border-border bg-card p-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <div className="text-sm font-medium text-foreground">{sb.service}</div>
-                          {metTarget && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">✓ Met</span>}
+                          {met && <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">✓ Requirement met</span>}
                         </div>
                         <div className="flex items-center gap-4 text-xs tabular-nums">
-                          <span className="text-muted-foreground">Needed <span className="font-semibold text-foreground">{sb.needed}</span></span>
+                          <span className="text-muted-foreground">Required <span className="font-semibold text-foreground">{sb.needed}</span></span>
                           <span className="text-muted-foreground">Filled <span className="font-semibold text-foreground">{sb.filled}</span></span>
-                          <span className={`font-semibold ${sb.gap > 2 ? "text-warning" : sb.gap > 0 ? "text-foreground" : "text-[oklch(0.55_0.14_155)]"}`}>Gap {sb.gap}</span>
+                          <span className={`font-semibold ${sb.gap > 2 ? "text-warning" : sb.gap > 0 ? "text-foreground" : "text-[oklch(0.55_0.14_155)]"}`}>Remaining {sb.gap}</span>
                         </div>
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
@@ -188,25 +188,29 @@ function ClientsPage() {
                 })}
               </div>
 
-              {/* Language demand summary */}
+              {/* Met / still hiring summary */}
               <div className="mt-4 rounded-xl border border-border bg-muted/20 p-3">
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Language hiring status</div>
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-2">Hiring summary</div>
                 <div className="grid grid-cols-2 gap-2">
                   <div className="rounded-lg bg-accent/10 border border-accent/20 p-2">
                     <div className="text-[10px] text-accent font-medium">Requirements met</div>
                     <div className="mt-1 text-sm font-semibold">
-                      {active.service_breakdown.filter(s => s.gap === 0).length} / {active.service_breakdown.length} services
+                      {active.service_breakdown.filter(s => s.gap === 0).map(s => s.service).join(", ") || "None yet"}
                     </div>
                   </div>
                   <div className={`rounded-lg p-2 ${active.gap > 0 ? "bg-warning/10 border border-warning/20" : "bg-accent/10 border border-accent/20"}`}>
                     <div className={`text-[10px] font-medium ${active.gap > 0 ? "text-warning" : "text-accent"}`}>Still required</div>
-                    <div className="mt-1 text-sm font-semibold">{active.gap} headcount remaining</div>
+                    <div className="mt-1 text-sm font-semibold">
+                      {active.gap > 0
+                        ? `${active.gap} headcount · ${active.service_breakdown.filter(s => s.gap > 0).map(s => `${s.service} (${s.gap})`).join(", ")}`
+                        : "All filled ✓"}
+                    </div>
                   </div>
                 </div>
               </div>
 
               <h3 className="mt-6 text-sm font-semibold">Recommended Leads</h3>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">Top candidates matching this language who could help close the gap.</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Candidates matching this language who could help close the gap.</p>
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {coveringLeads.map(l => <LeadCard key={l.id} lead={l} compact />)}
               </div>
@@ -214,6 +218,38 @@ function ClientsPage() {
           )}
         </SheetContent>
       </Sheet>
+    </div>
+  );
+}
+
+function LanguageSummaryBar({ demands }: { demands: ClientDemand[] }) {
+  const byLang = useMemo(() => {
+    const map = new Map<string, { needed: number; filled: number }>();
+    for (const d of demands) {
+      const cur = map.get(d.language) ?? { needed: 0, filled: 0 };
+      map.set(d.language, { needed: cur.needed + d.headcount_needed, filled: cur.filled + d.filled });
+    }
+    return Array.from(map, ([language, v]) => ({ language, ...v, gap: v.needed - v.filled }));
+  }, [demands]);
+
+  if (!byLang.length) return null;
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {byLang.slice(0, 4).map(({ language, needed, filled, gap }) => (
+        <div key={language} className="rounded-xl border border-border bg-card px-4 py-3">
+          <div className="text-[11px] font-semibold text-foreground">{language}</div>
+          <div className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-xl font-semibold tabular-nums">{filled}</span>
+            <span className="text-[11px] text-muted-foreground">/ {needed}</span>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full bg-accent transition-all" style={{ width: `${needed ? Math.min(100, (filled / needed) * 100) : 0}%` }} />
+          </div>
+          <div className={`mt-1 text-[10px] font-medium ${gap > 0 ? "text-warning" : "text-accent"}`}>
+            {gap > 0 ? `${gap} remaining` : "Complete ✓"}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

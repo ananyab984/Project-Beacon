@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { myContractorLeads, useRecruiterStore } from "@/lib/recruiter-mock";
-import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
-import { outreachBatch } from "@/lib/g3-mock";
+import { ArrowUpRight, Mail, UserPlus, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
+import { outreachBatch, useClientDemands } from "@/lib/g3-mock";
 import { DateRangeToggle, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/contractor/")({
   head: () => ({ meta: [{ title: "Dashboard — Global3 Contractor" }] }),
@@ -65,6 +66,9 @@ function DashboardPage() {
         </div>
       </div>
 
+      {/* Language & Service Demand Requirements Section for Contractors */}
+      <ContractorRequirementsSection />
+
       <section className="rounded-2xl border border-border bg-card p-5">
         <div className="flex items-baseline justify-between">
           <div>
@@ -106,6 +110,95 @@ function DashboardPage() {
   );
 }
 
+function ContractorRequirementsSection() {
+  const demands = useClientDemands();
+
+  const summary = useMemo(() => {
+    const totalNeeded = demands.reduce((s, d) => s + d.headcount_needed, 0);
+    const totalFilled = demands.reduce((s, d) => s + d.filled, 0);
+    const totalRemaining = Math.max(0, totalNeeded - totalFilled);
+    return { totalNeeded, totalFilled, totalRemaining };
+  }, [demands]);
+
+  const byLang = useMemo(() => {
+    const map = new Map<string, { needed: number; filled: number; services: Set<string> }>();
+    for (const d of demands) {
+      const cur = map.get(d.language) ?? { needed: 0, filled: 0, services: new Set() };
+      d.services.forEach(s => cur.services.add(s));
+      map.set(d.language, {
+        needed: cur.needed + d.headcount_needed,
+        filled: cur.filled + d.filled,
+        services: cur.services,
+      });
+    }
+    return Array.from(map, ([language, v]) => ({
+      language,
+      needed: v.needed,
+      filled: v.filled,
+      remaining: Math.max(0, v.needed - v.filled),
+      services: Array.from(v.services),
+    })).sort((a, b) => b.remaining - a.remaining);
+  }, [demands]);
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-accent font-semibold">Current Hiring Requirements</div>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight">Language &amp; Service Headcount Needed</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Focus outreach on high-priority languages · <span className="font-semibold text-foreground">{summary.totalRemaining} headcount still left to fill</span>
+          </p>
+        </div>
+        <Link to="/contractor/requirements" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+          View All Requirements <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Headcount Needed</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{summary.totalNeeded}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Headcount Filled</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-[oklch(0.55_0.14_155)]">{summary.totalFilled}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Headcount Still Left</div>
+          <div className={`mt-1 text-2xl font-semibold tabular-nums ${summary.totalRemaining > 0 ? "text-warning" : "text-accent"}`}>
+            {summary.totalRemaining}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {byLang.slice(0, 4).map(item => (
+          <div key={item.language} className="rounded-xl border border-border/80 bg-background/50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm">{item.language}</span>
+              <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${item.remaining > 0 ? "bg-warning/15 text-warning" : "bg-accent/15 text-accent"}`}>
+                {item.remaining > 0 ? `${item.remaining} left` : "Filled"}
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground truncate">{item.services.join(", ")}</div>
+            <div className="mt-2 flex items-baseline justify-between text-xs tabular-nums">
+              <span className="text-muted-foreground">Filled <strong className="text-foreground">{item.filled}</strong>/{item.needed}</span>
+              <span className="font-semibold text-foreground">{item.remaining} left</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-accent transition-all"
+                style={{ width: `${item.needed ? Math.min(100, (item.filled / item.needed) * 100) : 0}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function MetricCard({ label, value, delta, tone }: { label: string; value: number | string; delta: string; tone: "positive" | "negative" }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-5">
@@ -121,37 +214,35 @@ function MetricCard({ label, value, delta, tone }: { label: string; value: numbe
 function Stat({ n, label }: { n: number; label: string }) {
   return (
     <div>
-      <div className="text-2xl font-semibold tabular-nums text-primary">{String(n).padStart(2, "0")}</div>
-      <div className="mt-1 text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="text-2xl font-semibold tracking-tight tabular-nums">{n}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }
 
-function BatchTile({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number; tone: "primary" | "muted" | "accent" | "warning" | "destructive" }) {
-  const styles = {
-    primary: { chip: "bg-primary/10 text-primary", value: "text-primary" },
-    muted: { chip: "bg-muted text-muted-foreground", value: "text-foreground" },
-    accent: { chip: "bg-accent/10 text-accent", value: "text-accent" },
-    warning: { chip: "bg-warning/15 text-warning", value: "text-warning" },
-    destructive: { chip: "bg-destructive/10 text-destructive", value: "text-destructive" },
-  }[tone];
+function BatchTile({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number | string; tone: "primary" | "muted" | "accent" | "warning" | "destructive" }) {
+  const map = {
+    primary: "text-primary",
+    muted: "text-muted-foreground",
+    accent: "text-accent",
+    warning: "text-warning",
+    destructive: "text-destructive",
+  };
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="flex items-center justify-between">
-        <span className={`grid h-7 w-7 place-items-center rounded-lg ${styles.chip}`}>
-          <Icon className="h-3.5 w-3.5" />
-        </span>
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
+    <div className="rounded-xl border border-border bg-card p-3">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className={`h-3.5 w-3.5 ${map[tone]}`} />
+        <span>{label}</span>
       </div>
-      <div className={`mt-3 text-2xl font-semibold tabular-nums ${styles.value}`}>{value.toLocaleString()}</div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
 
-function relative(ts: number) {
-  const s = Math.floor((Date.now() - ts) / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
-  return `${Math.floor(s / 86400)}d ago`;
+function relative(time: number) {
+  const diff = Date.now() - time;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
 }

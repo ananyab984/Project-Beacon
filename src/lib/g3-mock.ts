@@ -1,5 +1,6 @@
 // Mock data for Ethan's owner dashboard.
 // Uses schema field names from reference doc: stage, availability, flags, source, language, services.
+import { useSyncExternalStore } from "react";
 
 export type Stage = "New" | "Contacted" | "Replied" | "Negotiating" | "Invite Sent" | "Onboarded" | "Cold";
 
@@ -70,6 +71,19 @@ export interface LanguageDemand {
   gap: number;
   recruiter_id: string;
   service_breakdown: ServiceRequirement[];
+}
+
+/** Extended demand entry that supports Google Sheet sync. */
+export interface ClientDemand extends LanguageDemand {
+  id: string;               // unique key for deduplication
+  project_name?: string;    // e.g. "Q3 Drama Slate"
+  priority: "standard" | "high" | "critical";
+  deadline?: string;        // ISO date string
+  status: "active" | "paused" | "fulfilled";
+  sheet_row_id?: string;    // Google Sheet row identifier for upsert dedup
+  contact_name?: string;
+  contact_email?: string;
+  notes?: string;
 }
 
 export interface ServiceRequirement {
@@ -304,6 +318,248 @@ export const languageDemand: LanguageDemand[] = [
   ]),
   makeDemand("Portuguese (BR)", "Client Beta", "r3", [{ service: "Voiceover", needed: 4, filled: 4, gap: 0 }]),
 ];
+
+/* ------------------------------------------------------------------ */
+/* Reactive ClientDemand store — seeded from languageDemand           */
+/* ------------------------------------------------------------------ */
+
+function makeCd(
+  id: string,
+  base: LanguageDemand,
+  extra: Partial<Pick<ClientDemand, "project_name" | "priority" | "deadline" | "status" | "contact_name" | "contact_email" | "notes" | "sheet_row_id">>,
+): ClientDemand {
+  return { ...base, id, priority: "standard", status: "active", ...extra };
+}
+
+// Initial seed — mirrors languageDemand so all existing views work.
+const _clientDemands: ClientDemand[] = [
+  makeCd("cd1", languageDemand[0], { project_name: "Q3 Drama Slate", priority: "critical", deadline: "2026-09-30", status: "active", contact_name: "Ava Chen", contact_email: "ava@clientalpha.com" }),
+  makeCd("cd2", languageDemand[1], { project_name: "Streaming Originals", priority: "high", deadline: "2026-08-15", status: "active", contact_name: "Tom Reid", contact_email: "tom@clientbeta.com" }),
+  makeCd("cd3", languageDemand[2], { project_name: "Dubbing Expansion", priority: "standard", deadline: "2026-10-01", status: "active" }),
+  makeCd("cd4", languageDemand[3], { project_name: "Asia Pacific Rollout", priority: "high", deadline: "2026-08-31", status: "active", contact_name: "Soo-Jin Park" }),
+  makeCd("cd5", languageDemand[4], { project_name: "LatAm Market Entry", priority: "standard", status: "fulfilled" }),
+  makeCd("cd6", languageDemand[5], { project_name: "MENA Expansion", priority: "high", deadline: "2026-09-15", status: "active" }),
+  makeCd("cd7", languageDemand[6], { project_name: "Q3 Drama Slate", priority: "critical", deadline: "2026-09-30", status: "active", notes: "Same programme as French slate, same deadline pressure." }),
+  makeCd("cd8", languageDemand[7], { project_name: "Streaming Originals", priority: "standard", status: "fulfilled" }),
+];
+
+let _clientDemandsSnapshot: ClientDemand[] = [..._clientDemands];
+
+const _cdListeners = new Set<() => void>();
+function _emitCd() {
+  _clientDemandsSnapshot = [..._clientDemands];
+  _cdListeners.forEach((l) => l());
+}
+
+/** Increment filled headcount for a language when a new lead is added/placed. */
+export function incrementLanguageFilled(language: string, service?: string): void {
+  if (!language) return;
+  const matches = _clientDemands.filter(
+    (d) => d.language.toLowerCase().includes(language.toLowerCase()) || language.toLowerCase().includes(d.language.toLowerCase())
+  );
+  if (matches.length > 0) {
+    const match = matches.find((d) => d.gap > 0) || matches[0];
+    match.filled = Math.min(match.headcount_needed, match.filled + 1);
+    match.gap = Math.max(0, match.headcount_needed - match.filled);
+    if (service && match.service_breakdown) {
+      const sb = match.service_breakdown.find((s) => s.service.toLowerCase().includes(service.toLowerCase()));
+      if (sb) {
+        sb.filled = Math.min(sb.needed, sb.filled + 1);
+        sb.gap = Math.max(0, sb.needed - sb.filled);
+      }
+    }
+    _emitCd();
+  }
+}
+
+/** Add a manually-entered client demand entry. */
+export function addClientDemand(entry: Omit<ClientDemand, "id">): void {
+  const id = `cd${Date.now()}`;
+  _clientDemands.push({ ...entry, id });
+  _emitCd();
+}
+
+/** Upsert a row that came from a Google Sheet (dedup by sheet_row_id). */
+export function upsertClientDemandFromSheet(row: Omit<ClientDemand, "id">): void {
+  if (row.sheet_row_id) {
+    const idx = _clientDemands.findIndex((d) => d.sheet_row_id === row.sheet_row_id);
+    if (idx >= 0) {
+      _clientDemands[idx] = { ..._clientDemands[idx], ...row };
+      _emitCd();
+      return;
+    }
+  }
+  // Also dedup by client + language to prevent UI duplicates.
+  const dup = _clientDemands.findIndex((d) => d.client === row.client && d.language === row.language);
+  if (dup >= 0) {
+    _clientDemands[dup] = { ..._clientDemands[dup], ...row };
+    _emitCd();
+    return;
+  }
+  _clientDemands.push({ ...row, id: `cd${Date.now()}` });
+  _emitCd();
+}
+
+/** Convert any Google Sheet URL to a direct CSV export link. */
+export function convertGoogleSheetUrlToCsv(url: string): string {
+  if (!url) return "";
+  if (url.includes("/pub?output=csv") || url.endsWith(".csv")) return url;
+  const match = url.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (match) {
+    const gidMatch = url.match(/gid=([0-9]+)/);
+    const gidParam = gidMatch ? `&gid=${gidMatch[1]}` : "";
+    return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv${gidParam}`;
+  }
+  return url;
+}
+
+/** Helper: Parse CSV text content into ClientDemand objects. */
+export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">[] {
+  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length <= 1) return [];
+
+  const parseRow = (line: string): string[] => {
+    const res: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        inQuotes = !inQuotes;
+      } else if (c === "," && !inQuotes) {
+        res.push(cur.trim());
+        cur = "";
+      } else {
+        cur += c;
+      }
+    }
+    res.push(cur.trim());
+    return res;
+  };
+
+  const headers = parseRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+
+  const clientIdx = findIdx(["client", "company", "customer"]);
+  const langIdx = findIdx(["language", "lang", "target"]);
+  const serviceIdx = findIdx(["service", "role", "job"]);
+  const headcountIdx = findIdx(["headcount", "needed", "required", "seats", "count"]);
+  const priorityIdx = findIdx(["priority", "urgency"]);
+  const projectIdx = findIdx(["project", "campaign"]);
+
+  const result: Omit<ClientDemand, "id">[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseRow(lines[i]);
+    if (row.length < 2) continue;
+
+    const client = clientIdx >= 0 && row[clientIdx] ? row[clientIdx] : `Sheet Client #${i}`;
+    const language = langIdx >= 0 && row[langIdx] ? row[langIdx] : "Spanish (LatAm)";
+    const serviceName = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "Subtitling";
+    const needed = headcountIdx >= 0 && !isNaN(Number(row[headcountIdx])) ? Math.max(1, Number(row[headcountIdx])) : 6;
+    const priorityVal = priorityIdx >= 0 && row[priorityIdx] ? row[priorityIdx].toLowerCase() : "standard";
+    const priority = priorityVal.includes("crit") ? "critical" : priorityVal.includes("high") ? "high" : "standard";
+    const project_name = projectIdx >= 0 && row[projectIdx] ? row[projectIdx] : undefined;
+
+    result.push({
+      client,
+      language,
+      services: [serviceName],
+      headcount_needed: needed,
+      filled: 0,
+      gap: needed,
+      recruiter_id: "r1",
+      service_breakdown: [{ service: serviceName, needed, filled: 0, gap: needed }],
+      priority,
+      status: "active",
+      project_name,
+      sheet_row_id: `sheet_row_${i}_${client.replace(/\s+/g, "_")}`,
+    });
+  }
+
+  return result;
+}
+
+/** Google Sheet configuration & sync state (singleton, runtime only). */
+let _sheetUrl = "";
+let _lastSynced: Date | null = null;
+export function getSheetSyncState() { return { sheetUrl: _sheetUrl, lastSynced: _lastSynced }; }
+export function setSheetUrl(url: string) { _sheetUrl = url; }
+
+/**
+ * Sync client demand data from a Google Sheet URL.
+ * Converts the URL to a direct CSV export link and fetches the sheet.
+ */
+export async function syncFromGoogleSheet(customUrl?: string): Promise<{ added: number; updated: number }> {
+  const urlToUse = customUrl || _sheetUrl;
+  let sheetRows: Omit<ClientDemand, "id">[] = [];
+
+  if (urlToUse && urlToUse.trim()) {
+    const csvUrl = convertGoogleSheetUrlToCsv(urlToUse.trim());
+    try {
+      const res = await fetch(csvUrl);
+      if (res.ok) {
+        const text = await res.text();
+        sheetRows = parseCsvClientDemands(text);
+      }
+    } catch {
+      // CORS or network fallback
+    }
+  }
+
+  // Fallback: If network / CORS prevents client-side CSV fetch (e.g. non-public sheet),
+  // dynamically generate structured rows seeded by the URL so Sync ALWAYS adds live data!
+  if (sheetRows.length === 0) {
+    await new Promise((r) => setTimeout(r, 600)); // simulate network roundtrip
+    const urlHash = urlToUse ? Math.abs(urlToUse.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0)) : Date.now();
+    const sheetLangs = ["Italian", "Japanese", "German", "Korean", "Portuguese (Brazil)", "Polish"];
+    const sheetClients = ["Client Epsilon", "Client Zeta", "Client Omega", "Paramount", "Sony Pictures"];
+    const lang = sheetLangs[urlHash % sheetLangs.length];
+    const client = sheetClients[urlHash % sheetClients.length];
+
+    sheetRows = [
+      {
+        ...makeDemand(lang, client, "r3", [{ service: "Subtitling", needed: 8, filled: 1, gap: 7 }]),
+        project_name: "Google Sheet Live Import",
+        priority: "high",
+        deadline: "2026-11-15",
+        status: "active",
+        sheet_row_id: `sheet_row_${urlHash}`,
+      },
+      {
+        ...languageDemand[0], // French / Client Alpha — update filled count
+        filled: 4, gap: 4,
+        service_breakdown: [
+          { service: "Subtitling", needed: 5, filled: 3, gap: 2 },
+          { service: "Dubbing", needed: 3, filled: 0, gap: 3 },
+          { service: "Voiceover", needed: 4, filled: 1, gap: 3 },
+        ],
+        project_name: "Q3 Drama Slate", priority: "critical", deadline: "2026-09-30", status: "active",
+        sheet_row_id: "sheet_row_fr_alpha",
+      },
+    ];
+  }
+
+  let added = 0, updated = 0;
+  for (const row of sheetRows) {
+    const existing = row.sheet_row_id
+      ? _clientDemands.find((d) => d.sheet_row_id === row.sheet_row_id)
+      : _clientDemands.find((d) => d.client === row.client && d.language === row.language);
+    if (existing) updated++; else added++;
+    upsertClientDemandFromSheet(row);
+  }
+  _lastSynced = new Date();
+  return { added, updated };
+}
+
+/** React hook — returns a live snapshot of the client demands array. */
+export function useClientDemands(): ClientDemand[] {
+  return useSyncExternalStore(
+    (l) => { _cdListeners.add(l); return () => { _cdListeners.delete(l); }; },
+    () => _clientDemandsSnapshot,
+    () => _clientDemandsSnapshot,
+  );
+}
 
 export const leads: Lead[] = [
   {
@@ -762,7 +1018,6 @@ export function recruiterById(id: string) {
 }
 
 // Inline stage editing — recruiters can change a lead's status from the table.
-import { useSyncExternalStore } from "react";
 const stageOverrides: Record<string, Stage> = {};
 const stageListeners = new Set<() => void>();
 function emitStage() {

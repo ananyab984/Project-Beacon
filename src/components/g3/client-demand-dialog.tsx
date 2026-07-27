@@ -5,8 +5,9 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Upload, Download } from "lucide-react";
+import { Plus, Trash2, Upload, Download, RefreshCw, LinkIcon, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { syncFromGoogleSheet, getSheetSyncState, setSheetUrl, addClientDemand } from "@/lib/g3-mock";
 
 const EVENT = "g3:open-client-demand";
 export const openClientDemand = () => window.dispatchEvent(new Event(EVENT));
@@ -66,7 +67,29 @@ export function ClientDemandDialog() {
       return;
     }
     const totalSeats = cleaned.reduce((s, r) => s + Number(r.headcount), 0);
-    toast.success(`Demand added: ${clientName} — ${language} · ${cleaned.length} service${cleaned.length > 1 ? "s" : ""}, ${totalSeats} seats`);
+
+    addClientDemand({
+      client: clientName.trim(),
+      language: language.trim(),
+      services: cleaned.map((r) => r.service),
+      headcount_needed: totalSeats,
+      filled: 0,
+      gap: totalSeats,
+      recruiter_id: recruiter.trim() ? "r1" : "unassigned",
+      service_breakdown: cleaned.map((r) => ({
+        service: r.service,
+        needed: Number(r.headcount),
+        filled: 0,
+        gap: Number(r.headcount),
+      })),
+      priority: priority as "standard" | "high" | "critical",
+      status: "active",
+      contact_name: contactName.trim() || undefined,
+      contact_email: contactEmail.trim() || undefined,
+      notes: notes.trim() || undefined,
+    });
+
+    toast.success(`Demand added: ${clientName} — ${language} · ${cleaned.length} service${cleaned.length > 1 ? "" : "s"}, ${totalSeats} seats`);
     reset();
     setOpen(false);
   };
@@ -82,6 +105,7 @@ export function ClientDemandDialog() {
         </DialogHeader>
 
         <BulkImportStrip />
+        <GoogleSheetSyncStrip />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Client name" required>
@@ -224,6 +248,96 @@ function BulkImportStrip() {
         </Button>
         <input ref={inputRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={onFile} />
       </div>
+    </div>
+  );
+}
+
+function GoogleSheetSyncStrip() {
+  const [localUrl, setLocalUrl] = useState(() => getSheetSyncState().sheetUrl);
+  const [lastSynced, setLastSynced] = useState<Date | null>(() => getSheetSyncState().lastSynced);
+  const [syncing, setSyncing] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  const handleSync = async () => {
+    const urlToSync = localUrl.trim();
+    if (!urlToSync) {
+      toast.error("Enter a Google Sheet URL first.");
+      setEditing(true);
+      return;
+    }
+    setSheetUrl(urlToSync);
+    setSyncing(true);
+    try {
+      const { added, updated } = await syncFromGoogleSheet(urlToSync);
+      setLastSynced(new Date());
+      setEditing(false);
+      toast.success(`Synced from Google Sheet — ${added} added, ${updated} updated.`);
+    } catch {
+      toast.error("Sync failed. Check the Sheet URL and try again.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleSaveUrl = () => {
+    setSheetUrl(localUrl.trim());
+    setEditing(false);
+    toast.success("Google Sheet URL saved.");
+  };
+
+  const syncedLabel = lastSynced
+    ? `Last synced ${lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+    : "Not yet synced";
+
+  return (
+    <div className="rounded-lg border border-dashed border-accent/40 bg-accent/5 px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <LinkIcon className="h-3.5 w-3.5 text-accent shrink-0" />
+          <div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-medium text-foreground">Google Sheet Sync</span>
+              {lastSynced && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                  <CheckCircle2 className="h-2.5 w-2.5" /> Live
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-muted-foreground">{syncedLabel}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button" variant="ghost" size="sm"
+            onClick={() => setEditing((e) => !e)}
+            className="h-7 gap-1 text-xs"
+          >
+            {editing ? "Cancel" : "Configure"}
+          </Button>
+          <Button
+            type="button" variant="outline" size="sm"
+            onClick={handleSync}
+            disabled={syncing}
+            className="h-7 gap-1 text-xs"
+          >
+            {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {syncing ? "Syncing…" : "Sync Now"}
+          </Button>
+        </div>
+      </div>
+      {editing && (
+        <div className="mt-2.5 flex gap-2">
+          <Input
+            value={localUrl}
+            onChange={(e) => setLocalUrl(e.target.value)}
+            placeholder="https://docs.google.com/spreadsheets/d/…"
+            className="h-8 flex-1 text-xs"
+          />
+          <Button type="button" size="sm" onClick={handleSaveUrl} className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90">
+            Save
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
