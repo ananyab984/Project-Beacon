@@ -1,7 +1,7 @@
 import { createFileRoute, Link, Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import { G3Logo } from "@/components/g3/logo";
 import { EscalationsBell } from "@/components/g3/escalations";
-import { LayoutGrid, Building2, Users, ContactRound, Settings, Search, Sparkles, BarChart3, Plus, LogOut } from "lucide-react";
+import { LayoutGrid, Building2, Users, ContactRound, Settings, Search, Sparkles, BarChart3, Plus, LogOut, UserCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ClientDemandDialog, openClientDemand } from "@/components/g3/client-demand-dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";

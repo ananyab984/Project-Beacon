@@ -6,6 +6,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { RoleGuard } from "@/components/g3/role-guard";
 import { useAuth } from "@/lib/auth";
 import { AddLeadDialog } from "@/components/g3/add-lead-dialog";
+import { RecruiterNotificationsPopover } from "@/components/g3/recruiter-notifications-popover";
 import type { ComponentType } from "react";
 
 export const Route = createFileRoute("/recruiter")({
@@ -90,7 +91,7 @@ function RecruiterLayout() {
         <header className="sticky top-0 z-20 flex h-14 items-center justify-between gap-4 border-b border-border bg-background/80 px-6 backdrop-blur">
           <h1 className="text-[15px] font-semibold tracking-tight">{current?.label ?? "Dashboard"}</h1>
           <div className="flex items-center gap-2">
-            {/* PLACEMENT: pending usability testing — top-right for now. */}
+            <RecruiterNotificationsPopover />
             <AddLeadDialog
               trigger={
                 <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">

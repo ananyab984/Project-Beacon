@@ -1,0 +1,908 @@
+// ============================================================================
+// PROJECT BEACON — Merged DB Schema (Prisma) — V2
+// Sources reconciled: recruiter-scoring draft (v3) + G3 Implementation
+// doc + Template_ProjectBeacon.xlsx + Enrichment_Outreach_Tool_Comparison +
+// Phase2_MultiChannel_Outreach + live frontend repo (ANANYA542/lead-dashboard-flow):
+// src/lib/g3-mock.ts, src/lib/recruiter-mock.ts, src/lib/evaluation.ts,
+// src/lib/auth.tsx, .lovable/plan.md, and the dialog/route components.
+// See SCHEMA_NOTES.md for every V1 -> V2 change and open question.
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// ENUMS
+// ----------------------------------------------------------------------------
+
+enum UserRole {
+  OWNER        // Sundar/Ethan — full visibility, client mapping, approval
+  RECRUITER    // in-house, full DB access, Global Leads pool
+  CONTRACTOR   // search-only, no full list visibility, submits via form/upload
+}
+
+/// Repo confirms two parallel status vocabularies exist and are reconciled by
+/// a mapping function (recruiter-mock.ts: stageToStatus). LeadStage is the
+/// canonical 7-value pipeline stage used by scoring/metrics (matches
+/// StageHistory, draft, G3 doc Section 2). LeadStatus (below) is a
+/// richer 13-value UI-facing vocabulary. Both are kept — see SCHEMA_NOTES.md.
+enum LeadStage {
+  NEW
+  CONTACTED
+  REPLIED
+  NEGOTIATING
+  INVITE_SENT
+  ONBOARDED
+  COLD
+}
+
+/// Extended UI status vocabulary (recruiter-mock.ts LEAD_STATUSES). Not a
+/// replacement for LeadStage — this is what recruiters actually click through
+/// on lead cards; LeadStage is what scoring/stage_history reasons about.
+enum LeadStatus {
+  NEW
+  CONTACTED
+  AWAITING_REPLY
+  REPLIED
+  SCREENING
+  INTERVIEW_SCHEDULED
+  INTERVIEW_COMPLETED
+  NEGOTIATION
+  OFFERED
+  PLACED
+  ON_HOLD
+  CLOSED
+  REJECTED
+}
+
+enum Availability {
+  AVAILABLE_NOW
+  AVAILABLE_FROM   // pairs with availability_from_date
+  UNAVAILABLE
+  UNKNOWN
+}
+
+enum LeadFlagType {
+  DNC
+  ON_HOLD
+  WATCHING
+  HIGH_PRIORITY
+}
+
+enum FlagStatus {
+  PROVISIONAL   // meaningful for DNC only; other flags default to CONFIRMED
+  CONFIRMED
+}
+
+enum FlagAction {
+  ADDED
+  REMOVED
+}
+
+/// Repo (recruiter-mock.ts RecruiterLeadStatus) ships only PENDING/COMPLETE
+/// today ("SEARCH fields filled by recruiter; ENRICHMENT fields filled by
+/// background job"). IN_PROGRESS and FLAGGED_REVIEW are kept because the G3
+/// doc's import-report design explicitly requires a review-flagged state for
+/// ambiguous identities ("Danny M") that the current 2-state UI enum doesn't
+/// yet expose — see SCHEMA_NOTES.md.
+enum EnrichmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETE
+  FLAGGED_REVIEW
+}
+
+/// Repo's Source type (g3-mock.ts) is a plain string union with values
+/// actually seeded in mock data: LinkedIn, ProZ, Apollo, Referral, Import,
+/// GitHub (recruiter-mock.ts, one seed row). GitHub is almost certainly mock
+/// noise (no doc anywhere mentions sourcing from GitHub) but is included
+/// since it's real seeded data — flagged in SCHEMA_NOTES.md rather than
+/// silently dropped.
+enum LeadSource {
+  LINKEDIN
+  PROZ
+  APOLLO
+  REFERRAL
+  IMPORT
+  GITHUB
+}
+
+enum InteractionDirection {
+  OUTBOUND   // recruiter -> candidate
+  INBOUND    // candidate -> recruiter
+}
+
+enum InteractionChannel {
+  EMAIL       // via Resend
+  LINKEDIN_DM // via Unipile
+}
+
+enum ActivityType {
+  INTERVIEW
+  CALL
+}
+
+/// V2: evaluation.ts's Direction type is just "higher" | "lower" for all 14
+/// metrics — no SPECIAL case in the shipped code. V1's SPECIAL value
+/// (guessed from the doc) is dropped.
+enum MetricDirection {
+  HIGHER_IS_BETTER
+  LOWER_IS_BETTER
+}
+
+/// evaluation.ts MetricGroup — drives the dashboard's 5-section layout.
+enum MetricGroup {
+  ACTIVITY_AND_EFFORT
+  RESPONSIVENESS
+  OWNERSHIP_AND_FOLLOW_THROUGH
+  OUTCOME_METRICS
+  ADDITIONAL_BUSINESS_METRICS
+}
+
+enum MetricUnit {
+  COUNT
+  PCT
+  DAYS
+  ATTEMPTS
+}
+
+enum SnapshotStatus {
+  FINAL   // scores computed once at period close, never live
+}
+
+/// recruiter-mock.ts Conversation.channel — confirms outreach isn't
+/// email+LinkedIn only (Phase2_MultiChannel_Outreach's stated scope).
+/// Instagram/WhatsApp/SMS are real, seeded channels in the live UI.
+enum ConversationChannel {
+  LINKEDIN
+  INSTAGRAM
+  WHATSAPP
+  SMS
+}
+
+enum MessageSender {
+  ME
+  THEM
+}
+
+enum RateUnit {
+  HOUR
+  MINUTE
+  PROJECT
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  INR
+}
+
+enum PreferredContact {
+  EMAIL
+  PHONE
+  WHATSAPP
+}
+
+enum LeadPriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum EscalationPriority {
+  P1
+  P2
+  P3
+}
+
+enum EscalationStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+}
+
+enum EmailQueueStatus {
+  AI_DRAFTED
+  FOLLOW_UP
+  REVIEW_NEEDED
+}
+
+enum ClientDemandPriority {
+  STANDARD
+  HIGH
+  CRITICAL
+}
+
+enum ClientDemandStatus {
+  ACTIVE
+  PAUSED
+  FULFILLED
+}
+
+// ----------------------------------------------------------------------------
+// USERS & ACCESS CONTROL
+// ----------------------------------------------------------------------------
+
+/// Replaces the bare `recruiters` table with role-aware access control,
+/// covering Owner (Sundar/Ethan), in-house Recruiters, and Contractors.
+/// Auth fields below are taken directly from the live repo's src/lib/auth.tsx
+/// (currently a localStorage mock — passwordHash etc. are the real-backend
+/// equivalents of what that file will need once auth moves server-side).
+model User {
+  id                  String    @id @default(uuid())
+  name                String
+  email               String    @unique
+  passwordHash        String    @map("password_hash")
+  role                UserRole
+  emailVerified       Boolean   @default(false) @map("email_verified")
+  verifyToken         String?   @map("verify_token")
+  resetToken          String?   @map("reset_token")
+  resetTokenExpiresAt DateTime? @map("reset_token_expires_at")
+  startDate           DateTime  @default(now()) @map("start_date")   // determines 3-month trend baseline eligibility
+  isActive            Boolean   @default(true) @map("is_active")
+  createdAt           DateTime  @default(now()) @map("created_at")
+
+  // Lead relationships
+  leadsCreated        Lead[]              @relation("CreatedBy")
+  leadsCreatedAsContractor Lead[]         @relation("ContractorCreator")
+
+  leadsAssigned       Lead[]              @relation("AssignedTo")
+  leadsClaimed        Lead[]              @relation("ClaimedBy")
+  stageChanges        StageHistory[]      @relation("ChangedBy")
+  flagEventsSet       LeadFlagEvent[]     @relation("SetBy")
+  flagEventsConfirmed LeadFlagEvent[]     @relation("ConfirmedBy")
+  interactionsSent    InteractionEvent[]  @relation("SentBy")
+  manualActivities    ManualActivityLog[]
+  emailQueueItems     EmailQueueItem[]
+  conversations       Conversation[]
+  contractorProfile   ContractorProfile?
+  escalationsOwned    Escalation[]        @relation("EscalationOwner")
+
+  // Contractor-management (recruiter <-> assigned contractors)
+  contractorsManaged  ContractorAssignment[] @relation("ManagingRecruiter")
+  managedBy           ContractorAssignment[] @relation("AssignedContractor")
+
+  // Scoring relationships
+  monthlyMetrics   RecruiterMonthlyMetric[]
+  scoreSnapshots   RecruiterScoreSnapshot[]
+  kpiSummary       RecruiterKpiSummary?
+  clientDemands    ClientDemand[]        @relation("ClientDemandOwner")
+
+  @@map("users")
+}
+
+/// Explicit visibility rule table: which role can see which lead pool.
+/// Contractors get SEARCH_ONLY (existence check, no full record); Recruiters
+/// get FULL once a lead is promoted to Global; Owner always sees everything.
+/// This exists as data (not just app logic) so the rule is auditable and can
+/// change without a code deploy.
+model VisibilityRule {
+  id              String   @id @default(uuid())
+  role            UserRole
+  enrichmentGate  EnrichmentStatus? @map("enrichment_gate")  // null = no gate, e.g. OWNER
+  accessLevel     String   @map("access_level")  // "FULL" | "SEARCH_ONLY" | "OWN_ONLY"
+  notes           String?
+
+  @@unique([role])
+  @@map("visibility_rules")
+}
+
+// ----------------------------------------------------------------------------
+// LEADS — core record, merged with enrichment + sourcing fields
+// ----------------------------------------------------------------------------
+
+/// V2 note: language moved from a per-service join table (V1's LeadService)
+/// to flat source_language / target_language / secondary_languages fields,
+/// and years_of_experience moved from per-service to lead-level. Both match
+/// the live repo exactly (recruiter-mock.ts RecruiterLead,
+/// manual-enrichment-dialog.tsx LeadForEnrichment) and your confirmation
+/// that YOE is once-per-lead, not once-per-service. `services` stays a
+/// string array (matches repo) rather than a join table.
+model Lead {
+  id                       String            @id @default(uuid())
+
+  // --- ownership / scoring-relevant ---
+  createdByRecruiterId     String?           @map("created_by_recruiter_id")   // nullable: contractor-submitted leads have no recruiter creator (repo: owner_recruiter_id = "")
+  createdBy                User?             @relation("CreatedBy", fields: [createdByRecruiterId], references: [id])
+  createdByContractorId    String?           @map("created_by_contractor_id")  // repo: owner_contractor_id
+  createdByContractor      User?             @relation("ContractorCreator", fields: [createdByContractorId], references: [id])
+  assignedRecruiterId      String?           @map("assigned_recruiter_id")
+  assignedTo                User?             @relation("AssignedTo", fields: [assignedRecruiterId], references: [id])
+  assignedAt                 DateTime?         @map("assigned_at")
+  isSelfSourced                Boolean           @default(false) @map("is_self_sourced")
+
+  // --- Global Leads claim tracking (repo: claimLead / useClaimedBy) ---
+  // A lead promoted to the Global pool is unassigned until a recruiter claims
+  // it. Distinct from assignedRecruiterId, which can be set directly without
+  // ever going through a claim (e.g. a recruiter's own sourced lead).
+  claimedByRecruiterId  String?   @map("claimed_by_recruiter_id")
+  claimedBy             User?     @relation("ClaimedBy", fields: [claimedByRecruiterId], references: [id])
+  claimedAt              DateTime? @map("claimed_at")
+
+  // --- duplicate detection at submission (repo: checkDuplicate, dup_flagged) ---
+  dupFlagged        Boolean  @default(false) @map("dup_flagged")
+  dupFlaggedField   String?  @map("dup_flagged_field")   // "full_name" | "profile_link" | "email_address"
+
+  enrichmentStatus     EnrichmentStatus  @default(PENDING) @map("enrichment_status")
+  promotedToGlobalAt   DateTime?         @map("promoted_to_global_at")
+  justEnrichedUntil    DateTime?         @map("just_enriched_until")  // repo: transient "recently enriched" highlight window
+
+  stage        LeadStage      @default(NEW)
+  status       LeadStatus     @default(NEW)     // repo's richer UI vocabulary; independently editable per-card, not strictly derived from stage
+  priority     LeadPriority?                    // repo: leadPriority/setLeadPriority (P0-P3), inline-editable on lead cards
+  flags        LeadFlagType[] @default([])      // denormalized cache; source of truth = LeadFlagEvent
+  closureReason           String?    @map("closure_reason")
+  closureReasonLoggedAt   DateTime?  @map("closure_reason_logged_at")
+
+  // --- identity / masking ("Danny M" case — repo: masked_label, identity_resolved, display_name) ---
+  maskedLabel        String?   @map("masked_label")     // e.g. "Lead #A-1042" — always shown until identity resolved
+  identityResolved    Boolean   @default(false) @map("identity_resolved")
+  displayName          String?   @map("display_name")    // real name, only meaningful once identityResolved = true
+
+  // --- identity / contact (Template_ProjectBeacon.xlsx + repo RecruiterLead) ---
+  firstName        String?    @map("first_name")
+  fullName          String?    @map("full_name")
+  profileLink        String?    @map("profile_link")   // LinkedIn or ProZ URL
+  country              String?    @map("country_of_residence")
+  contactNumber         String?    @map("contact_number")
+  email                   String?    @map("email_address")
+  emailVerified             Boolean    @default(false) @map("email_verified")
+  reachoutDate                DateTime?  @map("reachout_date")
+  applicationDate               DateTime?  @map("application_date")
+
+  // --- languages & services (repo: source_language / target_language / secondary_languages; flat services[]) ---
+  services              String[]  @default([])
+  sourceLanguage          String?   @map("source_language")
+  targetLanguage            String?   @map("target_language")
+  secondaryLanguages          String[]  @default([]) @map("secondary_languages")
+
+  // --- source + enrichment (Phase 1: Bright Data / ProZ / Claude wrapper) ---
+  source                LeadSource
+  prozProfileId           String?   @map("proz_profile_id")
+  linkedinUrn                String?   @map("linkedin_urn")
+  yearsOfExperience             Decimal?  @map("years_of_experience") @db.Decimal(4, 1)   // once per lead, per confirmed answer
+  vendorExperience                String?   @map("vendor_experience")   // repo stores this as free text; LeadVendorMatch below adds structured matching on top, does not replace this field
+  yoeConfidence                      Decimal?  @map("yoe_confidence") @db.Decimal(4, 3)  // Claude extraction confidence, 0-1
+  linkedinMatchConfidence               Decimal?  @map("linkedin_match_confidence") @db.Decimal(4, 3) // "Danny M" case (repo: match_confidence)
+  availability                            Availability @default(UNKNOWN)
+  availabilityFromDate                       DateTime?    @map("availability_from_date")
+
+  createdAt          DateTime   @default(now()) @map("created_at")
+  lastActivityAt        DateTime?  @map("last_activity_at")  // repo: last_activity, rendered as relative time
+
+  // relations
+  vendorMatches       LeadVendorMatch[]
+  stageHistory        StageHistory[]
+  flagEvents          LeadFlagEvent[]
+  interactionEvents   InteractionEvent[]
+  manualActivityLogs  ManualActivityLog[]
+  emailQueueItems     EmailQueueItem[]
+  conversations       Conversation[]
+
+  @@index([enrichmentStatus])
+  @@index([assignedRecruiterId])
+  @@index([claimedByRecruiterId])
+  @@index([stage])
+  @@index([country])
+  @@map("leads")
+}
+
+
+/// Seed competitor list match, referenced by Enrichment_Outreach_Tool_Comparison
+/// ("extraction can't classify against a list that doesn't exist yet").
+/// Kept as its own table (not a leads column) so "competitor shutdowns ->
+/// high priority" logic can query which competitor, and the seed list can
+/// grow without a migration.
+model Competitor {
+  id        String   @id @default(uuid())
+  name      String   @unique   // e.g. "PaperCup"
+  isActive  Boolean  @default(true) @map("is_active")   // false once flagged as shut down -> triggers high-priority matching
+
+  matches   LeadVendorMatch[]
+
+  @@map("competitors")
+}
+
+model LeadVendorMatch {
+  id            String     @id @default(uuid())
+  leadId        String     @map("lead_id")
+  lead          Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  competitorId  String     @map("competitor_id")
+  competitor    Competitor @relation(fields: [competitorId], references: [id])
+  confidence    Decimal?   @db.Decimal(4, 3)   // Claude extraction confidence, 0-1
+  matchedAt     DateTime   @default(now()) @map("matched_at")
+
+  @@unique([leadId, competitorId])
+  @@map("lead_vendor_matches")
+}
+
+// ----------------------------------------------------------------------------
+// STAGE HISTORY (draft, unchanged)
+// ----------------------------------------------------------------------------
+
+model StageHistory {
+  id                    String     @id @default(uuid())
+  leadId                String     @map("lead_id")
+  lead                  Lead       @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  fromStage             LeadStage? @map("from_stage")
+  toStage               LeadStage  @map("to_stage")
+  changedAt             DateTime   @default(now()) @map("changed_at")
+  changedByRecruiterId  String     @map("changed_by_recruiter_id")
+  changedBy             User       @relation("ChangedBy", fields: [changedByRecruiterId], references: [id])
+  reason                String?    // populated when toStage = COLD; durable version of leads.closureReason
+
+  @@index([leadId])
+  @@map("stage_history")
+}
+
+// ----------------------------------------------------------------------------
+// FLAG EVENTS — audit trail + confirmation workflow (draft)
+// ----------------------------------------------------------------------------
+
+model LeadFlagEvent {
+  id                     String       @id @default(uuid())
+  leadId                 String       @map("lead_id")
+  lead                   Lead         @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  flag                   LeadFlagType
+  action                 FlagAction
+  status                 FlagStatus   @default(CONFIRMED)  // meaningful for DNC only
+  setByRecruiterId       String       @map("set_by_recruiter_id")
+  setBy                  User         @relation("SetBy", fields: [setByRecruiterId], references: [id])
+  setAt                  DateTime     @default(now()) @map("set_at")
+  confirmedByRecruiterId String?      @map("confirmed_by_recruiter_id")
+  confirmedBy            User?        @relation("ConfirmedBy", fields: [confirmedByRecruiterId], references: [id])
+  confirmedAt             DateTime?    @map("confirmed_at")
+  reason                  String?      // DNC-equivalent of stage_history.reason
+  removedAt                DateTime?    @map("removed_at")
+
+  @@index([leadId])
+  @@index([flag, status])
+  @@map("lead_flag_events")
+}
+
+// ----------------------------------------------------------------------------
+// INTERACTION EVENTS — merges outreach_events + inbound_replies, both channels
+// ----------------------------------------------------------------------------
+
+/// Split by `direction` per draft, and by `channel` to support
+/// both Resend (email) and Unipile (LinkedIn DM) per Phase2_MultiChannel_Outreach.
+/// channel + aiClassification were cut from draft as unused by the
+/// 14 metrics; re-added here because Phase 2 docs require a channel-selection
+/// rule and reply classification is a named M2 feature (AI-draft edit rate,
+/// reply-classification accuracy) — see SCHEMA_NOTES.md for why this diverges
+/// from the draft.
+model InteractionEvent {
+  id                     String                @id @default(uuid())
+  leadId                 String                @map("lead_id")
+  lead                   Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  direction               InteractionDirection
+  channel                 InteractionChannel
+  recruiterId              String?               @map("recruiter_id")  // FK -> users; outbound rows only
+  recruiter                User?                 @relation("SentBy", fields: [recruiterId], references: [id])
+  occurredAt                DateTime              @map("occurred_at")  // sent (outbound) or received (inbound)
+
+  // SLA / urgency ( draft)
+  isUrgentFlag              Boolean               @default(false) @map("is_urgent_flag")  // snapshot of High Priority at reply time; inbound only; copy at insert, never join live
+  recruiterRespondedAt      DateTime?             @map("recruiter_responded_at")  // inbound rows only
+
+  // AI-generated outreach / reply handling (M2 features named in G3 doc)
+  aiGenerated                Boolean               @default(false) @map("ai_generated")
+  aiDraftText                 String?               @map("ai_draft_text")   // pre-edit draft, for edit-rate metric
+  sentText                    String?               @map("sent_text")       // final text actually sent
+  aiReplyClassification       String?               @map("ai_reply_classification")  // e.g. "interested" | "faq" | "rate_question" | "dnc"
+  aiClassificationConfidence  Decimal?              @map("ai_classification_confidence") @db.Decimal(4, 3)
+
+  // delivery tracking (Resend webhooks / Unipile webhooks)
+  deliveryStatus               String?               @map("delivery_status")  // sent/delivered/opened/clicked/bounced/complained (Resend) or sent/delivered/read/replied (Unipile)
+
+  @@index([leadId])
+  @@index([direction, occurredAt])
+  @@map("interaction_events")
+}
+
+// ----------------------------------------------------------------------------
+// MANUAL ACTIVITY LOGS — merges manual_interview_logs + manual_call_logs
+// ----------------------------------------------------------------------------
+
+model ManualActivityLog {
+  id             String        @id @default(uuid())
+  leadId         String        @map("lead_id")
+  lead           Lead          @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recruiterId    String        @map("recruiter_id")
+  recruiter      User          @relation(fields: [recruiterId], references: [id])
+  type           ActivityType
+  scheduledAt    DateTime      @map("scheduled_at")
+  purpose        String?       // call rows only
+  outcome        String?       // call rows only; "Converted" undefined — store raw, no rate logic
+  notes          String?       // interview rows only
+  loggedAt       DateTime      @default(now()) @map("logged_at")
+
+  @@index([leadId])
+  @@index([type])
+  @@map("manual_activity_logs")
+}
+
+// ----------------------------------------------------------------------------
+// SCORING SYSTEM — kpi_config, snapshots, monthly metrics, calendar
+// (draft, unchanged in structure)
+// ----------------------------------------------------------------------------
+
+/// V2: field set matches evaluation.ts's RUBRIC array exactly (metricKey
+/// values: outreach_volume, followup_persistence, proactive_sourcing,
+/// time_to_first_touch, sla_adherence, backlog_aging, progression_rate,
+/// closure_rate, reason_logged_rate, interview_conversion, onboard_vs_queue,
+/// cold_lead_conversion, manual_interviews, manual_conversion). Kept as a
+/// VERSIONED table per your decision, even though the live code currently
+/// stores weights as one hardcoded constant flagged "pending business
+/// sign-off" in .lovable/plan.md — this models where the system is going.
+/// group/goodBand are new vs V1: group drives the dashboard's 5-section
+/// layout; goodBand is the normalization ceiling for metrics without a fixed
+/// target (e.g. outreach_volume's goodBand of 420).
+model KpiConfig {
+  id             String            @id @default(uuid())
+  metricKey      String            @map("metric_key")
+  group          MetricGroup
+  label          String
+  unit           MetricUnit
+  weight         Decimal?          @db.Decimal(5, 2)
+  target         Decimal?          @db.Decimal(10, 4)
+  goodBand       Decimal?          @map("good_band") @db.Decimal(10, 4)
+  direction      MetricDirection
+  scored         Boolean           @default(true)
+  effectiveDate  DateTime          @map("effective_date")
+  notes          String?
+
+  @@unique([metricKey, effectiveDate])
+  @@index([metricKey])
+  @@map("kpi_config")
+}
+
+/// V2: extended with previousScore/bandLabel/summary and a child
+/// RecruiterMetricSnapshot table, matching evaluation.ts's Evaluation and
+/// MetricSnapshot interfaces (score, previousScore, band, summary, and one
+/// row per rubric metric with trend/baseline/status). V1 only stored
+/// overallScore + a JSON blob — too coarse to power the actual dashboard's
+/// per-metric trend arrows and status pills without re-deriving everything
+/// from raw events every render.
+model RecruiterScoreSnapshot {
+  id                 String         @id @default(uuid())
+  recruiterId        String         @map("recruiter_id")
+  recruiter          User           @relation(fields: [recruiterId], references: [id])
+  period             DateTime
+  isNew              Boolean        @default(false) @map("is_new")
+  overallScore       Decimal        @map("overall_score") @db.Decimal(5, 2)
+  previousScore      Decimal?       @map("previous_score") @db.Decimal(5, 2)
+  bandLabel          String?        @map("band_label")
+  summary            String?
+  computedAt         DateTime       @default(now()) @map("computed_at")
+  kpiConfigSnapshot  Json           @map("kpi_config_snapshot")
+  excludedMetrics    Json?          @map("excluded_metrics")
+  status             SnapshotStatus @default(FINAL)
+
+  metricSnapshots RecruiterMetricSnapshot[]
+
+  @@unique([recruiterId, period])
+  @@map("recruiter_score_snapshots")
+}
+
+model RecruiterMetricSnapshot {
+  id              String                 @id @default(uuid())
+  scoreSnapshotId String                 @map("score_snapshot_id")
+  scoreSnapshot   RecruiterScoreSnapshot @relation(fields: [scoreSnapshotId], references: [id], onDelete: Cascade)
+  metricKey       String                 @map("metric_key")
+  currentValue    Decimal                @map("current_value") @db.Decimal(10, 4)
+  previousValue   Decimal?               @map("previous_value") @db.Decimal(10, 4)
+  baseline        Decimal?               @db.Decimal(10, 4)
+  changePct       Decimal?               @map("change_pct") @db.Decimal(6, 2)
+  trend           String?
+  metricStatus    String?                @map("metric_status")
+  normalized      Decimal                @db.Decimal(5, 2)
+
+  @@unique([scoreSnapshotId, metricKey])
+  @@map("recruiter_metric_snapshots")
+}
+
+model RecruiterMonthlyMetric {
+  id           String   @id @default(uuid())
+  recruiterId  String   @map("recruiter_id")
+  recruiter    User     @relation(fields: [recruiterId], references: [id])
+  metricName   String   @map("metric_name")
+  month        DateTime
+  value        Decimal  @db.Decimal(10, 4)
+
+  @@unique([recruiterId, metricName, month])
+  @@map("recruiter_monthly_metrics")
+}
+
+/// Shared reference table defining working hours (e.g. Mon-Fri 9am-6pm),
+/// excluding nights/weekends/holidays. Metrics 5 (SLA) and 6 (backlog aging)
+/// both diff against this instead of raw timestamps.
+model BusinessHoursCalendar {
+  id          String   @id @default(uuid())
+  dayOfWeek   Int      @map("day_of_week")   // 0=Sunday .. 6=Saturday
+  startTime   String   @map("start_time")    // "09:00"
+  endTime     String   @map("end_time")      // "18:00"
+  isHoliday   Boolean  @default(false) @map("is_holiday")
+  holidayDate DateTime? @map("holiday_date")
+
+  @@map("business_hours_calendar")
+}
+
+// ----------------------------------------------------------------------------
+// GLOBAL CONFIG — sla_window_hours, backlog_aging_ceiling_pct
+// (Table 9; kept as rows in KpiConfig-adjacent shape via kpi_config
+// itself where possible, plus a small catch-all for the two non-metric configs)
+// ----------------------------------------------------------------------------
+
+model SystemConfig {
+  key       String   @id
+  value     String
+  notes     String?
+
+  @@map("system_config")
+}
+
+// ----------------------------------------------------------------------------
+// CLIENT DEMAND — Sundar/Ethan's client mapping flow.
+// V2: rewritten against g3-mock.ts ClientDemand/LanguageDemand/
+// ServiceRequirement, considerably richer than the V1 guess — supports
+// Google Sheet sync (upsert-by-sheet_row_id), per-service headcount
+// breakdown, and project/deadline/priority tracking.
+// ----------------------------------------------------------------------------
+
+model ClientDemand {
+  id              String                @id @default(uuid())
+  clientName      String                @map("client_name")
+  language        String
+  recruiterId     String?               @map("recruiter_id")   // owning recruiter for this demand line
+  recruiter       User?                 @relation("ClientDemandOwner", fields: [recruiterId], references: [id])
+  headcountNeeded Int                   @map("headcount_needed")
+  filled          Int                   @default(0)
+  gap             Int                   @default(0)            // denormalized: headcountNeeded - filled, kept in sync by app logic per incrementLanguageFilled
+  projectName     String?               @map("project_name")
+  priority        ClientDemandPriority  @default(STANDARD)
+  deadline        DateTime?
+  status          ClientDemandStatus    @default(ACTIVE)
+  sheetRowId      String?               @unique @map("sheet_row_id")   // Google Sheet row identifier for upsert dedup
+  contactName     String?               @map("contact_name")
+  contactEmail    String?               @map("contact_email")
+  notes           String?
+  submittedAt     DateTime              @default(now()) @map("submitted_at")
+
+  serviceBreakdown ClientDemandService[]
+
+  @@index([language])
+  @@index([status])
+  @@map("client_demand")
+}
+
+/// Per-service headcount breakdown within one ClientDemand line
+/// (g3-mock.ts ServiceRequirement: service/needed/filled/gap).
+model ClientDemandService {
+  id              String       @id @default(uuid())
+  clientDemandId  String       @map("client_demand_id")
+  clientDemand    ClientDemand @relation(fields: [clientDemandId], references: [id], onDelete: Cascade)
+  service         String
+  needed          Int
+  filled          Int          @default(0)
+  gap             Int          @default(0)
+
+  @@unique([clientDemandId, service])
+  @@map("client_demand_services")
+}
+
+/// Google Sheet sync configuration and last-sync state
+/// (g3-mock.ts getSheetSyncState/setSheetUrl/syncFromGoogleSheet).
+model SheetSyncConfig {
+  id           String    @id @default(uuid())
+  ownerUserId  String    @unique @map("owner_user_id")
+  sheetUrl     String?   @map("sheet_url")
+  lastSyncedAt DateTime? @map("last_synced_at")
+
+  @@map("sheet_sync_config")
+}
+
+// ----------------------------------------------------------------------------
+// EMAIL QUEUE — AI-drafted / follow-up / review-needed outreach queue
+// (recruiter-mock.ts EmailQueueItem). Distinct from InteractionEvent: this is
+// the pre-send review queue; InteractionEvent is the post-send/received log.
+// ----------------------------------------------------------------------------
+
+model EmailQueueItem {
+  id             String           @id @default(uuid())
+  leadId         String           @map("lead_id")
+  lead           Lead             @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recruiterId    String           @map("recruiter_id")
+  recruiter      User             @relation(fields: [recruiterId], references: [id])
+  candidateName  String           @map("candidate_name")
+  candidateRole  String?          @map("candidate_role")
+  status         EmailQueueStatus @default(AI_DRAFTED)
+  subject        String
+  body           String
+  aiGenerated    Boolean          @default(false) @map("ai_generated")
+  receivedAt     DateTime         @default(now()) @map("received_at")
+
+  @@index([leadId])
+  @@index([status])
+  @@map("email_queue_items")
+}
+
+// ----------------------------------------------------------------------------
+// CONVERSATIONS — multi-channel candidate messaging
+// (recruiter-mock.ts Conversation). Confirms outreach spans LinkedIn,
+// Instagram, WhatsApp, and SMS in the live UI — wider than the email +
+// LinkedIn-DM scope in Phase2_MultiChannel_Outreach.docx. Flagged in
+// SCHEMA_NOTES.md: was this expansion intentional, or mockup scaffolding
+// ahead of an actual Instagram/SMS integration decision?
+// ----------------------------------------------------------------------------
+
+model Conversation {
+  id             String              @id @default(uuid())
+  leadId         String              @map("lead_id")
+  lead           Lead                @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recruiterId    String              @map("recruiter_id")
+  recruiter      User                @relation(fields: [recruiterId], references: [id])
+  candidateName  String              @map("candidate_name")
+  candidateRole  String?             @map("candidate_role")
+  channel        ConversationChannel
+  unread         Boolean             @default(false)
+  lastMessageAt  DateTime?           @map("last_message_at")
+
+  messages ConversationMessage[]
+
+  @@index([leadId])
+  @@index([recruiterId])
+  @@map("conversations")
+}
+
+model ConversationMessage {
+  id             String        @id @default(uuid())
+  conversationId String        @map("conversation_id")
+  conversation   Conversation  @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender         MessageSender
+  text           String
+  sentAt         DateTime      @default(now()) @map("sent_at")
+
+  @@index([conversationId])
+  @@map("conversation_messages")
+}
+
+// ----------------------------------------------------------------------------
+// CONTRACTOR PROFILE — rich self-service profile
+// (recruiter-mock.ts ContractorProfile). Entirely new in V2: not covered by
+// any prior document, only discovered from the live repo. Covers rate card,
+// availability, portfolio links, resume, and notification preferences.
+// ----------------------------------------------------------------------------
+
+model ContractorProfile {
+  id                  String            @id @default(uuid())
+  userId              String            @unique @map("user_id")
+  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  headline            String?
+  country             String?           @map("country_of_residence")
+  timezone            String?
+  bio                 String?
+  avatarUrl           String?           @map("avatar_url")
+  phone               String?
+  whatsapp            String?
+  preferredContact    PreferredContact? @map("preferred_contact")
+
+  services            String[]          @default([])
+  sourceLanguage      String?           @map("source_language")
+  targetLanguages     String[]          @default([]) @map("target_languages")
+  secondaryLanguages  String[]          @default([]) @map("secondary_languages")
+  yearsOfExperience   Decimal?          @map("years_of_experience") @db.Decimal(4, 1)
+  vendorExperience    String?           @map("vendor_experience")
+
+  rateAmount          Decimal?          @map("rate_amount") @db.Decimal(10, 2)
+  rateUnit            RateUnit?         @map("rate_unit")
+  currency            Currency?         @default(USD)
+
+  resumeFilename      String?           @map("resume_filename")
+  resumeSizeKb        Int?              @map("resume_size_kb")
+  portfolioUrl        String?           @map("portfolio_url")
+  linkedinUrl         String?           @map("linkedin_url")
+  prozUrl             String?           @map("proz_url")
+  websiteUrl          String?           @map("website_url")
+
+  availabilityStatus  Availability      @default(UNKNOWN) @map("availability_status")
+  availableFrom       DateTime?         @map("available_from")
+  weeklyCapacityHours Int?              @map("weekly_capacity_hours")
+  blackoutDates       DateTime[]        @default([]) @map("blackout_dates")
+
+  notifyNewLead       Boolean           @default(true) @map("notify_new_lead")
+  notifyDuplicate     Boolean           @default(true) @map("notify_duplicate")
+  notifyMessage       Boolean           @default(true) @map("notify_message")
+  notifyWeeklyDigest  Boolean           @default(false) @map("notify_weekly_digest")
+  twoFaEnabled        Boolean           @default(false) @map("two_fa_enabled")
+
+  @@map("contractor_profiles")
+}
+
+/// Which recruiter manages which contractor (recruiter-mock.ts
+/// AssignedContractor / unassignedContractors, assignContractor/removeContractor).
+/// A contractor with no row here is "unassigned" per the app's own vocabulary.
+model ContractorAssignment {
+  id             String    @id @default(uuid())
+  recruiterId    String    @map("recruiter_id")
+  recruiter      User      @relation("ManagingRecruiter", fields: [recruiterId], references: [id])
+  contractorId   String    @unique @map("contractor_id")   // a contractor has at most one managing recruiter at a time
+  contractor     User      @relation("AssignedContractor", fields: [contractorId], references: [id])
+  assignedAt     DateTime  @default(now()) @map("assigned_at")
+
+  @@map("contractor_assignments")
+}
+
+// ----------------------------------------------------------------------------
+// ESCALATIONS — owner-facing alert queue (g3-mock.ts Escalation)
+// ----------------------------------------------------------------------------
+
+model Escalation {
+  id                 String             @id @default(uuid())
+  priority           EscalationPriority
+  status             EscalationStatus   @default(OPEN)
+  category           String             // e.g. "Email Queue Threshold Alert", "SLA Breach" — free text; repo's category union is long and UI-defined, not a stable domain enum
+  ownerUserId        String?            @map("owner_user_id")   // nullable: repo allows owner: "System"
+  owner              User?              @relation("EscalationOwner", fields: [ownerUserId], references: [id])
+  title              String
+  detail             String
+  recommendedAction  String             @map("recommended_action")
+  slaHoursRemaining  Decimal?           @map("sla_hours_remaining") @db.Decimal(6, 2)  // negative = breached
+  impact             String?
+  recruiterId        String?            @map("recruiter_id")
+  leadId             String?            @map("lead_id")
+  createdAt          DateTime           @default(now()) @map("created_at")
+
+  @@index([status])
+  @@index([priority])
+  @@map("escalations")
+}
+
+// ----------------------------------------------------------------------------
+// RECRUITER KPI SUMMARY — cached roster-view scorecard
+// (g3-mock.ts RecruiterKPIs). V2: kept per your instruction to check where
+// this maps back rather than assume it's dead. Confirmed live in
+// owner.recruiters.tsx as a FALLBACK ("outreachVolume?.current ??
+// r.kpis.outreach_volume") for the roster list, while evaluation.ts's rubric
+// (RecruiterScoreSnapshot below) is the primary, on-demand-computed source
+// for the recruiter detail view. Modeled as a cache, not an independent
+// scoring system — see SCHEMA_NOTES.md.
+// ----------------------------------------------------------------------------
+
+model RecruiterKpiSummary {
+  id                  String   @id @default(uuid())
+  recruiterId         String   @unique @map("recruiter_id")
+  recruiter           User     @relation(fields: [recruiterId], references: [id])
+
+  // Fields that DO map onto evaluation.ts rubric metrics (cache of latest snapshot)
+  outreachEffectiveness Decimal @map("outreach_effectiveness") @db.Decimal(5, 2)
+  responseRate          Decimal @map("response_rate") @db.Decimal(5, 2)
+  slaAdherence           Decimal @map("sla_adherence") @db.Decimal(5, 2)
+  overallScore             Decimal @map("overall_score") @db.Decimal(5, 2)
+  outreachVolume             Int     @map("outreach_volume")
+
+  // Fields NOT covered by the 9 scored + 2 watched rubric metrics — genuine
+  // extra signals that need to live somewhere; kept here rather than forcing
+  // them into KpiConfig/RUBRIC, which is a closed, named list in the code.
+  dncPct               Decimal @map("dnc_pct") @db.Decimal(5, 2)          // lower is better
+  interviewToOffer      Decimal @map("interview_to_offer") @db.Decimal(5, 2)
+  offerAcceptance         Decimal @map("offer_acceptance") @db.Decimal(5, 2)
+  profileQuality            Decimal @map("profile_quality") @db.Decimal(5, 2)
+  clientSatisfaction          Decimal @map("client_satisfaction") @db.Decimal(5, 2)
+  aiAdoption                    Decimal @map("ai_adoption") @db.Decimal(5, 2)
+  pipelineHealth                  Decimal @map("pipeline_health") @db.Decimal(5, 2)
+  emailOpenRate                     Decimal @map("email_open_rate") @db.Decimal(5, 2)  // directional only — Apple Mail Privacy Protection caveat
+  avgTurnaroundDays                    Decimal @map("avg_turnaround_days") @db.Decimal(6, 2)  // lower is better
+
+  computedAt DateTime @default(now()) @map("computed_at")
+
+  @@map("recruiter_kpi_summaries")
+}

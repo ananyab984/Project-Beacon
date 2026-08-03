@@ -27,6 +27,7 @@ import { Route as ContractorPerformanceRouteImport } from './routes/contractor.p
 import { Route as ContractorRequirementsRouteImport } from './routes/contractor.requirements'
 import { Route as ContractorSettingsRouteImport } from './routes/contractor.settings'
 import { Route as OwnerIndexRouteImport } from './routes/owner.index'
+import { Route as OwnerAssignmentConfigRouteImport } from './routes/owner.assignment-config'
 import { Route as OwnerClientsRouteImport } from './routes/owner.clients'
 import { Route as OwnerLeadsRouteImport } from './routes/owner.leads'
 import { Route as OwnerPipelinesRouteImport } from './routes/owner.pipelines'
@@ -131,6 +132,11 @@ const OwnerIndexRoute = OwnerIndexRouteImport.update({
   path: '/',
   getParentRoute: () => OwnerRoute,
 } as any)
+const OwnerAssignmentConfigRoute = OwnerAssignmentConfigRouteImport.update({
+  id: '/assignment-config',
+  path: '/assignment-config',
+  getParentRoute: () => OwnerRoute,
+} as any)
 const OwnerClientsRoute = OwnerClientsRouteImport.update({
   id: '/clients',
   path: '/clients',
@@ -215,6 +221,7 @@ export interface FileRoutesByFullPath {
   '/contractor/performance': typeof ContractorPerformanceRoute
   '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
+  '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
@@ -245,6 +252,7 @@ export interface FileRoutesByTo {
   '/contractor/performance': typeof ContractorPerformanceRoute
   '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
+  '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
@@ -279,6 +287,7 @@ export interface FileRoutesById {
   '/contractor/performance': typeof ContractorPerformanceRoute
   '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
+  '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
@@ -314,6 +323,7 @@ export interface FileRouteTypes {
     | '/contractor/performance'
     | '/contractor/requirements'
     | '/contractor/settings'
+    | '/owner/assignment-config'
     | '/owner/clients'
     | '/owner/leads'
     | '/owner/pipelines'
@@ -344,6 +354,7 @@ export interface FileRouteTypes {
     | '/contractor/performance'
     | '/contractor/requirements'
     | '/contractor/settings'
+    | '/owner/assignment-config'
     | '/owner/clients'
     | '/owner/leads'
     | '/owner/pipelines'
@@ -377,6 +388,7 @@ export interface FileRouteTypes {
     | '/contractor/performance'
     | '/contractor/requirements'
     | '/contractor/settings'
+    | '/owner/assignment-config'
     | '/owner/clients'
     | '/owner/leads'
     | '/owner/pipelines'
@@ -535,6 +547,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerIndexRouteImport
       parentRoute: typeof OwnerRoute
     }
+    '/owner/assignment-config': {
+      id: '/owner/assignment-config'
+      path: '/assignment-config'
+      fullPath: '/owner/assignment-config'
+      preLoaderRoute: typeof OwnerAssignmentConfigRouteImport
+      parentRoute: typeof OwnerRoute
+    }
     '/owner/clients': {
       id: '/owner/clients'
       path: '/clients'
@@ -654,6 +673,7 @@ const ContractorRouteWithChildren = ContractorRoute._addFileChildren(
 )
 
 interface OwnerRouteChildren {
+  OwnerAssignmentConfigRoute: typeof OwnerAssignmentConfigRoute
   OwnerClientsRoute: typeof OwnerClientsRoute
   OwnerLeadsRoute: typeof OwnerLeadsRoute
   OwnerPipelinesRoute: typeof OwnerPipelinesRoute
@@ -665,6 +685,7 @@ interface OwnerRouteChildren {
 }
 
 const OwnerRouteChildren: OwnerRouteChildren = {
+  OwnerAssignmentConfigRoute: OwnerAssignmentConfigRoute,
   OwnerClientsRoute: OwnerClientsRoute,
   OwnerLeadsRoute: OwnerLeadsRoute,
   OwnerPipelinesRoute: OwnerPipelinesRoute,

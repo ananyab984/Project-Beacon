@@ -7,33 +7,40 @@ import { Send, Linkedin, Instagram, MessageCircle, Phone } from "lucide-react";
 
 export function ConversationsPageView() {
   const store = useRecruiterStore();
-  const [channel, setChannel] = useState<"LinkedIn" | "Instagram" | "WhatsApp" | "SMS">("LinkedIn");
   const [id, setId] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
 
   const filtered = useMemo(
-    () => store.conversations.filter((c) => c.channel === channel),
-    [store.conversations, channel],
+    () => store.conversations.filter((c) => c.channel === "LinkedIn" || true).map(c => ({ ...c, channel: "LinkedIn" as const })),
+    [store.conversations],
   );
   const conv = filtered.find((c) => c.id === id) ?? filtered[0];
 
-  const counts = useMemo(() => {
-    const acc: Record<string, number> = { LinkedIn: 0, Instagram: 0, WhatsApp: 0, SMS: 0 };
-    for (const c of store.conversations) acc[c.channel] = (acc[c.channel] ?? 0) + 1;
-    return acc;
-  }, [store.conversations]);
-
   return (
     <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-7xl flex-col gap-3">
-      <div className="flex items-center gap-1 rounded-xl border border-border bg-card p-1">
-        <ChannelTab active={channel === "LinkedIn"} onClick={() => { setChannel("LinkedIn"); setId(undefined); }} icon={Linkedin} label="LinkedIn" count={counts.LinkedIn} />
-        <ChannelTab active={channel === "Instagram"} onClick={() => { setChannel("Instagram"); setId(undefined); }} icon={Instagram} label="Instagram" count={counts.Instagram} />
-        <ChannelTab active={channel === "WhatsApp"} onClick={() => { setChannel("WhatsApp"); setId(undefined); }} icon={MessageCircle} label="WhatsApp" count={counts.WhatsApp} />
-        <ChannelTab active={channel === "SMS"} onClick={() => { setChannel("SMS"); setId(undefined); }} icon={Phone} label="SMS" count={counts.SMS} />
+      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-2.5 shadow-xs">
+        <div className="flex items-center gap-2.5">
+          <div className="rounded-lg bg-[#0A66C2]/15 p-2 text-[#0A66C2]">
+            <Linkedin className="h-4 w-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              LinkedIn Conversations
+              <Badge variant="secondary" className="text-[10px] bg-[#0A66C2]/10 text-[#0A66C2] font-semibold border border-[#0A66C2]/20">
+                Official Channel
+              </Badge>
+            </div>
+            <p className="text-[11px] text-muted-foreground">Direct messaging, candidate replies, and outreach follow-ups via LinkedIn.</p>
+          </div>
+        </div>
+        <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1 gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+          {filtered.length} Active Threads
+        </Badge>
       </div>
       {filtered.length === 0 ? (
         <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 text-sm text-muted-foreground">
-          No {channel} conversations yet.
+          No LinkedIn conversations yet.
         </div>
       ) : (
       <div className="flex-1 overflow-hidden rounded-2xl border border-border bg-card">
@@ -41,7 +48,7 @@ export function ConversationsPageView() {
         {/* Threads */}
         <div className="border-r border-border">
           <div className="border-b border-border p-3">
-            <div className="text-sm font-semibold">{channel} Conversations</div>
+            <div className="text-sm font-semibold">LinkedIn Conversations</div>
           </div>
           <div className="divide-y divide-border overflow-y-auto">
             {filtered.map((c) => (
