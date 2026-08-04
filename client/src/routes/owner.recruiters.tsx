@@ -1,20 +1,33 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRecruiters, deleteRecruiter, escalations, type Recruiter, type Escalation } from "@/lib/g3-mock";
+import {
+  useRecruiters,
+  deleteRecruiter,
+  escalations,
+  useRecruiterLanguageMappings,
+  updateRecruiterLanguages,
+  addNewRecruiter,
+  type Recruiter,
+} from "@/lib/g3-mock";
 import { useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { RecruiterLanguageMappingDialog } from "@/components/g3/recruiter-language-mapping-dialog";
 import { KpiTile, ScoreRing } from "@/components/g3/kpi";
 import { getEvaluation, type MetricSnapshot } from "@/lib/evaluation";
 import { EvaluationDashboard } from "@/components/g3/evaluation-dashboard";
 import { Button } from "@/components/ui/button";
-import { Trash2, AlertTriangle, AlertCircle, Clock, ShieldAlert } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Trash2, UserPlus, ShieldAlert, Clock, Plus, Globe, Check, Users, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/owner/recruiters")({
   head: () => ({
     meta: [
       { title: "Recruiters — Global3 Owner" },
-      { name: "description", content: "Recruiter and contractor performance, Project Beacon evaluation rubric, SLA adherence, and activity metrics." },
+      { name: "description", content: "Recruiter performance scorecards, language profiles, SLA adherence, and activity." },
     ],
   }),
   component: RecruitersPage,
@@ -22,10 +35,25 @@ export const Route = createFileRoute("/owner/recruiters")({
 
 const baseline = { reply: 0.28, read: 0.65 };
 
+const COMMON_LANGUAGES = [
+  "English", "French", "Spanish (LatAm)", "Spanish (Spain)", "Japanese", "German",
+  "Korean", "Mandarin", "Italian", "Portuguese (BR)", "Tamil", "Telugu", "Arabic", "Dutch", "Polish", "Swedish",
+];
+
 function RecruitersPage() {
   const recruiters = useRecruiters();
+  const mappings = useRecruiterLanguageMappings();
+
   const [openId, setOpenId] = useState<string | null>(null);
   const [escalatedRecruiterId, setEscalatedRecruiterId] = useState<string | null>(null);
+  const [showMappingModal, setShowMappingModal] = useState(false);
+
+  // Add Recruiter Onboarding Modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [newRecruiterName, setNewRecruiterName] = useState("");
+  const [newRecruiterRole, setNewRecruiterRole] = useState<"full_access" | "contractor">("full_access");
+  const [onboardingDate, setOnboardingDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [selectedInitialLangs, setSelectedInitialLangs] = useState<string[]>([]);
 
   const active = recruiters.find((r) => r.id === openId) ?? null;
   const escalatedRecruiter = recruiters.find((r) => r.id === escalatedRecruiterId) ?? null;
@@ -33,7 +61,6 @@ function RecruitersPage() {
   const full = [...recruiters.filter((r) => r.role === "full_access")].sort((a, b) => b.kpis.overall_score - a.kpis.overall_score);
   const contractors = [...recruiters.filter((r) => r.role === "contractor")].sort((a, b) => b.kpis.overall_score - a.kpis.overall_score);
 
-  // Get escalated items for selected recruiter
   const recruiterEscalations = escalatedRecruiter
     ? escalations.filter(
         (e) =>
@@ -44,19 +71,59 @@ function RecruitersPage() {
       )
     : [];
 
+  const handleCreateRecruiter = () => {
+    if (!newRecruiterName.trim()) {
+      toast.error("Please enter recruiter full name.");
+      return;
+    }
+    const created = addNewRecruiter(newRecruiterName.trim(), selectedInitialLangs);
+    toast.success(
+      `Recruiter onboarding record created for ${onboardingDate}! Sent login credentials & invite email to ${created.name.toLowerCase().replace(/\s+/g, ".")}@global3.io.`
+    );
+    setNewRecruiterName("");
+    setSelectedInitialLangs([]);
+    setShowAddModal(false);
+  };
+
   return (
-    <div className="mx-auto max-w-7xl space-y-8">
-      {/* Full-access recruiters section */}
-      <section>
-        <div className="mb-3 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-widest text-accent">Full-access recruiters ({full.length})</h2>
-          <span className="text-xs text-muted-foreground">Ranked by overall recruiter score · Team baseline reply {Math.round(baseline.reply * 100)}%</span>
+    <div className="mx-auto max-w-7xl space-y-6">
+      {/* Header bar (Clean, description text removed) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Recruiter Roster</div>
+          <h2 className="mt-0.5 text-2xl font-semibold tracking-tight">Recruiters &amp; Language Mapping</h2>
         </div>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowMappingModal(true)}
+            className="h-9 gap-1.5 bg-card text-xs font-semibold border-border hover:border-accent/50"
+          >
+            <Users className="h-4 w-4 text-accent" /> Language Mapping
+          </Button>
+
+          <Button
+            onClick={() => setShowAddModal(true)}
+            className="h-9 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 text-xs font-semibold shadow-xs"
+          >
+            <UserPlus className="h-4 w-4" /> + Add Recruiter
+          </Button>
+        </div>
+      </div>
+
+      {/* Full-access recruiters section */}
+      <section className="space-y-3">
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-accent">Full-access recruiters ({full.length})</h3>
+          <span className="text-[11px] text-muted-foreground">Team baseline reply {Math.round(baseline.reply * 100)}%</span>
+        </div>
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {full.map((r) => (
-            <RecruiterCard
+            <CleanRecruiterCard
               key={r.id}
               r={r}
+              mappings={mappings}
               onOpen={() => setOpenId(r.id)}
               onOpenEscalated={() => setEscalatedRecruiterId(r.id)}
             />
@@ -66,16 +133,17 @@ function RecruitersPage() {
 
       {/* Contractors section */}
       {contractors.length > 0 && (
-        <section>
-          <div className="mb-3 flex items-baseline justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Contractors ({contractors.length})</h2>
-            <span className="text-xs text-muted-foreground">Contractor evaluation &amp; SLA metrics</span>
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">Contractors ({contractors.length})</h3>
+            <span className="text-[11px] text-muted-foreground">Contractor SLA &amp; evaluation metrics</span>
           </div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
             {contractors.map((r) => (
-              <RecruiterCard
+              <CleanRecruiterCard
                 key={r.id}
                 r={r}
+                mappings={mappings}
                 onOpen={() => setOpenId(r.id)}
                 onOpenEscalated={() => setEscalatedRecruiterId(r.id)}
               />
@@ -84,7 +152,97 @@ function RecruitersPage() {
         </section>
       )}
 
-      {/* Slide-out sheet: entire evaluation rubric */}
+      {/* Recruiter Language Mapping Modal */}
+      <RecruiterLanguageMappingDialog open={showMappingModal} onOpenChange={setShowMappingModal} />
+
+      {/* Add Recruiter Onboarding Flow Modal (Clean, extra descriptions removed) */}
+      <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <UserPlus className="h-4 w-4 text-primary" /> Recruiter Onboarding Flow
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Full Name *</Label>
+              <Input
+                placeholder="e.g. Sharmista Roy, Divya Kumar..."
+                value={newRecruiterName}
+                onChange={(e) => setNewRecruiterName(e.target.value)}
+                className="h-9 text-xs bg-card"
+                autoFocus
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                  <Calendar className="h-3 w-3 text-accent" /> Onboarding Date
+                </Label>
+                <Input
+                  type="date"
+                  value={onboardingDate}
+                  onChange={(e) => setOnboardingDate(e.target.value)}
+                  className="h-9 text-xs bg-card"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Roster Role</Label>
+                <Select value={newRecruiterRole} onValueChange={(v) => setNewRecruiterRole(v as any)}>
+                  <SelectTrigger className="h-9 text-xs bg-card">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="full_access">Full Access</SelectItem>
+                    <SelectItem value="contractor">Contractor</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Assigned Languages</Label>
+              <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto p-2 border border-border/70 rounded-lg bg-muted/10">
+                {COMMON_LANGUAGES.map((lang) => {
+                  const isSel = selectedInitialLangs.includes(lang);
+                  return (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() =>
+                        setSelectedInitialLangs((prev) =>
+                          isSel ? prev.filter((l) => l !== lang) : [...prev, lang],
+                        )
+                      }
+                      className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                        isSel
+                          ? "border-primary bg-primary/15 text-primary font-semibold"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/50"
+                      }`}
+                    >
+                      {isSel ? "✓ " : "+ "}{lang}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-border">
+            <Button variant="ghost" size="sm" onClick={() => setShowAddModal(false)} className="h-8 text-xs">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleCreateRecruiter} className="h-8 text-xs bg-primary text-primary-foreground gap-1.5">
+              <UserPlus className="h-3.5 w-3.5" /> Submit &amp; Send Credentials
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Slide-out evaluation drawer */}
       <Sheet open={!!active} onOpenChange={(o) => !o && setOpenId(null)}>
         <SheetContent className="w-full sm:max-w-4xl overflow-auto border-l border-border bg-background p-6">
           {active && (
@@ -92,16 +250,18 @@ function RecruitersPage() {
               <SheetHeader className="pb-4 border-b border-border">
                 <SheetTitle className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div
-                      className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0"
-                      style={{ background: `oklch(0.55 0.16 ${active.avatar_hue})` }}
-                    >
-                      {active.name.charAt(0)}
+                    <div className="relative">
+                      <div
+                        className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
+                        style={{ background: `oklch(0.55 0.16 ${active.avatar_hue})` }}
+                      >
+                        {active.name.charAt(0)}
+                      </div>
+                      <StatusDot status={active.status} />
                     </div>
                     <div>
                       <div className="flex items-center gap-2 text-lg font-bold">
                         <span>{active.name}</span>
-                        <StatusPill status={active.status} />
                       </div>
                       <div className="text-xs font-normal text-muted-foreground">
                         {active.role === "contractor" ? "Contractor Evaluation" : "Full-Access Recruiter Evaluation"}
@@ -125,7 +285,6 @@ function RecruitersPage() {
                 </SheetTitle>
               </SheetHeader>
 
-              {/* Entire Project Beacon Evaluation Rubric */}
               <EvaluationDashboard
                 subjectId={active.id}
                 subjectName={active.name}
@@ -146,9 +305,6 @@ function RecruitersPage() {
                 Escalated Items — {escalatedRecruiter?.name}
               </DialogTitle>
             </div>
-            <DialogDescription className="text-xs">
-              Review active SLA breaches, stalled follow-ups, and escalated alerts assigned to {escalatedRecruiter?.name}.
-            </DialogDescription>
           </DialogHeader>
 
           <div className="mt-2 space-y-3 max-h-96 overflow-y-auto pr-1">
@@ -193,57 +349,106 @@ function RecruitersPage() {
   );
 }
 
-function RecruiterCard({
+function CleanRecruiterCard({
   r,
+  mappings,
   onOpen,
   onOpenEscalated,
 }: {
   r: Recruiter;
+  mappings: ReturnType<typeof useRecruiterLanguageMappings>;
   onOpen: () => void;
   onOpenEscalated: () => void;
 }) {
   const ev = getEvaluation(r.id, r.name);
   const band = ev.band;
   const bandTone =
-    band.tone === "positive" ? "bg-accent/15 text-accent" :
-    band.tone === "warning" ? "bg-warning/15 text-warning" :
-    band.tone === "critical" ? "bg-destructive/15 text-destructive" :
-    "bg-primary/15 text-primary";
+    band.tone === "positive" ? "bg-accent/15 text-accent border-accent/30" :
+    band.tone === "warning" ? "bg-warning/15 text-warning border-warning/30" :
+    band.tone === "critical" ? "bg-destructive/15 text-destructive border-destructive/30" :
+    "bg-primary/15 text-primary border-primary/30";
 
   const activityMetrics = ev.metrics.filter((m: MetricSnapshot) => m.def.group === "Activity & Effort");
   const responsivenessMetrics = ev.metrics.filter((m: MetricSnapshot) => m.def.group === "Responsiveness");
 
   const outreachVolume = activityMetrics.find((m: MetricSnapshot) => m.def.id === "outreach_volume");
-  const followupPersistence = activityMetrics.find((m: MetricSnapshot) => m.def.id === "followup_persistence");
+  const slaAdherence = responsivenessMetrics.find((m: MetricSnapshot) => m.def.id === "sla_adherence");
   const proactiveSourcing = activityMetrics.find((m: MetricSnapshot) => m.def.id === "proactive_sourcing");
 
-  const timeToFirstTouch = responsivenessMetrics.find((m: MetricSnapshot) => m.def.id === "time_to_first_touch");
-  const slaAdherence = responsivenessMetrics.find((m: MetricSnapshot) => m.def.id === "sla_adherence");
-  const backlogAging = responsivenessMetrics.find((m: MetricSnapshot) => m.def.id === "backlog_aging");
+  // Language mapping logic
+  const myMapping = mappings.find((m) => m.recruiter_id === r.id);
+  const mappedLangs = myMapping?.languages ?? [];
+
+  const toggleLang = (lang: string) => {
+    const next = mappedLangs.includes(lang)
+      ? mappedLangs.filter((l) => l !== lang)
+      : [...mappedLangs, lang];
+    updateRecruiterLanguages(r.id, next);
+    toast.success(`Updated language mapping for ${r.name}`);
+  };
 
   return (
-    <div className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-5 text-left transition-all hover:border-accent/50 hover:shadow-[0_1px_0_0_theme(colors.accent/10),0_12px_28px_-16px_theme(colors.accent/25)]">
-      <div onClick={onOpen} className="cursor-pointer">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white"
-              style={{ background: `oklch(0.55 0.16 ${r.avatar_hue})` }}
-            >
-              {r.name.charAt(0)}
+    <div className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 space-y-3.5 transition-all hover:border-accent/40 hover:shadow-lg">
+      <div className="space-y-3.5">
+        {/* Header: Avatar + Status Dot + Name + Right Corner Language Popover & Trash Icon */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 cursor-pointer" onClick={onOpen}>
+            <div className="relative">
+              <div
+                className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white shrink-0 shadow-xs"
+                style={{ background: `oklch(0.55 0.16 ${r.avatar_hue})` }}
+              >
+                {r.name.charAt(0)}
+              </div>
+              <StatusDot status={r.status} />
             </div>
             <div>
-              <div className="font-semibold text-foreground flex items-center gap-2">
+              <div className="font-bold text-base text-foreground">
                 {r.name}
               </div>
-              <div className="text-[11px] text-muted-foreground">
+              <div className="text-xs text-muted-foreground font-medium">
                 {r.role === "contractor" ? "Contractor" : "Full access"}
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-            <StatusPill status={r.status} />
+
+          <div className="flex items-center gap-1.5">
+            {/* Language Mapping Configuration Dropdown */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <button
+                  className="p-1.5 rounded-lg border border-border bg-muted/20 hover:bg-muted text-muted-foreground hover:text-accent transition-colors"
+                  title="Configure Mapped Languages"
+                >
+                  <Globe className="h-4 w-4" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="end" className="w-64 p-3 space-y-2">
+                <div className="text-xs font-semibold text-foreground border-b border-border/60 pb-1.5 flex items-center justify-between">
+                  <span>Languages for {r.name}</span>
+                  <span className="text-[10px] text-accent font-medium">{mappedLangs.length} mapped</span>
+                </div>
+                <div className="max-h-56 overflow-y-auto space-y-1 pr-1">
+                  {COMMON_LANGUAGES.map((lang) => {
+                    const isSel = mappedLangs.includes(lang);
+                    return (
+                      <button
+                        key={lang}
+                        onClick={() => toggleLang(lang)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded text-xs transition-colors ${
+                          isSel ? "bg-accent/15 text-accent font-semibold" : "hover:bg-muted text-muted-foreground"
+                        }`}
+                      >
+                        <span>{lang}</span>
+                        {isSel && <Check className="h-3.5 w-3.5 text-accent" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </PopoverContent>
+            </Popover>
+
+            {/* Dustbin delete icon button */}
             <button
               onClick={() => {
                 if (confirm(`Delete recruiter ${r.name}?`)) {
@@ -251,77 +456,83 @@ function RecruiterCard({
                   toast.success(`Deleted ${r.name}`);
                 }
               }}
-              className="text-muted-foreground hover:text-destructive p-1 rounded transition-colors"
+              className="p-1.5 rounded-lg border border-border bg-muted/20 hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-colors"
               title={`Delete ${r.name}`}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Overall Score & Band */}
-        <div className="mt-4 flex items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-3">
-          <ScoreRing score={r.kpis.overall_score} size={72} label="Overall score" />
+        {/* Score & Band Card Box */}
+        <div
+          onClick={onOpen}
+          className="cursor-pointer flex items-center justify-between rounded-xl border border-border/70 bg-muted/20 p-3.5"
+        >
+          <ScoreRing score={r.kpis.overall_score} size={64} label="Score" />
           <div className="text-right">
-            <span className={`rounded-md px-2.5 py-1 text-[11px] font-semibold ${bandTone}`}>
+            <span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${bandTone}`}>
               {band.label}
             </span>
-            <div className="mt-1.5 text-[11px] text-muted-foreground">{band.meaning}</div>
+            <div className="mt-1.5 text-xs text-muted-foreground">{band.meaning}</div>
           </div>
         </div>
 
-        {/* Rubric metrics: Activity & Effort */}
-        <div className="mt-4 space-y-3">
-          <div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
-              Activity &amp; Effort
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              <KpiTile label="Outreach Vol." value={outreachVolume?.current ?? r.kpis.outreach_volume} unit="score" />
-              <KpiTile label="Follow-up" value={followupPersistence?.current ?? 2.4} unit="score" hint="avg attempts" />
-              <KpiTile label="Proactive" value={proactiveSourcing?.current ?? 14} unit="score" hint="self-sourced" />
+        {/* 3 High-Impact Metrics Tiles */}
+        <div onClick={onOpen} className="cursor-pointer grid grid-cols-3 gap-2.5 text-center">
+          <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Outreach</div>
+            <div className="text-base font-bold tabular-nums text-foreground">
+              {outreachVolume?.current ?? r.kpis.outreach_volume}
             </div>
           </div>
 
-          {/* Rubric metrics: Responsiveness & SLA */}
-          <div>
-            <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-accent">
-              Responsiveness &amp; SLA
+          <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">SLA Adh.</div>
+            <div className="text-base font-bold tabular-nums text-accent">
+              {slaAdherence?.current ?? r.kpis.sla_adherence}%
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <KpiTile label="1st Touch" value={timeToFirstTouch?.current ?? 1.2} unit="days" hint="days to 1st msg" />
-              <KpiTile label="SLA Adherence" value={slaAdherence?.current ?? r.kpis.sla_adherence} unit="pct" hint="urgent reply" />
-              <KpiTile label="Backlog Aging" value={backlogAging?.current ?? 0} unit="pct" hint="3+ days idle" />
+          </div>
+
+          <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Proactive</div>
+            <div className="text-base font-bold tabular-nums text-foreground">
+              {proactiveSourcing?.current ?? 14}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Escalated Items Banner — Clickable to open Escalation Inspection */}
+      {/* Escalated Items Banner */}
       {r.unresolved_5d > 0 && (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onOpenEscalated();
           }}
-          className="mt-4 flex w-full items-center justify-between rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning font-semibold hover:bg-warning/20 transition-colors"
+          className="flex w-full items-center justify-between rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning font-semibold hover:bg-warning/20 transition-colors"
         >
           <span className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
-            {r.unresolved_5d} escalated {r.unresolved_5d === 1 ? "item" : "items"} 5+ days unresolved
+            {r.unresolved_5d} escalated {r.unresolved_5d === 1 ? "item" : "items"} unresolved
           </span>
-          <span className="text-[10px] underline">Inspect →</span>
+          <span className="text-[11px] underline">Inspect →</span>
         </button>
       )}
     </div>
   );
 }
 
-function StatusPill({ status }: { status: Recruiter["status"] }) {
-  const map = {
-    healthy: { c: "bg-[oklch(0.62_0.14_155)]/15 text-[oklch(0.42_0.14_155)]", label: "healthy" },
-    attention: { c: "bg-warning/15 text-warning", label: "attention" },
-    stalled: { c: "bg-destructive/15 text-destructive", label: "stalled" },
-  }[status];
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-medium ${map.c}`}>{map.label}</span>;
+function StatusDot({ status }: { status: Recruiter["status"] }) {
+  const dotColor =
+    status === "healthy" ? "bg-emerald-500 ring-emerald-500/30" :
+    status === "attention" ? "bg-amber-500 ring-amber-500/30" :
+    "bg-rose-500 ring-rose-500/30";
+
+  return (
+    <span
+      className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full ${dotColor} ring-2 ring-background`}
+      title={`Status: ${status}`}
+    />
+  );
 }

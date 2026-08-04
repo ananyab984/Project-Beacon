@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRecruiterStore, myLeads, leadsOnboardedCount, leadsOffboardedCount } from "@/lib/recruiter-mock";
 import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
 import { outreachBatch, useClientDemands } from "@/lib/g3-mock";
-import { DateRangeToggle, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
+import { DateRangeSelect, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/recruiter/")({
@@ -25,16 +25,18 @@ function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
+      {/* Current Batch Section with Date Control dropdown matching Owner Dashboard */}
       <section>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-accent">
               <Radio className="h-3 w-3" /> Current batch
             </div>
             <div className="mt-0.5 text-sm font-semibold">My outreach · {rangeLabel.toLowerCase()}</div>
           </div>
-          <DateRangeToggle />
+          <DateRangeSelect />
         </div>
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <BatchTile icon={Mail} label="Contacted" value={scaleValue(outreachBatch.contacted, scale)} tone="primary" />
           <BatchTile icon={MailOpen} label="Awaiting Reply" value={scaleValue(outreachBatch.awaiting_reply, scale)} tone="muted" />
@@ -45,7 +47,7 @@ function DashboardPage() {
       </section>
 
       {/* Recruiter Notifications for On Hold Leads */}
-      <section className="rounded-2xl border border-warning/40 bg-warning/5 p-5">
+      <section className="rounded-2xl border border-warning/40 bg-warning/5 p-5 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-warning/15 text-warning font-bold shrink-0">
@@ -97,21 +99,7 @@ function DashboardPage() {
       {/* Language & Services Requirements Overview */}
       <RecruiterMarketRequirementsSection />
 
-      <section className="rounded-2xl border border-border bg-card p-5">
-        <div className="flex items-baseline justify-between">
-          <div>
-            <div className="text-[11px] uppercase tracking-widest text-primary">Active Pipeline Overview</div>
-            <h2 className="mt-1 text-xl font-semibold tracking-tight">Urgent attention needed for {store.emailQueue.length} candidate reviews.</h2>
-          </div>
-          <Link to="/recruiter/leads" search={{ scope: "mine" }} className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">View leads <ArrowUpRight className="h-3 w-3" /></Link>
-        </div>
-        <div className="mt-5 grid grid-cols-3 gap-4 border-t border-border pt-4">
-          <Stat n={mine.length} label="My Leads" />
-          <Stat n={mine.filter((l) => l.enrichment_status === "complete").length} label="Enriched" />
-          <Stat n={mine.filter((l) => l.enrichment_status === "pending").length} label="Enriching" />
-        </div>
-      </section>
-
+      {/* Recent Activity */}
       <section className="rounded-2xl border border-border bg-card p-5">
         <div className="flex items-center justify-between">
           <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Recent Activity</div>
@@ -239,38 +227,39 @@ function MetricCard({ label, value, delta, tone }: { label: string; value: numbe
   );
 }
 
-function Stat({ n, label }: { n: number; label: string }) {
-  return (
-    <div>
-      <div className="text-2xl font-semibold tracking-tight tabular-nums">{n}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-    </div>
-  );
-}
-
-function BatchTile({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number | string; tone: "primary" | "muted" | "accent" | "warning" | "destructive" }) {
-  const map = {
-    primary: "text-primary",
-    muted: "text-muted-foreground",
-    accent: "text-accent",
-    warning: "text-warning",
-    destructive: "text-destructive",
+function BatchTile({
+  icon: Icon,
+  label,
+  value,
+  tone,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  tone: "primary" | "muted" | "accent" | "warning" | "destructive";
+}) {
+  const colorMap = {
+    primary: "border-primary/30 bg-primary/5 text-primary",
+    muted: "border-border bg-card text-foreground",
+    accent: "border-accent/30 bg-accent/5 text-accent",
+    warning: "border-warning/30 bg-warning/5 text-warning",
+    destructive: "border-destructive/30 bg-destructive/5 text-destructive",
   };
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
-      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className={`h-3.5 w-3.5 ${map[tone]}`} />
-        <span>{label}</span>
+    <div className={`rounded-xl border p-3.5 space-y-2 ${colorMap[tone]}`}>
+      <div className="flex items-center justify-between">
+        <Icon className="h-4 w-4" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{label}</span>
       </div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
+      <div className="text-2xl font-bold tabular-nums">{value.toLocaleString()}</div>
     </div>
   );
 }
 
-function relative(time: number) {
-  const diff = Date.now() - time;
-  if (diff < 60000) return "just now";
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-  return `${Math.floor(diff / 86400000)}d ago`;
+function relative(isoOrTs: string | number): string {
+  const ts = typeof isoOrTs === "number" ? isoOrTs : new Date(isoOrTs).getTime();
+  const diff = (Date.now() - ts) / 1000;
+  if (diff < 3600) return `${Math.max(1, Math.floor(diff / 60))}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }

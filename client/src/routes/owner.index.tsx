@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import {
   recruiters,
   useClientDemands,
@@ -11,7 +11,6 @@ import {
 import { FEATURES } from "@/lib/feature-flags";
 import { Badge } from "@/components/ui/badge";
 import {
-  ArrowRight,
   Radio,
   Mail,
   MailOpen,
@@ -23,7 +22,7 @@ import {
   Gauge,
 } from "lucide-react";
 import { KpiTile, ScoreRing } from "@/components/g3/kpi";
-import { DateRangeToggle, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
+import { DateRangeSelect, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
 
 export const Route = createFileRoute("/owner/")({
   head: () => ({
@@ -44,27 +43,30 @@ function Overview() {
   const { scale, label: rangeLabel } = useDateRange();
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      {/* Hero header */}
-      <section className="rounded-2xl border border-border bg-gradient-to-br from-primary/[0.04] via-accent/[0.05] to-warning/[0.06] px-6 py-5">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Owner overview</div>
-            <h2 className="mt-1 text-2xl font-semibold tracking-tight">Good morning, Ethan.</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {escalations.length} items need your attention across {recruiters.length} recruiters and{" "}
-              {clientDemands.length} active language demands.
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-1">
-            <DateRangeToggle />
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{rangeLabel}</span>
-          </div>
+      {/* Good Morning Ethan Hero Header Block */}
+      <section className="rounded-2xl border border-border bg-gradient-to-br from-primary/[0.04] via-accent/[0.05] to-warning/[0.06] p-6">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Owner overview</div>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Good morning, Ethan.</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {escalations.length} items need your attention across {recruiters.length} recruiters and{" "}
+            {clientDemands.length} active language demands.
+          </p>
         </div>
       </section>
 
-      {/* Data Health — AI/enrichment surface, gated */}
+      {/* Date Range Control Bar — Positioned BELOW Good Morning Ethan block (TIME HORIZON label removed) */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+        <DateRangeSelect />
+
+        <span className="text-xs font-medium text-muted-foreground bg-card border border-border/70 rounded-lg px-3 py-1.5">
+          Active Filter: <strong className="text-foreground">{rangeLabel}</strong>
+        </span>
+      </div>
+
+      {/* Data Health — AI/enrichment surface */}
       {FEATURES.ai && (
-        <section className="rounded-2xl border border-border bg-card p-6">
+        <section className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-accent">
@@ -73,15 +75,15 @@ function Overview() {
               <div className="mt-0.5 text-sm font-semibold">Profile completeness</div>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-semibold tabular-nums text-accent">
+              <div className="text-2xl font-semibold tabular-nums text-accent">
                 {Math.round(profileCompleteness.after_enrichment * 100)}%
               </div>
-              <div className="text-[11px] text-muted-foreground">
+              <div className="text-[10px] text-muted-foreground">
                 from {Math.round(profileCompleteness.before_enrichment * 100)}% pre-enrichment
               </div>
             </div>
           </div>
-          <div className="mt-5 relative h-2 overflow-hidden rounded-full bg-muted">
+          <div className="mt-4 relative h-2 overflow-hidden rounded-full bg-muted">
             <div
               className="absolute inset-y-0 left-0 bg-muted-foreground/40"
               style={{ width: `${profileCompleteness.before_enrichment * 100}%` }}
@@ -91,7 +93,7 @@ function Overview() {
               style={{ width: `${profileCompleteness.after_enrichment * 100}%`, mixBlendMode: "multiply" }}
             />
           </div>
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <HealthTile label="Verified email" value={profileCompleteness.verified_email_pct} />
             <HealthTile label="Confirmed language pair" value={profileCompleteness.confirmed_language_pair_pct} />
             <HealthTile label="Experience data" value={profileCompleteness.experience_data_pct} />
@@ -99,9 +101,9 @@ function Overview() {
         </section>
       )}
 
-      {/* Live outreach — 4 discrete blocks, generous spacing */}
+      {/* Live outreach — 5 discrete blocks */}
       <section>
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-2.5 flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-accent">
               <Radio className="h-3 w-3" /> Live outreach
@@ -110,7 +112,7 @@ function Overview() {
           </div>
           <span className="text-[11px] text-muted-foreground">updates every 60s</span>
         </div>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <OutreachBlock
             icon={Mail}
             label="Contacted"
@@ -140,9 +142,9 @@ function Overview() {
       </section>
 
       {/* Team health — evaluation framework strip */}
-      <section className="rounded-2xl border border-border bg-card p-6">
+      <section className="rounded-2xl border border-border bg-card p-5">
         <div className="flex items-start justify-between gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
             <span className="grid h-9 w-9 place-items-center rounded-lg bg-accent/10 text-accent">
               <Gauge className="h-4 w-4" />
             </span>
@@ -151,9 +153,9 @@ function Overview() {
               <div className="mt-0.5 text-sm font-semibold">Evaluation framework · {rangeLabel.toLowerCase()}</div>
             </div>
           </div>
-          <ScoreRing score={team.overall_score} size={80} label="Team score" />
+          <ScoreRing score={team.overall_score} size={72} label="Team score" />
         </div>
-        <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiTile label="SLA adherence" value={team.sla_adherence} unit="pct" trend={+3} />
           <KpiTile
             label="Pipeline health"
@@ -167,9 +169,9 @@ function Overview() {
         </div>
       </section>
 
-      {/* Escalations — the only true owner-only concern on this page */}
+      {/* Escalations — View all button removed as requested */}
       <section className="rounded-2xl border border-border bg-card">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">
             <span className="grid h-6 w-6 place-items-center rounded-md bg-warning/15 text-warning">
               <AlertOctagon className="h-3.5 w-3.5" />
@@ -179,12 +181,6 @@ function Overview() {
               {escalations.length}
             </span>
           </div>
-          <Link
-            to="/owner/leads"
-            className="inline-flex items-center gap-1 text-xs font-medium text-accent hover:underline"
-          >
-            View all <ArrowRight className="h-3 w-3" />
-          </Link>
         </div>
         <ul className="divide-y divide-border">
           {[...escalations]
@@ -199,48 +195,61 @@ function Overview() {
                     : "border-accent/40 bg-accent/10 text-accent";
               const statusStyle =
                 e.status === "Open"
-                  ? "bg-muted text-foreground/80"
-                  : e.status === "Acknowledged"
-                    ? "bg-accent/10 text-accent"
-                    : "bg-primary/10 text-primary";
-              const sla =
-                e.sla_hours_remaining === undefined
-                  ? null
-                  : e.sla_hours_remaining < 0
-                    ? { text: `${Math.abs(e.sla_hours_remaining)}h overdue`, cls: "text-destructive" }
-                    : { text: `${e.sla_hours_remaining}h left`, cls: "text-warning" };
+                  ? "bg-destructive/15 text-destructive"
+                  : e.status === "In Progress"
+                    ? "bg-warning/15 text-warning"
+                    : "bg-muted text-muted-foreground";
+
               return (
-                <li key={e.id} className="px-6 py-4 transition-colors hover:bg-muted/30">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${priorityStyle}`}>
+                <li key={e.id} className="p-4 transition-colors hover:bg-muted/20">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${priorityStyle}`}>
                           {e.priority}
                         </span>
-                        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
-                          {e.category}
-                        </span>
-                        <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusStyle}`}>
+                        <span className="text-xs font-semibold text-foreground">{e.title}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle}`}>
                           {e.status}
                         </span>
-                        <span className="text-[11px] text-muted-foreground">Owner · {e.owner}</span>
-                        <span className="text-[11px] text-muted-foreground">· {e.age_days}d</span>
-                        {sla && <span className={`text-[11px] font-medium ${sla.cls}`}>· SLA {sla.text}</span>}
-                        {rec && <span className="text-[11px] text-accent">· {rec.name}</span>}
                       </div>
-                      <div className="mt-1.5 text-sm font-medium">{e.title}</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{e.detail}</div>
+                      <p className="text-xs text-muted-foreground leading-normal">{e.detail}</p>
+                      {e.recommended_action && (
+                        <div className="mt-1 text-[11px] text-accent">
+                          Action: {e.recommended_action}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                  <div className="mt-2 flex items-center gap-2 text-[12px]">
-                    <span className="text-muted-foreground">Recommended:</span>
-                    <span className="font-medium text-foreground">{e.recommended_action}</span>
+                    {rec && (
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div
+                          className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                          style={{ background: `oklch(0.55 0.18 ${rec.avatar_hue}deg)` }}
+                        >
+                          {rec.name[0]}
+                        </div>
+                        <span className="text-xs font-medium text-muted-foreground">{rec.name}</span>
+                      </div>
+                    )}
                   </div>
                 </li>
               );
             })}
         </ul>
       </section>
+    </div>
+  );
+}
+
+function HealthTile({ label, value }: { label: string; value: number }) {
+  const pct = Math.round(value * 100);
+  return (
+    <div className="rounded-xl border border-border/80 bg-muted/20 p-3">
+      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-1 flex items-baseline justify-between">
+        <span className="text-lg font-bold tabular-nums text-foreground">{pct}%</span>
+        <span className="text-[10px] text-accent font-medium">Enriched</span>
+      </div>
     </div>
   );
 }
@@ -256,39 +265,20 @@ function OutreachBlock({
   value: number;
   tone: "primary" | "muted" | "accent" | "warning" | "destructive";
 }) {
-  const styles = {
-    primary: { chip: "bg-primary/10 text-primary", value: "text-primary" },
-    muted: { chip: "bg-muted text-muted-foreground", value: "text-foreground" },
-    accent: { chip: "bg-accent/10 text-accent", value: "text-accent" },
-    warning: { chip: "bg-warning/15 text-warning", value: "text-warning" },
-    destructive: { chip: "bg-destructive/10 text-destructive", value: "text-destructive" },
-  }[tone];
+  const colorMap = {
+    primary: "border-primary/30 bg-primary/5 text-primary",
+    muted: "border-border bg-card text-foreground",
+    accent: "border-accent/30 bg-accent/5 text-accent",
+    warning: "border-warning/30 bg-warning/5 text-warning",
+    destructive: "border-destructive/30 bg-destructive/5 text-destructive",
+  };
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 transition-colors hover:border-accent/30">
+    <div className={`rounded-xl border p-3.5 space-y-2 ${colorMap[tone]}`}>
       <div className="flex items-center justify-between">
-        <span className={`grid h-8 w-8 place-items-center rounded-lg ${styles.chip}`}>
-          <Icon className="h-4 w-4" />
-        </span>
-        <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</span>
+        <Icon className="h-4 w-4" />
+        <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{label}</span>
       </div>
-      <div className={`mt-4 text-3xl font-semibold tabular-nums ${styles.value}`}>{value.toLocaleString()}</div>
+      <div className="text-2xl font-bold tabular-nums">{value.toLocaleString()}</div>
     </div>
   );
 }
-
-function HealthTile({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-muted/20 p-4">
-      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
-      <div className="mt-2 flex items-baseline justify-between gap-2">
-        <div className="text-xl font-semibold tabular-nums">{Math.round(value * 100)}%</div>
-      </div>
-      <div className="mt-2 h-1 overflow-hidden rounded-full bg-muted">
-        <div className="h-full bg-accent" style={{ width: `${value * 100}%` }} />
-      </div>
-    </div>
-  );
-}
-
-// Keep Badge import satisfied elsewhere.
-void Badge;

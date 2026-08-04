@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Download, FileText, Clock, TrendingUp, Users, Radio, Sparkles, Eye, History, CheckCircle2 } from "lucide-react";
+import { Download, FileText, Clock, TrendingUp, Users, Radio, Sparkles, Eye, History, ChevronDown, ChevronRight, Info } from "lucide-react";
 import { toast } from "sonner";
 import { recruiters, useClientDemands, outreachBatch, teamKpis, aiDraftStats, useRequirements, useClients } from "@/lib/g3-mock";
 import { RUBRIC, METRIC_GROUPS, formatValue, bandFor, getEvaluation } from "@/lib/evaluation";
@@ -230,53 +230,17 @@ function ReportsPage() {
           </Badge>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-4">
           {METRIC_GROUPS.map((group) => {
             const groupMetrics = RUBRIC.filter((m) => m.group === group);
             if (!groupMetrics.length) return null;
             return (
-              <div key={group} className="space-y-3">
-                <div className="text-xs font-bold uppercase tracking-widest text-accent">
-                  {group}
-                </div>
-                <div className="divide-y divide-border/40 rounded-xl border border-border/70 bg-background/40">
-                  {groupMetrics.map((def) => {
-                    const values = recruiters.map((r) => {
-                      const ev = getEvaluation(r.id, r.name);
-                      const snap = ev.metrics.find((x) => x.def.id === def.id);
-                      return snap ? snap.current : 0;
-                    });
-                    const avg = values.reduce((a, b) => a + b, 0) / (values.length || 1);
-                    const display = formatValue(def.unit, avg);
-
-                    return (
-                      <div key={def.id} className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-[1fr_180px_110px] sm:items-center sm:gap-4 text-sm transition-colors hover:bg-muted/20">
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold text-foreground">{def.label}</span>
-                            {def.scored && (
-                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground font-medium">
-                                weight {def.weight}%
-                              </span>
-                            )}
-                          </div>
-                          <div className="mt-0.5 text-xs text-muted-foreground">{def.definition}</div>
-                        </div>
-
-                        <div className="text-xs text-muted-foreground">
-                          <div className="font-medium text-foreground">Target</div>
-                          <div>{def.target !== null ? formatValue(def.unit, def.target) : def.targetLabel}</div>
-                        </div>
-
-                        <div className="text-right">
-                          <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Team Avg</div>
-                          <div className="text-base font-bold tabular-nums text-foreground">{display}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
+              <ExpandableMetricCategory
+                key={group}
+                group={group}
+                groupMetrics={groupMetrics}
+                recruiters={recruiters}
+              />
             );
           })}
         </div>
@@ -549,7 +513,82 @@ function OutreachVolumePreview({ recruiters: list }: { recruiters: typeof recrui
   );
 }
 
-// ─── Metric Tile Helpers ──────────────────────────────────────────────────────
+function ExpandableMetricCategory({
+  group,
+  groupMetrics,
+  recruiters,
+}: {
+  group: string;
+  groupMetrics: typeof RUBRIC;
+  recruiters: any[];
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <div className="rounded-xl border border-border/80 bg-background/50 overflow-hidden transition-colors">
+      <button
+        onClick={() => setExpanded((prev) => !prev)}
+        className="w-full flex items-center justify-between p-4 bg-muted/20 hover:bg-muted/40 transition-colors text-left"
+      >
+        <div>
+          <div className="text-xs font-bold uppercase tracking-widest text-accent">{group}</div>
+          <div className="text-[11px] text-muted-foreground">{groupMetrics.length} metrics defined</div>
+        </div>
+
+        <div className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground">
+          {expanded ? (
+            <ChevronDown className="h-4 w-4 text-accent" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="divide-y divide-border/40 border-t border-border/60 p-2 space-y-1">
+          {groupMetrics.map((def) => {
+            const values = recruiters.map((r) => {
+              const ev = getEvaluation(r.id, r.name);
+              const snap = ev.metrics.find((x) => x.def.id === def.id);
+              return snap ? snap.current : 0;
+            });
+            const avg = values.reduce((a, b) => a + b, 0) / (values.length || 1);
+            const display = formatValue(def.unit, avg);
+
+            return (
+              <div
+                key={def.id}
+                className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-[1fr_180px_110px] sm:items-center sm:gap-4 text-xs transition-colors hover:bg-muted/20 rounded-lg"
+              >
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-foreground">{def.label}</span>
+                    {def.scored && (
+                      <span className="rounded bg-accent/10 text-accent px-1.5 py-0.5 text-[10px] font-medium">
+                        weight {def.weight}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">{def.definition}</div>
+                </div>
+
+                <div className="text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground">Target</div>
+                  <div>{def.target !== null ? formatValue(def.unit, def.target) : def.targetLabel}</div>
+                </div>
+
+                <div className="text-right">
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Team Avg</div>
+                  <div className="text-base font-bold tabular-nums text-foreground">{display}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Metric({ icon: Icon, label, value, sub }: { icon: React.ComponentType<{ className?: string }>; label: string; value: string; sub: string }) {
   return (

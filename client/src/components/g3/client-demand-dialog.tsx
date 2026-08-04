@@ -65,14 +65,14 @@ type ServiceRow = {
   service: string;
   customService?: string;
   headcount: string;
-  assignedRecruiterId?: string;
-  customRecruiterName?: string;
 };
 
 type LanguageBlock = {
   id: string;
   language: string;
   customLanguage?: string;
+  assignedRecruiterId?: string;
+  customRecruiterName?: string;
   services: ServiceRow[];
 };
 
@@ -82,12 +82,12 @@ const createEmptyServiceRow = (): ServiceRow => ({
   id: uid(),
   service: "Subtitling",
   headcount: "1",
-  assignedRecruiterId: "unassigned",
 });
 
 const createEmptyLanguageBlock = (): LanguageBlock => ({
   id: uid(),
   language: "Spanish (LatAm)",
+  assignedRecruiterId: "unassigned",
   services: [createEmptyServiceRow()],
 });
 
@@ -124,45 +124,36 @@ export function ClientDemandDialog() {
   };
 
   const removeLanguageBlock = (blockId: string) => {
-    setLanguageBlocks(prev => (prev.length > 1 ? prev.filter(b => b.id !== blockId) : prev));
+    setLanguageBlocks(prev => prev.filter(b => b.id !== blockId));
   };
 
   const updateLanguageBlock = (blockId: string, patch: Partial<LanguageBlock>) => {
-    setLanguageBlocks(prev => prev.map(b => (b.id === blockId ? { ...b, ...patch } : b)));
+    setLanguageBlocks(prev => prev.map(b => b.id === blockId ? { ...b, ...patch } : b));
   };
 
   const addServiceRow = (blockId: string) => {
-    setLanguageBlocks(prev =>
-      prev.map(b =>
-        b.id === blockId
-          ? { ...b, services: [...b.services, createEmptyServiceRow()] }
-          : b
-      )
-    );
+    setLanguageBlocks(prev => prev.map(b => {
+      if (b.id !== blockId) return b;
+      return { ...b, services: [...b.services, createEmptyServiceRow()] };
+    }));
   };
 
   const removeServiceRow = (blockId: string, rowId: string) => {
-    setLanguageBlocks(prev =>
-      prev.map(b => {
-        if (b.id !== blockId) return b;
-        return {
-          ...b,
-          services: b.services.length > 1 ? b.services.filter(r => r.id !== rowId) : b.services,
-        };
-      })
-    );
+    setLanguageBlocks(prev => prev.map(b => {
+      if (b.id !== blockId) return b;
+      if (b.services.length <= 1) return b;
+      return { ...b, services: b.services.filter(s => s.id !== rowId) };
+    }));
   };
 
   const updateServiceRow = (blockId: string, rowId: string, patch: Partial<ServiceRow>) => {
-    setLanguageBlocks(prev =>
-      prev.map(b => {
-        if (b.id !== blockId) return b;
-        return {
-          ...b,
-          services: b.services.map(r => (r.id === rowId ? { ...r, ...patch } : r)),
-        };
-      })
-    );
+    setLanguageBlocks(prev => prev.map(b => {
+      if (b.id !== blockId) return b;
+      return {
+        ...b,
+        services: b.services.map(s => s.id === rowId ? { ...s, ...patch } : s),
+      };
+    }));
   };
 
   const submit = () => {
@@ -223,7 +214,7 @@ export function ClientDemandDialog() {
       });
     }
 
-    // 2. Process submission into individual Requirements (for Clients & Market table) and ClientDemand
+    // 2. Process submission into individual Requirements per language-service pair
     const allLanguages: string[] = [];
     const allServices: string[] = [];
     const fullServiceBreakdown: { language: string; service: string; needed: number; filled: number; gap: number }[] = [];
@@ -235,6 +226,18 @@ export function ClientDemandDialog() {
       if (!allLanguages.includes(actualLang)) {
         allLanguages.push(actualLang);
       }
+
+      // Resolve recruiter assigned to this specific language block
+      let langRecId = block.assignedRecruiterId;
+      if (langRecId === "custom" && block.customRecruiterName?.trim()) {
+        const newRec = addNewRecruiter(block.customRecruiterName.trim(), [actualLang]);
+        langRecId = newRec.id;
+      }
+      const assignedRecId = langRecId && langRecId !== "unassigned" ? langRecId : undefined;
+      if (assignedRecId && !firstAssignedRecruiterId) {
+        firstAssignedRecruiterId = assignedRecId;
+      }
+
       block.services.forEach((r) => {
         const sName = (r.service === "Custom..." ? r.customService : r.service)!.trim();
         const seats = Number(r.headcount) || 1;
@@ -242,18 +245,6 @@ export function ClientDemandDialog() {
           allServices.push(sName);
         }
         totalHeadcount += seats;
-
-        // Resolve row recruiter (custom or selected)
-        let rowRecId = r.assignedRecruiterId;
-        if (rowRecId === "custom" && r.customRecruiterName?.trim()) {
-          const newRowRec = addNewRecruiter(r.customRecruiterName.trim(), [actualLang]);
-          rowRecId = newRowRec.id;
-        }
-
-        const assignedRecId = rowRecId && rowRecId !== "unassigned" ? rowRecId : undefined;
-        if (assignedRecId && !firstAssignedRecruiterId) {
-          firstAssignedRecruiterId = assignedRecId;
-        }
 
         // Add Requirement directly to _requirements so it updates the main tabular view!
         addRequirement({
@@ -310,7 +301,7 @@ export function ClientDemandDialog() {
         <DialogHeader>
           <DialogTitle>Add Client Demand</DialogTitle>
           <DialogDescription>
-            Register client requirements, specify headcount per language/service, and assign recruiters.
+            Register client requirements, specify language &amp; recruiter assignments, and service headcount.
           </DialogDescription>
         </DialogHeader>
 
@@ -322,10 +313,11 @@ export function ClientDemandDialog() {
             <Input value={clientName} onChange={e => setClientName(e.target.value)} placeholder="e.g. Netflix" maxLength={100} />
           </Field>
           <Field label="Primary contact">
-            <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="Name" maxLength={100} />
+            <Input value={contactName} onChange={e => setContactName(e.target.value)} placeholder="e.g. Ava Chen" maxLength={100} />
           </Field>
-          <Field label="Contact email">
-            <Input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="name@client.com" maxLength={255} />
+
+          <Field label="Contact Email">
+            <Input type="email" value={contactEmail} onChange={e => setContactEmail(e.target.value)} placeholder="e.g. ava@netflix.com" />
           </Field>
           <Field label="Priority">
             <Select value={priority} onValueChange={setPriority}>
@@ -338,12 +330,12 @@ export function ClientDemandDialog() {
             </Select>
           </Field>
 
-          {/* Dynamic Language & Services Section */}
+          {/* Dynamic Language & Services Section with Recruiter per Language */}
           <div className="sm:col-span-2 space-y-4 rounded-xl border border-border/80 bg-muted/20 p-3.5">
             <div className="flex items-center justify-between">
               <div>
                 <Label className="text-xs font-semibold uppercase tracking-wide text-foreground flex items-center gap-1.5">
-                  Language &amp; Services <span className="text-primary">*</span>
+                  Language &amp; Recruiter Assignments <span className="text-primary">*</span>
                 </Label>
               </div>
               <Button type="button" variant="outline" size="sm" onClick={addLanguageBlock} className="h-7 gap-1 text-xs">
@@ -356,41 +348,104 @@ export function ClientDemandDialog() {
 
               return (
                 <div key={block.id} className="rounded-lg border border-border bg-card p-3 space-y-3 shadow-sm">
-                  <div className="flex items-center justify-between gap-2 border-b border-border/50 pb-2">
-                    <div className="flex-1 flex items-center gap-2">
-                      <span className="text-xs font-semibold text-foreground shrink-0">Language #{bIdx + 1}:</span>
-                      <Select
-                        value={block.language}
-                        onValueChange={(val) => updateLanguageBlock(block.id, { language: val })}
-                      >
-                        <SelectTrigger className="h-8 text-xs flex-1 max-w-xs bg-card">
-                          <SelectValue placeholder="Select Language" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {STANDARD_LANGUAGES.map(lang => (
-                            <SelectItem key={lang} value={lang}>{lang}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {block.language === "Custom..." && (
-                        <Input
-                          value={block.customLanguage || ""}
-                          onChange={e => updateLanguageBlock(block.id, { customLanguage: e.target.value })}
-                          placeholder="Enter custom language"
-                          className="h-8 text-xs flex-1"
-                        />
-                      )}
+                  {/* Language Block Header: Language Select + Recruiter Selector per Language */}
+                  <div className="space-y-2 border-b border-border/50 pb-2.5">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex-1 flex items-center gap-2 min-w-[200px]">
+                        <span className="text-xs font-semibold text-foreground shrink-0">Language #{bIdx + 1}:</span>
+                        <Select
+                          value={block.language}
+                          onValueChange={(val) => updateLanguageBlock(block.id, { language: val })}
+                        >
+                          <SelectTrigger className="h-8 text-xs flex-1 bg-card">
+                            <SelectValue placeholder="Select Language" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STANDARD_LANGUAGES.map(lang => (
+                              <SelectItem key={lang} value={lang}>{lang}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {block.language === "Custom..." && (
+                          <Input
+                            value={block.customLanguage || ""}
+                            onChange={e => updateLanguageBlock(block.id, { customLanguage: e.target.value })}
+                            placeholder="Custom language"
+                            className="h-8 text-xs flex-1"
+                          />
+                        )}
+                      </div>
+
+                      {/* Recruiter Selector for THIS Language */}
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] font-medium text-muted-foreground shrink-0">Recruiter:</span>
+                        <Select
+                          value={block.assignedRecruiterId || "unassigned"}
+                          onValueChange={(val) => updateLanguageBlock(block.id, { assignedRecruiterId: val })}
+                        >
+                          <SelectTrigger className="h-8 text-xs w-44 bg-card">
+                            <SelectValue placeholder="Assign recruiter">
+                              {block.assignedRecruiterId === "custom" ? (
+                                <span className="flex items-center gap-1 font-medium text-primary">
+                                  <UserPlus className="h-3 w-3 shrink-0" /> Custom Recruiter
+                                </span>
+                              ) : block.assignedRecruiterId && block.assignedRecruiterId !== "unassigned" ? (
+                                <span className="flex items-center gap-1.5 font-medium truncate">
+                                  <UserCheck className="h-3 w-3 text-accent shrink-0" />
+                                  {recruiters.find(r => r.id === block.assignedRecruiterId)?.name}
+                                </span>
+                              ) : (
+                                <span className="font-normal text-muted-foreground">Unassigned</span>
+                              )}
+                            </SelectValue>
+                          </SelectTrigger>
+                          <SelectContent align="end">
+                            <SelectItem value="unassigned">
+                              <span className="font-semibold text-warning">Unassigned</span>
+                            </SelectItem>
+                            {recruiters.filter(r => r.role !== "contractor").map((r) => (
+                              <SelectItem key={r.id} value={r.id}>
+                                <span className="flex items-center justify-between gap-2 w-full font-medium text-foreground">
+                                  <span className="font-semibold text-foreground">{r.name}</span>
+                                  <span className="text-[10px] text-muted-foreground font-normal">· {r.kpis.overall_score}%</span>
+                                </span>
+                              </SelectItem>
+                            ))}
+                            <SelectItem value="custom">
+                              <span className="flex items-center gap-1.5 text-primary font-semibold">
+                                <UserPlus className="h-3 w-3" /> + Custom / Add New...
+                              </span>
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        {languageBlocks.length > 1 && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeLanguageBlock(block.id)}
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            title="Remove Language Block"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    {languageBlocks.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => removeLanguageBlock(block.id)}
-                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" /> Remove
-                      </Button>
+
+                    {/* Custom Recruiter Input Field if selected */}
+                    {block.assignedRecruiterId === "custom" && (
+                      <div className="flex items-center gap-2 pt-1 pl-1">
+                        <UserPlus className="h-3.5 w-3.5 text-primary shrink-0" />
+                        <Input
+                          placeholder={`Enter recruiter name for ${currentLang || "Language"}…`}
+                          value={block.customRecruiterName || ""}
+                          onChange={e => updateLanguageBlock(block.id, { customRecruiterName: e.target.value })}
+                          className="h-7 text-xs bg-card flex-1 border-primary/40"
+                          autoFocus
+                        />
+                      </div>
                     )}
                   </div>
 
@@ -404,107 +459,51 @@ export function ClientDemandDialog() {
                     </div>
 
                     {block.services.map((row) => (
-                      <div key={row.id} className="space-y-2 rounded-md border border-border/60 bg-muted/20 p-2">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Select
-                            value={row.service}
-                            onValueChange={(val) => updateServiceRow(block.id, row.id, { service: val })}
-                          >
-                            <SelectTrigger className="h-8 text-xs flex-1 min-w-36 bg-card">
-                              <SelectValue placeholder="Select Service" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {STANDARD_SERVICES.map(s => (
-                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                      <div key={row.id} className="flex items-center gap-2 rounded-md border border-border/60 bg-muted/20 p-2">
+                        <Select
+                          value={row.service}
+                          onValueChange={(val) => updateServiceRow(block.id, row.id, { service: val })}
+                        >
+                          <SelectTrigger className="h-8 text-xs flex-1 min-w-36 bg-card">
+                            <SelectValue placeholder="Select Service" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STANDARD_SERVICES.map(s => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
 
-                          {row.service === "Custom..." && (
-                            <Input
-                              value={row.customService || ""}
-                              onChange={e => updateServiceRow(block.id, row.id, { customService: e.target.value })}
-                              placeholder="Custom service name"
-                              className="h-8 text-xs flex-1 min-w-28"
-                            />
-                          )}
-
+                        {row.service === "Custom..." && (
                           <Input
-                            type="number"
-                            min={1}
-                            max={9999}
-                            value={row.headcount}
-                            onChange={e => updateServiceRow(block.id, row.id, { headcount: e.target.value })}
-                            placeholder="Seats"
-                            className="h-8 w-20 text-xs bg-card"
+                            value={row.customService || ""}
+                            onChange={e => updateServiceRow(block.id, row.id, { customService: e.target.value })}
+                            placeholder="Custom service name"
+                            className="h-8 text-xs flex-1 min-w-28"
                           />
+                        )}
 
-                          {/* Recruiter Selector with Custom Option */}
-                          <Select
-                            value={row.assignedRecruiterId || "unassigned"}
-                            onValueChange={(val) => updateServiceRow(block.id, row.id, { assignedRecruiterId: val })}
-                          >
-                            <SelectTrigger className="h-8 text-xs w-44 bg-card">
-                              <SelectValue placeholder="Assign recruiter">
-                                {row.assignedRecruiterId === "custom" ? (
-                                  <span className="flex items-center gap-1 font-medium text-primary">
-                                    <UserPlus className="h-3 w-3 shrink-0" /> Custom Recruiter
-                                  </span>
-                                ) : row.assignedRecruiterId && row.assignedRecruiterId !== "unassigned" ? (
-                                  <span className="flex items-center gap-1.5 font-medium truncate">
-                                    <UserCheck className="h-3 w-3 text-accent shrink-0" />
-                                    {recruiters.find(r => r.id === row.assignedRecruiterId)?.name}
-                                  </span>
-                                ) : (
-                                  <span className="font-normal text-muted-foreground">Assign recruiter</span>
-                                )}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">
-                                <span className="font-semibold text-warning">Unassigned</span>
-                              </SelectItem>
-                              {recruiters.filter(r => r.role !== "contractor").map((r) => (
-                                <SelectItem key={r.id} value={r.id}>
-                                  <span className="flex items-center justify-between gap-2 w-full">
-                                    <span className="font-medium">{r.name}</span>
-                                    <span className="text-[10px] text-muted-foreground">· {r.kpis.overall_score}%</span>
-                                  </span>
-                                </SelectItem>
-                              ))}
-                              <SelectItem value="custom">
-                                <span className="flex items-center gap-1.5 text-primary font-semibold">
-                                  <UserPlus className="h-3 w-3" /> + Custom / Add New Recruiter…
-                                </span>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={9999}
+                          value={row.headcount}
+                          onChange={e => updateServiceRow(block.id, row.id, { headcount: e.target.value })}
+                          placeholder="Seats"
+                          className="h-8 w-24 text-xs bg-card"
+                        />
 
+                        {block.services.length > 1 && (
                           <Button
                             type="button"
                             variant="ghost"
-                            size="icon"
+                            size="sm"
                             onClick={() => removeServiceRow(block.id, row.id)}
-                            disabled={block.services.length === 1}
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-                            aria-label="Remove service"
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                            title="Remove Service Row"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
-                        </div>
-
-                        {/* Custom Recruiter Input Field */}
-                        {row.assignedRecruiterId === "custom" && (
-                          <div className="flex items-center gap-2 pt-1 pl-1">
-                            <UserPlus className="h-3.5 w-3.5 text-primary shrink-0" />
-                            <Input
-                              placeholder="Enter custom recruiter name (e.g. Mathumitha, Shivendra)…"
-                              value={row.customRecruiterName || ""}
-                              onChange={e => updateServiceRow(block.id, row.id, { customRecruiterName: e.target.value })}
-                              className="h-7 text-xs bg-card flex-1 border-primary/40"
-                              autoFocus
-                            />
-                          </div>
                         )}
                       </div>
                     ))}
@@ -559,64 +558,60 @@ function BulkImportStrip() {
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card p-3 text-xs">
-      <div>
-        <div className="font-semibold text-foreground">Bulk CSV Import</div>
-        <div className="text-[11px] text-muted-foreground">Upload a CSV file with columns for client, language, service, headcount.</div>
+    <div className="flex items-center justify-between rounded-xl border border-dashed border-border bg-card/60 p-3 text-xs">
+      <div className="flex items-center gap-2">
+        <Upload className="h-4 w-4 text-accent" />
+        <div>
+          <div className="font-semibold text-foreground">Bulk CSV / Excel Import</div>
+          <div className="text-[11px] text-muted-foreground">Upload CSV file with client demands.</div>
+        </div>
       </div>
-      <input ref={inputRef} type="file" accept=".csv,text/csv" onChange={onFile} className="hidden" />
-      <Button type="button" variant="outline" size="sm" onClick={() => inputRef.current?.click()} className="h-8 gap-1.5 text-xs shrink-0">
-        <Upload className="h-3.5 w-3.5" /> Upload CSV
+      <input ref={inputRef} type="file" accept=".csv,.txt" onChange={onFile} className="hidden" />
+      <Button variant="outline" size="sm" onClick={() => inputRef.current?.click()} className="h-7 text-xs">
+        Choose File
       </Button>
     </div>
   );
 }
 
 function GoogleSheetSyncStrip() {
-  const { sheetUrl, lastSynced } = getSheetSyncState();
-  const [urlInput, setUrlInput] = useState(sheetUrl);
+  const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
+  const state = getSheetSyncState();
 
   const handleSync = async () => {
+    if (!url.trim()) return;
     setLoading(true);
-    setSheetUrl(urlInput);
-    try {
-      const { added, updated } = await syncFromGoogleSheet(urlInput);
-      toast.success(`Google Sheet synced: ${added} added, ${updated} updated.`);
-    } catch {
-      toast.error("Failed to sync from Google Sheet.");
-    } finally {
-      setLoading(false);
+    setSheetUrl(url.trim());
+    const res = await syncFromGoogleSheet();
+    setLoading(false);
+    if (res && (res.added > 0 || res.updated > 0)) {
+      toast.success(`Synced ${res.added + res.updated} client demands from Google Sheet!`);
+    } else {
+      toast.info("Google Sheet synced — no new rows.");
     }
   };
 
   return (
-    <div className="rounded-xl border border-border bg-card p-3 space-y-2 text-xs">
+    <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2 text-xs">
       <div className="flex items-center justify-between">
-        <div className="font-semibold text-foreground flex items-center gap-1.5">
-          <LinkIcon className="h-3.5 w-3.5 text-accent" /> Google Sheet Sync
-        </div>
-        {lastSynced && (
+        <span className="font-semibold flex items-center gap-1.5 text-foreground">
+          <LinkIcon className="h-3.5 w-3.5 text-accent" /> Live Google Sheet Sync
+        </span>
+        {state.lastSynced && (
           <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3 text-accent" /> Last synced {lastSynced.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            <CheckCircle2 className="h-3 w-3 text-accent" /> Synced {new Date(state.lastSynced).toLocaleTimeString()}
           </span>
         )}
       </div>
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2">
         <Input
-          placeholder="Paste public Google Sheet URL (CSV/pub html)…"
-          value={urlInput}
-          onChange={(e) => setUrlInput(e.target.value)}
-          className="h-8 text-xs flex-1"
+          placeholder="Paste Google Sheet public link..."
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          className="h-8 text-xs bg-card flex-1"
         />
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          onClick={handleSync}
-          disabled={loading}
-          className="h-8 gap-1 text-xs shrink-0"
-        >
+        <Button size="sm" disabled={loading} onClick={handleSync} className="h-8 text-xs gap-1">
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Sync Now
         </Button>

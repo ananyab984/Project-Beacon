@@ -11,7 +11,7 @@ export function PerformancePageView({
   const { user } = useAuth();
   const subjectName = user?.name ?? user?.email?.split("@")[0] ?? roleLabel;
 
-  // Lead-specific workflow metrics — NOT in the rubric, so not duplicated.
+  // Lead-specific workflow metrics — NOT in the rubric
   const assigned = 80;
   const active = 44;
   const positive = 16;
@@ -23,19 +23,12 @@ export function PerformancePageView({
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
-      {/* Primary: full rubric evaluation */}
-      <EvaluationDashboard
-        subjectId={subjectId}
-        subjectName={subjectName}
-        roleLabel={roleLabel}
-      />
-
-      {/* Secondary: lead-specific pipeline state — metrics not scored in rubric */}
-      <section className="rounded-2xl border border-border bg-gradient-to-br from-primary/5 via-accent/5 to-transparent p-6">
+      {/* 1. Primary: Lead-specific pipeline state (Shifted to VERY TOP as requested) */}
+      <section className="rounded-2xl border border-border bg-gradient-to-br from-primary/5 via-accent/5 to-transparent p-6 shadow-sm">
         <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Lead pipeline state</div>
         <h2 className="mt-1 text-xl font-semibold tracking-tight">Your active lead activity</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Live pipeline snapshot — distinct from rubric scores above. These reflect what is currently in your queue.
+        <p className="mt-1 text-xs text-muted-foreground">
+          Live pipeline snapshot — distinct from rubric scores below. These reflect what is currently in your queue.
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
@@ -46,11 +39,19 @@ export function PerformancePageView({
           <KpiTile label="DNC count" value={dnc} unit="score" tone={dnc > 8 ? "warning" : "neutral"} context="opted out / bounced" />
         </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-3 md:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <KpiTile label="Follow-ups pending" value={followUps} unit="score" tone={followUps > 10 ? "warning" : "neutral"} context="due this week" />
           <KpiTile label="Emails sent (period)" value={emailsSent} unit="score" context={`${emailsReplied} replies received`} />
         </div>
       </section>
+
+      {/* 2. Secondary: Full Rubric Evaluation Dashboard (with expandable category groups & clean tables) */}
+      <EvaluationDashboard
+        subjectId={subjectId}
+        subjectName={subjectName}
+        roleLabel={roleLabel}
+        isExpandable={true}
+      />
     </div>
   );
 }

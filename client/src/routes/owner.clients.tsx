@@ -160,15 +160,6 @@ function ClientsPage() {
 
         <div className="flex items-center gap-2">
           <Button
-            variant="outline"
-            onClick={() => setShowMappingModal(true)}
-            className="h-8 gap-1.5 text-xs bg-card"
-          >
-            <Users className="h-3.5 w-3.5 text-primary" />
-            Recruiter – Language Mapping
-          </Button>
-
-          <Button
             size="sm"
             onClick={openClientDemand}
             className="h-8 gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 text-xs shadow-xs"
