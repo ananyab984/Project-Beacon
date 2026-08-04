@@ -1,118 +1,181 @@
-// PLACEMENT: pending usability testing — this dialog is triggered via a
-// props.trigger element so the button can be moved (center / top-right / etc.)
-// without changing dialog internals.
-import { useRef, useState, type ReactNode } from "react";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+import { ReactNode, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { addLead, checkDuplicate } from "@/lib/recruiter-mock";
+import { Upload, Download, FileSpreadsheet, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { z } from "zod";
-import { Upload, Download } from "lucide-react";
-
-const schema = z
-  .object({
-    first_name: z.string().trim().max(80).optional().default(""),
-    full_name: z.string().trim().min(1, "Full name is required").max(120),
-    country_of_residence: z.string().trim().max(80).optional().default(""),
-    source: z.string().min(1, "Select a source"),
-    profile_link: z.string().trim().url("Enter a valid URL").or(z.literal("")).optional().default(""),
-    email_address: z.string().trim().email("Enter a valid email").or(z.literal("")).optional().default(""),
-    contact_number: z.string().trim().max(40).optional().default(""),
-    reachout_date: z.string().optional().default(""),
-    services: z.string().optional().default(""),
-    source_language: z.string().trim().max(60).optional().default(""),
-    target_language: z.string().trim().max(60).optional().default(""),
-    secondary_languages: z.string().optional().default(""),
-  })
-  .refine((v) => v.profile_link || v.email_address, {
-    message: "Provide at least Profile Link or Email Address",
-    path: ["profile_link"],
-  });
+import { addLead, Lead } from "@/lib/g3-mock";
 
 const SOURCES = ["LinkedIn", "ProZ", "Referral", "GitHub", "Other"];
-const LANGUAGES = ["English", "German", "French", "Spanish", "Italian", "Portuguese", "Japanese", "Korean", "Mandarin", "Hindi", "Arabic"];
-const SERVICES = ["Dubbing", "Subtitling", "SDH", "CC", "AD"];
-const empty = { first_name: "", full_name: "", country_of_residence: "", source: "", profile_link: "", email_address: "", contact_number: "", reachout_date: "", services: "", source_language: "", target_language: "", secondary_languages: "" };
 
-const TEMPLATE_HEADERS = [
-  "Reachout Date", "First Name", "Full Name", "Country of Residence", "Source",
-  "Profile_Link", "Contact Number", "Email Address", "Services",
-  "Source_Language", "Target_Language", "Secondary_Languages",
+const LANGUAGES = [
+  "English",
+  "Spanish (LatAm)",
+  "Japanese",
+  "German",
+  "French",
+  "Portuguese (Brazil)",
+  "Italian",
+  "Korean",
+  "Chinese (Simplified)",
+  "Chinese (Traditional)",
+  "Arabic",
+  "Dutch",
+  "Polish",
+  "Swedish",
+  "Turkish",
+  "Spanish (Spain)",
+  "Vietnamese",
+  "Hindi",
+  "Tamil",
+  "Telugu",
+  "Malayalam",
+  "Russian",
+  "Norwegian",
+  "Danish",
+  "Finnish",
+  "Greek",
+  "Hebrew",
+  "Thai",
+  "Indonesian",
 ];
 
-function downloadTemplate(kind: "csv" | "xlsx") {
-  const filename = `leads_template.${kind}`;
-  const content = TEMPLATE_HEADERS.join(",") + "\n";
-  const mime = kind === "csv"
-    ? "text/csv"
-    : "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
+const SERVICES = [
+  "Dubbing",
+  "Subtitling",
+  "SDH",
+  "Transcription",
+  "Voice Over",
+  "Localization QA",
+  "AI Post-editing",
+  "Translation",
+  "Transcreation",
+  "Quality Control",
+  "Interpretation",
+  "Audio Description",
+  "Closed Captioning",
+];
 
-function splitList(s: string): string[] {
-  return s.split(",").map((x) => x.trim()).filter(Boolean);
-}
-
-export function AddLeadDialog({ trigger }: { trigger: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const [values, setValues] = useState(empty);
+export function AddLeadDialog({
+  open: controlledOpen,
+  setOpen: controlledSetOpen,
+  trigger,
+}: {
+  open?: boolean;
+  setOpen?: (open: boolean) => void;
+  trigger?: ReactNode;
+}) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = controlledSetOpen ?? setInternalOpen;
+  const [values, setValues] = useState({
+    first_name: "",
+    full_name: "",
+    country_of_residence: "Germany",
+    source: "LinkedIn",
+    profile_link: "",
+    email_address: "",
+    contact_number: "",
+    reachout_date: "",
+    source_language: "English",
+    target_language: "German",
+    secondary_languages: "French",
+    services: "Dubbing",
+  });
+  const [customService, setCustomService] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const set = (k: keyof typeof empty, v: string) => setValues((s) => ({ ...s, [k]: v }));
-
-  function reset() {
-    setValues(empty);
-    setErrors({});
+  function set(k: string, v: string) {
+    setValues((prev) => ({ ...prev, [k]: v }));
+    setErrors((prev) => ({ ...prev, [k]: "" }));
   }
 
-  function handleBulkFile(f: File) {
-    toast.success(`Bulk import queued: ${f.name}`, {
-      description: "You'll be notified once rows are validated and merged.",
-    });
-    setOpen(false);
-    reset();
+  function validate() {
+    const next: Record<string, string> = {};
+    if (!values.full_name.trim()) next.full_name = "Full name is required";
+    if (!values.source) next.source = "Source is required";
+    if (values.services === "Custom" && !customService.trim()) {
+      next.services = "Please enter custom service name";
+    }
+    if (values.email_address && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email_address)) {
+      next.email_address = "Enter a valid email address";
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
   }
 
-  function onSubmit(e: React.FormEvent) {
+  function submit(e: React.FormEvent) {
     e.preventDefault();
-    const parsed = schema.safeParse(values);
-    if (!parsed.success) {
-      const flat: Record<string, string> = {};
-      for (const issue of parsed.error.issues) flat[issue.path[0] as string] = issue.message;
-      setErrors(flat);
-      return;
-    }
-    const dup = checkDuplicate({
-      full_name: parsed.data.full_name,
-      profile_link: parsed.data.profile_link,
-      email_address: parsed.data.email_address,
-    });
-    if (dup) {
-      setErrors({ [dup.field]: `Duplicate — matches existing lead "${dup.lead.full_name}" on ${dup.field.replace("_", " ")}` });
-      return;
-    }
-    addLead({
-      ...parsed.data,
-      services: splitList(parsed.data.services),
-      secondary_languages: splitList(parsed.data.secondary_languages),
-    });
+    if (!validate()) return;
+
+    const trimmed = values.full_name.trim();
+    const id = `lead_${Date.now()}`;
+    const name = values.first_name ? `${values.first_name} (${trimmed})` : trimmed;
+    const resolvedService = values.services === "Custom" ? customService.trim() : values.services;
+    const services = resolvedService
+      ? resolvedService.split(",").map((s) => s.trim()).filter(Boolean)
+      : ["Subtitling"];
+
+    const newLead: Partial<Lead> & { id: string } = {
+      id,
+      display_name: name,
+      masked_label: name,
+      language: values.target_language || "German",
+      source_language: values.source_language || "English",
+      target_language: values.target_language || "German",
+      secondary_languages: values.secondary_languages
+        ? values.secondary_languages.split(",").map((l) => l.trim()).filter(Boolean)
+        : [],
+      services,
+      stage: "Contacted",
+      source: (values.source as any) || "LinkedIn",
+      country: values.country_of_residence || "Germany",
+      verified_email: true,
+      confirmed_language_pair: true,
+      years_experience: 5,
+      recruiter_id: "r1",
+      last_activity: "Just now",
+      identity_resolved: true,
+      flags: [],
+      availability: "Available Now",
+    };
+
+    addLead(newLead as Lead);
+    toast.success(`Lead ${trimmed} added to My Leads!`);
     setOpen(false);
-    reset();
-    toast.success("Lead added", { description: "Enrichment in progress — fields populate shortly." });
   }
+
+  const handleCsvDownload = () => {
+    const csvContent =
+      "data:text/csv;charset=utf-8,Full Name,Country,Source,Profile Link,Email,Contact,Reachout Date,Source Language,Target Language,Secondary Languages,Services\nAlex Chen,Germany,LinkedIn,https://linkedin.com/in/alexchen,alex@example.com,+49 1234567,2026-08-01,English,German,French,Dubbing; Subtitling\n";
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "global3_lead_import_template.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    toast.success("Downloaded CSV lead import template!");
+  };
+
+  const handleExcelDownload = () => {
+    toast.success("Downloaded Excel (.xlsx) lead import template!");
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      toast.success(`Parsed ${file.name}! Imported 5 candidate leads.`);
+      setOpen(false);
+    }
+  };
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-2xl">
+    <Dialog open={open} onOpenChange={setOpen}>
+      {trigger && <div onClick={() => setOpen(true)}>{trigger}</div>}
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add a Lead</DialogTitle>
           <DialogDescription>
@@ -120,42 +183,55 @@ export function AddLeadDialog({ trigger }: { trigger: ReactNode }) {
           </DialogDescription>
         </DialogHeader>
 
-        {/* Bulk import strip — inline shortcut for many leads at once */}
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-border bg-muted/30 px-3 py-2">
-          <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
-            <Upload className="h-3.5 w-3.5 shrink-0" />
-            <span className="truncate">Have many? Bulk import via CSV or Excel.</span>
+        {/* Bulk Upload CSV/Excel Template Box */}
+        <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+              <Upload className="h-4 w-4 text-primary" />
+              <span>Have many? Bulk import via CSV or Excel.</span>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
-            <Button type="button" variant="ghost" size="sm" className="h-7 text-[11px]" onClick={() => downloadTemplate("csv")}>
-              <Download className="h-3 w-3" /> CSV template
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCsvDownload}
+              className="h-8 text-xs gap-1.5 bg-card"
+            >
+              <Download className="h-3.5 w-3.5" /> CSV template
             </Button>
-            <Button type="button" variant="ghost" size="sm" className="h-7 text-[11px]" onClick={() => downloadTemplate("xlsx")}>
-              <Download className="h-3 w-3" /> Excel template
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleExcelDownload}
+              className="h-8 text-xs gap-1.5 bg-card"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-accent" /> Excel template
             </Button>
-            <Button type="button" size="sm" className="h-7 text-[11px] bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => fileRef.current?.click()}>
-              <Upload className="h-3 w-3" /> Upload file
-            </Button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="hidden"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleBulkFile(f); e.target.value = ""; }}
-            />
+            <label className="cursor-pointer">
+              <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+              <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
+                <Upload className="h-3.5 w-3.5" /> Upload file
+              </div>
+            </label>
           </div>
         </div>
 
-        <form onSubmit={onSubmit} className="grid max-h-[70vh] grid-cols-1 gap-4 overflow-y-auto pr-1 md:grid-cols-2">
+        <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
           <Field label="First Name" error={errors.first_name}>
             <Input value={values.first_name} onChange={(e) => set("first_name", e.target.value)} placeholder="Alex" />
           </Field>
+
           <Field label="Full Name *" error={errors.full_name}>
             <Input value={values.full_name} onChange={(e) => set("full_name", e.target.value)} placeholder="Alex Chen" />
           </Field>
+
           <Field label="Country of Residence" error={errors.country_of_residence}>
             <Input value={values.country_of_residence} onChange={(e) => set("country_of_residence", e.target.value)} placeholder="Germany" />
           </Field>
+
           <Field label="Source *" error={errors.source}>
             <Select value={values.source} onValueChange={(v) => set("source", v)}>
               <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
@@ -164,35 +240,103 @@ export function AddLeadDialog({ trigger }: { trigger: ReactNode }) {
               </SelectContent>
             </Select>
           </Field>
+
           <Field label="Profile Link" error={errors.profile_link} full>
             <Input value={values.profile_link} onChange={(e) => set("profile_link", e.target.value)} placeholder="https://linkedin.com/in/…" />
           </Field>
+
           <Field label="Email Address" error={errors.email_address}>
             <Input type="email" value={values.email_address} onChange={(e) => set("email_address", e.target.value)} placeholder="alex@example.com" />
           </Field>
+
           <Field label="Contact Number" error={errors.contact_number}>
             <Input value={values.contact_number} onChange={(e) => set("contact_number", e.target.value)} placeholder="+49 …" />
           </Field>
+
           <Field label="Reachout Date" error={errors.reachout_date}>
             <Input type="date" value={values.reachout_date} onChange={(e) => set("reachout_date", e.target.value)} />
           </Field>
+
+          {/* Source Language Dropdown */}
           <Field label="Source Language" error={errors.source_language}>
-            <Input list="al-langs" value={values.source_language} onChange={(e) => set("source_language", e.target.value)} placeholder="English" />
+            <Select value={values.source_language} onValueChange={(v) => set("source_language", v)}>
+              <SelectTrigger className="h-9 text-xs bg-card">
+                <SelectValue placeholder="Select Source Language" />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
+
+          {/* Target Language Dropdown */}
           <Field label="Target Language" error={errors.target_language}>
-            <Input list="al-langs" value={values.target_language} onChange={(e) => set("target_language", e.target.value)} placeholder="German" />
+            <Select value={values.target_language} onValueChange={(v) => set("target_language", v)}>
+              <SelectTrigger className="h-9 text-xs bg-card">
+                <SelectValue placeholder="Select Target Language" />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
-          <Field label="Secondary Languages" error={errors.secondary_languages} full>
-            <Input value={values.secondary_languages} onChange={(e) => set("secondary_languages", e.target.value)} placeholder="French, Spanish (comma-separated)" />
+
+          {/* Secondary Languages Dropdown */}
+          <Field label="Secondary Languages" error={errors.secondary_languages}>
+            <Select value={values.secondary_languages} onValueChange={(v) => set("secondary_languages", v)}>
+              <SelectTrigger className="h-9 text-xs bg-card">
+                <SelectValue placeholder="Select Secondary Language" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="None">None</SelectItem>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </Field>
-          <Field label="Services" error={errors.services} full>
-            <Input list="al-services" value={values.services} onChange={(e) => set("services", e.target.value)} placeholder="Dubbing, Subtitling, SDH (comma-separated)" />
+
+          {/* Services Dropdown with Custom Add Option */}
+          <Field label="Services" error={errors.services}>
+            <div className="space-y-1.5">
+              <Select
+                value={values.services}
+                onValueChange={(v) => set("services", v)}
+              >
+                <SelectTrigger className="h-9 text-xs bg-card">
+                  <SelectValue placeholder="Select Service" />
+                </SelectTrigger>
+                <SelectContent>
+                  {SERVICES.map((s) => (
+                    <SelectItem key={s} value={s}>{s}</SelectItem>
+                  ))}
+                  <SelectItem value="Custom">
+                    <span className="flex items-center gap-1.5 text-primary font-semibold">
+                      <Plus className="h-3.5 w-3.5" /> + Custom / Add New Service...
+                    </span>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              {values.services === "Custom" && (
+                <Input
+                  value={customService}
+                  onChange={(e) => setCustomService(e.target.value)}
+                  placeholder="Type custom service name (e.g. Dialogue Editing)..."
+                  className="h-8 text-xs bg-card border-primary/50"
+                  autoFocus
+                />
+              )}
+            </div>
           </Field>
-          <datalist id="al-langs">{LANGUAGES.map((l) => <option key={l} value={l} />)}</datalist>
-          <datalist id="al-services">{SERVICES.map((s) => <option key={s} value={s} />)}</datalist>
-          <DialogFooter className="md:col-span-2">
+
+          <DialogFooter className="md:col-span-2 pt-2 border-t border-border">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90">Add Lead</Button>
+            <Button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">Add Lead</Button>
           </DialogFooter>
         </form>
       </DialogContent>
@@ -203,7 +347,7 @@ export function AddLeadDialog({ trigger }: { trigger: ReactNode }) {
 function Field({ label, error, children, full }: { label: string; error?: string; children: ReactNode; full?: boolean }) {
   return (
     <div className={`space-y-1.5 ${full ? "md:col-span-2" : ""}`}>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+      <Label className="text-xs font-semibold text-muted-foreground">{label}</Label>
       {children}
       {error && <p className="text-[11px] text-destructive">{error}</p>}
     </div>

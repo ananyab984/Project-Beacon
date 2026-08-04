@@ -23,8 +23,8 @@ export function EmailQueuePageView() {
   const selected = store.emailQueue.find((e) => e.id === selectedId) ?? store.emailQueue[0];
   const [aiPref] = useAiToolsEnabled();
   const ai = FEATURES.ai && aiPref;
-  const [body, setBody] = useState(selected?.body ?? "");
-  const [subject, setSubject] = useState(selected?.subject ?? "");
+  const [body, setBody] = useState("");
+  const [subject, setSubject] = useState(selected ? `Global3 Outreach · Freelance Partnership (${selected.candidate_name})` : "");
   const [to, setTo] = useState(selected ? mockEmail(selected.candidate_name) : "");
   const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -33,8 +33,8 @@ export function EmailQueuePageView() {
   function pick(id: string) {
     setSelectedId(id);
     const e = store.emailQueue.find((x) => x.id === id);
-    setBody(e?.body ?? "");
-    setSubject(e?.subject ?? "");
+    setBody("");
+    setSubject(e ? `Global3 Outreach · Freelance Partnership (${e.candidate_name})` : "");
     setTo(e ? mockEmail(e.candidate_name) : "");
     setSaveState("idle");
     setSavedAt(null);
@@ -136,7 +136,12 @@ export function EmailQueuePageView() {
                     <Wand2 className="h-3 w-3" /> Insert Official Template
                   </button>
                 </div>
-                <Textarea value={body} onChange={(e) => { setBody(e.target.value); markDirty(); }} className="mt-1 min-h-[320px] font-sans text-xs leading-relaxed" />
+                <Textarea
+                  value={body}
+                  onChange={(e) => { setBody(e.target.value); markDirty(); }}
+                  placeholder="Click 'Generate Draft' button above to generate official email outreach message..."
+                  className="mt-1 min-h-[320px] font-sans text-xs leading-relaxed"
+                />
               </div>
             </div>
           </div>

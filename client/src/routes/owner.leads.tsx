@@ -1,24 +1,26 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { leads, recruiters, stageOrder } from "@/lib/g3-mock";
+import { leads, recruiters, stageOrder, type Lead } from "@/lib/g3-mock";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, AlertTriangle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/g3/manual-enrichment-dialog";
 
 export const Route = createFileRoute("/owner/leads")({
   head: () => ({
     meta: [
-      { title: "Leads — Global3" },
+      { title: "Leads — Global3 Owner" },
       { name: "description", content: "CRM-style lead management: search, filter, sort, bulk actions." },
     ],
   }),
   component: LeadsPage,
 });
+
+const CURRENT_GLOBAL_RECRUITER_ID = "r1"; // Divya
 
 // Language → country proxy for filtering + display.
 const languageCountry: Record<string, string> = {
@@ -28,8 +30,10 @@ const languageCountry: Record<string, string> = {
 };
 
 type SortKey = "lead" | "language" | "country" | "stage" | "recruiter" | "activity";
+type LeadScope = "global" | "mine";
 
 function LeadsPage() {
+  const [scope, setScope] = useState<LeadScope>("global");
   const [q, setQ] = useState("");
   const [lang, setLang] = useState("all");
   const [country, setCountry] = useState("all");
@@ -41,14 +45,31 @@ function LeadsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [enrichLead, setEnrichLead] = useState<LeadForEnrichment | null>(null);
+  const [version, setVersion] = useState(0);
   const pageSize = 12;
+
+  const globalEnrichedLeads = useMemo(
+    () => leads.filter((l) => l.identity_resolved && !l.flags.includes("On Hold")),
+    [version],
+  );
+
+  const mineCount = useMemo(
+    () => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID).length,
+    [version],
+  );
+
+  const baseSet = useMemo(
+    () => (scope === "mine" ? leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID) : globalEnrichedLeads),
+    [scope, version, globalEnrichedLeads],
+  );
 
   const languages = useMemo(() => Array.from(new Set(leads.map((l) => l.language))), []);
   const services = useMemo(() => Array.from(new Set(leads.flatMap((l) => l.services))), []);
   const countries = useMemo(() => Array.from(new Set(leads.map((l) => languageCountry[l.language] ?? "—"))), []);
 
   const filtered = useMemo(() => {
-    const rows = leads.filter((l) => {
+    const rows = baseSet.filter((l) => {
       const c = languageCountry[l.language] ?? "—";
       return (
         (q === "" ||
@@ -69,7 +90,7 @@ function LeadsPage() {
       return va < vb ? -dir : va > vb ? dir : 0;
     });
     return rows;
-  }, [q, lang, country, service, rec, stage, dateRange, sortBy, sortDir]);
+  }, [baseSet, q, lang, country, service, rec, stage, dateRange, sortBy, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const view = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -96,9 +117,57 @@ function LeadsPage() {
     setRec("all"); setStage("all"); setDateRange("all"); setPage(1);
   }
 
+  const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
+    const targetLead = leads.find((l) => l.id === id);
+    if (targetLead) {
+      targetLead.identity_resolved = true;
+      targetLead.display_name = updated.name || targetLead.display_name || "Enriched Lead";
+      targetLead.language = updated.language || targetLead.language;
+      targetLead.services = updated.services || targetLead.services;
+      targetLead.flags = targetLead.flags.filter((f) => f !== "On Hold");
+      setVersion((v) => v + 1);
+    }
+  };
+
+  const manualEnrichmentNeededCount = useMemo(
+    () => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID && (!l.identity_resolved || l.flags.includes("On Hold"))).length,
+    [version],
+  );
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-4">
-      {/* Toolbar: search + primary actions */}
+      {/* Manual Enrichment Banner */}
+      {manualEnrichmentNeededCount > 0 && scope === "mine" && (
+        <div className="flex items-center justify-between rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-xs text-warning">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <span>
+              <strong>{manualEnrichmentNeededCount} leads require manual enrichment.</strong> Please review missing candidate details to promote them to Global Leads.
+            </span>
+          </div>
+          <Button
+            size="sm"
+            className="bg-warning text-warning-foreground hover:bg-warning/90 text-xs font-semibold h-7"
+            onClick={() => {
+              const firstOnHold = leads.find((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID && (!l.identity_resolved || l.flags.includes("On Hold")));
+              if (firstOnHold) {
+                setEnrichLead({
+                  id: firstOnHold.id,
+                  name: firstOnHold.display_name || firstOnHold.masked_label,
+                  language: firstOnHold.language,
+                  services: firstOnHold.services,
+                  years_experience: firstOnHold.years_experience,
+                  verified_email: firstOnHold.verified_email,
+                });
+              }
+            }}
+          >
+            Review Now
+          </Button>
+        </div>
+      )}
+
+      {/* Toolbar: search + scope switcher tabs */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[280px] flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -111,9 +180,11 @@ function LeadsPage() {
         </div>
         <div className="flex items-center gap-2">
           <BulkUploadDialog />
-          <Button variant="outline" size="sm" onClick={() => toast.success("Exporting CSV…")}>
-            <Download className="h-3.5 w-3.5" /> Export
-          </Button>
+          {/* Scope Tab Switcher: Global Leads vs My Leads */}
+          <div role="tablist" aria-label="Lead scope" className="inline-flex rounded-lg border border-border bg-card p-0.5">
+            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalEnrichedLeads.length} />
+            <ScopeTab active={scope === "mine"} onClick={() => { setScope("mine"); setPage(1); setSelected(new Set()); }} label="My Leads" count={mineCount} />
+          </div>
         </div>
       </div>
 
@@ -172,6 +243,7 @@ function LeadsPage() {
                   <Checkbox checked={allChecked} onCheckedChange={togglePage} aria-label="Select page" />
                 </th>
                 <SortableTh label="Lead" k="lead" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
+                <th className="px-4 py-3 font-semibold text-foreground">ENRICHMENT STATUS</th>
                 <SortableTh label="Language" k="language" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <th className="px-4 py-3">Services</th>
@@ -188,6 +260,7 @@ function LeadsPage() {
                 const label = l.identity_resolved ? l.display_name ?? l.masked_label : l.masked_label;
                 const c = languageCountry[l.language] ?? "—";
                 const isSel = selected.has(l.id);
+                const isOnHold = !l.identity_resolved || l.flags.includes("On Hold");
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -196,10 +269,28 @@ function LeadsPage() {
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{label}</span>
-                        {!l.identity_resolved && (
-                          <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">unresolved</Badge>
-                        )}
                       </div>
+                    </td>
+                    <td className="px-4 py-3">
+                      {isOnHold ? (
+                        <button
+                          onClick={() => setEnrichLead({
+                            id: l.id,
+                            name: label,
+                            language: l.language,
+                            services: l.services,
+                            years_experience: l.years_experience,
+                            verified_email: l.verified_email,
+                          })}
+                          className="font-semibold text-xs text-warning hover:underline cursor-pointer"
+                        >
+                          On Hold
+                        </button>
+                      ) : (
+                        <span className="font-semibold text-xs text-emerald-400">
+                          Enriched
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
@@ -214,7 +305,9 @@ function LeadsPage() {
                         ))}
                       </div>
                     </td>
-                    <td className="px-4 py-3"><Badge variant="outline">{l.stage}</Badge></td>
+                    <td className="px-4 py-3">
+                      <span className="rounded-md border border-border px-2 py-0.5 text-xs font-medium">{l.stage}</span>
+                    </td>
                     <td className="px-4 py-3 text-foreground/80">{l.availability}</td>
                     <td className="px-4 py-3 text-foreground/80">{l.source}</td>
                     <td className="px-4 py-3 text-foreground/80">{r?.name ?? "—"}</td>
@@ -224,7 +317,7 @@ function LeadsPage() {
               })}
               {view.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
                     <button className="ml-2 text-primary hover:underline" onClick={clearFilters}>Clear filters</button>
                   </td>
@@ -247,7 +340,82 @@ function LeadsPage() {
           </div>
         </div>
       </div>
+
+      {/* Manual Enrichment Modal */}
+      <ManualEnrichmentDialog
+        open={!!enrichLead}
+        onOpenChange={(o) => !o && setEnrichLead(null)}
+        lead={enrichLead}
+        onMarkEnriched={handleMarkEnriched}
+      />
     </div>
+  );
+}
+
+function ScopeTab({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
+        active ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <span>{label}</span>
+      <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+        {count}
+      </span>
+    </button>
+  );
+}
+
+function FilterSelect({
+  value, onChange, placeholder, options, labelFor,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: string[];
+  labelFor?: (v: string) => string;
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-9 text-xs">
+        <SelectValue placeholder={`All ${placeholder.toLowerCase()}`} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All {placeholder.toLowerCase()}</SelectItem>
+        {options.map((o) => (
+          <SelectItem key={o} value={o}>{labelFor ? labelFor(o) : o}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function SortableTh({
+  label, k, sortBy, sortDir, onClick,
+}: {
+  label: string;
+  k: SortKey;
+  sortBy: SortKey;
+  sortDir: "asc" | "desc";
+  onClick: (k: SortKey) => void;
+}) {
+  const active = sortBy === k;
+  return (
+    <th className="px-4 py-3">
+      <button
+        onClick={() => onClick(k)}
+        className={`inline-flex items-center gap-1 text-left font-semibold hover:text-foreground ${
+          active ? "text-foreground" : ""
+        }`}
+      >
+        {label}
+        <ArrowUpDown className={`h-3 w-3 ${active ? "text-primary" : "text-muted-foreground/60"}`} />
+      </button>
+    </th>
   );
 }
 
@@ -259,80 +427,20 @@ function sortVal(l: (typeof leads)[number], k: SortKey): string | number {
     case "stage": return stageOrder.indexOf(l.stage);
     case "recruiter": return l.recruiter_id;
     case "activity": return l.last_activity;
+    default: return "";
   }
 }
 
-function matchesDate(activity: string, r: string) {
-  // Mock: activity strings like "2d ago", "4h ago", "45m ago", "14d ago"
-  const m = activity.match(/^(\d+)([mhd])/);
-  if (!m) return true;
-  const n = parseInt(m[1]);
-  const unit = m[2];
-  const hours = unit === "m" ? n / 60 : unit === "h" ? n : n * 24;
-  if (r === "24h") return hours <= 24;
-  if (r === "7d") return hours <= 24 * 7;
-  if (r === "30d") return hours <= 24 * 30;
+function matchesDate(ago: string, range: string): boolean {
+  if (range === "all") return true;
+  if (range === "24h") return ago.includes("m ago") || ago.includes("h ago");
+  if (range === "7d") return ago.includes("m ago") || ago.includes("h ago") || (ago.includes("d ago") && parseInt(ago) <= 7);
+  if (range === "30d") return true;
   return true;
-}
-
-function SortableTh({
-  label, k, sortBy, sortDir, onClick,
-}: { label: string; k: SortKey; sortBy: SortKey; sortDir: "asc" | "desc"; onClick: (k: SortKey) => void }) {
-  const active = sortBy === k;
-  return (
-    <th className="px-4 py-3">
-      <button
-        onClick={() => onClick(k)}
-        className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-wide transition-colors ${
-          active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-        }`}
-      >
-        {label}
-        <ArrowUpDown className={`h-3 w-3 ${active ? "opacity-100" : "opacity-40"}`} />
-        {active && <span className="text-[9px]">{sortDir === "asc" ? "↑" : "↓"}</span>}
-      </button>
-    </th>
-  );
-}
-
-function FilterSelect({
-  value, onChange, placeholder, options, labelFor,
-}: { value: string; onChange: (v: string) => void; placeholder: string; options: string[]; labelFor?: (v: string) => string }) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
-      <SelectContent>
-        <SelectItem value="all">All {placeholder.toLowerCase()}</SelectItem>
-        {options.map((o) => <SelectItem key={o} value={o}>{labelFor ? labelFor(o) : o}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  );
 }
 
 function BulkUploadDialog() {
   const [open, setOpen] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-
-  function downloadTemplate() {
-    const headers = [
-      "Reachout Date", "Application Date", "First Name", "Full Name",
-      "Country of Residence", "Source", "Profile_Link", "Contact Number",
-      "Email Address", "Services", "Source_Language", "Target_Language", "Secondary_Languages",
-    ];
-    const csv = headers.join(",") + "\n";
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "leads_template.csv"; a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function submit() {
-    if (!file) { toast.error("Choose a CSV or Excel file first"); return; }
-    toast.success(`Uploading ${file.name}. You'll be notified when processing finishes.`);
-    setOpen(false); setFile(null);
-  }
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -340,35 +448,19 @@ function BulkUploadDialog() {
           <Upload className="h-3.5 w-3.5" /> Bulk Upload
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Bulk upload leads</DialogTitle>
-          <DialogDescription>
-            Upload a CSV or Excel file matching the SEARCH schema. Duplicates are auto-flagged.
-          </DialogDescription>
+          <DialogTitle>Bulk Upload Leads</DialogTitle>
+          <DialogDescription>Upload a CSV or Excel sheet with candidate info to create leads in bulk.</DialogDescription>
         </DialogHeader>
-        <div className="space-y-4">
-          <button
-            onClick={downloadTemplate}
-            className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted"
-          >
-            <span className="flex items-center gap-2"><Download className="h-3.5 w-3.5" /> Download sample template</span>
-            <span className="text-[11px] text-muted-foreground">.csv</span>
-          </button>
-          <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">File</span>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="mt-1 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-            />
-            {file && <div className="mt-1 text-[11px] text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</div>}
-          </label>
+        <div className="border-2 border-dashed border-border rounded-xl p-8 text-center space-y-2">
+          <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
+          <div className="text-xs font-semibold">Drop CSV/XLSX file here, or click to browse</div>
+          <div className="text-[11px] text-muted-foreground">Supported fields: name, email, language, country, services, source</div>
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button size="sm" onClick={submit}>Upload</Button>
+          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={() => { toast.success("Bulk import complete!"); setOpen(false); }}>Upload &amp; Process</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

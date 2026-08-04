@@ -107,7 +107,7 @@ function RecruiterClientsPage() {
             }`}
           >
             <UserCheck className="h-3.5 w-3.5 text-primary" />
-            My Assigned ({myRequirements.length})
+            My Projects ({myRequirements.length})
           </button>
           <button
             onClick={() => setViewTab("global")}

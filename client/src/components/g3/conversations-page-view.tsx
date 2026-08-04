@@ -18,6 +18,11 @@ export function ConversationsPageView() {
   );
   const conv = filtered.find((c) => c.id === id) ?? filtered[0];
 
+  const pickConv = (convId: string) => {
+    setId(convId);
+    setDraft("");
+  };
+
   const handleGenerateLinkedInDraft = () => {
     if (!conv) return;
     const generated = generateLinkedInDraft(conv.candidate_name, conv.candidate_role || "Linguist");
@@ -61,7 +66,7 @@ export function ConversationsPageView() {
           </div>
           <div className="divide-y divide-border overflow-y-auto">
             {filtered.map((c) => (
-              <button key={c.id} onClick={() => setId(c.id)} className={`block w-full p-3 text-left transition-colors ${conv?.id === c.id ? "bg-muted/60" : "hover:bg-muted/30"}`}>
+              <button key={c.id} onClick={() => pickConv(c.id)} className={`block w-full p-3 text-left transition-colors ${conv?.id === c.id ? "bg-muted/60" : "hover:bg-muted/30"}`}>
                 <div className="flex items-center gap-2">
                   <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium">{c.candidate_name.split(" ").map((s) => s[0]).slice(0, 2).join("")}</div>
                   <div className="min-w-0 flex-1">
@@ -118,7 +123,12 @@ export function ConversationsPageView() {
                 </button>
               </div>
               <div className="flex items-center gap-2">
-                <Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write or generate a LinkedIn message…" className="flex-1 text-xs" />
+                <Input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  placeholder="Click 'Generate Draft' button above to generate LinkedIn message..."
+                  className="flex-1 text-xs"
+                />
                 <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => { if (draft.trim()) { toast.success("Message dispatched via LinkedIn!"); setDraft(""); } }}><Send className="h-3.5 w-3.5" /></Button>
               </div>
             </div>

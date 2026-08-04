@@ -1,49 +1,49 @@
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Bell, AlertTriangle, ArrowRight, Check } from "lucide-react";
+import { Bell, MessageSquare, RefreshCw, Wand2, ArrowRight, Check } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 
 export interface RecruiterNotification {
   id: string;
-  leadId: string;
+  type: "message_received" | "lead_update" | "draft_message";
+  title: string;
   leadName: string;
   language: string;
-  reason: string;
+  detail: string;
   timestamp: string;
-  status: "pending" | "resolved" | "awaiting";
   read: boolean;
 }
 
 const INITIAL_NOTIFICATIONS: RecruiterNotification[] = [
   {
     id: "notif-1",
-    leadId: "lead-hold-1",
+    type: "message_received",
+    title: "Message received from candidate",
     leadName: "Takeshi Kovacs",
     language: "Japanese",
-    reason: "Missing secondary email verification",
+    detail: "Replied to outreach: 'Interested in Japanese Dubbing role. Available to start next week.'",
     timestamp: "10m ago",
-    status: "pending",
     read: false,
   },
   {
     id: "notif-2",
-    leadId: "lead-hold-2",
+    type: "lead_update",
+    title: "Lead update",
     leadName: "Maria Garcia",
     language: "Spanish (Spain)",
-    reason: "Certifications profile incomplete",
+    detail: "Secondary profile & vendor certifications automatically enriched by system.",
     timestamp: "1h ago",
-    status: "pending",
     read: false,
   },
   {
     id: "notif-3",
-    leadId: "lead-hold-3",
+    type: "draft_message",
+    title: "Draft a message for new lead",
     leadName: "Jean Dupont",
     language: "French",
-    reason: "Phone number parsing error",
+    detail: "New self-sourced lead assigned. Click 'Generate Draft' in Email Queue to reach out.",
     timestamp: "3h ago",
-    status: "awaiting",
     read: false,
   },
 ];
@@ -56,6 +56,28 @@ export function RecruiterNotificationsPopover() {
 
   const markAllRead = () => {
     setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+  };
+
+  const typeIcon = (type: RecruiterNotification["type"]) => {
+    switch (type) {
+      case "message_received":
+        return <MessageSquare className="h-3.5 w-3.5 text-accent" />;
+      case "lead_update":
+        return <RefreshCw className="h-3.5 w-3.5 text-primary" />;
+      case "draft_message":
+        return <Wand2 className="h-3.5 w-3.5 text-warning" />;
+    }
+  };
+
+  const actionLink = (type: RecruiterNotification["type"]) => {
+    switch (type) {
+      case "message_received":
+        return { label: "Reply to message", to: "/recruiter/conversations" };
+      case "lead_update":
+        return { label: "View lead update", to: "/recruiter/leads" };
+      case "draft_message":
+        return { label: "Draft message", to: "/recruiter/email-queue" };
+    }
   };
 
   return (
@@ -98,42 +120,46 @@ export function RecruiterNotificationsPopover() {
               No new lead notifications.
             </div>
           ) : (
-            notifications.map((n) => (
-              <div
-                key={n.id}
-                className={`p-3.5 transition-colors ${
-                  !n.read ? "bg-primary/5" : "hover:bg-muted/30"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="grid h-6 w-6 place-items-center rounded-full bg-warning/15 text-warning shrink-0">
-                      <AlertTriangle className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="text-xs font-bold text-foreground">{n.leadName}</span>
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                      {n.language}
-                    </span>
+            notifications.map((n) => {
+              const act = actionLink(n.type);
+              return (
+                <div
+                  key={n.id}
+                  className={`p-3.5 transition-colors ${
+                    !n.read ? "bg-primary/5" : "hover:bg-muted/30"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="grid h-6 w-6 place-items-center rounded-full bg-muted/80 shrink-0">
+                        {typeIcon(n.type)}
+                      </span>
+                      <div>
+                        <div className="text-xs font-bold text-foreground">{n.title}</div>
+                        <div className="text-[11px] text-muted-foreground font-medium">
+                          {n.leadName} · <span className="text-accent">{n.language}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{n.timestamp}</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground shrink-0">{n.timestamp}</span>
-                </div>
 
-                <p className="mt-1 text-xs text-muted-foreground pl-8">
-                  {n.reason}
-                </p>
+                  <p className="mt-1.5 text-xs text-muted-foreground/90 pl-8 leading-normal">
+                    {n.detail}
+                  </p>
 
-                <div className="mt-2.5 flex justify-end pl-8">
-                  <Link
-                    to="/recruiter/leads"
-                    search={{ scope: "mine" }}
-                    onClick={() => setOpen(false)}
-                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
-                  >
-                    Review lead <ArrowRight className="h-3 w-3" />
-                  </Link>
+                  <div className="mt-2.5 flex justify-end pl-8">
+                    <Link
+                      to={act.to as any}
+                      onClick={() => setOpen(false)}
+                      className="inline-flex items-center gap-1 text-[11px] font-semibold text-accent hover:underline"
+                    >
+                      {act.label} <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
 

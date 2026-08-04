@@ -14,11 +14,15 @@ export interface Lead {
   display_name?: string; // real display name when identity is resolved
   identity_resolved: boolean;
   language: string;
+  source_language?: string;
+  target_language?: string;
+  secondary_languages?: string[];
   services: string[];
   stage: Stage;
   availability: Availability;
   flags: Flag[];
   source: Source;
+  country?: string;
   recruiter_id: string;
   years_experience?: number;
   verified_email: boolean;
@@ -1554,6 +1558,10 @@ const stageListeners = new Set<() => void>();
 function emitStage() {
   stageListeners.forEach((l) => l());
 }
+export function addLead(newLead: Lead) {
+  leads.unshift(newLead);
+}
+
 export function setLeadStage(id: string, s: Stage) {
   stageOverrides[id] = s;
   emitStage();
