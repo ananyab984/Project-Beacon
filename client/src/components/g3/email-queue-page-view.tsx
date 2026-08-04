@@ -4,10 +4,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Sparkles, Send, Trash2, RefreshCw, Save, CircleDot, CheckCircle2, Loader2 } from "lucide-react";
+import { Sparkles, Send, Trash2, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2 } from "lucide-react";
 import { useAiToolsEnabled } from "@/hooks/use-ai-tools";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
+
+export function generateEmailDraft(name: string, language: string = "Linguist") {
+  return `Hi ${name},\n\nI hope this email finds you well.\n\nI'm reaching out from the Resource Management team at Global3. We recently reviewed your profile and believe your expertise would be a strong asset to our current and upcoming project pipelines.\n\nWe are actively looking to connect with talented freelance ${language} linguists who value long-term, meaningful collaboration over one-off tasks.\n\nAt Global3, we pride ourselves on building lasting partnerships with our global network of professionals. You can find more details about our mission and the scope of our work at global3.io.\n\nIf you are open to exploring a partnership, please submit your application through our portal so we can align your profile with relevant opportunities: https://app.global3.io/apply\n\nShould you have any questions before applying, please feel free to reach out to us at resources@global3.io. We're happy to provide more information.\n\nBest regards,\nResources Team`;
+}
+
+export function generateLinkedInDraft(name: string, language: string = "Linguist") {
+  return `Hi ${name},\n\nWe're urgently looking for a freelance Native ${language} to join us at Global3. For more information about our team and services, please visit global3.io.\n\nIf you're interested in this opportunity, you can apply through our application form here: https://app.global3.io/apply`;
+}
 
 export function EmailQueuePageView() {
   const store = useRecruiterStore();
@@ -30,6 +38,15 @@ export function EmailQueuePageView() {
     setTo(e ? mockEmail(e.candidate_name) : "");
     setSaveState("idle");
     setSavedAt(null);
+  }
+
+  function handleGenerateDraft() {
+    if (!selected) return;
+    const generated = generateEmailDraft(selected.candidate_name, selected.candidate_role || "Linguist");
+    setBody(generated);
+    setSubject(`Global3 Outreach · Freelance Partnership (${selected.candidate_name})`);
+    markDirty();
+    toast.success(`Generated official email draft for ${selected.candidate_name}!`);
   }
 
   function markDirty() {
@@ -81,41 +98,46 @@ export function EmailQueuePageView() {
         {selected && (
           <div className="flex h-full flex-col">
             <div className="border-b border-border p-4">
-              <div className="flex items-start justify-between">
+              <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="text-lg font-semibold">{selected.candidate_name}</div>
                   <div className="text-xs text-muted-foreground">{selected.candidate_role}</div>
                   <SaveStatus state={saveState} savedAt={savedAt} />
                 </div>
-                <div className="flex gap-2">
-                  {selected.ai_generated && ai && (
-                    <Button variant="outline" size="sm" onClick={() => toast("Regenerating draft…")}><RefreshCw className="h-3.5 w-3.5" />Regenerate</Button>
-                  )}
-                  <Button variant="outline" size="sm" onClick={saveDraft}><Save className="h-3.5 w-3.5" />Save draft</Button>
-                  <Button variant="ghost" size="sm" className="text-destructive"><Trash2 className="h-3.5 w-3.5" />Discard</Button>
-                  <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => toast.success("Email sent")}><Send className="h-3.5 w-3.5" />Send</Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={handleGenerateDraft}
+                    className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
+                  >
+                    <Wand2 className="h-3.5 w-3.5" /> Generate Draft
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={saveDraft} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
+                  <Button variant="ghost" size="sm" className="h-8 text-xs text-destructive"><Trash2 className="h-3.5 w-3.5" />Discard</Button>
+                  <Button size="sm" className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => toast.success("Email sent")}><Send className="h-3.5 w-3.5" />Send</Button>
                 </div>
               </div>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               <div>
-                <label className="text-[10px] uppercase tracking-widest text-muted-foreground">To</label>
+                <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
                 <Input value={to} onChange={(e) => { setTo(e.target.value); markDirty(); }} placeholder="recipient@example.com" className="mt-1" />
               </div>
               <div>
-                <label className="text-[10px] uppercase tracking-widest text-muted-foreground">Subject</label>
+                <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Subject</label>
                 <Input value={subject} onChange={(e) => { setSubject(e.target.value); markDirty(); }} className="mt-1" />
               </div>
               <div className="flex-1">
-                <label className="text-[10px] uppercase tracking-widest text-muted-foreground">Body</label>
-                <Textarea value={body} onChange={(e) => { setBody(e.target.value); markDirty(); }} className="mt-1 min-h-[320px] font-[13px] leading-relaxed" />
-              </div>
-              {selected.ai_generated && ai && (
-                <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 text-[11px] text-primary/90">
-                  <div className="flex items-center gap-2 font-semibold"><Sparkles className="h-3 w-3" />AI Drafted</div>
-                  <p className="mt-1 text-muted-foreground">Review before sending. Personalization based on candidate profile.</p>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Email Body</label>
+                  <button
+                    onClick={handleGenerateDraft}
+                    className="text-[11px] text-accent hover:underline font-medium flex items-center gap-1"
+                  >
+                    <Wand2 className="h-3 w-3" /> Insert Official Template
+                  </button>
                 </div>
-              )}
+                <Textarea value={body} onChange={(e) => { setBody(e.target.value); markDirty(); }} className="mt-1 min-h-[320px] font-sans text-xs leading-relaxed" />
+              </div>
             </div>
           </div>
         )}

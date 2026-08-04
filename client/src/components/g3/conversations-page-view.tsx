@@ -3,7 +3,9 @@ import { useRecruiterStore } from "@/lib/recruiter-mock";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Send, Linkedin, Instagram, MessageCircle, Phone } from "lucide-react";
+import { Send, Linkedin, Wand2 } from "lucide-react";
+import { generateLinkedInDraft } from "@/components/g3/email-queue-page-view";
+import { toast } from "sonner";
 
 export function ConversationsPageView() {
   const store = useRecruiterStore();
@@ -15,6 +17,13 @@ export function ConversationsPageView() {
     [store.conversations],
   );
   const conv = filtered.find((c) => c.id === id) ?? filtered[0];
+
+  const handleGenerateLinkedInDraft = () => {
+    if (!conv) return;
+    const generated = generateLinkedInDraft(conv.candidate_name, conv.candidate_role || "Linguist");
+    setDraft(generated);
+    toast.success(`Generated official LinkedIn draft for ${conv.candidate_name}!`);
+  };
 
   return (
     <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-7xl flex-col gap-3">
@@ -77,7 +86,16 @@ export function ConversationsPageView() {
                 <div className="text-sm font-semibold">{conv.candidate_name}</div>
                 <div className="text-[11px] text-muted-foreground">{conv.candidate_role}</div>
               </div>
-              <Badge variant="outline" className="gap-1 text-[10px]"><ChannelIcon channel={conv.channel} className="h-3 w-3" />{conv.channel}</Badge>
+              <div className="flex items-center gap-2">
+                <Button
+                  onClick={handleGenerateLinkedInDraft}
+                  size="sm"
+                  className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
+                >
+                  <Wand2 className="h-3.5 w-3.5" /> Generate Draft
+                </Button>
+                <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
+              </div>
             </div>
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
               {conv.messages.map((m, i) => (
@@ -89,10 +107,19 @@ export function ConversationsPageView() {
                 </div>
               ))}
             </div>
-            <div className="border-t border-border p-3">
+            <div className="border-t border-border p-3 space-y-2">
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                <span>Direct Message</span>
+                <button
+                  onClick={handleGenerateLinkedInDraft}
+                  className="text-accent hover:underline font-semibold flex items-center gap-1"
+                >
+                  <Wand2 className="h-3 w-3" /> Auto-fill LinkedIn Template
+                </button>
+              </div>
               <div className="flex items-center gap-2">
-                <Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write a message…" className="flex-1" />
-                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => setDraft("")}><Send className="h-3.5 w-3.5" /></Button>
+                <Input value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Write or generate a LinkedIn message…" className="flex-1 text-xs" />
+                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => { if (draft.trim()) { toast.success("Message dispatched via LinkedIn!"); setDraft(""); } }}><Send className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
           </div>
@@ -101,7 +128,7 @@ export function ConversationsPageView() {
         {/* Candidate context */}
         {conv && (
           <div className="border-l border-border p-4 overflow-y-auto">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Candidate</div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Candidate</div>
             <div className="mt-2 flex items-center gap-3">
               <div className="h-10 w-10 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">{conv.candidate_name[0]}</div>
               <div>
@@ -110,7 +137,7 @@ export function ConversationsPageView() {
               </div>
             </div>
             <div className="mt-4 space-y-2 text-xs">
-              <Row k="Channel" v={conv.channel} />
+              <Row k="Channel" v="LinkedIn" />
               <Row k="Status" v={conv.unread ? "Unread" : "Active"} />
               <Row k="Last activity" v={conv.last_ago} />
             </div>
@@ -123,23 +150,6 @@ export function ConversationsPageView() {
   );
 }
 
-function ChannelTab({ active, onClick, icon: Icon, label, count, comingSoon }: { active: boolean; onClick: () => void; icon: React.ComponentType<{ className?: string }>; label: string; count?: number; comingSoon?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={comingSoon}
-      className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-        active ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground disabled:opacity-60 disabled:hover:text-muted-foreground"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" />
-      <span>{label}</span>
-      {typeof count === "number" && <Badge variant="secondary" className="text-[9px]">{count}</Badge>}
-      {comingSoon && <Badge variant="outline" className="text-[9px]">Soon</Badge>}
-    </button>
-  );
-}
-
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex justify-between border-b border-border/40 pb-1.5">
@@ -147,9 +157,4 @@ function Row({ k, v }: { k: string; v: string }) {
       <span className="font-medium">{v}</span>
     </div>
   );
-}
-
-function ChannelIcon({ channel, className }: { channel: string; className?: string }) {
-  const Icon = channel === "Instagram" ? Instagram : channel === "WhatsApp" ? MessageCircle : channel === "SMS" ? Phone : Linkedin;
-  return <Icon className={className} />;
 }

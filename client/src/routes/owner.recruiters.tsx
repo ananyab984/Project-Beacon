@@ -13,14 +13,14 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RecruiterLanguageMappingDialog } from "@/components/g3/recruiter-language-mapping-dialog";
-import { KpiTile, ScoreRing } from "@/components/g3/kpi";
+import { ScoreRing } from "@/components/g3/kpi";
 import { getEvaluation, type MetricSnapshot } from "@/lib/evaluation";
 import { EvaluationDashboard } from "@/components/g3/evaluation-dashboard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Trash2, UserPlus, ShieldAlert, Clock, Plus, Globe, Check, Users, Calendar } from "lucide-react";
+import { Trash2, UserPlus, ShieldAlert, Clock, Globe, Check, Users, Calendar } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/owner/recruiters")({
@@ -87,7 +87,7 @@ function RecruitersPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
-      {/* Header bar (Clean, description text removed) */}
+      {/* Header bar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Recruiter Roster</div>
@@ -155,7 +155,7 @@ function RecruitersPage() {
       {/* Recruiter Language Mapping Modal */}
       <RecruiterLanguageMappingDialog open={showMappingModal} onOpenChange={setShowMappingModal} />
 
-      {/* Add Recruiter Onboarding Flow Modal (Clean, extra descriptions removed) */}
+      {/* Add Recruiter Onboarding Flow Modal */}
       <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
         <DialogContent className="max-w-md">
           <DialogHeader>
@@ -250,14 +250,11 @@ function RecruitersPage() {
               <SheetHeader className="pb-4 border-b border-border">
                 <SheetTitle className="flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <div
-                        className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
-                        style={{ background: `oklch(0.55 0.16 ${active.avatar_hue})` }}
-                      >
-                        {active.name.charAt(0)}
-                      </div>
-                      <StatusDot status={active.status} />
+                    <div
+                      className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
+                      style={{ background: `oklch(0.55 0.16 ${active.avatar_hue})` }}
+                    >
+                      {active.name.charAt(0)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2 text-lg font-bold">
@@ -369,11 +366,10 @@ function CleanRecruiterCard({
     "bg-primary/15 text-primary border-primary/30";
 
   const activityMetrics = ev.metrics.filter((m: MetricSnapshot) => m.def.group === "Activity & Effort");
-  const responsivenessMetrics = ev.metrics.filter((m: MetricSnapshot) => m.def.group === "Responsiveness");
 
   const outreachVolume = activityMetrics.find((m: MetricSnapshot) => m.def.id === "outreach_volume");
-  const slaAdherence = responsivenessMetrics.find((m: MetricSnapshot) => m.def.id === "sla_adherence");
   const proactiveSourcing = activityMetrics.find((m: MetricSnapshot) => m.def.id === "proactive_sourcing");
+  const timeToFirstTouch = activityMetrics.find((m: MetricSnapshot) => m.def.id === "time_to_first_touch");
 
   // Language mapping logic
   const myMapping = mappings.find((m) => m.recruiter_id === r.id);
@@ -390,17 +386,14 @@ function CleanRecruiterCard({
   return (
     <div className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 space-y-3.5 transition-all hover:border-accent/40 hover:shadow-lg">
       <div className="space-y-3.5">
-        {/* Header: Avatar + Status Dot + Name + Right Corner Language Popover & Trash Icon */}
+        {/* Header: Avatar + Name + Right Corner Language Popover & Trash Icon (Green/Yellow/Red dots removed) */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 cursor-pointer" onClick={onOpen}>
-            <div className="relative">
-              <div
-                className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white shrink-0 shadow-xs"
-                style={{ background: `oklch(0.55 0.16 ${r.avatar_hue})` }}
-              >
-                {r.name.charAt(0)}
-              </div>
-              <StatusDot status={r.status} />
+            <div
+              className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white shrink-0 shadow-xs"
+              style={{ background: `oklch(0.55 0.16 ${r.avatar_hue})` }}
+            >
+              {r.name.charAt(0)}
             </div>
             <div>
               <div className="font-bold text-base text-foreground">
@@ -488,9 +481,9 @@ function CleanRecruiterCard({
           </div>
 
           <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
-            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">SLA Adh.</div>
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">1st Touch</div>
             <div className="text-base font-bold tabular-nums text-accent">
-              {slaAdherence?.current ?? r.kpis.sla_adherence}%
+              {timeToFirstTouch?.current ?? "1.0"}d
             </div>
           </div>
 
@@ -520,19 +513,5 @@ function CleanRecruiterCard({
         </button>
       )}
     </div>
-  );
-}
-
-function StatusDot({ status }: { status: Recruiter["status"] }) {
-  const dotColor =
-    status === "healthy" ? "bg-emerald-500 ring-emerald-500/30" :
-    status === "attention" ? "bg-amber-500 ring-amber-500/30" :
-    "bg-rose-500 ring-rose-500/30";
-
-  return (
-    <span
-      className={`absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full ${dotColor} ring-2 ring-background`}
-      title={`Status: ${status}`}
-    />
   );
 }

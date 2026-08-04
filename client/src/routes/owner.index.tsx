@@ -9,7 +9,6 @@ import {
   teamKpis,
 } from "@/lib/g3-mock";
 import { FEATURES } from "@/lib/feature-flags";
-import { Badge } from "@/components/ui/badge";
 import {
   Radio,
   Mail,
@@ -55,15 +54,6 @@ function Overview() {
         </div>
       </section>
 
-      {/* Date Range Control Bar — Positioned BELOW Good Morning Ethan block (TIME HORIZON label removed) */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-1">
-        <DateRangeSelect />
-
-        <span className="text-xs font-medium text-muted-foreground bg-card border border-border/70 rounded-lg px-3 py-1.5">
-          Active Filter: <strong className="text-foreground">{rangeLabel}</strong>
-        </span>
-      </div>
-
       {/* Data Health — AI/enrichment surface */}
       {FEATURES.ai && (
         <section className="rounded-2xl border border-border bg-card p-5">
@@ -101,17 +91,21 @@ function Overview() {
         </section>
       )}
 
-      {/* Live outreach — 5 discrete blocks */}
+      {/* Live outreach — 5 discrete blocks with DateRangeSelect aligned to the right */}
       <section>
-        <div className="mb-2.5 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-accent">
               <Radio className="h-3 w-3" /> Live outreach
             </div>
             <div className="mt-0.5 text-sm font-semibold">Current batch</div>
           </div>
-          <span className="text-[11px] text-muted-foreground">updates every 60s</span>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-muted-foreground hidden sm:inline">updates every 60s</span>
+            <DateRangeSelect />
+          </div>
         </div>
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <OutreachBlock
             icon={Mail}
@@ -169,7 +163,7 @@ function Overview() {
         </div>
       </section>
 
-      {/* Escalations — View all button removed as requested */}
+      {/* Escalations */}
       <section className="rounded-2xl border border-border bg-card">
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">
           <div className="flex items-center gap-2">

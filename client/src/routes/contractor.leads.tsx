@@ -148,7 +148,7 @@ function MyLeadsPage() {
             <thead className="sticky top-0 z-10 bg-muted/80 text-left text-[11px] uppercase tracking-wide text-muted-foreground backdrop-blur">
               <tr>
                 <SortableTh label="Lead" k="lead" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <th className="px-4 py-3 font-semibold text-foreground">Lead Enrichment Status</th>
+                <th className="px-4 py-3 font-semibold text-foreground">ENRICHMENT STATUS</th>
                 <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <SortableTh label="Source" k="source" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <th className="px-4 py-3">Contact</th>
@@ -181,13 +181,13 @@ function MyLeadsPage() {
                             language: l.target_language || l.source_language || "Spanish (LatAm)",
                             services: l.services ?? ["Subtitling"],
                           })}
-                          className="inline-flex items-center gap-1 rounded-md bg-warning/15 px-2.5 py-0.5 text-[11px] font-semibold text-warning border border-warning/30 hover:bg-warning/25 transition-colors cursor-pointer"
+                          className="font-semibold text-xs text-warning hover:underline cursor-pointer"
                         >
-                          🟡 On Hold
+                          On Hold
                         </button>
                       ) : (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-accent/15 px-2 py-0.5 text-[11px] font-semibold text-accent border border-accent/30">
-                          🟢 Enriched
+                        <span className="font-semibold text-xs text-emerald-400">
+                          Enriched
                         </span>
                       )}
                     </td>

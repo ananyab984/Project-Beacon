@@ -10,11 +10,9 @@ import { ScoreRing } from "@/components/g3/kpi";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const GROUP_BLURB: Record<MetricGroup, string> = {
-  "Activity & Effort": "Volume and persistence of recruiter-initiated work.",
-  "Responsiveness": "How fast leads get a first and an urgent reply.",
-  "Ownership & Follow-through": "Whether leads move forward and get properly closed.",
-  "Outcome Metrics": "Watched, not weighted — these depend heavily on candidate decisions.",
-  "Additional Business Metrics": "Nice-to-have manual effort tracked alongside the scored core.",
+  "Activity & Effort": "Volume, persistence, and promptness of recruiter-initiated work.",
+  "Ownership & Follow-through": "Whether leads move forward and get properly logged.",
+  "Outcome Metrics": "Watched, not weighted — candidate conversions and business outputs.",
 };
 
 function statusChip(status: MetricSnapshot["status"]) {
