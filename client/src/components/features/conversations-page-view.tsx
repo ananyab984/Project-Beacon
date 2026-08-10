@@ -1,20 +1,20 @@
 import { useMemo, useState } from "react";
-import { useRecruiterStore } from "@/lib/recruiter-mock";
+import { useEmailQueueStore } from "@/stores/useEmailQueueStore";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Send, Linkedin, Wand2 } from "lucide-react";
-import { generateLinkedInDraft } from "@/components/g3/email-queue-page-view";
+import { generateLinkedInDraft } from "@/components/features/email-queue-page-view";
 import { toast } from "sonner";
 
 export function ConversationsPageView() {
-  const store = useRecruiterStore();
+  const { conversations, addConversationMessage } = useEmailQueueStore();
   const [id, setId] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
 
   const filtered = useMemo(
-    () => store.conversations.filter((c) => c.channel === "LinkedIn" || true).map(c => ({ ...c, channel: "LinkedIn" as const })),
-    [store.conversations],
+    () => conversations.filter((c) => c.channel === "LinkedIn" || true).map(c => ({ ...c, channel: "LinkedIn" as const })),
+    [conversations],
   );
   const conv = filtered.find((c) => c.id === id) ?? filtered[0];
 
@@ -129,7 +129,7 @@ export function ConversationsPageView() {
                   placeholder="Click 'Generate Draft' button above to generate LinkedIn message..."
                   className="flex-1 text-xs"
                 />
-                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => { if (draft.trim()) { toast.success("Message dispatched via LinkedIn!"); setDraft(""); } }}><Send className="h-3.5 w-3.5" /></Button>
+                <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => { if (draft.trim() && conv) { addConversationMessage(conv.id, draft.trim()); toast.success("Message dispatched via LinkedIn!"); setDraft(""); } }}><Send className="h-3.5 w-3.5" /></Button>
               </div>
             </div>
           </div>

@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { AuthShell } from "@/components/g3/auth-shell";
+import { AuthShell } from "@/components/features/auth-shell";
 import { Button } from "@/components/ui/button";
 import { useAuth, roleHome } from "@/lib/auth";
 

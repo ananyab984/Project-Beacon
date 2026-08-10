@@ -1,15 +1,10 @@
-import { escalations, recruiterById } from "@/lib/g3-mock";
+import { getCombinedEscalations, recruiterById, useRequirements } from "@/lib/g3-mock";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Bell } from "lucide-react";
-import { useState } from "react";
+import { Bell, Clock } from "lucide-react";
+import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-
-const priorityRank = { P1: 0, P2: 1, P3: 2 } as const;
-const sortedEscalations = [...escalations].sort(
-  (a, b) => priorityRank[a.priority] - priorityRank[b.priority] || b.age_days - a.age_days,
-);
 
 function priorityStyle(p: "P1" | "P2" | "P3") {
   return p === "P1"
@@ -21,6 +16,8 @@ function priorityStyle(p: "P1" | "P2" | "P3") {
 
 export function EscalationsBell() {
   const [openId, setOpenId] = useState<string | null>(null);
+  const reqs = useRequirements();
+  const sortedEscalations = useMemo(() => getCombinedEscalations(), [reqs]);
   const active = sortedEscalations.find((e) => e.id === openId) ?? null;
   const p1Count = sortedEscalations.filter((e) => e.priority === "P1").length;
 

@@ -1,4 +1,4 @@
-import { G3Logo } from "@/components/g3/logo";
+import { G3Logo } from "@/components/features/logo";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import { useNavigate } from "@tanstack/react-router";

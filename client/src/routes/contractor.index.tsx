@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { myContractorLeads, useRecruiterStore } from "@/lib/recruiter-mock";
 import { ArrowUpRight, Mail, UserPlus, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
 import { outreachBatch, useClientDemands } from "@/lib/g3-mock";
-import { DateRangeToggle, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
+import { DateRangeToggle, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/contractor/")({

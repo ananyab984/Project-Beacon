@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { AuthShell } from "@/components/g3/auth-shell";
+import { AuthShell } from "@/components/features/auth-shell";
 import { Button } from "@/components/ui/button";
 import { useAuth, roleHome } from "@/lib/auth";
 

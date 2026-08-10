@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { PerformancePageView } from "@/components/g3/performance-page-view";
+import { PerformancePageView } from "@/components/features/performance-page-view";
 import { CURRENT_CONTRACTOR_ID } from "@/lib/recruiter-mock";
 
 export const Route = createFileRoute("/contractor/performance")({

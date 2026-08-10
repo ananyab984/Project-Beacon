@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useRecruiterStore } from "@/lib/recruiter-mock";
+import { useEmailQueueStore } from "@/stores/useEmailQueueStore";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,9 +18,9 @@ export function generateLinkedInDraft(name: string, language: string = "Linguist
 }
 
 export function EmailQueuePageView() {
-  const store = useRecruiterStore();
-  const [selectedId, setSelectedId] = useState(store.emailQueue[0]?.id);
-  const selected = store.emailQueue.find((e) => e.id === selectedId) ?? store.emailQueue[0];
+  const { emailQueue, updateDraft, approveAndSendDraft } = useEmailQueueStore();
+  const [selectedId, setSelectedId] = useState(emailQueue[0]?.id);
+  const selected = emailQueue.find((e) => e.id === selectedId) ?? emailQueue[0];
   const [aiPref] = useAiToolsEnabled();
   const ai = FEATURES.ai && aiPref;
   const [body, setBody] = useState("");
@@ -32,8 +32,8 @@ export function EmailQueuePageView() {
 
   function pick(id: string) {
     setSelectedId(id);
-    const e = store.emailQueue.find((x) => x.id === id);
-    setBody("");
+    const e = emailQueue.find((x) => x.id === id);
+    setBody(e?.body || "");
     setSubject(e ? `Global3 Outreach · Freelance Partnership (${e.candidate_name})` : "");
     setTo(e ? mockEmail(e.candidate_name) : "");
     setSaveState("idle");
@@ -71,12 +71,12 @@ export function EmailQueuePageView() {
         <div className="border-r border-border">
           <div className="border-b border-border p-3">
             <div className="flex items-center justify-between">
-              <div className="text-sm font-semibold">Queue <span className="text-muted-foreground font-normal">({store.emailQueue.length})</span></div>
+              <div className="text-sm font-semibold">Queue <span className="text-muted-foreground font-normal">({emailQueue.length})</span></div>
               <Badge variant="outline" className="text-[10px]">All Statuses</Badge>
             </div>
           </div>
           <div className="divide-y divide-border overflow-y-auto">
-            {store.emailQueue.map((e) => (
+            {emailQueue.map((e) => (
               <button key={e.id} onClick={() => pick(e.id)} className={`block w-full p-3 text-left transition-colors ${selected?.id === e.id ? "bg-muted/60" : "hover:bg-muted/30"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">

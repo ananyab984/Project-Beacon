@@ -5,6 +5,7 @@ import {
   useRecruiterLanguageMappings,
   useRecruiters,
   assignRequirementRecruiter,
+  updateRequirementDeadline,
   leads,
   type Requirement,
 } from "@/lib/g3-mock";
@@ -21,13 +22,14 @@ import {
   ChevronRight,
   History,
   UserCheck,
+  AlertTriangle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
-import { ClientLogo } from "@/components/g3/client-logo";
-import { LeadCard } from "@/components/g3/lead-card";
-import { RecruiterLanguageMappingDialog } from "@/components/g3/recruiter-language-mapping-dialog";
-import { openClientDemand } from "@/components/g3/client-demand-dialog";
+import { ClientLogo } from "@/components/features/client-logo";
+import { LeadCard } from "@/components/features/lead-card";
+import { RecruiterLanguageMappingDialog } from "@/components/features/recruiter-language-mapping-dialog";
+import { openClientDemand } from "@/components/features/client-demand-dialog";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/owner/clients")({
@@ -178,6 +180,7 @@ function ClientsPage() {
               <th className="px-5 py-3 font-medium">Language — Service</th>
               <th className="px-5 py-3 font-medium">Assigned Recruiter</th>
               <th className="px-5 py-3 font-medium">Priority</th>
+              <th className="px-5 py-3 font-medium">Due Date &amp; Risk Alert</th>
               <th className="px-5 py-3 font-medium text-right">Needed</th>
               <th className="px-5 py-3 font-medium text-right">Filled</th>
               <th className="px-5 py-3 font-medium text-right">Gap</th>
@@ -280,6 +283,62 @@ function ClientsPage() {
                   {/* Priority */}
                   <td className="px-5 py-3.5">
                     <PriorityPill priority={req.priority} />
+                  </td>
+
+                  {/* Due Date & Auto-Alert Column */}
+                  <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                    {req.deadline ? (() => {
+                      const today = new Date("2026-08-10T00:00:00Z");
+                      const dlDate = new Date(`${req.deadline}T00:00:00Z`);
+                      const daysLeft = Math.ceil((dlDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                      const isAtRisk = req.gap > 0 && daysLeft <= 14;
+                      const confirmedStr = req.filled === 0
+                        ? `0 ${req.language} resources confirmed`
+                        : `only ${req.filled} of ${req.headcount_needed} ${req.language} confirmed`;
+                      const riskReason = `${client?.name ?? "Client"} due in ${daysLeft} days, ${confirmedStr}`;
+
+                      return (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5">
+                            <Input
+                              type="date"
+                              value={req.deadline}
+                              onChange={(e) => {
+                                updateRequirementDeadline(req.id, e.target.value);
+                                toast.success(`Updated target due date for ${req.title}`);
+                              }}
+                              className="h-7 w-32 text-[11px] bg-card border-border/80 px-1.5"
+                            />
+                            {isAtRisk && (
+                              <span
+                                title={riskReason}
+                                className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold shrink-0 ${
+                                  daysLeft <= 3 ? "bg-destructive/15 text-destructive border border-destructive/30" : "bg-warning/15 text-warning border border-warning/30"
+                                }`}
+                              >
+                                <Clock className="h-3 w-3" /> {daysLeft <= 0 ? "Due today" : `${daysLeft}d left`}
+                              </span>
+                            )}
+                          </div>
+                          {isAtRisk && (
+                            <div className="text-[10px] text-destructive font-medium leading-tight max-w-[210px] truncate" title={riskReason}>
+                              ⚠️ {riskReason}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })() : (
+                      <Input
+                        type="date"
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            updateRequirementDeadline(req.id, e.target.value);
+                            toast.success(`Set target due date for ${req.title}`);
+                          }
+                        }}
+                        className="h-7 w-32 text-[11px] bg-card border-border/80 px-1.5 text-muted-foreground"
+                      />
+                    )}
                   </td>
 
                   {/* Headcount metrics */}

@@ -1,6 +1,6 @@
 // Mock data for Global3 owner dashboard.
 // Data model: Client (org) → Requirements (independent assignable units) → Recruiter (manual assignment).
-import { useSyncExternalStore } from "react";
+import { useSyncExternalStore, useMemo } from "react";
 
 export type Stage = "New" | "Contacted" | "Replied" | "Negotiating" | "Invite Sent" | "Onboarded" | "Cold";
 
@@ -161,6 +161,28 @@ export interface Escalation {
   impact?: string; // short business-impact line
   recruiter_id?: string;
   lead_id?: string;
+  client_id?: string;
+  due_date?: string;
+}
+
+export interface ClientDueDateAlert {
+  id: string;
+  client_id: string;
+  client_name: string;
+  requirement_id: string;
+  requirement_title: string;
+  language: string;
+  service: string;
+  recruiter_id?: string;
+  due_date: string;
+  days_remaining: number;
+  headcount_needed: number;
+  filled: number;
+  gap: number;
+  priority: "P1" | "P2" | "P3";
+  risk_reason: string;
+  detail: string;
+  recommended_action: string;
 }
 
 export const recruiters: Recruiter[] = [
@@ -587,6 +609,8 @@ const _clientDemands: ClientDemand[] = [
   },
 ];
 
+export const initialClientDemands = _clientDemands;
+
 let _clientDemandsSnapshot: ClientDemand[] = [..._clientDemands];
 
 const _cdListeners = new Set<() => void>();
@@ -618,9 +642,46 @@ export function incrementLanguageFilled(language: string, service?: string): voi
 
 /** Add a manually-entered client demand entry. */
 export function addClientDemand(entry: Omit<ClientDemand, "id">): void {
-  const id = `cd${Date.now()}`;
-  _clientDemands.push({ ...entry, id });
+  const id = `cd_${Date.now()}`;
+  const newDemand: ClientDemand = { ...entry, id };
+  _clientDemands.unshift(newDemand);
   _emitCd();
+
+  // Ensure client exists in _clients list so it displays everywhere
+  let clientObj: Client | undefined = _clients.find((c) => c.name.toLowerCase() === entry.client.trim().toLowerCase());
+  if (!clientObj) {
+    clientObj = {
+      id: `cl_${Date.now()}`,
+      name: entry.client.trim(),
+      contact_name: entry.contact_name,
+      contact_email: entry.contact_email,
+    };
+    _clients.push(clientObj);
+    _emitClients();
+  }
+
+  // Auto-generate requirement record to trigger client due date risk alerts
+  const primaryService = entry.services?.[0] || "Subtitling";
+  const primaryLanguage = entry.language?.split(",")?.[0]?.trim() || "Tamil";
+  const reqId = `req_${Date.now()}`;
+  _requirements.unshift({
+    id: reqId,
+    client_id: clientObj?.id || `cl_${Date.now()}`,
+    title: `${primaryLanguage} ${primaryService}`,
+    language: primaryLanguage,
+    service: primaryService,
+    project_name: entry.project_name || "Client Requisition",
+    headcount_needed: entry.headcount_needed || 6,
+    filled: entry.filled || 0,
+    gap: entry.gap ?? Math.max(0, (entry.headcount_needed || 6) - (entry.filled || 0)),
+    priority: entry.priority || "critical",
+    status: entry.recruiter_id ? "active" : "unassigned",
+    recruiter_id: entry.recruiter_id,
+    assignment_history: [],
+    deadline: entry.deadline || "2026-08-16",
+    created_at: new Date().toISOString(),
+  });
+  _emitReq();
 }
 
 /** Upsert a row that came from a Google Sheet (dedup by sheet_row_id). */
@@ -785,7 +846,7 @@ const _requirements: Requirement[] = [
     headcount_needed: 6, filled: 0, gap: 6,
     priority: "critical", status: "unassigned", recruiter_id: undefined,
     assignment_history: [],
-    deadline: "2026-09-30", created_at: "2026-07-01T09:00:00Z",
+    deadline: "2026-08-13", created_at: "2026-07-01T09:00:00Z",
   },
   {
     id: "req2", client_id: "cl1", title: "French Translation",
@@ -856,7 +917,7 @@ const _requirements: Requirement[] = [
     assignment_history: [
       { recruiter_id: "r2", assigned_at: "2026-07-10T09:00:00Z", assigned_by: "Sundar" },
     ],
-    deadline: "2026-08-31", created_at: "2026-07-01T09:00:00Z",
+    deadline: "2026-08-18", created_at: "2026-07-01T09:00:00Z",
   },
   {
     id: "req9", client_id: "cl3", title: "Arabic Subtitling",
@@ -864,7 +925,7 @@ const _requirements: Requirement[] = [
     headcount_needed: 5, filled: 1, gap: 4,
     priority: "critical", status: "unassigned", recruiter_id: undefined,
     assignment_history: [],
-    deadline: "2026-08-31", created_at: "2026-07-05T09:00:00Z",
+    deadline: "2026-08-22", created_at: "2026-07-05T09:00:00Z",
   },
   {
     id: "req10", client_id: "cl3", title: "Italian Audio Description",
@@ -925,7 +986,7 @@ const _requirements: Requirement[] = [
     headcount_needed: 8, filled: 2, gap: 6,
     priority: "high", status: "unassigned", recruiter_id: undefined,
     assignment_history: [],
-    deadline: "2026-10-30", created_at: "2026-07-25T09:00:00Z",
+    deadline: "2026-08-16", created_at: "2026-07-25T09:00:00Z",
   },
   {
     id: "req16", client_id: "cl6", title: "Telugu Voice Over",
@@ -1002,6 +1063,112 @@ export function updateRequirement(requirementId: string, patch: Partial<Requirem
     _requirements[idx] = { ..._requirements[idx], ...patch };
     _emitReq();
   }
+}
+
+export function updateRequirementDeadline(requirementId: string, deadline: string): void {
+  const idx = _requirements.findIndex((r) => r.id === requirementId);
+  if (idx >= 0) {
+    _requirements[idx] = { ..._requirements[idx], deadline };
+    _emitReq();
+  }
+}
+
+/** Auto-generates Client Due Date & Risk Alerts based on client records, deadlines, and confirmed resources. */
+export function getAutoGeneratedDueDateAlerts(): ClientDueDateAlert[] {
+  const today = new Date("2026-08-10T00:00:00Z");
+  const alerts: ClientDueDateAlert[] = [];
+
+  for (const req of _requirements) {
+    if (req.status === "fulfilled" || req.gap <= 0 || !req.deadline) continue;
+
+    const client = _clients.find((c) => c.id === req.client_id);
+    const clientName = client?.name ?? "Client";
+    const deadlineDate = new Date(`${req.deadline}T00:00:00Z`);
+    const diffTime = deadlineDate.getTime() - today.getTime();
+    const daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    if (daysRemaining > 30) continue;
+
+    let priority: "P1" | "P2" | "P3" = "P3";
+    if (daysRemaining <= 3 || (daysRemaining <= 5 && req.filled === 0)) {
+      priority = "P1";
+    } else if (daysRemaining <= 7 || (daysRemaining <= 10 && req.filled / req.headcount_needed < 0.5)) {
+      priority = "P2";
+    }
+
+    const timeStr =
+      daysRemaining < 0
+        ? `overdue by ${Math.abs(daysRemaining)} day${Math.abs(daysRemaining) === 1 ? "" : "s"}`
+        : daysRemaining === 0
+        ? "due today"
+        : `due in ${daysRemaining} day${daysRemaining === 1 ? "" : "s"}`;
+
+    const confirmedStr =
+      req.filled === 0
+        ? `0 ${req.language} resources confirmed`
+        : `only ${req.filled} of ${req.headcount_needed} ${req.language} resources confirmed`;
+
+    const risk_reason = `${clientName} ${timeStr}, ${confirmedStr}`;
+
+    alerts.push({
+      id: `alert_due_${req.id}`,
+      client_id: req.client_id,
+      client_name: clientName,
+      requirement_id: req.id,
+      requirement_title: req.title,
+      language: req.language,
+      service: req.service,
+      recruiter_id: req.recruiter_id,
+      due_date: req.deadline,
+      days_remaining: daysRemaining,
+      headcount_needed: req.headcount_needed,
+      filled: req.filled,
+      gap: req.gap,
+      priority,
+      risk_reason,
+      detail: `Target due date is ${req.deadline}. ${req.filled} of ${req.headcount_needed} ${req.language} ${req.service} positions confirmed (${req.gap} seat(s) remaining).`,
+      recommended_action: req.recruiter_id
+        ? `Expedite candidate outreach for ${req.language} ${req.service}.`
+        : `Assign recruiter to ${clientName} ${req.language} demand immediately.`,
+    });
+  }
+
+  const pRank = { P1: 0, P2: 1, P3: 2 };
+  return alerts.sort((a, b) => pRank[a.priority] - pRank[b.priority] || a.days_remaining - b.days_remaining);
+}
+
+export function useClientDueDateAlerts(recruiterId?: string): ClientDueDateAlert[] {
+  const reqs = useRequirements();
+  return useMemo(() => {
+    const all = getAutoGeneratedDueDateAlerts();
+    return recruiterId ? all.filter((a) => a.recruiter_id === recruiterId) : all;
+  }, [reqs, recruiterId]);
+}
+
+export function getCombinedEscalations(): Escalation[] {
+  const dueAlerts = getAutoGeneratedDueDateAlerts();
+  const autoEscalations: Escalation[] = dueAlerts.map((a) => {
+    const rec = a.recruiter_id ? recruiterById(a.recruiter_id) : undefined;
+    return {
+      id: a.id,
+      priority: a.priority,
+      status: "Open",
+      category: "Client Risk",
+      owner: rec ? rec.name : "Unassigned",
+      title: a.risk_reason,
+      detail: a.detail,
+      recommended_action: a.recommended_action,
+      age_days: Math.max(1, 14 - a.days_remaining),
+      impact: `${a.gap} unfilled ${a.language} seat(s) at risk before client due date (${a.due_date})`,
+      recruiter_id: a.recruiter_id,
+      client_id: a.client_id,
+      due_date: a.due_date,
+    };
+  });
+
+  const all = [...autoEscalations, ...escalations];
+  const priorityRank = { P1: 0, P2: 1, P3: 2 } as const;
+  return all.sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || a.age_days - b.age_days);
 }
 
 /** Convert any Google Sheet URL to a direct CSV export link. */

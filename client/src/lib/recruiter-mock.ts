@@ -259,6 +259,8 @@ const store: Store = {
   ],
 };
 
+export const initialRecruiterStore: Store = store;
+
 const listeners = new Set<() => void>();
 function emit() { listeners.forEach((l) => l()); }
 function subscribe(l: () => void) { listeners.add(l); return () => { listeners.delete(l); }; }

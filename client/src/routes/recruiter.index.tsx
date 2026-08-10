@@ -1,8 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useRecruiterStore, myLeads, leadsOnboardedCount, leadsOffboardedCount } from "@/lib/recruiter-mock";
-import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
-import { outreachBatch, useClientDemands } from "@/lib/g3-mock";
-import { DateRangeSelect, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
+import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle, Clock } from "lucide-react";
+import { outreachBatch, useClientDemands, useClientDueDateAlerts } from "@/lib/g3-mock";
+import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/recruiter/")({
@@ -13,6 +13,7 @@ export const Route = createFileRoute("/recruiter/")({
 function DashboardPage() {
   const store = useRecruiterStore();
   const mine = myLeads();
+  const dueAlerts = useClientDueDateAlerts();
   const { scale, label: rangeLabel } = useDateRange();
 
   const activities = mine.slice(0, 6).map((l) => ({
@@ -45,6 +46,40 @@ function DashboardPage() {
           <BatchTile icon={ShieldOff} label="DNC" value={scaleValue(outreachBatch.dnc, scale)} tone="destructive" />
         </div>
       </section>
+
+      {/* Compact Client Due Date Alerts Summary (Full list in Notifications Tab) */}
+      {dueAlerts.length > 0 && (
+        <section className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="grid h-7 w-7 place-items-center rounded-lg bg-destructive/15 text-destructive font-bold shrink-0">
+                <AlertTriangle className="h-4 w-4" />
+              </div>
+              <div className="flex items-center gap-2 flex-wrap text-xs">
+                <span className="font-bold text-destructive uppercase tracking-wider text-[10px]">Client Due Date Risk:</span>
+                <span className="font-semibold text-foreground">{dueAlerts[0].risk_reason}</span>
+                <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive flex items-center gap-1">
+                  <Clock className="h-3 w-3" /> Due in {dueAlerts[0].days_remaining}d
+                </span>
+                {dueAlerts.length > 1 && (
+                  <span className="text-muted-foreground text-[11px]">
+                    (+{dueAlerts.length - 1} more in Notifications)
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">Check Notifications Tab for complete list</span>
+              <Link
+                to="/recruiter/clients"
+                className="text-xs font-semibold text-destructive hover:underline flex items-center gap-1 shrink-0"
+              >
+                View Client Demands <ArrowUpRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Recruiter Notifications for On Hold Leads */}
       <section className="rounded-2xl border border-warning/40 bg-warning/5 p-5 shadow-sm">

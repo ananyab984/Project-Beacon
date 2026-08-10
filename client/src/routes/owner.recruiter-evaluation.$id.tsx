@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { recruiters } from "@/lib/g3-mock";
-import { EvaluationDashboard } from "@/components/g3/evaluation-dashboard";
+import { EvaluationDashboard } from "@/components/features/evaluation-dashboard";
 
 export const Route = createFileRoute("/owner/recruiter-evaluation/$id")({
   head: () => ({

@@ -1,4 +1,4 @@
-import { G3Logo } from "@/components/g3/logo";
+import { G3Logo } from "@/components/features/logo";
 import type { ReactNode } from "react";
 
 export function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle?: string; children: ReactNode; footer?: ReactNode }) {

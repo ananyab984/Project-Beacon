@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, AlertTriangle } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/g3/manual-enrichment-dialog";
+import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 
 export const Route = createFileRoute("/owner/leads")({
   head: () => ({

@@ -1,6 +1,6 @@
 import { CURRENT_RECRUITER_ID, useRecruiterStore } from "@/lib/recruiter-mock";
-import { KpiTile } from "@/components/g3/kpi";
-import { EvaluationDashboard } from "@/components/g3/evaluation-dashboard";
+import { KpiTile } from "@/components/features/kpi";
+import { EvaluationDashboard } from "@/components/features/evaluation-dashboard";
 import { useAuth } from "@/lib/auth";
 
 export function PerformancePageView({

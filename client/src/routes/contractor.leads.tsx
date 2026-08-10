@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUpDown, AlertTriangle } from "lucide-react";
-import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/g3/manual-enrichment-dialog";
+import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 
 export const Route = createFileRoute("/contractor/leads")({
   head: () => ({

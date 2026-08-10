@@ -4,7 +4,8 @@ import {
   useClientDemands,
   outreachBatch,
   profileCompleteness,
-  escalations,
+  getCombinedEscalations,
+  useRequirements,
   recruiterById,
   teamKpis,
 } from "@/lib/g3-mock";
@@ -19,9 +20,11 @@ import {
   AlertOctagon,
   ShieldOff,
   Gauge,
+  AlertTriangle,
 } from "lucide-react";
-import { KpiTile, ScoreRing } from "@/components/g3/kpi";
-import { DateRangeSelect, useDateRange, scaleValue } from "@/components/g3/date-range-toggle";
+import { KpiTile, ScoreRing } from "@/components/features/kpi";
+import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
+import { useMemo } from "react";
 
 export const Route = createFileRoute("/owner/")({
   head: () => ({
@@ -39,6 +42,8 @@ export const Route = createFileRoute("/owner/")({
 function Overview() {
   const team = teamKpis();
   const clientDemands = useClientDemands();
+  const reqs = useRequirements();
+  const escalationsList = useMemo(() => getCombinedEscalations(), [reqs]);
   const { scale, label: rangeLabel } = useDateRange();
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -48,7 +53,7 @@ function Overview() {
           <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Owner overview</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Good morning, Ethan.</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {escalations.length} items need your attention across {recruiters.length} recruiters and{" "}
+            {escalationsList.length} items need your attention across {recruiters.length} recruiters and{" "}
             {clientDemands.length} active language demands.
           </p>
         </div>
@@ -163,74 +168,56 @@ function Overview() {
         </div>
       </section>
 
-      {/* Escalations */}
-      <section className="rounded-2xl border border-border bg-card">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+      {/* Compact Escalations & Risk Summary (Full list in Notifications Bell) */}
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between pb-3 border-b border-border">
           <div className="flex items-center gap-2">
             <span className="grid h-6 w-6 place-items-center rounded-md bg-warning/15 text-warning">
               <AlertOctagon className="h-3.5 w-3.5" />
             </span>
-            <div className="text-sm font-semibold">Escalated items</div>
+            <div className="text-sm font-semibold">Escalated Items & Client Due Date Risks</div>
             <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
-              {escalations.length}
+              {escalationsList.length}
             </span>
           </div>
+          <span className="text-xs text-muted-foreground font-medium">Check Notifications Bell for complete list</span>
         </div>
-        <ul className="divide-y divide-border">
-          {[...escalations]
-            .sort((a, b) => a.priority.localeCompare(b.priority))
-            .map((e) => {
-              const rec = e.recruiter_id ? recruiterById(e.recruiter_id) : undefined;
-              const priorityStyle =
-                e.priority === "P1"
-                  ? "border-destructive/50 bg-destructive/10 text-destructive"
-                  : e.priority === "P2"
-                    ? "border-warning/50 bg-warning/10 text-warning"
-                    : "border-accent/40 bg-accent/10 text-accent";
-              const statusStyle =
-                e.status === "Open"
-                  ? "bg-destructive/15 text-destructive"
-                  : e.status === "In Progress"
-                    ? "bg-warning/15 text-warning"
-                    : "bg-muted text-muted-foreground";
+        <ul className="divide-y divide-border/60">
+          {escalationsList.slice(0, 2).map((e) => {
+            const rec = e.recruiter_id ? recruiterById(e.recruiter_id) : undefined;
+            const isClientRisk = e.category === "Client Risk";
+            const priorityStyle =
+              e.priority === "P1"
+                ? "border-destructive/50 bg-destructive/10 text-destructive"
+                : e.priority === "P2"
+                  ? "border-warning/50 bg-warning/10 text-warning"
+                  : "border-accent/40 bg-accent/10 text-accent";
 
-              return (
-                <li key={e.id} className="p-4 transition-colors hover:bg-muted/20">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${priorityStyle}`}>
-                          {e.priority}
-                        </span>
-                        <span className="text-xs font-semibold text-foreground">{e.title}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${statusStyle}`}>
-                          {e.status}
-                        </span>
-                      </div>
-                      <p className="text-xs text-muted-foreground leading-normal">{e.detail}</p>
-                      {e.recommended_action && (
-                        <div className="mt-1 text-[11px] text-accent">
-                          Action: {e.recommended_action}
-                        </div>
-                      )}
-                    </div>
-                    {rec && (
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div
-                          className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
-                          style={{ background: `oklch(0.55 0.18 ${rec.avatar_hue}deg)` }}
-                        >
-                          {rec.name[0]}
-                        </div>
-                        <span className="text-xs font-medium text-muted-foreground">{rec.name}</span>
-                      </div>
+            return (
+              <li key={e.id} className="py-2.5 transition-colors hover:bg-muted/20">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex items-center gap-2">
+                    <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${priorityStyle}`}>
+                      {e.priority}
+                    </span>
+                    {isClientRisk && (
+                      <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[9px] font-bold text-destructive flex items-center gap-1 shrink-0">
+                        <AlertTriangle className="h-3 w-3" /> Client Due Date Alert
+                      </span>
                     )}
+                    <span className="text-xs font-semibold text-foreground truncate">{e.title}</span>
                   </div>
-                </li>
-              );
-            })}
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    Owner: <span className="text-foreground font-medium">{e.owner}</span>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       </section>
+
+      {/* Recruiter Roster */}
     </div>
   );
 }

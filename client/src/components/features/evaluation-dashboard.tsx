@@ -2,17 +2,20 @@
 // Styled strictly to match the Project Beacon Rubric layout specification in clean tabular form with fixed column alignments.
 import { useState } from "react";
 import { Info, ChevronDown, ChevronRight } from "lucide-react";
-import { METRIC_GROUPS, formatValue, getEvaluation } from "@/lib/evaluation.js";
-import { ScoreRing } from "@/components/g3/kpi";
+import {
+  METRIC_GROUPS, formatValue, getEvaluation,
+  type Evaluation, type MetricGroup, type MetricSnapshot,
+} from "@/lib/evaluation";
+import { ScoreRing } from "@/components/features/kpi";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
-const GROUP_BLURB = {
+const GROUP_BLURB: Record<MetricGroup, string> = {
   "Activity & Effort": "Volume, persistence, and promptness of recruiter-initiated work.",
   "Ownership & Follow-through": "Whether leads move forward and get properly logged.",
   "Outcome Metrics": "Watched, not weighted — candidate conversions and business outputs.",
 };
 
-function statusChip(status) {
+function statusChip(status: MetricSnapshot["status"]) {
   const map = {
     on_track: { c: "bg-accent/15 text-accent border border-accent/30", t: "On track" },
     watch: { c: "bg-warning/15 text-warning border border-warning/30", t: "Watch" },
@@ -27,6 +30,11 @@ export function EvaluationDashboard({
   subjectName,
   roleLabel = "Recruiter",
   isExpandable = false,
+}: {
+  subjectId: string;
+  subjectName: string;
+  roleLabel?: string;
+  isExpandable?: boolean;
 }) {
   const evalData = getEvaluation(subjectId, subjectName);
   return <EvaluationBody data={evalData} roleLabel={roleLabel} isExpandable={isExpandable} />;
@@ -36,6 +44,10 @@ function EvaluationBody({
   data,
   roleLabel,
   isExpandable,
+}: {
+  data: Evaluation;
+  roleLabel: string;
+  isExpandable?: boolean;
 }) {
   const bandTone =
     data.band.tone === "positive" ? "bg-accent/15 text-accent border-accent/30" :
@@ -149,6 +161,10 @@ function GroupMetricSection({
   group,
   items,
   isExpandable,
+}: {
+  group: MetricGroup;
+  items: MetricSnapshot[];
+  isExpandable?: boolean;
 }) {
   const [open, setOpen] = useState(true);
 

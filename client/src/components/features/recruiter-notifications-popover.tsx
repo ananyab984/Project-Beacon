@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
-import { Bell, MessageSquare, RefreshCw, Wand2, ArrowRight, Check } from "lucide-react";
+import { Bell, MessageSquare, RefreshCw, Wand2, ArrowRight, Check, AlertTriangle } from "lucide-react";
 import { Link } from "@tanstack/react-router";
+import { useClientDueDateAlerts } from "@/lib/g3-mock";
 
 export interface RecruiterNotification {
   id: string;
-  type: "message_received" | "lead_update" | "draft_message";
+  type: "message_received" | "lead_update" | "draft_message" | "due_date_risk";
   title: string;
   leadName: string;
   language: string;
@@ -50,12 +51,33 @@ const INITIAL_NOTIFICATIONS: RecruiterNotification[] = [
 
 export function RecruiterNotificationsPopover() {
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [readState, setReadState] = useState<Record<string, boolean>>({});
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  const dueAlerts = useClientDueDateAlerts();
+
+  const autoDueNotifs: RecruiterNotification[] = useMemo(() => {
+    return dueAlerts.map((a) => ({
+      id: a.id,
+      type: "due_date_risk" as const,
+      title: "Client Due Date Risk Alert",
+      leadName: a.client_name,
+      language: a.language,
+      detail: a.risk_reason,
+      timestamp: a.days_remaining <= 0 ? "Today" : `${a.days_remaining}d left`,
+      read: !!readState[a.id],
+    }));
+  }, [dueAlerts, readState]);
+
+  const allNotifications = useMemo(() => {
+    return [...autoDueNotifs, ...INITIAL_NOTIFICATIONS.map((n) => ({ ...n, read: readState[n.id] ?? n.read }))];
+  }, [autoDueNotifs, readState]);
+
+  const unreadCount = allNotifications.filter((n) => !n.read).length;
 
   const markAllRead = () => {
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+    const next: Record<string, boolean> = {};
+    allNotifications.forEach((n) => (next[n.id] = true));
+    setReadState(next);
   };
 
   const typeIcon = (type: RecruiterNotification["type"]) => {
@@ -66,6 +88,8 @@ export function RecruiterNotificationsPopover() {
         return <RefreshCw className="h-3.5 w-3.5 text-primary" />;
       case "draft_message":
         return <Wand2 className="h-3.5 w-3.5 text-warning" />;
+      case "due_date_risk":
+        return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
     }
   };
 
@@ -77,6 +101,8 @@ export function RecruiterNotificationsPopover() {
         return { label: "View lead update", to: "/recruiter/leads" };
       case "draft_message":
         return { label: "Draft message", to: "/recruiter/email-queue" };
+      case "due_date_risk":
+        return { label: "Review client demand", to: "/recruiter/clients" };
     }
   };
 
@@ -115,12 +141,12 @@ export function RecruiterNotificationsPopover() {
         </div>
 
         <div className="max-h-80 overflow-y-auto divide-y divide-border/60">
-          {notifications.length === 0 ? (
+          {allNotifications.length === 0 ? (
             <div className="p-6 text-center text-xs text-muted-foreground">
               No new lead notifications.
             </div>
           ) : (
-            notifications.map((n) => {
+            allNotifications.map((n) => {
               const act = actionLink(n.type);
               return (
                 <div
