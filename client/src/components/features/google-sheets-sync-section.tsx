@@ -9,6 +9,8 @@ import {
   setSheetUrl,
   addClientDemand,
   addRequirement,
+  parseCsvClientDemands,
+  type ClientDemand,
 } from "@/lib/g3-mock";
 
 /**
@@ -54,46 +56,22 @@ export function GoogleSheetsSyncSection() {
     if (!file) return;
 
     setUploading(true);
-    setTimeout(() => {
-      // Parse & import mock demand entries from CSV / Excel file
-      const fileName = file.name;
-      const demoDemands = [
-        { client: "Paramount+", language: "Japanese", service: "Subtitling", count: 4 },
-        { client: "Paramount+", language: "Spanish (LatAm)", service: "Dubbing", count: 2 },
-        { client: "Sony Pictures", language: "German", service: "Localization QA", count: 3 },
-      ];
-
-      demoDemands.forEach(d => {
-        addRequirement({
-          client_id: `cl_${d.client.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
-          title: `${d.client} — ${d.language} ${d.service}`,
-          language: d.language,
-          service: d.service,
-          headcount_needed: d.count,
-          filled: 0,
-          gap: d.count,
-          priority: "standard",
-          status: "unassigned",
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      const parsed = parseCsvClientDemands(text);
+      if (parsed.length > 0) {
+        parsed.forEach((d: Omit<ClientDemand, "id">) => {
+          addClientDemand(d);
         });
-
-        addClientDemand({
-          client: d.client,
-          language: d.language,
-          services: [d.service],
-          headcount_needed: d.count,
-          filled: 0,
-          gap: d.count,
-          priority: "standard",
-          status: "active",
-          recruiter_id: "r1",
-          service_breakdown: [{ language: d.language, service: d.service, needed: d.count, filled: 0, gap: d.count }],
-        });
-      });
-
+        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} client demand records.`);
+      } else {
+        toast.info(`Uploaded ${file.name}. Please ensure file contains Client, Language, Service, and Headcount headers.`);
+      }
       setUploading(false);
-      toast.success(`Uploaded ${fileName}! Imported ${demoDemands.length} client intake requirements.`);
       if (fileInputRef.current) fileInputRef.current.value = "";
-    }, 600);
+    };
+    reader.readAsText(file);
   };
 
   return (

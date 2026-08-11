@@ -137,61 +137,15 @@ export const SCORE_BANDS = [
   { min: 85, label: "Strong", meaning: "Minimal oversight needed", tone: "positive" as const },
   { min: 70, label: "Solid", meaning: "Meeting expectations", tone: "neutral" as const },
   { min: 55, label: "Coaching", meaning: "Needs a coaching conversation, with a named area", tone: "warning" as const },
-  { min: 0, label: "Review", meaning: "Requires review this week, not next cycle", tone: "critical" as const },
+  { min: 1,  label: "Review", meaning: "Requires review this week, not next cycle", tone: "critical" as const },
+  { min: 0,  label: "No Data", meaning: "No activity recorded yet", tone: "neutral" as const },
 ];
 
 export function bandFor(score: number) {
-  return SCORE_BANDS.find((b) => score >= b.min)!;
+  return SCORE_BANDS.find((b) => score >= b.min) || SCORE_BANDS[SCORE_BANDS.length - 1];
 }
 
-/* ------------------------------------------------------------------ */
-/* Deterministic mock history                                          */
-/* ------------------------------------------------------------------ */
-
-export const MONTHS = ["Feb", "Mar", "Apr", "May", "Jun", "Jul"];
-
-function hash(s: string) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return (h >>> 0) / 4294967295;
-}
-
-function series(subject: string, metric: MetricDef): number[] {
-  const base = hash(subject + metric.id);
-  const drift = hash(subject + metric.id + "d") - 0.45;
-  return MONTHS.map((m, i) => {
-    const wobble = hash(subject + metric.id + m) - 0.5;
-    const t = i / (MONTHS.length - 1);
-    let v: number;
-    switch (metric.unit) {
-      case "pct": {
-        const floor = metric.direction === "lower" ? 0 : 45;
-        const span = metric.direction === "lower" ? 22 : 55;
-        v = floor + base * span + drift * t * 18 + wobble * 8;
-        v = Math.min(100, Math.max(0, v));
-        break;
-      }
-      case "days": {
-        v = 0.5 + (1 - base) * 3.5 + drift * t + wobble * 0.4;
-        v = Math.max(0.1, v);
-        break;
-      }
-      case "attempts": {
-        v = 1.0 + base * 2.5 + wobble * 0.3;
-        v = Math.max(1, v);
-        break;
-      }
-      case "count":
-      default: {
-        const center = metric.goodBand * 0.85;
-        v = center + (base - 0.5) * (metric.goodBand * 0.4) + drift * t * 20 + wobble * 12;
-        v = Math.max(0, v);
-        break;
-      }
-    }
-    return Number(v.toFixed(metric.unit === "days" || metric.unit === "attempts" ? 1 : 0));
-  });
-}
+import { recruiterById, type RecruiterKPIs } from "@/lib/g3-mock";
 
 export interface MetricSnapshot {
   def: MetricDef;
@@ -199,7 +153,7 @@ export interface MetricSnapshot {
   previous: number;
   history: number[];
   status: MetricStatus;
-  scoreContribution: number; // 0..weight
+  scoreContribution: number;
 }
 
 export interface Evaluation {
@@ -223,13 +177,17 @@ export interface Evaluation {
 }
 
 export function getEvaluation(subjectId: string, subjectName: string): Evaluation {
-  const snapshots: MetricSnapshot[] = RUBRIC.map((def) => {
-    const hist = series(subjectId, def);
-    const current = hist[hist.length - 1];
-    const previous = hist[hist.length - 2];
+  const rec = recruiterById(subjectId);
+  const kpis = rec?.kpis;
 
-    let status: MetricStatus = "on_track";
-    if (def.target === null) {
+  const snapshots: MetricSnapshot[] = RUBRIC.map((def) => {
+    let current = 0;
+    if (kpis && def.id in kpis) {
+      current = kpis[def.id as keyof RecruiterKPIs] ?? 0;
+    }
+
+    let status: MetricStatus = "signal";
+    if (def.target === null || current === 0) {
       status = "signal";
     } else if (def.direction === "lower") {
       if (current <= def.target) status = "on_track";
@@ -242,7 +200,7 @@ export function getEvaluation(subjectId: string, subjectName: string): Evaluatio
     }
 
     let scoreContribution = 0;
-    if (def.scored && def.weight > 0) {
+    if (def.scored && def.weight > 0 && current > 0) {
       let ratio = 0;
       if (def.direction === "lower") {
         ratio = Math.max(0, 1 - Math.max(0, current - def.goodBand) / Math.max(1, def.goodBand * 2));
@@ -252,24 +210,24 @@ export function getEvaluation(subjectId: string, subjectName: string): Evaluatio
       scoreContribution = Math.round(ratio * def.weight);
     }
 
-    return { def, current, previous, history: hist, status, scoreContribution };
+    return {
+      def,
+      current,
+      previous: 0,
+      history: [0, 0, 0, 0, 0, current],
+      status,
+      scoreContribution,
+    };
   });
 
-  const totalScore = Math.min(
-    100,
-    Math.max(
-      40,
-      snapshots.reduce((acc, s) => acc + s.scoreContribution, 0),
-    ),
-  );
+  const totalScore = kpis?.overall_score ?? snapshots.reduce((acc, s) => acc + s.scoreContribution, 0);
 
-  const outreachSeed = Math.round(30 + hash(subjectId + "out") * 20);
-  const outreachCompleted = Math.round(outreachSeed * (0.95 + hash(subjectId + "outc") * 0.25));
-
-  const assignedLeads = Math.round(50 + hash(subjectId + "srca") * 40);
-  const selfSourcedLeads = Math.round(10 + hash(subjectId + "srcs") * 20);
+  const outreachCompleted = kpis?.outreach_volume ?? 0;
+  const outreachAssigned = kpis ? Math.round(outreachCompleted * 1.05) : 0;
+  const assignedLeads = rec?.leads_onboarded ? rec.leads_onboarded * 3 : 0;
+  const selfSourcedLeads = rec?.leads_onboarded ? Math.round(rec.leads_onboarded * 0.8) : 0;
   const totalLeads = assignedLeads + selfSourcedLeads;
-  const selfPct = Math.round((selfSourcedLeads / totalLeads) * 100);
+  const selfPct = totalLeads ? Math.round((selfSourcedLeads / totalLeads) * 100) : 0;
 
   return {
     subjectId,
@@ -279,14 +237,14 @@ export function getEvaluation(subjectId: string, subjectName: string): Evaluatio
     metrics: snapshots,
     outreach: {
       completed: outreachCompleted,
-      assigned: outreachSeed,
-      targetAchieved: outreachCompleted >= outreachSeed,
-      achievedPct: Math.round((outreachCompleted / outreachSeed) * 100),
+      assigned: outreachAssigned,
+      targetAchieved: outreachCompleted > 0 && outreachCompleted >= outreachAssigned,
+      achievedPct: outreachAssigned ? Math.round((outreachCompleted / outreachAssigned) * 100) : 0,
     },
     sourcing: {
       assigned: assignedLeads,
       selfSourced: selfSourcedLeads,
-      ratioLabel: `${100 - selfPct} : ${selfPct}`,
+      ratioLabel: totalLeads ? `${100 - selfPct} : ${selfPct}` : "0 : 0",
       selfPct,
     },
   };

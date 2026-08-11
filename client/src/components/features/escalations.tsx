@@ -43,6 +43,11 @@ export function EscalationsBell() {
             </div>
           </div>
           <div className="max-h-[26rem] divide-y divide-border overflow-auto">
+            {sortedEscalations.length === 0 && (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                No open escalations or due date risks.
+              </div>
+            )}
             {sortedEscalations.map((e) => {
               const rec = e.recruiter_id ? recruiterById(e.recruiter_id) : undefined;
               return (

@@ -1,0 +1,1591 @@
+{
+  "summary": {
+    "total": 10,
+    "success": 8,
+    "failed": 2,
+    "cache_hits": 0
+  },
+  "results": [
+    {
+      "case_id": "LI01",
+      "url": "https://www.linkedin.com/in/linh-nguyen-a817a132",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 52.16,
+      "raw": [
+        {
+          "id": "linh-nguyen-a817a132",
+          "name": "Linh Nguyen",
+          "city": "Vietnam",
+          "country_code": "VN",
+          "position": null,
+          "about": null,
+          "current_company": {
+            "name": "Freelance",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://tr.linkedin.com/in/Linh-nguyen-a817a132",
+          "educations_details": "HUTECH",
+          "education": [
+            {
+              "title": "HUTECH",
+              "start_year": "1996",
+              "end_year": "2000",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "1993",
+              "end_year": "1996",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://media.licdn.com/dms/image/v2/C5603AQEWbCaqOYGeuw/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1516511509330?e=2147483647&v=beta&t=TouUAoJV_F09xMrWjrYFaXV4UYOo7RW1q6CXGUjBRIc",
+          "followers": 36,
+          "connections": 36,
+          "current_company_name": "Freelance",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/linh-nguyen-a817a132",
+          "linkedin_id": "linh-nguyen-a817a132",
+          "activity": null,
+          "linkedin_num_id": "115419841",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [
+            {
+              "title": "Personal Website",
+              "link": "http://vn.360plus.yahoo.com/dieu_y_2702/"
+            }
+          ],
+          "first_name": "Linh",
+          "last_name": "Nguyen",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:30:10.006Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/linh-nguyen-a817a132"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI02",
+      "url": "https://www.linkedin.com/in/chen-chen-28ba7122",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 16.41,
+      "raw": [
+        {
+          "id": "chen-chen-28ba7122",
+          "name": "Chen Chen",
+          "position": null,
+          "about": "About Chen: I was born in China and educated in Greater China area and the UK. I…",
+          "current_company": {
+            "link": "https://www.linkedin.com/company/national-geographic?trk=public_profile_topcard-current-company",
+            "name": "National Geographic",
+            "company_id": "national-geographic",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://es.linkedin.com/in/Chen-chen-28ba7122",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://sa.linkedin.com/in/sarah-alamri-41a67913b",
+              "name": "Sarah Alamri",
+              "about": "Misk Foundation",
+              "location": "2K followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://eg.linkedin.com/in/mahmoud-abdel-aziz-2246a46a",
+              "name": "Mahmoud Abdel-Aziz",
+              "about": "RIA Novosti",
+              "location": "1K followers Al Qalyubiyah, Egypt"
+            },
+            {
+              "profile_link": "https://om.linkedin.com/in/buthaina-al-yahmadi-49643a77",
+              "name": "Buthaina Al Yahmadi",
+              "about": "Oman Vision 2040 رؤية عُمان",
+              "location": "2K followers Muscat"
+            },
+            {
+              "profile_link": "https://br.linkedin.com/in/carolinealberoni",
+              "name": "Caroline Alberoni",
+              "about": "Apple",
+              "location": "3K followers Rio Claro, SP"
+            },
+            {
+              "profile_link": "https://de.linkedin.com/in/diana-aridi-abb2465a",
+              "name": "Diana Aridi",
+              "about": "Freelance Translator and Writer",
+              "location": "1K followers Germany"
+            },
+            {
+              "profile_link": "https://tr.linkedin.com/in/g%C3%B6zde-kaya-81751323",
+              "name": "Gözde Kaya",
+              "about": "Universal Hukuk | Law & Consultancy",
+              "location": "988 followers Istanbul"
+            },
+            {
+              "profile_link": "https://lb.linkedin.com/in/mira-neaimeh-85829364",
+              "name": "Mira NEAIMEH",
+              "about": "Freelance (Self employed)",
+              "location": "593 followers Beirut Governorate, Lebanon"
+            },
+            {
+              "profile_link": "https://ae.linkedin.com/in/tatiana-hdd",
+              "name": "Tatiana Haddad",
+              "about": "Tarjama&",
+              "location": "722 followers Dubai, United Arab Emirates"
+            },
+            {
+              "profile_link": "https://eg.linkedin.com/in/sara-gomaa-54b662aa",
+              "name": "Sara Gomaa",
+              "about": "Netflix",
+              "location": "814 followers Cairo, Egypt"
+            },
+            {
+              "profile_link": "https://nl.linkedin.com/in/menno-grootveld-0145064",
+              "name": "Menno Grootveld",
+              "about": "Starfish Books the Netherlands",
+              "location": "2K followers Amsterdam"
+            },
+            {
+              "profile_link": "https://eg.linkedin.com/in/mahmoud-el-refaey-3b3178113",
+              "name": "Mahmoud El-Refaey",
+              "about": "Tencent",
+              "location": "3K followers Cairo, Egypt"
+            },
+            {
+              "profile_link": "https://ae.linkedin.com/in/ahmed-el-bendary-11347129",
+              "name": "Ahmed El Bendary",
+              "about": "ECSSR",
+              "location": "2K followers United Arab Emirates"
+            },
+            {
+              "profile_link": "https://ae.linkedin.com/in/rafeek-kumbidi-8961501a",
+              "name": "Rafeek Kumbidi",
+              "about": "AL HIQBA TRANSLATION LLC",
+              "location": "771 followers Dubai, United Arab Emirates"
+            },
+            {
+              "profile_link": "https://ae.linkedin.com/in/fatma-hasaneen-b9760099",
+              "name": "Fatma Hasaneen",
+              "about": "Maamoun Al Khouli & Associates",
+              "location": "3K followers Dubai, United Arab Emirates"
+            },
+            {
+              "profile_link": "https://jo.linkedin.com/in/ahmad-al-katouni-03179879",
+              "name": "Ahmad Al-Katouni",
+              "about": "Freelance",
+              "location": "6K followers Amman, Jordan"
+            },
+            {
+              "profile_link": "https://ir.linkedin.com/in/saeidsafari85",
+              "name": "Saeid Safari, Ph.D سعید صفری",
+              "about": "Persian <> English ISI Translator. PhD in Translation Studies, مترجم مقاله آی اس آی",
+              "location": "19K followers Iran"
+            },
+            {
+              "profile_link": "https://eg.linkedin.com/in/rasha-alkhateeb-71b6006b",
+              "name": "Rasha Alkhateeb",
+              "about": "Freelance",
+              "location": "1K followers Markaz Berket El Sabaa"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/edbeetar",
+              "name": "Ed Beetar",
+              "about": "Top 10 Fortune Companies",
+              "location": "2K followers Washington, DC"
+            },
+            {
+              "profile_link": "https://cm.linkedin.com/in/valerie-ngime-epie-bb617667",
+              "name": "Valerie Ngime Epie",
+              "about": "Eneo Cameroon S.A.",
+              "location": "1K followers Communauté urbaine de Douala"
+            }
+          ],
+          "educations_details": "Cambridge University",
+          "education": [
+            {
+              "title": "Cambridge University",
+              "url": "https://uk.linkedin.com/school/university-of-cambridge/",
+              "start_year": "2012",
+              "end_year": "2012",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2010",
+              "end_year": "2011",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2010",
+              "end_year": "2011",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2009",
+              "end_year": "2010",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2007",
+              "end_year": "2008",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "recommendations_count": 1,
+          "avatar": "https://media.licdn.com/dms/image/v2/C4D03AQEEeaj8wyN8bA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1516995585800?e=2147483647&v=beta&t=HDkebkCBqILsohx_Gj_uLkDJOYUVNwrSGTJ-7PpTmBg",
+          "languages": [
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "English"
+            },
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "Mandarin"
+            },
+            {
+              "subtitle": "Elementary proficiency",
+              "title": "French"
+            }
+          ],
+          "recommendations": [
+            "Richard Hughes “Chen was one of the brightest and most enthusiastic students in her year: always curious, always questioning, always willing to make a constructive coment to take the discussion a little further. Her final Masters dissertation was singled out for particular praise by the external examiner.”"
+          ],
+          "followers": 453,
+          "connections": 442,
+          "current_company_company_id": "national-geographic",
+          "current_company_name": "National Geographic",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/chen-chen-28ba7122",
+          "linkedin_id": "chen-chen-28ba7122",
+          "activity": null,
+          "linkedin_num_id": "80271179",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Chen",
+          "last_name": "Chen",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:30:26.671Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/chen-chen-28ba7122"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI03",
+      "url": "https://www.linkedin.com/in/natascharincon",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 74.42,
+      "raw": [
+        {
+          "id": "natascharincon",
+          "name": "Natascha Rincon",
+          "city": "Fort Lauderdale, Florida, United States",
+          "country_code": "US",
+          "position": null,
+          "about": "I'm a native speaker of Spanish and English. Currently working as a freelance translator…",
+          "current_company": {
+            "name": "Self-employed",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://bh.linkedin.com/in/natascharincon",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/megankregel",
+              "name": "Megan Kregel, ALM",
+              "about": "IQVIA",
+              "location": "29K followers East Hartford, CT"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/filippocefaly",
+              "name": "Filippo Cefaly",
+              "about": "Hartford HealthCare",
+              "location": "14K followers Bristol, CT"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/mark-pisoni-182548b",
+              "name": "Mark Pisoni",
+              "about": "Italian Translations Company, LLC",
+              "location": "14K followers Washington DC-Baltimore Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/dagmarelstark-bastin",
+              "name": "Dagmar El. Stark-Bastin",
+              "about": "Stark Translations",
+              "location": "16K followers Monument, CO"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/alexa-baboun",
+              "name": "Alexa Baboun",
+              "about": "The Flow House Retreats",
+              "location": "9K followers Miami, FL"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/-abunayeem",
+              "name": "Abu Nayeem",
+              "about": "NYC Mayor's Public Engagement Unit",
+              "location": "10K followers Queens, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/cmstothemax",
+              "name": "♛ George P Schaefer",
+              "about": "SCORE Mentors Inland Empire",
+              "location": "15K followers Hemet, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/juancbernal",
+              "name": "Juan Carlos Bernal",
+              "about": "NetsMiami | Digital Marketing | Brand Building Experts",
+              "location": "10K followers Miami-Fort Lauderdale Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/franklingraham",
+              "name": "Franklin Graham",
+              "about": "Nassau Community College",
+              "location": "12K followers Garden City, NY"
+            }
+          ],
+          "educations_details": "New York University",
+          "education": [
+            {
+              "title": "New York University",
+              "url": "https://www.linkedin.com/school/new-york-university/",
+              "start_year": "2015",
+              "end_year": "2016",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2008",
+              "end_year": "2012",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://media.licdn.com/dms/image/v2/D5603AQF2oYl0GRizpA/profile-displayphoto-shrink_200_200/B56ZYCxyU0HQAY-/0/1743803329339?e=2147483647&v=beta&t=9DZe37sNA26tSlnvn60hzuY8Xbz4FgJE8_E3IM577n0",
+          "languages": [
+            {
+              "subtitle": "-",
+              "title": "English"
+            },
+            {
+              "subtitle": "-",
+              "title": "Spanish"
+            },
+            {
+              "subtitle": "-",
+              "title": "Greek"
+            }
+          ],
+          "followers": 37,
+          "connections": 37,
+          "current_company_name": "Self-employed",
+          "organizations": [
+            {
+              "title": "American Translators Association",
+              "membership_type": "Associate member",
+              "start_date": "2015",
+              "end_date": "Present",
+              "membership_number": null
+            }
+          ],
+          "location": "Fort Lauderdale",
+          "input_url": "https://www.linkedin.com/in/natascharincon",
+          "linkedin_id": "natascharincon",
+          "activity": [
+            {
+              "interaction": "Natascha Rincon liked this",
+              "link": "https://www.linkedin.com/posts/american-translators-association_languageservices-eo14224-xl8-activity-7304935623407087616-bhuQ",
+              "title": "President Trump's Executive Order 14224 designates English as the official language of the United States and revokes EO 13166 from 2000. Swipe through this post to learn more about what that means. The American Translators Association is committed to supporting its multilingual members and the populations they serve. Stay tuned for a statement from ATA and other industry associations about the full impact of this order. . . . #LanguageServices #EO14224 #xl8 #1nt #atanet",
+              "img": "https://media.licdn.com/dms/image/v2/D5610AQEvELOLyngYAw/image-shrink_1280/B56ZWBYFj4GUAM-/0/1741632330635?e=2147483647&v=beta&t=8H8U2qYOOFHPy4QM7kv524UCoZ5KG4tUjkMAkPc1RTQ",
+              "id": "7304935623407087616"
+            },
+            {
+              "interaction": "Natascha Rincon liked this",
+              "link": "https://www.linkedin.com/posts/american-translators-association_atanet-atacpe-1nt-activity-6774868452663529472-zEAw",
+              "title": "#atanet #atacpe #1nt ATA WORKSHOP: INTERPRETING IDIOMS AND CULTURAL REFERENCES (Presented in Russian) Interpreting idioms and cultural expressions may seem less important than getting the facts right. But wait … don't be so hasty to dismiss the casual side of an encounter! It often contains key details that add to the big picture—being able to understand and deal with colloquialisms and idiomatic expressions in your working language(s) is essential to your interpreting skill set. Attend this 2-hour interactive workshop to review and discuss types of idiomatic and cultural expressions; work in small groups to practice skills and strategies for interpreting idioms and cultural references. PRESENTER: Yuliya Speroff, CHIA Interpreter of the Year 2021 ATTEND THIS WORKSHOP TO LEARN: * Types of idiomatic expressions commonly encountered in spoken discourse * Examples of cultural references * Common mistakes interpreters can make with idiomatic expressions * Strategies for interpreting idioms and cultural references ATA MEMBERS $90 https://lnkd.in/gwr9wfK NON-MEMBERS $25 https://lnkd.in/gAmm3mH LEARN MORE https://lnkd.in/ggpwTRs",
+              "img": "https://media.licdn.com/dms/image/v2/C5622AQFphbTbFgCPIA/feedshare-shrink_800/feedshare-shrink_800/0/1615254509531?e=2147483647&v=beta&t=N2D_ASOClk0La-wouzMQQdwQJ9ios0hkNsk4L9_1cD8",
+              "id": "6774868452663529472"
+            }
+          ],
+          "linkedin_num_id": "199095770",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Natascha",
+          "last_name": "Rincon",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:31:41.271Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/natascharincon"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI04",
+      "url": "https://www.linkedin.com/in/caitlinackley",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 11.86,
+      "raw": [
+        {
+          "id": "caitlinackley",
+          "name": "Caitlin Mahoney",
+          "city": "Stoughton, Wisconsin, United States",
+          "country_code": "US",
+          "position": null,
+          "about": "I provide accurate Spanish to English translations of legal, medical and academic…",
+          "current_company": {
+            "name": "Caitlin Ackley",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://ae.linkedin.com/in/caitlinackley",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/angcastlop",
+              "name": "Ángela Castillo",
+              "about": "Confidential",
+              "location": "422 followers Miami-Fort Lauderdale Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/patricia-bower-b417986b",
+              "name": "Patricia Bower",
+              "about": "Self-employed",
+              "location": "47 followers Ogdensburg, NJ"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/danitranslations",
+              "name": "Danielle DeCruz-Sanchez",
+              "about": "DT by 2frame",
+              "location": "3K followers Rochester, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/elizabeth-eckardt",
+              "name": "Elizabeth Eckardt",
+              "about": "World Education Services",
+              "location": "788 followers Chicago, IL"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/soledad-ravalli-47b3a77",
+              "name": "Soledad Ravalli",
+              "about": "BIG Language Solutions",
+              "location": "343 followers Boca Raton, FL"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/chris-scrogum-8a094425",
+              "name": "Chris Scrogum",
+              "about": "chris.scrogum@gmail.com",
+              "location": "118 followers Murrieta, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/dora-guerra-40643718",
+              "name": "Dora Guerra",
+              "about": "Self",
+              "location": "95 followers San Antonio, TX"
+            },
+            {
+              "profile_link": "https://fr.linkedin.com/in/nadiawurtz",
+              "name": "Nadia Würtz",
+              "about": "Technology & Strategy",
+              "location": "2K followers Strasbourg"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/martha-e-rice",
+              "name": "Martha E Rice",
+              "about": "includes lazar.com; www.languedoc.co.nz; www.goglobal-consulting.com; www.bilingual-ls.com",
+              "location": "140 followers Conway, SC"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/minadescrivan",
+              "name": "Mina d'Escriván",
+              "about": "CrossTimbers Capital, Inc.",
+              "location": "148 followers Dallas, TX"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/yu-cha-817227103",
+              "name": "Yu Cha",
+              "about": "Self-Employed",
+              "location": "30 followers Bellevue, WA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/adriana-pereira-angulo-88535342",
+              "name": "ADRIANA PEREIRA ANGULO",
+              "about": "JPMorgan Chase & Co.",
+              "location": "625 followers San Antonio, TX"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/jeff-clingenpeel-28596419",
+              "name": "Jeff Clingenpeel",
+              "about": "Endress+Hauser Group",
+              "location": "143 followers Ann Arbor, MI"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/lilianjimenezramsey",
+              "name": "Lilian Jimenez Ramsey",
+              "about": "Translation in Context",
+              "location": "517 followers Los Angeles, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/james-kirchner-5259ab7",
+              "name": "James Kirchner",
+              "about": "home",
+              "location": "3K followers Grosse Pointe, MI"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/christina-rose-76346710",
+              "name": "Christina Rose",
+              "about": "Self-employed",
+              "location": "57 followers United States"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/alicialjohnson3033",
+              "name": "Alicia McNeely",
+              "about": "International League Against Epilepsy",
+              "location": "224 followers United States"
+            },
+            {
+              "profile_link": "https://pr.linkedin.com/in/manuelfernandezme",
+              "name": "Manuel Fernandez",
+              "about": "Self-Employed",
+              "location": "56 followers Puerto Rico"
+            },
+            {
+              "profile_link": "https://br.linkedin.com/in/olgasteffencruz",
+              "name": "Olga Corbett Cruz",
+              "about": "Wise",
+              "location": "310 followers São Paulo, SP"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/olivia-wood-326a3581",
+              "name": "Olivia Wood",
+              "about": "Freelance",
+              "location": "24 followers Nashville Metropolitan Area"
+            }
+          ],
+          "educations_details": "University of Wisconsin-Madison",
+          "education": [
+            {
+              "title": "University of Wisconsin-Madison",
+              "url": "https://www.linkedin.com/school/uwmadison/",
+              "start_year": "1997",
+              "end_year": "2001",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2004",
+              "end_year": "2007",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "languages": [
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "Spanish"
+            },
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "English"
+            }
+          ],
+          "certifications": [
+            {
+              "meta": "Issued Jun 2001 Expires Jun 2021",
+              "subtitle": "Wisconsin Department of Public Instruction",
+              "title": "Spanish Education PK-12",
+              "credential_url": null,
+              "credential_id": null
+            }
+          ],
+          "volunteer_experience": [
+            {
+              "info": "Tutored students after school",
+              "subtitle": "Centro Hispano",
+              "title": "Tutoring for Centro Hispano in Madison, Wisconsin"
+            }
+          ],
+          "followers": 83,
+          "connections": 83,
+          "current_company_name": "Caitlin Ackley",
+          "location": "Stoughton",
+          "input_url": "https://www.linkedin.com/in/caitlinackley",
+          "linkedin_id": "caitlinackley",
+          "activity": null,
+          "linkedin_num_id": "36836547",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Caitlin",
+          "last_name": "Mahoney",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:31:50.363Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/caitlinackley"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI05",
+      "url": "https://www.linkedin.com/in/michaelfnystrom",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 31.9,
+      "raw": [
+        {
+          "id": "michaelfnystrom",
+          "name": "Michael Nystrom",
+          "city": "Greater Boston",
+          "country_code": "US",
+          "position": null,
+          "about": "Hi, I’m Michael, a freelance Spanish-to-English translator and subtitler with a lifelong…",
+          "current_company": {
+            "link": "https://www.linkedin.com/company/ted-translators?trk=public_profile_topcard-current-company",
+            "name": "TED Translators",
+            "company_id": "ted-translators",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://www.linkedin.com/in/michaelfnystrom",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/coy-jackson-17b993106",
+              "name": "Coy Jackson",
+              "about": "Walmart",
+              "location": "4K followers Memphis, TN"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/dino-kincaid-2574ab90",
+              "name": "Dino Kincaid",
+              "about": "Walmart",
+              "location": "4K followers Las Vegas Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/shanea-hartsfield-938310152",
+              "name": "Shanea Hartsfield",
+              "about": "At Home Group Inc.",
+              "location": "20K followers Bryant, AR"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/heatherlyn-miller-5a99a9a8",
+              "name": "Heatherlyn Miller",
+              "about": "Kroger",
+              "location": "12K followers Louisville, KY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/charles-wright-161807126",
+              "name": "Charles Wright",
+              "about": "Cumberland Farms",
+              "location": "3K followers Utica-Rome Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/diarisel-vargas-42067140",
+              "name": "Diarisel Vargas",
+              "about": "Sandy Lake Dental & Orthodontics",
+              "location": "4K followers Bridgeport, CT"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/chris-goodin-21196710a",
+              "name": "Chris Goodin",
+              "about": "Harbor Freight Tools",
+              "location": "4K followers Searcy, AR"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/lawrenceatkinson83",
+              "name": "Lawrence Atkinson",
+              "about": "Walmart",
+              "location": "5K followers Atlanta Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/nicholas-suchy-4985a013b",
+              "name": "Nicholas Suchy",
+              "about": "Walmart",
+              "location": "5K followers Dallas, TX"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/john-leachman",
+              "name": "John Leachman",
+              "about": "Product Connections",
+              "location": "4K followers Bentonville, AR"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/manny-fern%C3%A1ndez-4474988",
+              "name": "Manny Fernández",
+              "about": "retired",
+              "location": "2K followers United States"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/adam-russell-2970841b",
+              "name": "Adam Russell",
+              "about": "Western Governors University",
+              "location": "3K followers DeSoto, TX"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/anthony-agnew",
+              "name": "Anthony Agnew",
+              "about": "Walmart",
+              "location": "7K followers Dallas-Fort Worth Metroplex"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/daniel-rutherford-b71b9985",
+              "name": "Daniel Rutherford",
+              "about": "Lowe's Companies, Inc.",
+              "location": "10K followers Silverdale, WA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/ericahasty",
+              "name": "Erica Hasty",
+              "about": "Blue Origin",
+              "location": "9K followers Raleigh, NC"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/shawn-abernathy-cpp-lpc-5964b56",
+              "name": "Shawn Abernathy, CPP, LPC",
+              "about": "Blackhawk Network",
+              "location": "6K followers Owasso, OK"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/wendy-factor-06b808146",
+              "name": "Wendy Factor",
+              "about": "Walmart",
+              "location": "8K followers Joplin Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/ryanweinstock",
+              "name": "Ryan Weinstock",
+              "about": "Total Wine & More",
+              "location": "6K followers San Francisco Bay Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/sandamali-amarasinghe-29150340",
+              "name": "Sandamali Amarasinghe",
+              "about": "Epiq",
+              "location": "4K followers Portland, Oregon Metropolitan Area"
+            }
+          ],
+          "educations_details": "University of Massachusetts Boston",
+          "education": [
+            {
+              "title": "University of Massachusetts Boston",
+              "url": "https://www.linkedin.com/school/umass-boston/",
+              "start_year": "2020-09",
+              "end_year": "2021-05",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2017",
+              "end_year": "2020-12",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2014",
+              "end_year": "2017",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "recommendations_count": 2,
+          "avatar": "https://media.licdn.com/dms/image/v2/D4E03AQEHbIgcSEZEWQ/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1725818936182?e=2147483647&v=beta&t=HUCvcJkNEpY9DTZ_rKKDbkw9iGOXCNrv-Hly5llMTss",
+          "courses": [
+            {
+              "subtitle": "CHINSE 301",
+              "title": "Advanced Chinese I"
+            },
+            {
+              "subtitle": "CHINSE 302",
+              "title": "Advanced Chinese II"
+            },
+            {
+              "subtitle": "SPAN 409",
+              "title": "Advanced Practice of Translation"
+            },
+            {
+              "subtitle": "SPAN 316",
+              "title": "Advanced Spanish Grammar"
+            },
+            {
+              "subtitle": "SPAN 408",
+              "title": "Advanced Techniques and Skills in Translation"
+            },
+            {
+              "subtitle": "SPAN 301",
+              "title": "Advanced Writing Reading and Speaking (Spanish)"
+            },
+            {
+              "subtitle": "SPAN 454L",
+              "title": "Argentina"
+            },
+            {
+              "subtitle": "CHINSE 276",
+              "title": "Chinese Cinema"
+            },
+            {
+              "subtitle": "ASIAN 371",
+              "title": "Environmental Issues in China"
+            },
+            {
+              "subtitle": "SPAN 333",
+              "title": "Intermediate Translation"
+            },
+            {
+              "subtitle": "SPAN 317",
+              "title": "Introduction to Translation"
+            },
+            {
+              "subtitle": "LATAM 360",
+              "title": "Language and Power in the Americas"
+            },
+            {
+              "subtitle": "LATAM 101",
+              "title": "Latin American Culture and Society"
+            },
+            {
+              "subtitle": "SPAN 304",
+              "title": "Spanish for Majors and Minors"
+            },
+            {
+              "subtitle": "SPAN 364",
+              "title": "Spanish-American Essay"
+            },
+            {
+              "subtitle": "SPAN 580",
+              "title": "Translation in Media"
+            }
+          ],
+          "languages": [
+            {
+              "subtitle": "Professional working proficiency",
+              "title": "Spanish"
+            },
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "English"
+            },
+            {
+              "subtitle": "Elementary proficiency",
+              "title": "Chinese"
+            },
+            {
+              "subtitle": "Limited working proficiency",
+              "title": "French"
+            }
+          ],
+          "certifications": [
+            {
+              "meta": "Issued Apr 2023 Credential ID 72512559 See credential",
+              "subtitle": "TED",
+              "title": "TED Translators Language Supervisor Badge",
+              "credential_url": "https://www.credential.net/1105c23d-51c1-4aa6-811d-b7c1950a084b?trk=public_profile_see-credential",
+              "credential_id": "72512559"
+            },
+            {
+              "meta": "Issued May 2022 See credential",
+              "subtitle": "RWS Group",
+              "title": "Trados Studio 2021 - Level 1",
+              "credential_url": "https://oos.sdl.com/asp/products/certified/index.asp?userid=c1e68f62-0b73-460c-9034-dde59fa4cfbc&trk=public_profile_see-credential",
+              "credential_id": null
+            },
+            {
+              "meta": "Issued Apr 2022",
+              "subtitle": "RWS Group",
+              "title": "RWS Post-Editing Certification",
+              "credential_url": null,
+              "credential_id": null
+            },
+            {
+              "meta": "Issued Jul 2021",
+              "subtitle": "UMass Boston",
+              "title": "Spanish-English Translation (Certificate)",
+              "credential_url": null,
+              "credential_id": null
+            }
+          ],
+          "recommendations": [
+            "Anastasia De Mey “Mike is kind and conscientious and has a great eye for detail. He is also a natural teacher. I had the pleasure of collaborating with Mike on several TED talks. As a reviewer and language supervisor, he provided feedback and correction on my Spanish-to-English subtitle translations. Mike has an extensive knowledge of grammar and is detail-oriented with his text corrections. He also provides links to sources and detailed explanations of his corrections to help other translators learn. He also has a great sense for creative, idiomatic translation, which is a huge asset in subtitling. He has helped me craft and refine English subtitles that sound natural for native speakers. Finally, Mike has a knack for providing constructive feedback in a kind and uplifting way. Although he is my supervisor, he has always made me feel that we're on the same team. His corrections are phrased in a way that makes it clear that they're an opportunity for me to learn and grow as a subtitler. The ability to make positive corrections makes Mike an amazing team member and supervisor. I highly recommend Mike as a knowledgeable audiovisual translator and project manager.”",
+            "Helen Gräwert “Meticulous, skilled and conscientious are the words I'd use to describe Mike. I contacted him after researching reviewers for my language pair (ES>EN) when I started translating TED talks in January 2023, and he's reviewed all my published subtitles to date. Mike has great attention to detail and an ability to identify any aspect that will improve the quality of the translation and therefore the viewer's experience. In addition, the way he sensitively provides constructive, encouraging feedback truly adds to the sense of collaboration required to produce translations of a high standard, as well as helping me to develop my own skills. It's a real pleasure to work with Mike, and he would be an asset to any translation team or project.”"
+          ],
+          "volunteer_experience": [
+            {
+              "cause": "Education",
+              "duration": "Jul 2022 · - Present · \n\n4 years 1 month",
+              "duration_short": "- Present",
+              "info": "I translate and transcribe video content using Caption Hub. I review other transcribers' and translators' work to ensure they follow TED guidelines. I approve and publish reviewed transcriptions and translations to appear on the TED website and YouTube.",
+              "start_date": "Jul 2022",
+              "subtitle": "TED Translators",
+              "title": "English Language Supervisor, Reviewer, Translator, Transcriber: Spanish & English"
+            }
+          ],
+          "followers": 484,
+          "connections": 478,
+          "current_company_company_id": "ted-translators",
+          "current_company_name": "TED Translators",
+          "projects": [
+            {
+              "title": "Indigenous transborder communities and the (f)utility of borders"
+            }
+          ],
+          "organizations": [
+            {
+              "title": "American Translators Association (ATA)",
+              "membership_type": "Member",
+              "start_date": "Mar 2021",
+              "end_date": "Present",
+              "membership_number": null
+            },
+            {
+              "title": "New England Translators Association (NETA)",
+              "membership_type": "Member",
+              "start_date": "Mar 2021",
+              "end_date": "Present",
+              "membership_number": null
+            }
+          ],
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/michaelfnystrom",
+          "linkedin_id": "michaelfnystrom",
+          "activity": [
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/frick-kelsey_thats-not-even-close-to-what-they-said-activity-7352977186615611393-4A9U",
+              "title": "\"That's not even close to what they said.\" - anyone who's ever watched the subtitled version of a show or movie where they know the original language And you know what? They're probably right. But there's a good reason 💡 When subtitlers are translating subtitles, they have to think about not only what was said in the original language, but how best to convey that in the space of: 😬 maximum 2 lines 😬 maximum 40 characters per line (with spaces) 😬 between 1 second and 6 seconds 😬 maximum 20 characters per second reading speed 😬 breaking the lines at a logical spot to aid reading 😬 all while making it understandable in another language So yeah, sometimes the subtitle might not be the direct translation of what the character is saying. But does it get the gist of it? Sometimes, that's all we can do. 🤷🏻‍♀️ (📌 limits above are for English subs, other languages vary!) ...more ...more",
+              "img": null,
+              "id": "7352977186615611393"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/tatiane-rocha-oliveira-translator_litranslators-activity-7331589643487866880-BWZK",
+              "title": "👀 I heard once that human translation is not a luxury. Because luxury is something we can do without. And no one needs a luxury. I couldn't agree more with that statement. Human translation is a necessity!!! Especially in audiovisual translation, which involves techniques to synchronise the subtitles with the speech to provide the best viewer experience possible. From my experience of using AI in translation for both dubbing and subtitling, the technology would struggle to do things such as: ➡️ Break lines at logical points (like a full stop or a comma). ➡️ Localise properly (e.g. inch to meter). ➡️ Compress the text to match the duration of the speech. ➡️ Spell proper names correctly. ➡️ Translate humour and slang. So, AI still leaves us with a lot of rewriting and reviewing, which is time-consuming. These are just a few basic examples of how our work is not a luxury; it's essential. Don't let anyone tell you otherwise! We all need very good quality to keep well mentally and culturally. And we need to prioritise that. 💡 Any other reasons why human translation is a necessity? #litranslators ...more ...more",
+              "img": null,
+              "id": "7331589643487866880"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/mariavirginiabarros-communication-expert_text-reduction-what-why-how-activity-7316385762541817857--7yC",
+              "title": "🎬 Why aren't all the spoken words included in the subtitles? Finding the sweet spot in subtitles: fitting the message without overwhelming the screen. Breaking down TEXT REDUCTION for both the creators and the audience. P.S. The next subtitling course will further explore this topic with hands-on practice (link in the comments.) ...more ...more",
+              "img": null,
+              "id": "7316385762541817857"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-volunteer-activity-7151253666459447297-Jiaa",
+              "title": "Celebrating November and December's rockstar reviewers and language supervisors! 🌟 A heartfelt applause to each one of you for the thoughtful reviews and inspiring mentorship you've provided. Your hard work makes your language community shine. Keep up the awesome work! 👏 #ted #tedtranslators #volunteer #community #translation #translator #ideasworthspreading #communityfirst #newsletter #subscribe #monthlyhighlights ...more ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQGOrP2MQH7Ueg/feedshare-image-high-res/feedshare-image-high-res/0/1704991736226?e=2147483647&v=beta&t=ZpSblKOsHdGJLX0oBpPVzS_xvcA6trz_VHgz011skJA",
+              "id": "7151253666459447297"
+            },
+            {
+              "interaction": "Michael Nystrom commented on a post 1y",
+              "link": "https://www.linkedin.com/posts/lingo-crafts-44813235a_us-english-subtitling-project-onboarding-activity-7337130638384279556--qL8",
+              "title": "It must be a very reputable company if it suggests using a cracked version of paid software.",
+              "img": null,
+              "id": "7337130638384279556"
+            },
+            {
+              "interaction": "Michael Nystrom commented on a post 1y",
+              "link": "https://www.linkedin.com/posts/eric-smith-0ab3a12b8_im-happy-to-share-that-im-starting-a-new-activity-7272038282400522240-UuVj",
+              "title": "Congrats Eric! 🎉",
+              "img": null,
+              "id": "7272038282400522240"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-reviewcup-activity-7483982794327531520-xWP7",
+              "title": "This is it. The Final. From 106 contestants to our last 16 finalists, the journey has led us here. Congratulations to everyone who has reached the Review Cup 2026 Final! Complete 10+ qualifying reviews before the tournament ends for a chance to lift the Review Cup. Good luck, finalists! We are excited to crown our champions soon! #ted #tedtranslators #reviewcup #knockout #translation #localization #community #volunteer #subtitles #worldcup #language",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQHoFv0wn_NnDA/feedshare-image-high-res/B56Z9xysXMKEAU-/0/1784320542416?e=2147483647&v=beta&t=fQ0FmSFAVstgYC77X5kaMmFxPCUjt9je8kJSAmtOlzU",
+              "id": "7483982794327531520"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-reviewcup-activity-7482833870267105281-iZ_m",
+              "title": "🏆 We're down to 24! Congratulations to everyone who's made it to the Semifinals. Complete 10+ qualifying reviews to secure your spot in the Final. Good luck! #ted #tedtranslators #reviewcup #knockout #translation #localization #community #volunteer #subtitles #worldcup #language",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQHaB6BoyYBzvw/feedshare-image-high-res/B56Z9hdwMyIQAU-/0/1784046617658?e=2147483647&v=beta&t=acFZoY8laWANuICcBPLZznwHUV9Z8qmjmj-pHG7qLKY",
+              "id": "7482833870267105281"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-reviewcup-activity-7481048420351111168-VSIn",
+              "title": "The Round of 16 has wrapped up, and 30 of our original 106 contestants have earned their place in the quarterfinals of Review Cup. Congratulations to everyone who advanced, and thank you to everyone who took part! We'll be announcing who advances to the semifinals soon. 🏆 #ted #tedtranslators #reviewcup #knockout #translation #localization #community #volunteer #subtitles #worldcup #language",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQGLTPcY0Y1wPg/feedshare-shrink_1280/B56Z9IF5dCHIAQ-/0/1783620933736?e=2147483647&v=beta&t=REegiY7SfMBSsr9fQTNuOcksPrN8KtOjqzM7gKCDGNk",
+              "id": "7481048420351111168"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-reviewcup-activity-7478837377193582592-6hs4",
+              "title": "Inspired by the FIFA World Cup, we're bringing the excitement of the knockout stage to the TED Translators community. 🏆 From July 4–19, we're hosting our first-ever Review Cup 2026: a World Cup-inspired Review-a-thon where Reviewers and Language Supervisors compete through rounds while helping more subtitles reach publication. Not participating in the tournament? You can still join the excitement by submitting subtitle sets for review or translating a sports-themed TED Talk. We'll be announcing who advances to the Quarterfinals, Semifinals, and Final throughout the tournament, so stay tuned to cheer on your fellow translators. Good luck to everyone participating—and let the games begin! ⚽ #ted #tedtranslators #reviewcup #knockout #translation #localization #community #volunteer #subtitles #worldcup #language",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQFgZlVlHIZNdg/feedshare-image-high-res/B56Z8oq9QMGQAU-/0/1783093777664?e=2147483647&v=beta&t=FfscICgI-QjTeDjw7R7TzSwSN-AU2KhO6tffzRLk1Ck",
+              "id": "7478837377193582592"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-volunteer-activity-7470941998703742977-l7x-",
+              "title": "We want to highlight some of the amazing talents behind TED Fluent translators from 13 different language communities working hard to bring these ideas to audiences around the world. A huge thank you to all of you making this magical thing happen, because we believe every idea deserves to be heard in its own language. Cheers to your work. 🌍 #ted #tedtranslators #volunteer #community #translation #translator #ideasworthspreading #communityfirst #monthlyhighlights",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQEfWFUARSHQzA/feedshare-shrink_1280/B4EZ64eKX_HoAM-/0/1781211375347?e=2147483647&v=beta&t=Oy9T52l_ccnrkyaV50k85WzpIRLsfysPB4NXYA49wzc",
+              "id": "7470941998703742977"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/millie-gascoyne_my-portfolio-over-the-last-few-weeks-ive-activity-7470007091773026304-bSCs",
+              "title": "My portfolio Over the last few weeks I've been busy creating a portfolio. It shows some of the work I'm most proud of, focusing on marketing, sustainability and fashion 🌺 You can take a look here > https://lnkd.in/e7_fBYzc **** If you're a brand wanting an English language partner who's ready to get on board with your mission, reach out to me here on LinkedIn or send me an email at millie.gascoyne.translation@outlook.com .",
+              "img": null,
+              "id": "7470007091773026304"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/sadegh-vahdati-nia-118702209_subtitling-persian-farsi-activity-7460871772389703680-7ELC",
+              "title": "Hello LinkedIn, I want to share that I accomplished one of my goals in 2026. I subtitled my first series in Farsi 💥😎 As you may know, because of the sanctions, we apparently can't cooperate with Netflix , Apple TV+, or other major platforms. But my subtitles are now available for Iranians and other Persian speakers to use. #Subtitling #Persian #Farsi #Unchosen #series",
+              "img": null,
+              "id": "7460871772389703680"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/millie-gascoyne_my-why-as-i-embarked-on-my-journey-as-activity-7457338420395204608-ZLtg",
+              "title": "My why... As I embarked on my journey as a freelance translator, it was important to think about why I wanted to do this. Someone asked me if I was sure this was the path I wanted to take or if I wanted to explore anything else. So, I sat and thought about what else I would do. And I can definitely come up with some ideas for other careers I could pursue, but none of them excite me like translation. I was lucky to have an amazing Spanish teacher in secondary school. I think she was key in igniting my love for languages, and that fascination has never gone away. Learning more about my native language and learning to master new ones is something I find endlessly interesting. The way we use words and their impact is so powerful. I am a language nerd through and through! And when you’re faced with a difficult sentence to translate, as frustrating as it can be sometimes, finding a solution that works is so rewarding. So, that’s why I do what I do. Because I love it, and I still get excited every time I learn something new ✨",
+              "img": null,
+              "id": "7457338420395204608"
+            },
+            {
+              "interaction": "Michael Nystrom reacted on this",
+              "link": "https://www.linkedin.com/posts/ted-translators_ted-tedtranslators-reviewathon-activity-7456007834326138880-K1nW",
+              "title": "Our first review-a-thon of the year is in the books! An impressive 78% of review requests were completed, and with our first Refinement Track, Language Supervisors amended published subtitles to further elevate their quality. Huge shout-out to all volunteers who showed up to review, refine, and expedite subtitles to publication. Come check out what you accomplished! #ted #tedtranslators #reviewathon #translation #localization #community #volunteer #subtitles #language",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQF0MMFpT2A7UQ/feedshare-image-high-res/B4DZ3kPh0UJ8AU-/0/1777650769515?e=2147483647&v=beta&t=6VwAy63GTtnHStNSHU8BmFISRFlvlQXcPEqKW0QL2AQ",
+              "id": "7456007834326138880"
+            }
+          ],
+          "linkedin_num_id": "282243532",
+          "banner_image": "https://media.licdn.com/dms/image/v2/D4E16AQGxmgiNth14yg/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1710186771505?e=2147483647&v=beta&t=zLS_kw0WN87d20wFgi6IyKJXLfLW8vXXIZ9wIpJF80M",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Michael",
+          "last_name": "Nystrom",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:32:24.854Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/michaelfnystrom"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI06",
+      "url": "https://www.linkedin.com/in/raqueltranslations",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 9.18,
+      "raw": [
+        {
+          "id": "raqueltranslations",
+          "name": "Raquel Martínez",
+          "city": "Washington, District of Columbia, United States",
+          "country_code": "US",
+          "position": null,
+          "about": "RECOMMENDATIONS I have used Raquel's services in several projects and speaking…",
+          "current_company": {
+            "name": "Freelance Translator l Interpreter English - Spanish",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://es.linkedin.com/in/Raqueltranslations",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/skaiserman",
+              "name": "Sydney Kaiserman",
+              "about": "U.S. Department of State",
+              "location": "460 followers Miami-Fort Lauderdale Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/adriana-lezama-97ba5519",
+              "name": "Adriana Lezama",
+              "about": "Freelancer",
+              "location": "187 followers New York, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/mizuho-toyoda-timmer-58b20a12",
+              "name": "Mizuho Toyoda Timmer",
+              "about": "Freelance Translator/Interpreter",
+              "location": "110 followers Greater Kalamazoo Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/conchita-ramos-3264a133",
+              "name": "Conchita Ramos",
+              "about": "Hispanos Media Independent Author",
+              "location": "441 followers Manassas, VA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/erin-teske-language-professional",
+              "name": "Erin Teske",
+              "about": "Stanford Health Care",
+              "location": "481 followers San Francisco, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/hussein-al-askari-35095073",
+              "name": "Hussein Al-Askari",
+              "about": "Self-employed translator",
+              "location": "37 followers United States"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/carolyna-mejia-44774248",
+              "name": "Carolyna Mejia",
+              "about": "East Bay Connections",
+              "location": "74 followers Richmond, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/licettev",
+              "name": "Licette V.",
+              "about": "UnitedHealth Group",
+              "location": "422 followers New York City Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/margarita-de-la-torre-interp-translation",
+              "name": "Margarita de la Torre",
+              "about": "TLC Interpreting & Translation Services, Inc.",
+              "location": "561 followers Los Angeles Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/lariza-cruz-50753451",
+              "name": "Lariza Cruz",
+              "about": "Freelance/Independent Spanish/English Interpreter/Translator",
+              "location": "963 followers Charlotte Metro"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/matthew-jones-345a5449",
+              "name": "Matthew Jones",
+              "about": "U.S. Department of State",
+              "location": "563 followers United States"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/maria-gabriela-leal-517a09109",
+              "name": "Maria Gabriela Leal",
+              "about": "Language Services Associates",
+              "location": "18 followers East Stroudsburg, PA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/yolanda-burgess-725a4a97",
+              "name": "Yolanda Burgess",
+              "about": "CCHI Health Care Certification",
+              "location": "122 followers Lexington County, SC"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/maria-jose-battaglia-b6b97992",
+              "name": "Maria Jose Battaglia",
+              "about": "Self-employed",
+              "location": "115 followers Greater Philadelphia"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/marina-s%C3%A1nchez-b4208b42",
+              "name": "Marina Sánchez",
+              "about": "Freelance",
+              "location": "122 followers Washington DC-Baltimore Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/svitlana-gryn-146b53130",
+              "name": "Svitlana Gryn",
+              "about": "Threat Tech LLC",
+              "location": "18 followers Fayetteville, NC"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/aleksandra-kaniak-132b4b84",
+              "name": "Aleksandra Kaniak",
+              "about": "Kaniak Translations",
+              "location": "2K followers Los Angeles, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/ulrike-wiesner-41364128",
+              "name": "Ulrike Wiesner",
+              "about": "own company",
+              "location": "321 followers New Alexandria, VA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/carmen-lucia-martinez-49974623",
+              "name": "Carmen Lucia Martinez",
+              "about": "Freelance, self-employed",
+              "location": "114 followers Parkville, MD"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/galina-korotkova-3b056533",
+              "name": "Galina Korotkova",
+              "about": "LPTS Translation Agency",
+              "location": "397 followers Gainesville, GA"
+            }
+          ],
+          "educations_details": "Southern California School of Interpretation",
+          "education": null,
+          "recommendations_count": 2,
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "languages": [
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "Spanish"
+            },
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "Catalan"
+            },
+            {
+              "subtitle": "Full professional proficiency",
+              "title": "English"
+            }
+          ],
+          "recommendations": [
+            "Cindy Gonzales Vermillion “As a freelance translator/interpreter myself, I can fully recommend Raquel Martinez as an expert in this field. Her work is accurate and meticulously done. She is reliable and highly motivated to please her clients. Her work ethic is strong and she is a pleasant person to work with. Her book translations are polished and ready for print. ”",
+            "Dan McCullough “Raquel is extremely professional and proficient in every aspect of her life. She managed quite a large office staff and worked with many international students in government and our school affairs. I would highly recommend Raquel and would be open for personal \"one on one\" conversation concerning her accomplishments and capabilities. Dan R McCullough CFNI”"
+          ],
+          "volunteer_experience": [
+            {
+              "duration": "Apr 2013 · - \nOct 2020 · \n7 years 7 months",
+              "duration_short": "- \nOct 2020",
+              "info": "Member, Cultural Ambassador and Home Hospitality Host for visitors on the U.S. State Department’s International Visitor Leadership Program. Speaker at Middle Schools under the Council´s International Education Program.",
+              "start_date": "Apr 2013",
+              "subtitle": "World Affairs Council of Dallas/Fort Worth",
+              "title": "Cultural Ambassador, Home Hospitality Host and Middle School Speaker"
+            },
+            {
+              "duration": "Sep 2003 · - \nDec 2018 · \n15 years 4 months",
+              "duration_short": "- \nDec 2018",
+              "info": "Provide simultaneous and consecutive interpretation during main services and conferences Oversee and train new interpreters Consecutive interpretation on missions trips Hospitality for international network representatives",
+              "start_date": "Sep 2003",
+              "subtitle": "Mundo de Fe Internacional - Mundo de Fe/Life Church Coppell",
+              "title": "Volunteer Lead Interpreter"
+            }
+          ],
+          "followers": 348,
+          "connections": 346,
+          "current_company_name": "Freelance Translator l Interpreter English - Spanish",
+          "organizations": [
+            {
+              "title": "World Affairs Council of Dallas and Fort Worth",
+              "membership_type": "Member. Cultural Ambassador and Home Hospitality Host for visitors on the U.S. State Department’s International Visitor Leadership Program. Speaker at Middle Schools under the Council´s International Education Program",
+              "membership_number": null
+            }
+          ],
+          "location": "Washington",
+          "input_url": "https://www.linkedin.com/in/raqueltranslations",
+          "linkedin_id": "raqueltranslations",
+          "activity": [
+            {
+              "interaction": "Liked by Raquel Martínez",
+              "link": "https://www.linkedin.com/posts/jochitlik_emorylaw-cslr-fulbright-activity-7316480143999258627-ex5f",
+              "title": "On April 15, 2025, join us for the second lecture of the \"Law & Religion\" virtual series, focusing on \"Religion and the U.S. Constitution.\" This…",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQGqski-TQdvlQ/feedshare-image-high-res/B56ZYlb6i9H0As-/0/1744384798407?e=2147483647&v=beta&t=bafOuXxvgW21P1kFnOwy4ROmxM4TEAd8a7xPV7rXtmc",
+              "id": "7316480143999258627"
+            },
+            {
+              "interaction": "Shared by Raquel Martínez",
+              "link": "https://www.linkedin.com/posts/raqueltranslations_thankyou-activity-7047952508693995520-EanD",
+              "title": "This week I received an excellence recognition award for my work as an interpreter in the Immigration Courts. Thank you, SOSi (SOS International) and…",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQGnaS09vajDnQ/feedshare-shrink_800/feedshare-shrink_800/0/1680362822154?e=2147483647&v=beta&t=6JNiV1ZjZZjv6yTC6M0QJe_F45ZQ-Azfb6-jyn3n1A4",
+              "id": "7047952508693995520"
+            }
+          ],
+          "linkedin_num_id": "125719223",
+          "banner_image": "https://media.licdn.com/dms/image/v2/C4E16AQHfcDVAS3wovg/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1523161682504?e=2147483647&v=beta&t=Ml9YiZy9RnDLnCwg_LgAZMdVXyjHxdg-VeO6dM9QYno",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [
+            {
+              "title": "Portfolio",
+              "link": "https://raqueltranslations.wixsite.com/portfolio"
+            }
+          ],
+          "first_name": "Raquel",
+          "last_name": "Martínez",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:32:34.580Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/raqueltranslations"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI07",
+      "url": "https://www.linkedin.com/in/carolpineiro",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 9.86,
+      "raw": [
+        {
+          "id": "carolpineiro",
+          "name": "Carol Piñeiro",
+          "city": "Boston, Massachusetts, United States",
+          "country_code": "US",
+          "position": null,
+          "about": "SENIOR LECTURER: CELOP/Boston University, 1980-2020 WORK ABROAD: English…",
+          "current_company": {
+            "name": "Freelance",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://be.linkedin.com/in/Carolpineiro",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/dr-shawn-marie-hrncir-phd-ches-98a88a11",
+              "name": "Shawn Marie Hrncir, PhD, CHES",
+              "about": "Mind Garden Institute",
+              "location": "3K followers Scottsdale, AZ"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/jencheatham",
+              "name": "Jennifer Cheatham",
+              "about": "Harvard University Graduate School of Education",
+              "location": "5K followers Cambridge, MA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/djkaiserphd",
+              "name": "DJ Kaiser",
+              "about": "Webster University",
+              "location": "3K followers St Louis, MO"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/drjordanutley",
+              "name": "Jordan Utley, PhD, LAT, ATC, FNAP",
+              "about": "Pima Medical Institute",
+              "location": "20K followers Tucson, AZ"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/dr-melissa-kaulbach-straub-0496458",
+              "name": "Dr. Melissa Kaulbach-Straub",
+              "about": "Institute of Medical & Business Careers",
+              "location": "3K followers Erie, PA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/karenpetersongt",
+              "name": "Karen Peterson",
+              "about": "Georgia Institute of Technology",
+              "location": "2K followers Atlanta Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/nmlavoi",
+              "name": "Nicole M. LaVoi",
+              "about": "University of Minnesota",
+              "location": "5K followers Greater Minneapolis-St. Paul Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/rohiniparikhnyc",
+              "name": "Rohini Parikh, MA, MPP",
+              "about": "Columbia University in the City of New York",
+              "location": "6K followers New York, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/randpark",
+              "name": "Rand Park",
+              "about": "University of Minnesota - Carlson School of Management",
+              "location": "5K followers St Paul, MN"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/angieneal",
+              "name": "Dr. Angie Neal",
+              "about": "Joyful Edupreneur",
+              "location": "6K followers Meridian, ID"
+            }
+          ],
+          "educations_details": "Boston University",
+          "education": [
+            {
+              "title": "Boston University",
+              "url": "https://www.linkedin.com/school/boston-university/",
+              "start_year": "1990",
+              "end_year": "2000",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "1971",
+              "end_year": "1972",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "recommendations_count": 3,
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "languages": [
+            {
+              "subtitle": "Full professional proficiency",
+              "title": "Spanish (C1)"
+            },
+            {
+              "subtitle": "Limited working proficiency",
+              "title": "Catalan, German, French, Portuguese (A2)"
+            }
+          ],
+          "certifications": [
+            {
+              "subtitle": "International House; Metropolitan College/BU",
+              "title": "Certificate in TEFL; Certificate in Biotechnology",
+              "credential_url": null,
+              "credential_id": null
+            }
+          ],
+          "recommendations": [
+            "Mark Stepner “Carol is an exceptional TESOL educator who is a valued colleague of mine, prolific conference presenter, and innovative teacher. I have found her to be a supportive special programs coordinator and generous fellow teacher who has contributed significantly and frequently to our professional development at CELOP/BU. In addition, I and other faculty members have benefited greatly from her media and technology expertise. With her international reputation as a skilled trainer and administrator as well as her outstanding work at CELOP/BU, Carol has demonstrated extraordinary depth and breadth of knowledge across such diverse fields as applied linguistics, cross-cultural education, and technology. Finally, Carol is a compassionate person who has done extensive volunteer work in a number of developing countries, which reflects her interest in other peoples and cultures.”",
+            "Zaher Alghanem, BSBA-IS, MSFSB “In summer 2009, I attended Carol's International Business English class at (CELOP) - Boston University. In this class, Carol had a unique collection of students given the differences in age, education levels, and backgrounds. I was amazed by the way she successfully managed this diversity and turned the class into a very interesting and interactive learning environment. After attending a business school, I understand how unique Carol's teaching strategies and techniques are. Carol's students are easily distinguished for the knowledge and the skills they develop in class. As a former student, I highly recommend Carol to every student whose aim is education and to each institution wants to increase its value.”"
+          ],
+          "volunteer_experience": [
+            {
+              "cause": "Education",
+              "duration": "2011 · - Present · \n15 years",
+              "duration_short": "- Present",
+              "info": "Provided training and teaching supplies for English teachers in Quezalguaque, Nicaragua",
+              "start_date": "2011",
+              "subtitle": "Brookline Sister City Project",
+              "title": "Education Committee"
+            },
+            {
+              "cause": "Health",
+              "duration": "2011 · - Present · \n15 years",
+              "duration_short": "- Present",
+              "info": "Oriented and accompanied Public Health students to Quezalguaque, Nicaragua, to do summer health projects related to chronic kidney disease.",
+              "start_date": "2011",
+              "subtitle": "Brookline Sister City Project",
+              "title": "Health Committee"
+            },
+            {
+              "cause": "Poverty Alleviation",
+              "duration": "Jul 2020 · - \nSep 2020 · 3 months",
+              "duration_short": "- \nSep 2020",
+              "info": "Work at check-in table to gather data on clients.",
+              "start_date": "Jul 2020",
+              "subtitle": "BROOKLINE FOOD PANTRY INC",
+              "title": "Check-in Table"
+            }
+          ],
+          "followers": 690,
+          "connections": 500,
+          "current_company_name": "Freelance",
+          "publications": [
+            {
+              "title": "Project-Based and Self-Directed Learning",
+              "subtitle": "Third International Conference on Higher Education Advances, Editorial Universitat Politecnica de Valencia",
+              "date": "August 6, 2017",
+              "description": "This article discusses the benefits of project-based and self-directed learning to develop competency in utilizing a second language and working collaboratively. The background premise of these modes of learning is provided, demonstrating that they work well for differentiated levels and language skills and improve student competence. Some of the areas examined are intercultural and scientific, ones that require the use of specific language in context. In addition, the concept of creating projects that increase student investment and motivation to make learning more relevant is juxtaposed with a student’s competency in an area after having participated in traditional approaches to learning. The overall benefit of the use of project-based and self-directed learning is that it allows the student to develop a higher skill set and greater engagement with the subject matter, producing better languageand content outcomes."
+            },
+            {
+              "title": "“Courses for Health & Medical Professionals” Chapter in volume English Language and the Medical Profession, Hoekje & Tipton (eds): Emerald Publishing Group, Ltd. (2011)",
+              "subtitle": "Emerald Publishing Group, Ltd.",
+              "date": "2011",
+              "description": "The book offers a program for an English language curriculum that is specifically designed for the important and growing group of international medical professionals, with a focus on both instruction and assessment. International physicians in the United States now total more than 25% of the physician workforce. Even subsequent to their passage of the clinical skills exam required for licensing and practice as physicians in U.S. hospitals, international physicians face communication challenges as first-year residents and may be referred to specialists for language and cultural issues."
+            }
+          ],
+          "organizations": [
+            {
+              "title": "TESOL, MATSOL, Fulbright",
+              "membership_type": "-",
+              "membership_number": null
+            }
+          ],
+          "location": "Boston",
+          "input_url": "https://www.linkedin.com/in/carolpineiro",
+          "linkedin_id": "carolpineiro",
+          "activity": [
+            {
+              "interaction": "Liked by Carol Piñeiro",
+              "link": "https://www.linkedin.com/posts/funmi-omisope-12a68370_streetconnectedchildren-childprotection-activity-7480345178730471424-_GCE",
+              "title": "Every child deserves interventions grounded in evidence, not just good intentions. That's why, after 17 years away from the classroom, I returned to…",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQEA9HDihfwvUw/feedshare-image-high-res/B4EZ8.GTJyHMAU-/0/1783453266928?e=2147483647&v=beta&t=uVHnoROuxd-174M9UF9xYF0GYIH0_bzvWrTgov34_kM",
+              "id": "7480345178730471424"
+            },
+            {
+              "interaction": "Liked by Carol Piñeiro",
+              "link": "https://www.linkedin.com/posts/roman-sheremeta-14972a50_u2-together-with-british-musician-ed-sheeran-activity-7430400824083718144-cY3n",
+              "title": "U2, together with British musician Ed Sheeran and the Ukrainian band Antytila, have released a joint song “Yours Eternally.” The song tells the…",
+              "img": "https://media.licdn.com/dms/image/v2/D5605AQFnTkuXa0LcJA/videocover-high/B56Zx4WF18J4BY-/0/1771545585250?e=2147483647&v=beta&t=qXdBUM5E8UjrDGyOoh_xWcNAnSCPcuaTpVZW5SiBrG0",
+              "id": "7430400824083718144"
+            }
+          ],
+          "linkedin_num_id": "36466915",
+          "banner_image": "https://media.licdn.com/dms/image/v2/C4D16AQG_JfQRi9HlPg/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1597193639667?e=2147483647&v=beta&t=e-WqjZA_Cezs3yEl5Qvst5btdKVKN2eACjRiwRROUew",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Carol",
+          "last_name": "Piñeiro",
+          "influencer": false,
+          "timestamp": "2026-07-23T03:32:44.487Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/carolpineiro"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI08",
+      "url": "",
+      "status": "error",
+      "error": "Missing URL: Profile_Link is empty.",
+      "raw": null
+    },
+    {
+      "case_id": "LI09",
+      "url": "",
+      "status": "error",
+      "error": "Missing URL: Profile_Link is empty.",
+      "raw": null
+    },
+    {
+      "case_id": "LI10",
+      "url": "https://www.linkedin.com/in/invalid-profile-example",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 6.44,
+      "raw": [
+        {
+          "timestamp": "2026-07-23T03:32:50.859Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/invalid-profile-example"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -17,8 +17,8 @@ interface AuthState {
 
 const defaultUser: AuthUser = {
   id: "u_owner",
-  email: "ethan@global3.co",
-  name: "Ethan",
+  email: "owner@global3.co",
+  name: "Owner User",
   role: "owner",
   emailVerified: true,
 };
@@ -26,8 +26,8 @@ const defaultUser: AuthUser = {
 export const useAuthStore = create<AuthState>((set) => ({
   user: defaultUser,
   activeRole: "owner",
-  activeRecruiterId: "r_riya",
-  activeContractorId: "ct_alex",
+  activeRecruiterId: "",
+  activeContractorId: "",
   isAuthenticated: true,
 
   setUser: (user) =>

@@ -13,8 +13,11 @@ export const Route = createFileRoute("/owner/settings")({
   component: SettingsPage,
 });
 
+import { useRecruiters } from "@/lib/g3-mock";
+
 function SettingsPage() {
   const [showAI, setShowAI] = useState(false);
+  const recruiters = useRecruiters();
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -53,41 +56,27 @@ function SettingsPage() {
 
       <Section title="Roles & permissions">
         <div className="divide-y divide-border">
-          {[
-            { name: "Ethan", role: "Owner", access: "Monitoring only" },
-            { name: "Divya", role: "Full-access recruiter", access: "All leads · outreach · approvals" },
-            { name: "Madhu", role: "Full-access recruiter", access: "All leads · outreach · approvals" },
-            { name: "Sharmista", role: "Full-access recruiter", access: "All leads · outreach · approvals" },
-            { name: "Contractor A", role: "Contractor recruiter", access: "Search-only + submit" },
-            { name: "Contractor B", role: "Contractor recruiter", access: "Search-only + submit" },
-          ].map((u) => (
-            <div key={u.name} className="grid grid-cols-3 items-center gap-4 py-3 text-sm">
-              <div className="font-medium">{u.name}</div>
-              <div className="text-muted-foreground">{u.role}</div>
-              <div className="text-right text-xs text-foreground/80">{u.access}</div>
+          {recruiters.length === 0 ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">
+              No team members onboarded yet.
             </div>
-          ))}
+          ) : (
+            recruiters.map((u) => (
+              <div key={u.id} className="grid grid-cols-3 items-center gap-4 py-3 text-sm">
+                <div className="font-medium">{u.name}</div>
+                <div className="text-muted-foreground">{u.role === "contractor" ? "Contractor Partner" : "Full-Access Recruiter"}</div>
+                <div className="text-right text-xs text-foreground/80">{u.status === "healthy" ? "Active" : "Attention Required"}</div>
+              </div>
+            ))
+          )}
         </div>
       </Section>
 
       <Section title="Audit trail" desc="Latest system events. Retained indefinitely per data retention policy.">
         <div className="rounded-lg border border-border">
-          {[
-            { t: "09:42", w: "Divya", a: "sent outreach to Lead #G-6613" },
-            { t: "09:31", w: "System", a: "flagged Lead #F-5502 for possible DNC conflict" },
-            { t: "08:12", w: "Madhu", a: "reclassified reply on Lead #B-2201 (Interested, not FAQ)" },
-            { t: "Yesterday", w: "Sharmista", a: "onboarded Verified Lead 4401" },
-            { t: "Yesterday", w: "System", a: "re-enriched 12 unresolved-identity records" },
-          ].map((r, i) => (
-            <div
-              key={i}
-              className="grid grid-cols-[90px_120px_1fr] items-center gap-3 border-b border-border px-4 py-2 text-xs last:border-0"
-            >
-              <span className="text-muted-foreground tabular-nums">{r.t}</span>
-              <span className="font-medium">{r.w}</span>
-              <span className="text-foreground/80">{r.a}</span>
-            </div>
-          ))}
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            No system events logged yet.
+          </div>
         </div>
       </Section>
     </div>

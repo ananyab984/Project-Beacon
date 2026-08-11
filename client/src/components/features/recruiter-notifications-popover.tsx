@@ -16,39 +16,6 @@ export interface RecruiterNotification {
   read: boolean;
 }
 
-const INITIAL_NOTIFICATIONS: RecruiterNotification[] = [
-  {
-    id: "notif-1",
-    type: "message_received",
-    title: "Message received from candidate",
-    leadName: "Takeshi Kovacs",
-    language: "Japanese",
-    detail: "Replied to outreach: 'Interested in Japanese Dubbing role. Available to start next week.'",
-    timestamp: "10m ago",
-    read: false,
-  },
-  {
-    id: "notif-2",
-    type: "lead_update",
-    title: "Lead update",
-    leadName: "Maria Garcia",
-    language: "Spanish (Spain)",
-    detail: "Secondary profile & vendor certifications automatically enriched by system.",
-    timestamp: "1h ago",
-    read: false,
-  },
-  {
-    id: "notif-3",
-    type: "draft_message",
-    title: "Draft a message for new lead",
-    leadName: "Jean Dupont",
-    language: "French",
-    detail: "New self-sourced lead assigned. Click 'Generate Draft' in Email Queue to reach out.",
-    timestamp: "3h ago",
-    read: false,
-  },
-];
-
 export function RecruiterNotificationsPopover() {
   const [open, setOpen] = useState(false);
   const [readState, setReadState] = useState<Record<string, boolean>>({});
@@ -69,8 +36,8 @@ export function RecruiterNotificationsPopover() {
   }, [dueAlerts, readState]);
 
   const allNotifications = useMemo(() => {
-    return [...autoDueNotifs, ...INITIAL_NOTIFICATIONS.map((n) => ({ ...n, read: readState[n.id] ?? n.read }))];
-  }, [autoDueNotifs, readState]);
+    return autoDueNotifs;
+  }, [autoDueNotifs]);
 
   const unreadCount = allNotifications.filter((n) => !n.read).length;
 

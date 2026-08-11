@@ -103,9 +103,9 @@ function LoginPage() {
           <div className="font-medium text-foreground/80">
             Demo accounts (password: <span className="font-mono">demo1234</span>)
           </div>
-          <div>ethan@global3.co · Owner</div>
-          <div>riya@global3.co · Recruiter</div>
-          <div>alex@global3.co · Contractor</div>
+          <div>owner@global3.co · Owner</div>
+          <div>recruiter@global3.co · Recruiter</div>
+          <div>contractor@global3.co · Contractor</div>
         </div>
       </form>
     </AuthShell>

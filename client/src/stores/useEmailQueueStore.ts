@@ -25,10 +25,10 @@ interface EmailQueueState {
 }
 
 export const useEmailQueueStore = create<EmailQueueState>((set) => ({
-  emailQueue: initialRecruiterStore?.emailQueue || [],
-  conversations: initialRecruiterStore?.conversations || [],
-  selectedQueueItemId: initialRecruiterStore?.emailQueue?.[0]?.id || null,
-  selectedConversationId: initialRecruiterStore?.conversations?.[0]?.id || null,
+  emailQueue: [],
+  conversations: [],
+  selectedQueueItemId: null,
+  selectedConversationId: null,
   isGeneratingDraft: false,
 
   setEmailQueue: (emailQueue) => set({ emailQueue }),

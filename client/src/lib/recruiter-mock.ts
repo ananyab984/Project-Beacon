@@ -129,21 +129,7 @@ function seedContractor(
   };
 }
 
-const seedLeads: RecruiterLead[] = [
-  seed("Adrian", "Adrian Steiner", "Germany", "LinkedIn", "adrian@example.com", ["Subtitling"], "German", "English", 9, "Netflix, Prime Video", "r_riya"),
-  seed("Marta", "Marta Lopez", "Spain", "ProZ", "marta@example.com", ["Dubbing"], "Spanish", "English", 6, "Disney+, HBO", "r_riya"),
-  seed("Kenji", "Kenji Watanabe", "Japan", "LinkedIn", "kenji@example.com", ["SDH", "CC"], "Japanese", "English", 12, "Sony Pictures", "r_riya"),
-  seed("Sasha", "Sasha Romanov", "Russia", "GitHub", "sasha@example.com", ["Dubbing", "Subtitling"], "Russian", "English", 5, "Independent", "r_riya"),
-  seed("Jane", "Jane Doe", "France", "Referral", "jane@example.com", ["AD"], "French", "English", 8, "Various", "r_other"),
-  seed("Lena", "Lena Hoffmann", "Austria", "LinkedIn", "lena@example.com", ["Subtitling"], "German", "English", 4, "Sky Deutschland", "r_other"),
-  seed("Diego", "Diego Martinez", "Argentina", "ProZ", "diego@example.com", ["Dubbing"], "Spanish", "English", 7, "Netflix LatAm", "r_riya"),
-  seedContractor("Mateo", "Mateo Rossi", "Italy", "LinkedIn", "mateo.rossi@example.com", "+39 06 6987 1234", ["Subtitling", "Dubbing"], "Italian", "English", 7, "Netflix Europe", "complete", false),
-  seedContractor("Hana", "Hana Tanaka", "Japan", "ProZ", "hana.t@example.co.jp", "+81 3 5555 0142", ["Voiceover"], "Japanese", "English", 11, "Sony Pictures, Hulu", "pending", true),
-  seedContractor("Carlos", "Carlos Gomez", "Mexico", "Referral", "carlos.gomez@example.com", "+52 55 1234 5678", ["Subtitling"], "Spanish (LatAm)", "English", 5, "Prime Video LatAm", "pending", false),
-  seedContractor("Freja", "Freja Lind", "Sweden", "LinkedIn", "freja.lind@example.se", "+46 8 123 4567", ["Dubbing", "QA"], "Swedish", "English", 8, "Viaplay", "complete", false),
-  seedContractor("Yusuf", "Yusuf Al-Mansoor", "UAE", "ProZ", "yusuf.m@example.ae", "+971 4 321 9876", ["Voiceover", "Subtitling"], "Arabic", "English", 9, "MBC Group, OSN", "pending", true),
-  seedContractor("Chloe", "Chloe Dubois", "France", "Import", "chloe.dubois@example.fr", "+33 1 42 68 55 00", ["Subtitling"], "French", "English", 4, "Canal+", "complete", false),
-];
+const seedLeads: RecruiterLead[] = [];
 
 function seed(
   first: string, full: string, country: string, source: string, email: string,
@@ -174,89 +160,12 @@ function seed(
 }
 
 const store: Store = {
-  leads: seedLeads,
-  emailQueue: [
-    { id: "eq1", lead_id: seedLeads[0].id, candidate_name: "Alex Chen", candidate_role: "Principal Software Engineer @ Meta", status: "AI Drafted", subject: "Architecting the Future: A specific note on your Failover work", body: "Hi Alex,\n\nI've been following your work at Meta, particularly your recent contributions to the distributed database resilience framework. The way you approached the quorum consensus problem in high-latency environments was masterfully executed.\n\nI'm currently leading a stealth-mode technical search for an Elite Systems Architecture firm founded by former AWS and Stripe leads. They're building a novel consensus engine for real-time edge computing. Given your background in Rust and multi-region failover systems, your expertise aligns perfectly with the technical challenges they are tackling.\n\nThey offer an environment that prioritizes deep engineering work over bureaucratic overhead, with a compensation package that reflects that level of impact ($450k - $600k TC + equity).\n\nWould you be open to a brief 10-minute technical sync next Tuesday or Wednesday afternoon?\n\n— Riya", preview: "Hi Alex, I was incredibly impressed by your recent open-source…", received_ago: "2m ago", ai_generated: true },
-    { id: "eq2", lead_id: seedLeads[1].id, candidate_name: "Sarah Jenkins", candidate_role: "VP of Engineering @ Stripe", status: "Follow-up", subject: "Following up on the Technical Leadership role", body: "Hi Sarah,\n\nWanted to circle back on the Technical Leadership role we discussed last week. Let me know if you'd like to schedule a call.\n\n— Riya", preview: "Wanted to circle back on the Technical Leadership role we…", received_ago: "45m ago", ai_generated: false },
-    { id: "eq3", lead_id: seedLeads[2].id, candidate_name: "Marcus Thorne", candidate_role: "Senior DevOps Architect @ Datadog", status: "AI Drafted", subject: "Your work on multi-region failover", body: "The way you architected the multi-region failover cluster is exactly the kind of problem-solving our client needs.\n\n— Riya", preview: "The way you architected the multi-region failover cluster is…", received_ago: "2h ago", ai_generated: true },
-    { id: "eq4", lead_id: seedLeads[3].id, candidate_name: "Elena Rodriguez", candidate_role: "Lead Data Scientist @ OpenAI", status: "Review Needed", subject: "Sparse autoencoders research collaboration", body: "I noticed your research on sparse autoencoders and thought you'd be interested in what our client is building.\n\n— Riya", preview: "I noticed your research on sparse autoencoders and…", received_ago: "5h ago", ai_generated: false },
-  ],
-  conversations: [
-    {
-      id: "c1", lead_id: seedLeads[0].id, candidate_name: "Marcus Holloway", candidate_role: "Principal Architect @ CloudScale",
-      channel: "LinkedIn", last_message: "I've reviewed the technical specs and…", last_ago: "2m ago", unread: true,
-      messages: [
-        { from: "them", text: "Hi there! Thanks for reaching out.", at: "10:12 AM" },
-        { from: "me", text: "Great to connect — quick 15 min sync tomorrow?", at: "10:14 AM" },
-      ],
-    },
-    {
-      id: "c2", lead_id: seedLeads[1].id, candidate_name: "Sarah Chen", candidate_role: "Principal Architect @ CloudScale",
-      channel: "LinkedIn", last_message: "Looking forward to the technical interview.", last_ago: "Active",
-      unread: false,
-      messages: [
-        { from: "them", text: "Hi there! Thanks for reaching out. I've been following G3 Recruitment's work in the fintech space. The Principal Architect role you mentioned sounds incredibly challenging.", at: "10:14 AM" },
-        { from: "me", text: "Glad to hear that, Sarah! Your background with distributed systems at CloudScale is exactly what the client is looking for. Would you be open to a 15-minute sync tomorrow to discuss the roadmap?", at: "10:16 AM" },
-      ],
-    },
-    {
-      id: "c3", lead_id: seedLeads[2].id, candidate_name: "Elena Rodriguez", candidate_role: "Lead Data Scientist",
-      channel: "Instagram", last_message: "Loved your reel on subtitle timing!", last_ago: "1h ago", unread: true,
-      messages: [{ from: "them", text: "Thanks for reaching out! Could you share more details?", at: "9:14 AM" }],
-    },
-    {
-      id: "c4", lead_id: seedLeads[3].id, candidate_name: "James Dorian", candidate_role: "Senior Engineer",
-      channel: "WhatsApp", last_message: "Sent the portfolio link. Let me know!", last_ago: "4h ago", unread: false,
-      messages: [{ from: "them", text: "Sent the portfolio link over email.", at: "6:00 AM" }],
-    },
-    {
-      id: "c5", lead_id: seedLeads[4].id, candidate_name: "Jane Doe", candidate_role: "AD Specialist",
-      channel: "Instagram", last_message: "DM'd you my showreel 🎬", last_ago: "30m ago", unread: true,
-      messages: [
-        { from: "them", text: "Hi! Saw your post about AD roles — DM'd you my showreel 🎬", at: "9:40 AM" },
-        { from: "me", text: "Amazing, taking a look now!", at: "9:45 AM" },
-      ],
-    },
-    {
-      id: "c6", lead_id: seedLeads[5].id, candidate_name: "Lena Hoffmann", candidate_role: "Subtitler (DE)",
-      channel: "WhatsApp", last_message: "Available for a call at 4pm CET?", last_ago: "20m ago", unread: false,
-      messages: [
-        { from: "me", text: "Hi Lena — do you have 10 min today?", at: "2:10 PM" },
-        { from: "them", text: "Available for a call at 4pm CET?", at: "2:22 PM" },
-      ],
-    },
-    {
-      id: "c7", lead_id: seedLeads[6].id, candidate_name: "Diego Martinez", candidate_role: "Dubbing Director",
-      channel: "SMS", last_message: "Sure, send the brief over.", last_ago: "10m ago", unread: true,
-      messages: [
-        { from: "me", text: "Hi Diego, quick opportunity for a LatAm dubbing project — interested?", at: "3:01 PM" },
-        { from: "them", text: "Sure, send the brief over.", at: "3:05 PM" },
-      ],
-    },
-    {
-      id: "c8", lead_id: seedLeads[0].id, candidate_name: "Adrian Steiner", candidate_role: "Subtitler (DE→EN)",
-      channel: "SMS", last_message: "Got it, thanks!", last_ago: "2h ago", unread: false,
-      messages: [
-        { from: "me", text: "Sending contract details shortly.", at: "1:00 PM" },
-        { from: "them", text: "Got it, thanks!", at: "1:04 PM" },
-      ],
-    },
-  ],
-  contractors: [
-    { id: "ct1", name: "Alex Kim", email: "alex@global3.co", assigned_at: Date.now() - 1000 * 60 * 60 * 24 * 30, leads_added_30d: 12, last_active: "3h ago" },
-    { id: "ct2", name: "Priya Nair", email: "priya@global3.co", assigned_at: Date.now() - 1000 * 60 * 60 * 24 * 14, leads_added_30d: 6, last_active: "Yesterday" },
-  ],
-  unassignedContractors: [
-    { id: "ct3", name: "Diego Vargas", email: "diego@global3.co", assigned_at: 0, leads_added_30d: 0, last_active: "—" },
-    { id: "ct4", name: "Mei Tanaka", email: "mei@global3.co", assigned_at: 0, leads_added_30d: 0, last_active: "—" },
-  ],
-  weekly: [
-    { week: "W1", emails_sent: 62, emails_replied: 14, dms_sent: 38, dms_replied: 11 },
-    { week: "W2", emails_sent: 74, emails_replied: 19, dms_sent: 42, dms_replied: 13 },
-    { week: "W3", emails_sent: 58, emails_replied: 12, dms_sent: 51, dms_replied: 17 },
-    { week: "W4", emails_sent: 81, emails_replied: 22, dms_sent: 47, dms_replied: 14 },
-    { week: "W5", emails_sent: 69, emails_replied: 18, dms_sent: 55, dms_replied: 19 },
-  ],
+  leads: [],
+  emailQueue: [],
+  conversations: [],
+  contractors: [],
+  unassignedContractors: [],
+  weekly: [],
 };
 
 export const initialRecruiterStore: Store = store;

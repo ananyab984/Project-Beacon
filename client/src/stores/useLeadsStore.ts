@@ -50,8 +50,8 @@ const initialFilters: LeadsFilter = {
 };
 
 export const useLeadsStore = create<LeadsState>((set) => ({
-  g3Leads: defaultG3Leads || [],
-  recruiterLeads: initialRecruiterStore?.leads || [],
+  g3Leads: [],
+  recruiterLeads: [],
   selectedLeadIds: [],
   activeLeadId: null,
   filters: initialFilters,

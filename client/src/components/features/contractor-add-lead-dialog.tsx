@@ -6,55 +6,53 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, CheckCircle2, Upload, Download, FileSpreadsheet, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { addLead, leads, Lead } from "@/lib/g3-mock";
+import { addLead, parseCsvLeads, leads, Lead } from "@/lib/g3-mock";
 
-const SOURCES = ["LinkedIn", "ProZ", "Referral", "GitHub", "Other"];
+const SOURCES = [
+  "LinkedIn",
+  "ProZ",
+  "Referral",
+  "GitHub",
+  "Google / Search Engine",
+  "Social Media (Twitter/X, Instagram, Facebook)",
+  "Email Outreach",
+  "Job Board / Portal",
+  "Direct / Word of Mouth",
+  "Other",
+];
 
 const LANGUAGES = [
-  "English",
-  "Spanish (LatAm)",
-  "Japanese",
-  "German",
-  "French",
-  "Portuguese (Brazil)",
-  "Italian",
-  "Korean",
-  "Chinese (Simplified)",
-  "Chinese (Traditional)",
-  "Arabic",
-  "Dutch",
-  "Polish",
-  "Swedish",
-  "Turkish",
-  "Spanish (Spain)",
-  "Vietnamese",
-  "Hindi",
-  "Tamil",
-  "Telugu",
-  "Malayalam",
-  "Russian",
-  "Norwegian",
-  "Danish",
-  "Finnish",
-  "Greek",
-  "Hebrew",
-  "Thai",
-  "Indonesian",
+  // Region 1 — East and South Asia
+  "Bengali", "Cantonese", "Chinese (Simplified)", "Chinese (Traditional)", "Gujarati",
+  "Hindi", "Indonesian", "Japanese", "Kannada", "Korean", "Malay", "Malayalam", "Marathi",
+  "Odia", "Punjabi", "Tamil", "Telugu", "Thai", "Urdu", "Vietnamese",
+  // Region 2 — Finno-Ugric, Slavic & Turkic
+  "Bulgarian", "Croatian", "Czech", "Finnish", "Hungarian", "Kazakh", "Polish",
+  "Russian", "Slovak", "Slovenian", "Turkish", "Ukrainian",
+  // Region 3 — Germanic Languages
+  "Danish", "Dutch", "German", "Icelandic", "Norwegian", "Swedish",
+  // Region 4 — Hellenic & Semitic
+  "Arabic", "Greek", "Hebrew",
+  // Region 5 — Romance Languages
+  "Castilian Spanish", "Catalan", "French (Canadian)", "French (Parisian)", "French",
+  "Italian", "Portuguese (Brazilian)", "Portuguese (Portugal)", "Romanian", "Spanish (Latin America)", "Spanish (LatAm)",
+  // Region 6 — Other / English
+  "English", "English (AUS)", "English (Canada)", "English (UK)",
 ];
 
 const SERVICES = [
-  "Dubbing",
   "Subtitling",
-  "SDH",
-  "Transcription",
+  "Dubbing",
+  "Translation",
   "Voice Over",
+  "SDH (Subtitles for Deaf & Hard of Hearing)",
+  "Audio Description (AD)",
   "Localization QA",
   "AI Post-editing",
-  "Translation",
   "Transcreation",
   "Quality Control",
   "Interpretation",
-  "Audio Description",
+  "Transcription",
   "Closed Captioning",
 ];
 
@@ -156,6 +154,29 @@ export function ContractorAddLeadDialog({
     setOpen(false);
   }
 
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      const parsed = parseCsvLeads(text);
+      if (parsed.length > 0) {
+        parsed.forEach((l) => {
+          addLead({
+            ...l,
+            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          });
+        });
+        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
+        setOpen(false);
+      } else {
+        toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Services columns.`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       {trigger && <div onClick={() => setOpen(true)}>{trigger}</div>}
@@ -195,7 +216,7 @@ export function ContractorAddLeadDialog({
               <FileSpreadsheet className="h-3.5 w-3.5 text-accent" /> Excel template
             </Button>
             <label className="cursor-pointer">
-              <input type="file" accept=".csv, .xlsx, .xls" onChange={() => { toast.success("Imported 5 candidate leads!"); setOpen(false); }} className="hidden" />
+              <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
               <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
                 <Upload className="h-3.5 w-3.5" /> Upload file
               </div>

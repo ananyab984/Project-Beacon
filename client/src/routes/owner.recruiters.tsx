@@ -128,6 +128,11 @@ function RecruitersPage() {
               onOpenEscalated={() => setEscalatedRecruiterId(r.id)}
             />
           ))}
+          {full.length === 0 && (
+            <div className="col-span-full p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-xl">
+              No recruiters found. Click "Onboard Recruiter" above to add a team member.
+            </div>
+          )}
         </div>
       </section>
 

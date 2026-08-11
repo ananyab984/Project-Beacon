@@ -33,13 +33,7 @@ type Pipeline = {
   category: "matching" | "outreach" | "enrichment";
 };
 
-const SEED: Pipeline[] = [
-  { id: "p1", name: "LinkedIn Identity Match", description: "Answers 'who is this person?' — resolves ambiguous LinkedIn profiles, matches incoming candidates to existing records, and links multiple sources into one canonical identity to prevent duplicate leads.", icon: LinkedinIcon, status: "active", enabled: true, runs_today: 412, success_rate: 0.87, last_run: "2 min ago", category: "matching" },
-  { id: "p2", name: "Reply Intent Classifier", description: "Tags inbound replies as Interested / FAQ / Not now / Decline.", icon: BrainCircuit, status: "running", enabled: true, runs_today: 156, success_rate: 0.62, last_run: "just now", category: "outreach" },
-  { id: "p3", name: "Cold-Email Drafts", description: "Generates first-touch drafts scoped by language + service.", icon: Mail, status: "active", enabled: true, runs_today: 88, success_rate: 0.91, last_run: "8 min ago", category: "outreach" },
-  { id: "p4", name: "Profile Enrichment", description: "Answers 'what else do we know?' — enriches an already-identified candidate with verified email, skills, language pairs, experience, resume metadata, employment history, headline, location, tech stack and profile completeness.", icon: Sparkles, status: "inactive", enabled: false, runs_today: 0, success_rate: 0.78, last_run: "yesterday", category: "enrichment" },
-  { id: "p6", name: "Duplicate Detection", description: "Flags likely duplicates across sources before outreach.", icon: Zap, status: "active", enabled: true, runs_today: 27, success_rate: 0.95, last_run: "22 min ago", category: "matching" },
-];
+const SEED: Pipeline[] = [];
 
 const STATUS_META: Record<PipelineStatus, { label: string; className: string; icon: React.ComponentType<{ className?: string }> }> = {
   active:   { label: "Active",   className: "bg-success/15 text-success border-success/30",          icon: CheckCircle2 },
@@ -159,6 +153,14 @@ function PipelinesPage() {
           );
         })}
       </div>
+
+      {filtered.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-16 text-center text-muted-foreground border border-dashed border-border rounded-2xl bg-card">
+          <BrainCircuit className="h-8 w-8 mb-2 opacity-30" />
+          <p className="text-sm font-semibold text-foreground">No AI pipelines found</p>
+          <p className="text-xs text-muted-foreground mt-1">Try searching for a different keyword or clearing your filter.</p>
+        </div>
+      )}
 
       <Sheet open={!!active} onOpenChange={(o) => !o && setSelected(null)}>
         <SheetContent className="w-full overflow-auto sm:max-w-xl">

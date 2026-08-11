@@ -1,0 +1,137 @@
+[
+  {
+    "years_of_professional_experience": 30,
+    "years_experience_evidence": "I bring over 30 years of experience in English–Spanish interpretation and translation…",
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI01",
+    "name": "Tammy Pérez",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": 4,
+    "years_experience_evidence": "four years of professional experience",
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI02",
+    "name": "Hani Almarzooq",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": null,
+    "years_experience_evidence": null,
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI03",
+    "name": "Traduttori RH",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": null,
+    "years_experience_evidence": null,
+    "contact_information": {
+      "emails": [],
+      "phones": [
+        "202-632-6452"
+      ],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": "\"Telephone: 202-632-6452\" found in the attribution text of a post.",
+    "case_id": "LI04",
+    "name": "Erika Weber-Guzman, Ed.D.",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": 4,
+    "years_experience_evidence": "four years of professional experience",
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI05",
+    "name": "Hani Almarzooq",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": null,
+    "years_experience_evidence": null,
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI06",
+    "name": "Cecilia de Tezanos",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": null,
+    "years_experience_evidence": null,
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI07",
+    "name": "Linka M.",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": 8,
+    "years_experience_evidence": "over eight years of experience",
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI08",
+    "name": "Michelle Rosslee",
+    "status": "ok"
+  },
+  {
+    "years_of_professional_experience": null,
+    "years_experience_evidence": null,
+    "contact_information": {
+      "emails": [],
+      "phones": [],
+      "websites": [],
+      "other": []
+    },
+    "contact_evidence": null,
+    "case_id": "LI09",
+    "name": "Chloe Zhang",
+    "status": "ok"
+  },
+  {
+    "case_id": "LI10",
+    "name": null,
+    "status": "no_data",
+    "years_of_professional_experience": null,
+    "contact_information": {}
+  }
+]

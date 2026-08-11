@@ -76,6 +76,11 @@ export function EmailQueuePageView() {
             </div>
           </div>
           <div className="divide-y divide-border overflow-y-auto">
+            {emailQueue.length === 0 && (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                No items in queue.
+              </div>
+            )}
             {emailQueue.map((e) => (
               <button key={e.id} onClick={() => pick(e.id)} className={`block w-full p-3 text-left transition-colors ${selected?.id === e.id ? "bg-muted/60" : "hover:bg-muted/30"}`}>
                 <div className="flex items-center justify-between gap-2">

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account Connected - Global3</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; background: #0a0a0c; color: #f3f4f6; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+    .card { background: #141418; border: 1px solid #22222a; padding: 44px 36px; border-radius: 14px; text-align: center; max-width: 460px; width: 90%; }
+    .icon { font-size: 3.2rem; margin-bottom: 16px; }
+    h1 { font-size: 1.35rem; font-weight: 700; color: #ffffff; margin-bottom: 10px; }
+    p { font-size: 0.88rem; color: #9ca3af; line-height: 1.5; margin-bottom: 28px; }
+    .btn { background: #f59e0b; color: #000; font-weight: 600; text-decoration: none; padding: 11px 22px; border-radius: 8px; font-size: 0.88rem; display: inline-block; transition: background 0.2s; }
+    .btn:hover { background: #d97706; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon" id="statusIcon">⏳</div>
+    <h1 id="statusTitle">Connecting Account...</h1>
+    <p id="statusDesc">Processing hosted authentication callback from Unipile.</p>
+    <a href="/" class="btn" id="returnBtn">Return to Global3 Dashboard</a>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get('status') || 'ok';
+    const provider = params.get('provider') || 'Account';
+    const isPopup = !!window.opener;
+
+    const iconEl = document.getElementById('statusIcon');
+    const titleEl = document.getElementById('statusTitle');
+    const descEl = document.getElementById('statusDesc');
+    const returnBtn = document.getElementById('returnBtn');
+
+    if (status === 'ok' || status === 'success') {
+      iconEl.textContent = '✅';
+      titleEl.textContent = `${provider} Connected Successfully!`;
+      descEl.textContent = isPopup
+        ? `Your ${provider} account is now authenticated via Unipile Hosted Auth. This window will close automatically.`
+        : `Your ${provider} account is now authenticated via Unipile Hosted Auth. Status webhooks will log live on your Global3 activity dashboard.`;
+    } else {
+      iconEl.textContent = '❌';
+      titleEl.textContent = `${provider} Connection Canceled`;
+      descEl.textContent = isPopup
+        ? `The hosted authentication process for ${provider} was canceled or encountered an error. This window will close automatically.`
+        : `The hosted authentication process for ${provider} was canceled or encountered an error. Please try again.`;
+    }
+
+    if (isPopup) {
+      returnBtn.style.display = 'none';
+      setTimeout(() => window.close(), 1800);
+    }
+  </script>
+</body>
+</html>

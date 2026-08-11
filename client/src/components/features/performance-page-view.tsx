@@ -11,15 +11,16 @@ export function PerformancePageView({
   const { user } = useAuth();
   const subjectName = user?.name ?? user?.email?.split("@")[0] ?? roleLabel;
 
-  // Lead-specific workflow metrics — NOT in the rubric
-  const assigned = 80;
-  const active = 44;
-  const positive = 16;
-  const followUps = 12;
+  // Lead-specific workflow metrics — calculated dynamically from store
+  const assigned = s.leads.length;
+  const active = s.leads.filter((l) => l.enrichment_status === "pending" || l.enrichment_status === "complete").length;
+  const positive = s.conversations.filter((c) => c.unread).length;
+  const followUps = s.emailQueue.filter((e) => e.status === "Follow-up" || e.status === "Review Needed").length;
   const emailsSent = s.weekly.reduce((a, w) => a + w.emails_sent, 0);
   const emailsReplied = s.weekly.reduce((a, w) => a + w.emails_replied, 0);
-  const dnc = 5;
+  const dnc = s.leads.filter((l) => l.vendor_experience?.toLowerCase().includes("dnc")).length;
   const responseRate = emailsSent ? Math.round((emailsReplied / emailsSent) * 100) : 0;
+  const activePct = assigned ? Math.round((active / assigned) * 100) : 0;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -33,7 +34,7 @@ export function PerformancePageView({
 
         <div className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
           <KpiTile label="Assigned leads" value={assigned} unit="score" context={`${active} active`} />
-          <KpiTile label="Active leads" value={active} unit="score" context={`${Math.round((active / assigned) * 100)}% of assigned`} />
+          <KpiTile label="Active leads" value={active} unit="score" context={`${activePct}% of assigned`} />
           <KpiTile label="Response rate" value={responseRate} unit="pct" trend={+2} tone="positive" context={`${emailsReplied} of ${emailsSent} emails`} />
           <KpiTile label="Positive replies" value={positive} unit="score" context="qualified responses" />
           <KpiTile label="DNC count" value={dnc} unit="score" tone={dnc > 8 ? "warning" : "neutral"} context="opted out / bounced" />

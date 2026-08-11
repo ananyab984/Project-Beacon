@@ -1,0 +1,2156 @@
+{
+  "summary": {
+    "total": 10,
+    "success": 10,
+    "failed": 0,
+    "cache_hits": 1
+  },
+  "results": [
+    {
+      "case_id": "LI01",
+      "url": "https://www.linkedin.com/in/tammy-pérez-908b8ab3",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 8.27,
+      "raw": [
+        {
+          "id": "tammy-pérez-908b8ab3",
+          "name": "Tammy Pérez",
+          "city": "Madison, Wisconsin, United States",
+          "country_code": "US",
+          "position": null,
+          "about": "I bring over 30 years of experience in English–Spanish interpretation and translation…",
+          "current_company": {
+            "link": "https://www.linkedin.com/company/self-employed-language-industry?trk=public_profile_topcard-current-company",
+            "name": "Self-Employed",
+            "company_id": "self-employed-language-industry",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://in.linkedin.com/in/tammy-p%C3%A9rez-908b8ab3",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/martine-de-haller-796a9a31",
+              "name": "Martine de Haller",
+              "about": "Self Employed",
+              "location": "159 followers Washington DC-Baltimore Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/iraleeacosta",
+              "name": "Iralee Acosta",
+              "about": "Houston ISD",
+              "location": "335 followers Houston, TX"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/martha-dominguez-2ba0a316",
+              "name": "Martha Dominguez",
+              "about": "Free lancing Consultant,",
+              "location": "263 followers Miami-Fort Lauderdale Area"
+            },
+            {
+              "profile_link": "https://hk.linkedin.com/in/bhrikuti-rai-1801b159",
+              "name": "Bhrikuti Rai",
+              "about": "Justice Without Borders",
+              "location": "478 followers Hong Kong SAR"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/windy-kellems-a10710119",
+              "name": "Windy Kellems",
+              "about": "Arizona State Schools for the Deaf and the Blind - ASDB",
+              "location": "109 followers Phoenix, AZ"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/cindy-stark",
+              "name": "Cindy Stark",
+              "about": "Marian University Center for Vibrant Schools",
+              "location": "605 followers Bloomington, IN"
+            },
+            {
+              "profile_link": "https://jm.linkedin.com/in/alexisgraves17",
+              "name": "Alexis C. Graves, MA Ed., PSM",
+              "about": "Educating Everywhere",
+              "location": "2K followers Saint Ann, Jamaica"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/marylou-selo-783a619",
+              "name": "Marylou Selo",
+              "about": "TranslationPerfect.Com",
+              "location": "1K followers New York, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/brett-dodds-8ab770b",
+              "name": "Brett Dodds",
+              "about": "Marana Unified School District",
+              "location": "79 followers Tucson, AZ"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/jon-zook-a55776a0",
+              "name": "Jon Zook",
+              "about": "- Freelance",
+              "location": "189 followers Indianapolis, IN"
+            }
+          ],
+          "educations_details": "Western Illinois University",
+          "education": [
+            {
+              "title": "Western Illinois University",
+              "url": "https://www.linkedin.com/school/western-illinois-university/",
+              "start_year": "1998",
+              "end_year": "2001",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "end_year": "2025-12",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2005",
+              "end_year": "2006",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "recommendations_count": 1,
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "recommendations": [
+            "John Jones “Tammy has the experience and ability to teach and translate. She has translated for me and I know she will do well for you. She is of high character and can be trusted to finish anything that she starts.”"
+          ],
+          "followers": 243,
+          "connections": 203,
+          "current_company_company_id": "self-employed-language-industry",
+          "current_company_name": "Self-Employed",
+          "location": "Madison",
+          "input_url": "https://www.linkedin.com/in/tammy-p%C3%A9rez-908b8ab3",
+          "linkedin_id": "tammy-pérez-908b8ab3",
+          "activity": [
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/future-innovation-education-activity-7446371035223924736-DzFB",
+              "title": "👉 Multilingual students are often framed as needing to catch up. In reality, they’re already ahead. They’re navigating multiple languages, cultures, and ways of thinking…every single day. That’s not a gap. That’s an advantage. Let’s remind them (and us) that: • Language is strength • Identity is an asset • And belonging should be felt in every classroom 👉 If you work with multilingual learners, this matters. #future #innovation #education ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQH_VUlOYxMsJQ/feedshare-shrink_1280/B56Z1bS_34IAAM-/0/1775353200460?e=2147483647&v=beta&t=HFZ-Lb-QgaPynU-m3205e5m-iBq36gffY28iWCcckN8",
+              "id": "7446371035223924736"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/dr-doris-chavez-linville-9118544_scienceofreading-biliteracy-multilinguallearners-activity-7446150808343130112-nHzH",
+              "title": "“Word families” are not the same across languages. And that matters for how we talk about the Science of Reading. In English, word families are typically about sound patterns: cat, bat, hat They help students recognize rimes and decode efficiently. In Spanish, familias de palabras are about meaning and structure: pan, panadero, panadería They help students understand how words are built and how meaning travels across forms. Same term. Different linguistic logic. Here is where this connects to the Science of Reading. The Science of Reading is grounded in how reading develops within a language system. But when we move across languages, we are not just applying the same practices in translation. We are working across different orthographies, different linguistic structures, and different pathways to meaning. English opaque orthography needs pattern recognition to support decoding. Spanish is a more transparent orthography, where morphology and meaning are more consistently visible. So when we treat “word families” as equivalent across languages, we risk doing two things: • Importing English phonics practices into Spanish without alignment • Missing the opportunity to leverage the strengths of Spanish for vocabulary and meaning making For multilingual learners, this is not a small shift. It is the difference between teaching toward the structure of the language and teaching against it. A cross-linguistic Science of Reading asks us to be more precise: Not just “what works” But “what works, in which language, and why” Because biliteracy is not built through replication. It is built through alignment. #ScienceOfReading #Biliteracy #MultilingualLearners #LiteracyLeadership #EquityInEducation ...more ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQHuTbpkkvKTZA/feedshare-shrink_1280/B4EZ1YKtBbH0AM-/0/1775300694382?e=2147483647&v=beta&t=476QdNLs3aEsRBiVVr-V7-bRrZskeUD7utx0otRVlbQ",
+              "id": "7446150808343130112"
+            },
+            {
+              "interaction": "Tammy Pérez shared this",
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_activity-7446411070610751489-KWCY",
+              "title": null,
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQE8g-VNIzjQhg/feedshare-shrink_1280/B56Z1b3aNBKQAM-/0/1775362745389?e=2147483647&v=beta&t=M9CCt2XTdHyxy9hdTDO7migA_dlLXr6mTmMwb_k7Cyg",
+              "id": "7446411070610751489"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_interpretation-translation-bilingual-activity-7446403268295110657-tlid",
+              "title": "Have you ever noticed how your tone and even your confidence can shift when you switch languages? Language shapes how we express tone, emotion, and connection. Bilingual speakers naturally adapt their communication style across languages. But this isn’t about becoming someone different. Language doesn’t change who you are—it gives you more ways to express yourself—more fully. In my work as a Spanish–English interpreter and translator, I see this every day. It’s not just about words—it’s about helping people fully show up, be understood, and connect with confidence. #Interpretation #Translation #Bilingual #LanguageAccess #CommunicationMatters #SpanishInterpreter #CulturalCompetence ...more",
+              "img": null,
+              "id": "7446403268295110657"
+            },
+            {
+              "interaction": "Tammy Pérez shared this",
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_this-is-very-true-interprtation-goes-far-activity-7438279842665754624-LIXT",
+              "title": "This is very true. Interprtation goes far beyond just words and language.",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQGkO007BXaRfw/feedshare-image-high-res/B4EZzR13J5KQAU-/0/1773047084024?e=2147483647&v=beta&t=WJqyrw68olIkWP58t37ypXmazwEAa-1thAgbQz8AJm8",
+              "id": "7438279842665754624"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/robertnandrewsii_activity-7426892060038709248-pMjr",
+              "title": null,
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQE0PAn-Yki9DA/feedshare-shrink_1280/B4EZxGe.UUKoAg-/0/1770709050925?e=2147483647&v=beta&t=fHFgFvNt0lifjF0oL430u4mmEEUCcKa8PBOUh6Uw-UE",
+              "id": "7426892060038709248"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_clear-communication-builds-trust-especially-activity-7427004290432499712-3_e3",
+              "title": "Clear communication builds trust — especially when language differences are involved. At Pérez Language Solutions, I provide professional Spanish ↔ English interpretation and translation services to help organizations communicate accurately and respectfully with Spanish-speaking families, clients, and communities. Services include: • Educational interpretation (IEP meetings, conferences, school communication) • Business and community interpretation • Faith-based events and ministry support • Certified document translation • Professional written translation Professional interpreters and translators help ensure clarity, neutrality, and accuracy in important conversations. If your organization serves Spanish-speaking individuals and wants to strengthen communication and connection, I would love to connect. Tammy Pérez Pérez Language Solutions Bridging languages with excellence, integrity, and care. ...more",
+              "img": null,
+              "id": "7427004290432499712"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_languageaccess-spanishinterpreter-translationservices-activity-7426626161323057152-Jai6",
+              "title": "Interpreter vs. Translator — what’s the difference? This question comes up often, and it’s a very common one. Both interpreters and translators support communication across languages, but they do so in slightly different ways: Interpreters work with spoken language • Meetings • Evaluations • Trainings • Conferences • Phone or virtual conversations Translators work with written documents • Birth and marriage certificates • Educational and legal documents • Forms, letters, and reports Both roles require specialized training, accuracy, and attention to confidentiality — and knowing which service is needed helps ensure communication is clear and complete. If you’re ever unsure whether interpretation or translation is the right fit for a particular situation, I’m always happy to help clarify or talk it through. — Tammy Pérez Spanish–English Interpreter & Translator Pérez Language Solutions Servicios de interpretación y traducción al español disponibles. #LanguageAccess #SpanishInterpreter #TranslationServices ...more",
+              "img": null,
+              "id": "7426626161323057152"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_languageaccess-spanishinterpreter-communitysupport-activity-7425372674912313344-G6CK",
+              "title": "Did you know that language access can look different depending on the situation? Many organizations do their very best to support Spanish-speaking families and clients by leaning on bilingual staff, volunteers, or trusted family members — especially during meetings, trainings, or important conversations. In some situations, however, having a professional interpreter or translator can provide additional clarity, confidentiality, and peace of mind for everyone involved. That’s where I’m honored to support organizations and individuals by offering professional Spanish ↔ English interpretation and translation. I work with: • Schools & districts • Businesses & organizations • Faith-based and community groups • Individuals needing certified document translation to help ensure communication is clear, respectful, and inclusive — so everyone can fully understand, participate, and feel heard. If your organization serves Spanish-speaking families, clients, or employees and is exploring ways to strengthen language access, I’d be happy to connect. 📩 I’m always glad to answer questions about: ✔ When professional interpretation may be helpful ✔ Ways to support Spanish-speaking families or clients ✔ Whether certified translation is needed for certain documents — Tammy Pérez Spanish–English Interpreter & Translator Pérez Language Solutions #LanguageAccess #SpanishInterpreter #CommunitySupport ...more",
+              "img": null,
+              "id": "7425372674912313344"
+            },
+            {
+              "interaction": "Tammy Pérez commented on a post 2mo",
+              "link": "https://www.linkedin.com/posts/kairosinterpretation_qa-episode-1-remote-jobs-in-medical-interpretation-activity-7445216263783698432-d45F",
+              "title": "I cannot get this video to load, but would greatly enjoy hearing more on this topic.",
+              "img": null,
+              "id": "1"
+            },
+            {
+              "interaction": "Tammy Pérez replied to a comment 2mo",
+              "link": "https://www.linkedin.com/posts/tammy-p%C3%A9rez-908b8ab3_activity-7455236384812044288-qQ7W",
+              "title": "Amaka Stella Ike Michelle Sinclair Doyley Wow! That is very beautiful and impacting!",
+              "img": null,
+              "id": "7455236384812044288"
+            },
+            {
+              "interaction": "Tammy Pérez reacted on this",
+              "link": "https://www.linkedin.com/posts/jeremydeweerdt_i-remember-the-day-we-bought-our-8k-lamborghini-activity-7478190710790221824-S-Fj",
+              "title": "I remember the day we bought our \"$8k Lamborghini\" In the early 90's our team and I had just launched the Leadership College and our budget was meager to say the least. Like trying to squeeze a dollar out of 15 cents! We had this vision to send teams into schools to talk to students about purpose and value, and no vehicle to actually get there. When our Finance Director called, they told us about an old 15 passenger Dodge van for sale at a mom-and-pop lot in Rockford. He figured the church could swing it cost wise, and when we pulled up that thing was U-G-L-Y. But it ran, and it drove well. $8K later, we pulled off the lot with it and we felt like purchased a Lamborghini. The vision now had a vehicle. Somebody helped us rig up a janky sound system and we were off to make a difference in as many student's lives as possible. One school booked us. Then another. And another. Our program interacted with over 1 million students during the next decade in large part to that ugly brown van, better known as our \"$8K Lamborghini\" Eventually our budget grew, better equipment followed, and our modes of transportation received a necessary upgrades. But here's what I learned: Big vision often begins with small steps God also honors those small and consistent steps of obedience and consistency...in church we'd call that \"faithfulness to your calling\". Maybe you find yourself walking this out today and I'd encourage you not to underestimate the seemingly small things like an act of obedience, a heartfelt prayer, or a necessary decision made. If you don't embrace the process, you'll never sustain the outcome. Be careful not to call something \"insignificant\" if God calls it a \"beginning\"",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQGLKhP_Czw9-w/feedshare-shrink_800/B56Z8e..2iGgAc-/0/1782931254925?e=2147483647&v=beta&t=DbcYC6W5-f8pfy7oXe6AiR5Ee858PpQ5zEViEEKeqhg",
+              "id": "7478190710790221824"
+            },
+            {
+              "interaction": "Tammy Pérez reacted on this",
+              "link": "https://www.linkedin.com/posts/dr-daniel-ruarte_welcome-heidi-chambers-to-the-team-at-life-activity-7478149621496836096-ARXl",
+              "title": "Welcome Heidi Chambers to the team at Life Pacific University 👏🎉🙏 It is official ✅💪 LPU is pleased to announce the appointment of Rev. Heidi Chambers as Assistant Professor and Director of Online Undergraduate Ministry and Management programs. In this role, Chambers will provide academic leadership for LPU’s Bachelor of Arts in Ministry and Leadership and Bachelor of Arts in Organizational Management programs.",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQHeum6S6sXLIg/feedshare-shrink_800/B56Z8e5dJ7IUAc-/0/1782929806309?e=2147483647&v=beta&t=8iXbOyS3uNEjO2HjMLdF4RlAKQHpR_yOrUA0-Hn89cY",
+              "id": "7478149621496836096"
+            },
+            {
+              "interaction": "Tammy Pérez liked this",
+              "link": "https://www.linkedin.com/posts/william-lopez-aa41887_in-king-jesus-precious-mighty-holy-name-amen-activity-7481834931560554496-wL8V",
+              "title": "In King Jesus Precious Mighty Holy Name Amen 🙏 ✝️ 🙏 🕊",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQEa3-E0AKjpZA/feedshare-image-high-res/B56Z9TROTaHUAU-/0/1783808452049?e=2147483647&v=beta&t=z8lswdfggM7oWpOenQibhgnugOqYw0CkzYcNKj52tcE",
+              "id": "7481834931560554496"
+            },
+            {
+              "interaction": "Tammy Pérez liked this",
+              "link": "https://www.linkedin.com/posts/ashlyngroeschel_encouragement-faith-ministry-activity-7468769776903897088-H1lq",
+              "title": "Whatever happens, rejoice in the Lord. In good times, rejoice! In hard times, rejoice! In slow times, rejoice! In busy times, rejoice! I pray that in every season of life, you are able to find joy in the Lord. He is with you, He cares for you, and you can experience an abundance of joy in Him that you won’t be able to find anywhere else. ❤️ #Encouragement #Faith #Ministry #YouVersion #BibleApp #Scripture",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQFnvRXZDUKHIA/feedshare-shrink_800/B4EZ6ZmiRvHoAc-/0/1780693476701?e=2147483647&v=beta&t=p9zjJpoMBZke-Yo0VVdlCGj9aFHSAf3vweIKYiJT4Fs",
+              "id": "7468769776903897088"
+            },
+            {
+              "interaction": "Tammy Pérez liked this",
+              "link": "https://www.linkedin.com/posts/youversion_psalm-4211-activity-7467213518543437824-duiR",
+              "title": "Psalm 42:11",
+              "img": "https://media.licdn.com/dms/image/v2/D4E10AQGQyxPglr7_Ag/image-shrink_800/B4EZ6DfEYCGQAk-/0/1780322420627?e=2147483647&v=beta&t=kY4TqC5zYu8008uI-a4MNtNnh753b63P-03f4zxxwLY",
+              "id": "4211"
+            },
+            {
+              "interaction": "Tammy Pérez reacted on this",
+              "link": "https://es.linkedin.com/posts/georgechambers2001_professor-rev-heidi-chambers-named-director-activity-7465869643618996224-_inD",
+              "title": "Celebrating a milestone moment for my brilliant wife, Reverend Heidi Chambers ! I am incredibly proud of her appointment as the Director of Online Undergraduate Ministry and Management Programs at Life Pacific University, and so grateful to the Lord for His faithfulness in opening this door. Someone recently shared a reflection that truly captures who she is: Heidi deeply understands the importance of supporting students both spiritually and academically, consistently creating an environment where they feel encouraged, valued, and empowered to grow. Excited to see all that is ahead as she steps into this new season of ministry and leadership under God’s guidance! -------------------------------------------------- ¡Celebrando un momento muy importante para mi brillante esposa, la Reverenda Heidi Chambers ! Me siento increíblemente orgulloso de su nombramiento como Directora de los Programas En Línea de Pregrado en Ministerio y Gestión en Life Pacific University, y muy agradecido con el Señor por Su fidelidad al abrir esta puerta. Hace poco alguien compartió una reflexión que describe perfectamente quién es ella: Heidi comprende profundamente la importancia de apoyar a los estudiantes tanto espiritual como académicamente, creando siempre un entorno donde se sienten motivados, valorados y empoderados para crecer. ¡Emocionado por ver todo lo que viene en esta nueva temporada de ministerio y liderazgo bajo la guía de Dios! #lifepacificuniversity #proudhusband",
+              "img": "https://media.licdn.com/dms/image/v2/D4E10AQHeeaNnMrQj1g/image-shrink_800/B4EZ5mhHRiH8Ak-/0/1779836417460?e=2147483647&v=beta&t=sxpuvKlHjavf0VocyOIqbpT9fsK3UihRklWz5kthZWg",
+              "id": "7465869643618996224"
+            },
+            {
+              "interaction": "Tammy Pérez liked this",
+              "link": "https://www.linkedin.com/posts/youversion_jesus-is-truth-%F0%9D%98%91%F0%9D%98%A6%F0%9D%98%B4%F0%9D%98%B6%F0%9D%98%B4-%F0%9D%98%B4%F0%9D%98%A2%F0%9D%98%AA%F0%9D%98%A5-%F0%9D%98%B5%F0%9D%98%B0-activity-7469772801521127424-C8XD",
+              "title": "Jesus is Truth. “𝘑𝘦𝘴𝘶𝘴 𝘴𝘢𝘪𝘥 𝘵𝘰 𝘩𝘪𝘮, ‘𝘐 𝘢𝘮 𝘵𝘩𝘦 𝘸𝘢𝘺, 𝘢𝘯𝘥 𝘵𝘩𝘦 𝘵𝘳𝘶𝘵𝘩, 𝘢𝘯𝘥 𝘵𝘩𝘦 𝘭𝘪𝘧𝘦. 𝘕𝘰 𝘰𝘯𝘦 𝘤𝘰𝘮𝘦𝘴 𝘵𝘰 𝘵𝘩𝘦 𝘍𝘢𝘵𝘩𝘦𝘳 𝘦𝘹𝘤𝘦𝘱𝘵 𝘵𝘩𝘳𝘰𝘶𝘨𝘩 𝘮𝘦.’” — John 14:6 ESV Truth doesn’t always change your circumstances. But it does change you. How has following Jesus—following Truth—changed your life?",
+              "img": "https://media.licdn.com/dms/image/v2/D4E10AQGE2yDT_j0mMg/image-shrink_800/B4EZ6n2w0sJ4Ag-/0/1780932611793?e=2147483647&v=beta&t=RAhTpJqserdquA83WfEfkMyZ47LuVFVg-CTnZcpZklo",
+              "id": "7469772801521127424"
+            },
+            {
+              "interaction": "Tammy Pérez reacted on this",
+              "link": "https://www.linkedin.com/posts/corporatebro_hard-to-be-more-confident-while-being-this-activity-7407072121534947329-nGpa",
+              "title": "Hard to be more confident while being this bad at numbers.",
+              "img": "https://media.licdn.com/dms/image/v2/D5605AQGKvvAy6YPJ9Q/videocover-high/B56Zsp7vIDJoBU-/0/1765935086586?e=2147483647&v=beta&t=IVf1iMCChCNcF0Gk0xl-AapwDQktxmLPmj-oaxtepUs",
+              "id": "7407072121534947329"
+            }
+          ],
+          "linkedin_num_id": "406029464",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Tammy",
+          "last_name": "Pérez",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:43:56.907Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/tammy-pérez-908b8ab3"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI02",
+      "url": "https://www.linkedin.com/in/hanialmarzooq212",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 13.47,
+      "raw": [
+        {
+          "id": "hanialmarzooq212",
+          "name": "Hani Almarzooq",
+          "city": "Saudi Arabia",
+          "country_code": "SA",
+          "position": null,
+          "about": "I am a certified English-Arabic translator with four years of professional experience…",
+          "current_company": {
+            "link": "https://at.linkedin.com/company/ilf-consulting-engineers?trk=public_profile_topcard-current-company",
+            "name": "ILF Consulting Engineers",
+            "company_id": "ilf-consulting-engineers",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://ua.linkedin.com/in/Hanialmarzooq212",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://sa.linkedin.com/in/ethar-taha-234733185",
+              "name": "Ethar Taha",
+              "about": "Self Employed",
+              "location": "421 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/amalalarfaj",
+              "name": "Amal Alarfaj",
+              "about": "Freelance Translator",
+              "location": "490 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/ahmad-alshammari-8205bbab",
+              "name": "Ahmad Alshammari",
+              "about": "The Saudi Investment Bank",
+              "location": "326 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/yasser-abunyan",
+              "name": "Yasser Abunyan",
+              "about": "Qiwa Platform Project (Takamol Holding)",
+              "location": "1K followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/sayed-moussa-9959a143",
+              "name": "Sayed Moussa",
+              "about": "German Solar Engineering and Consulting - BECR",
+              "location": "100 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/ameenahalibeck",
+              "name": "Ameenah Alibeck",
+              "about": "Day Translations, Inc.",
+              "location": "515 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://uk.linkedin.com/in/enas-habib-8a3951a9",
+              "name": "Enas Habib",
+              "about": "Senior Freelancer translator",
+              "location": "313 followers Strensall"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/farah-ahmed-149599b6",
+              "name": "Farah Ahmed",
+              "about": "Mutlaq AL-Ghowairi Contracting Company: MGC",
+              "location": "2K followers Jeddah"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/kholoud-almarwan-%D8%AE%D9%84%D9%88%D8%AF-%D8%A8%D9%86%D8%AA-%D9%85%D8%AD%D9%85%D8%AF-%D8%A7%D9%84%D9%85%D8%B1%D9%88%D8%A7%D9%86-0678b1b3",
+              "name": "Kholoud Almarwan خلود بنت محمد المروان",
+              "about": "The Cooperation Council for the Arab States of the Gulf (GCC)",
+              "location": "789 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/muna-alshehri-874687b8",
+              "name": "Muna Alshehri",
+              "about": "University of Jeddah",
+              "location": "63 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/emad-m-shurrab-a87601100",
+              "name": "Emad M. Shurrab",
+              "about": "Self- Employed Translation",
+              "location": "168 followers Jeddah"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/anasr24",
+              "name": "Abdelrahman Nasr Khedr",
+              "about": "Freelancer",
+              "location": "455 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/sultan-salah-altherwi-626829123",
+              "name": "Sultan Salah Altherwi",
+              "about": "Renfe",
+              "location": "395 followers Jeddah"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/sarah-alamri-41a67913b",
+              "name": "Sarah Alamri",
+              "about": "Misk Foundation",
+              "location": "2K followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/mahmoud-sami-b1127788",
+              "name": "Mahmoud Sami",
+              "about": "---------",
+              "location": "190 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/ghoson-alzubiri-805017120",
+              "name": "Ghoson Alzubiri",
+              "about": "National Transformation Program | برنامج التحول الوطني",
+              "location": "1K followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/lama-alem-8b18b8127",
+              "name": "Lama Alem",
+              "about": "Khunfus Publishing",
+              "location": "357 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/rasha-mohamed-86008627",
+              "name": "Rasha Mohamed",
+              "about": "Deputy Agency for Geospatial Information",
+              "location": "1K followers Riyadh, Saudi Arabia"
+            }
+          ],
+          "educations_details": "University of Melbourne",
+          "education": [
+            {
+              "start_year": "2017-06",
+              "end_year": "2019-05",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2011-07",
+              "end_year": "2015-06",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://media.licdn.com/dms/image/v2/D4D03AQHfaCBf_HVpvg/profile-displayphoto-shrink_200_200/B4DZR_cF8EHcAY-/0/1737304859967?e=2147483647&v=beta&t=h4bYqQz1sgQx9up8hPq0tI3PJxotd-ajCTEWtjyL_pM",
+          "languages": [
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "Arabic"
+            },
+            {
+              "subtitle": "Full professional proficiency",
+              "title": "English"
+            }
+          ],
+          "certifications": [
+            {
+              "meta": "Issued Oct 2025 Credential ID 68f9096edb6dc2c15e20b4a7 See credential",
+              "subtitle": "Canvas Credentials (Badgr)",
+              "title": "People Leadership: Melbourne Plus Credential",
+              "credential_url": "https://api.au.badgr.io/public/assertions/tuWAPs2WTrCnj0QUPQuiyg?trk=public_profile_see-credential",
+              "credential_id": "68f9096edb6dc2c15e20b4a7"
+            },
+            {
+              "meta": "Issued Oct 2025 Credential ID HQ-15202 See credential",
+              "subtitle": "International House Cairo",
+              "title": "TEFL Certificate (120-Hour)",
+              "credential_url": "https://www.linkedin.com/www.ihcairoeg.com?trk=public_profile_see-credential",
+              "credential_id": "HQ-15202"
+            },
+            {
+              "meta": "Issued Sep 2024",
+              "subtitle": "هيئة الأدب والنشر والترجمة | LPTC",
+              "title": "Certified Translator (English/Arabic)",
+              "credential_url": null,
+              "credential_id": null
+            },
+            {
+              "meta": "Issued May 2016",
+              "subtitle": "Education & Training Evaluation Commission",
+              "title": "Educational Professional License – English Language Teacher",
+              "credential_url": null,
+              "credential_id": null
+            }
+          ],
+          "followers": 158,
+          "connections": 150,
+          "current_company_company_id": "ilf-consulting-engineers",
+          "current_company_name": "ILF Consulting Engineers",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/hanialmarzooq212",
+          "linkedin_id": "hanialmarzooq212",
+          "activity": [
+            {
+              "interaction": "Hani Almarzooq shared this",
+              "link": "https://www.linkedin.com/posts/hanialmarzooq212_im-delighted-to-share-my-achievement-of-activity-7447119072124895232-3_G-",
+              "title": "I'm delighted to share my achievement of completing 120-hour TEFL Certificate with International House Cairo ! I was awarded this certificate upon the completion of a semi-intensive 120-hour course and It is incredible how much growth can happen over the course of 8 weeks. One of the highlights was completing 8 teaching practice sessions, where I had the opportunity to deliver lessons to elementary, lower-intermediate, and upper-intermediate English learners. If you're considering becoming a certified English language instructor, I highly recommend the 120-Hour TEFL Certificate at International House Cairo . The quality of training and the support from the staff is second to none. ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQGvnPw5bh3aqA/feedshare-image-high-res/B56Z1l7VVpKYAU-/0/1775531546263?e=2147483647&v=beta&t=SA42kPqfoRKUZURtpmnXxzuV84ET8DCk0xcg0QOHzEc",
+              "id": "7447119072124895232"
+            },
+            {
+              "interaction": "Hani Almarzooq shared this",
+              "link": "https://www.linkedin.com/posts/hanialmarzooq212_i-thought-i-already-knew-what-good-academic-activity-7446790287714246656-oB7u",
+              "title": "I thought I already knew what good academic writing was, having achieved a high score in the writing component of the IELTS. To my understanding, that was proof of my advanced writing skill before starting my Master of Applied Linguistics at the University of Melbourne. I assumed strong writing meant correct grammar, varied syntax, and rich vocabulary. One semester into the programme, I discovered that those are the least of your problems. One of the subjects that challenged me most in my first semester was Presenting Academic Discourse, a course that covers a wide range of academic writing genres and skills, including critical reviews, literature reviews, academic style and register, structuring arguments, managing reader expectations, and delivering seminar presentations. We were not only introduced to these genres throughout the course, we were actually required to produce them in multiple assignments. What really made the difference is that I came to understand what academic writing actually demands. It was not just the ability to express ideas, but the ability to construct them in a way that guides the reader, meets their expectations, and leaves no room for confusion. One important lesson I learned from this subject that no previous writing class ever taught me: Your reader has expectations, and you are responsible for meeting them. Every sentence sets up what the next one should do. Every paragraph signals what the section is about. Effective academic writers do not just have ideas. They guide their reader through those ideas. This completely shifted how I think about writing. Applying all of this was not easy at first. Being cohesive and coherent at every level of writing simultaneously is a skill that takes deliberate practice. I completed this subject with an H2A grade. It may not be a High Distinction, but the improvement in my scores from the first assignment to the final one tells a story that a single grade cannot. That progression is exactly why I am doing this degree. WAM is undeniably a key indicator of academic performance, but growth is what I am here for. ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQEn_50_k8NX_w/feedshare-shrink_800/B56Z1hQTa0IIAc-/0/1775453157291?e=2147483647&v=beta&t=KwUhGBRKaxO4fnKiO701d64UJ3kIncnLh9TK0NqGEZI",
+              "id": "7446790287714246656"
+            },
+            {
+              "interaction": "Hani Almarzooq commented on a post 8mo",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_im-happy-to-share-that-im-starting-a-new-activity-7395913050341654528-l1T_",
+              "title": "🎉 Excited for you",
+              "img": null,
+              "id": "7395913050341654528"
+            },
+            {
+              "interaction": "Hani Almarzooq liked this",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_ertiqaa2026-teachertogether-elt-activity-7482190971011645440-4sB4",
+              "title": "Thrilled to announce my participation in the 5th Ertiqaa International Conference 2026! 🌟 Instead of a traditional stage talk, I’m hosting an interactive, hands-on Station inside the educational corridor with Teacher Development Explorers! 🤝 🎯 At my Station: Stop by for a quick 10–15 minute session where we’ll dive into practical tools, simplified frameworks, and actionable roadmaps to solve real classroom challenges on the spot! 💡📈 🎁 Exclusive Discount: Register through me or mention you're coming from my side to get a special discount on your ticket! Heartfelt thanks to the organizers Ertiqaa International Academy and Conference President Dr. Samar Samy Al Najar for making this happen. ✨ 📍 Details: 📅 Saturday, July 25, 2026 | ⏰ 08:30 AM 🏢 Helwan University, Cairo, Egypt Can't wait to connect. See you there! 🙌 🔗 Dr. Samar Alnajar: https://lnkd.in/eYPCsdNQ 🔗 Conference Page: https://lnkd.in/eiwaaMyc #Ertiqaa2026 #TeacherTogether #ELT #TeacherDevelopment #InnovationInELT #TEFL",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQHya2zIMGydfA/feedshare-image-high-res/B4EZ9YVCgjJIAY-/0/1783893338473?e=2147483647&v=beta&t=QHXAIKBN6nR5YzHlCZld5g0GWh-DPlHkaFA--1v-MVA",
+              "id": "7482190971011645440"
+            },
+            {
+              "interaction": "Hani Almarzooq liked this",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_elt-tesol-tefl-activity-7475297417136046080-CF46",
+              "title": "​I am thrilled to share that I have officially received my LRN Level 5 Certificate in Teaching English to Speakers of Other Languages (ELTAC)! After months of grinding and waiting, it feels amazing to have this Ofqual-regulated milestone in hand. A massive thank you to the team at International House Cairo and Amanda Gamble for this incredible opportunity and for the unwavering support throughout my teaching journey. ​On to the next chapter! 🚀 ​ #ELT #TESOL #TEFL #ProfessionalDevelopment #InternationalHouse #CambridgeCELTA #EnglishTeaching",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQF5HKXuVpzUFQ/feedshare-shrink_800/B4EZ72XY72JMAc-/0/1782249787591?e=2147483647&v=beta&t=e8kzA5CfvdgYFuAp3v-gXbpTB-R7cGsXeyihAkGtxek",
+              "id": "7475297417136046080"
+            },
+            {
+              "interaction": "Hani Almarzooq liked this",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_efl-esl-teacher-activity-7446325822950531072-OO_Z",
+              "title": "I'm delighted to share my wonderful experience at \"Making Your Materials Work for You\" workshop at The British University in Egypt held by International House Cairo Huge thanks to the expert tutors for the amazing and wonderful EFL/ESL insights: Laura Woodward : Storytelling for language growth. Amanda Gamble : The power of visuals in engagement. Basma Elsebaey: Practical behavior management for YLs. #EFL #ESL #Teacher Training #BUE #ActiveLearning #ELT",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQFjkrcC1WxkBw/feedshare-shrink_1280/B4DZ1ap4EAGgAM-/0/1775342420593?e=2147483647&v=beta&t=YI19Qatix2Sxv9hCadXXocPizQ1sO-ar-0uvARp2bRs",
+              "id": "7446325822950531072"
+            }
+          ],
+          "linkedin_num_id": "725371155",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Hani",
+          "last_name": "Almarzooq",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:07.554Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/hanialmarzooq212"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI03",
+      "url": "https://www.linkedin.com/in/traduttori-rh-00095a52",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 12.54,
+      "raw": [
+        {
+          "id": "traduttori-rh-00095a52",
+          "name": "Traduttori RH",
+          "city": "Morocco",
+          "country_code": "MA",
+          "position": null,
+          "about": "1. Contact Information: • upon request 2. Education: • Phd. Student…",
+          "current_company": {
+            "name": "Free lance Full Time job",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://kr.linkedin.com/in/traduttori-rh-00095a52",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://ma.linkedin.com/in/asmaeziri/en",
+              "name": "Asmae Ziri",
+              "about": "Self-employed",
+              "location": "567 followers Morocco"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/wordtra-agence-de-traduction-multilingue-71139211a/en",
+              "name": "WORDTRA Global",
+              "about": "WORDTRA Agence de Traduction Multilingue",
+              "location": "11K followers Rabat"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/soumia-echeikhi",
+              "name": "soumia echeikhi",
+              "about": "Ministere des Habous et des affaires islamiques",
+              "location": "1K followers Prefecture of Salé"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/imamlajjam",
+              "name": "Imam Lajjam",
+              "about": "ASAP Translators & Interpreters",
+              "location": "4K followers Rabat"
+            },
+            {
+              "profile_link": "https://fr.linkedin.com/in/el-halloubi-mohammed-b6b05352",
+              "name": "EL HALLOUBI Mohammed",
+              "about": "GoStudent",
+              "location": "551 followers Paris"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/mohamed-ouaziz-9b124149",
+              "name": "Mohamed Ouaziz",
+              "about": "MAGHREB ARABE PRESSE AGENCE MAROCAINE DE PRESSE",
+              "location": "2K followers Rabat Prefecture"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/elhoucine-ait-haddou-04824a54",
+              "name": "Elhoucine Ait Haddou",
+              "about": "EDI",
+              "location": "2K followers Morocco"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/driss-tijani-0336a548/en",
+              "name": "Driss TIJANI",
+              "about": "Académie régionale de l'éducation et de la formation_ Rabat",
+              "location": "609 followers Prefecture of Salé"
+            },
+            {
+              "profile_link": "https://ma.linkedin.com/in/houdadiouane/en",
+              "name": "Houda Diouane",
+              "about": null,
+              "location": "3K followers Morocco"
+            }
+          ],
+          "educations_details": "Lessius Hogeschool Antwerpen",
+          "education": [
+            {
+              "title": "Lessius Hogeschool Antwerpen",
+              "start_year": "2010",
+              "end_year": "2011",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2009",
+              "end_year": "2011",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "followers": 247,
+          "connections": 248,
+          "current_company_name": "Free lance Full Time job",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/traduttori-rh-00095a52",
+          "linkedin_id": "traduttori-rh-00095a52",
+          "activity": [
+            {
+              "interaction": "Traduttori RH reacted on this",
+              "link": "https://www.linkedin.com/posts/fadoua-bakkali-88836743_i-am-very-excited-to-announce-that-in-the-activity-6644300188796227584-24MZ",
+              "title": "I am very excited to announce that in the coming days, my translation into Arabic of \"The Secret Life of Bees,\" by Sue Monk Kidd, will be published by Madarek Publishing House. I am very happy to have been able to make this come true, and truly thankful to the persons who have helped me in achieving this. Thank you a million times!",
+              "img": "https://media.licdn.com/dms/image/v2/C5622AQFnPVA2q22PQA/feedshare-shrink_800/feedshare-shrink_800/0/1584124609319?e=2147483647&v=beta&t=QzsvHQbFsYNeky_JUp6P1_X0x_8Z0OjdFxwv7ArqTHE",
+              "id": "6644300188796227584"
+            }
+          ],
+          "linkedin_num_id": "187491456",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Traduttori",
+          "last_name": "RH",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:19.753Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/traduttori-rh-00095a52"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI04",
+      "url": "https://www.linkedin.com/in/erikalweber",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 11.17,
+      "raw": [
+        {
+          "id": "erikalweber",
+          "name": "Erika Weber-Guzman, Ed.D.",
+          "city": "Camas, Washington, United States",
+          "country_code": "US",
+          "position": null,
+          "about": "As an experienced educator with a diverse range of leadership roles, I bring a wealth of…",
+          "posts": [
+            {
+              "title": "A new partnership",
+              "link": "https://www.linkedin.com/pulse/new-partnership-erika-weber",
+              "created_at": "2019-03-09T00:00:00.000Z",
+              "interaction": "-",
+              "id": "6510244446993469440"
+            },
+            {
+              "title": "Erika Weber Selected by U.S. Department of State for Prestigious English Language Specialist Assignment",
+              "attribution": "FOR IMMEDIATE RELEASE Contact: ECA Press Date: June 12, 2018 Telephone: 202-632-6452 Erika Weber Selected by U.S.",
+              "link": "https://www.linkedin.com/pulse/erika-weber-selected-us-department-state-prestigious-english-weber",
+              "created_at": "2018-06-16T00:00:00.000Z",
+              "interaction": "1 -",
+              "id": "6413800606812770304"
+            },
+            {
+              "title": "One of my workshops in Mexico",
+              "link": "https://www.linkedin.com/pulse/one-my-workshops-mexico-erika-weber",
+              "created_at": "2016-04-09T00:00:00.000Z",
+              "interaction": "- 2 Comments",
+              "id": "6124635090992513024"
+            },
+            {
+              "title": "This is what I'm up to:",
+              "attribution": "https://www.usfca.",
+              "link": "https://www.linkedin.com/pulse/what-im-up-erika-weber",
+              "created_at": "2015-11-17T00:00:00.000Z",
+              "interaction": "- 6 Comments",
+              "id": "6072441879390150656"
+            }
+          ],
+          "current_company": {
+            "link": "https://www.linkedin.com/school/lewis-&-clark-college/?trk=public_profile_topcard-current-company",
+            "name": "Lewis & Clark College",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://ph.linkedin.com/in/Erikalweber",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://www.linkedin.com/in/kelley-paternoster-2bbb0472",
+              "name": "Kelley Paternoster",
+              "about": "Suffolk County Community College",
+              "location": "2K followers Hicksville, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/patricia-brown-a5969b76",
+              "name": "Patricia Brown",
+              "about": "Oakhurst Middle School",
+              "location": "2K followers Clarksdale, MS"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/ted-byrd-37522358",
+              "name": "Ted Byrd",
+              "about": "Syracuse City School District",
+              "location": "2K followers East Syracuse, NY"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/rosa-aronson-7037536",
+              "name": "Rosa Aronson",
+              "about": "University of Virginia",
+              "location": "2K followers Ocean Isle Beach, NC"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/abigael-biehl-45b68611a",
+              "name": "Abigael Biehl",
+              "about": "Park Hill School District",
+              "location": "1K followers Kansas City Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/sandra-gonzalez-adamski-ed-d-0942ba23",
+              "name": "Sandra Gonzalez-Adamski Ed.D",
+              "about": "National Louis University",
+              "location": "1K followers Wheeling, IL"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/nancyfoote",
+              "name": "Nancy Foote",
+              "about": "Foote Consulting",
+              "location": "1K followers Gilbert, AZ"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/chelle-mcglothlin-carini-a49a6a78",
+              "name": "Chelle McGlothlin Carini",
+              "about": "PUBLIC School",
+              "location": "2K followers Richlands, VA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/amy-rendon-7864b3a6",
+              "name": "Amy Rendon",
+              "about": "Littleton Elementary School District #65",
+              "location": "2K followers Greater Phoenix Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/cloteeallochuku",
+              "name": "Clotee Allochuku-Albritton",
+              "about": "Lammersville Unified School District",
+              "location": "3K followers Tracy, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/alfonsoramirezorg",
+              "name": "Alfonso Ramirez, M.Ed.",
+              "about": "Galveston ISD",
+              "location": "21K followers Greater Houston"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/kyana-hopkins-ms-ed-1304a436",
+              "name": "Kyana Hopkins, MS.Ed",
+              "about": "The School District of Philadelphia",
+              "location": "2K followers Philadelphia, PA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/annette-marx-picconi-a1721912",
+              "name": "Annette Marx Picconi",
+              "about": "Global LT, Inc.",
+              "location": "662 followers Clermont, FL"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/kidworldcitizen",
+              "name": "Becky Morales",
+              "about": "Elmhurst District 205 Public Schools",
+              "location": "2K followers Elmhurst, IL"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/kathy-lindsey-45521a51",
+              "name": "Kathy Lindsey",
+              "about": "Richland School District Two-Round Top Elementary",
+              "location": "2K followers Columbia, SC"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/stephanielgriffin",
+              "name": "Stephanie Clark",
+              "about": "West Bloomfield School District",
+              "location": "3K followers Detroit Metropolitan Area"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/erindoan",
+              "name": "Erin Doan",
+              "about": "Power Solutions Group, Inc.",
+              "location": "2K followers Dundee, MI"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/silvia-cant%C3%BA-4a187839",
+              "name": "Silvia Cantú",
+              "about": "Stockton Unified School District",
+              "location": "1K followers Stockton, CA"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/brandy-snyder-44903b45",
+              "name": "Brandy Snyder",
+              "about": "Las Cruces Public Schools",
+              "location": "2K followers Las Cruces, NM"
+            },
+            {
+              "profile_link": "https://www.linkedin.com/in/pauljmwl12",
+              "name": "Paul Jemwel Agor",
+              "about": "Discovery Charter School",
+              "location": "1K followers Roxboro, NC"
+            }
+          ],
+          "educations_details": "Lewis & Clark College",
+          "education": [
+            {
+              "title": "Lewis & Clark College",
+              "url": "https://www.linkedin.com/school/lewis-&-clark-college/",
+              "start_year": "2022-06",
+              "end_year": "2026-05",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2013",
+              "end_year": "2015",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2010",
+              "end_year": "2012",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2000",
+              "end_year": "2003",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "recommendations_count": 2,
+          "avatar": "https://media.licdn.com/dms/image/v2/C4E03AQHlRzYQQ8YuMA/profile-displayphoto-shrink_200_200/profile-displayphoto-shrink_200_200/0/1552739997400?e=2147483647&v=beta&t=-42ejkmJpx_Nj_E20NvTHyPGtSAmSTeqr0DPSzQT-wo",
+          "languages": [
+            {
+              "subtitle": "Full professional proficiency",
+              "title": "English"
+            },
+            {
+              "subtitle": "Limited working proficiency",
+              "title": "Spanish"
+            }
+          ],
+          "certifications": [
+            {
+              "meta": "Issued Mar 2024 Expires Mar 2029 Credential ID 60678851 See credential",
+              "subtitle": "CITI Program",
+              "title": "Responsible Conduct of Research",
+              "credential_url": "https://www.citiprogram.org/verify/?wfe0e9f02-d6b3-45a7-9712-da3325f17e81-60678851&trk=public_profile_see-credential",
+              "credential_id": "60678851"
+            },
+            {
+              "subtitle": "Oregon, Pennsylvania, California, Louisiana and Arizona",
+              "title": "Professional Teaching Credential - Multiple Subject",
+              "credential_url": null,
+              "credential_id": null
+            },
+            {
+              "subtitle": "UC Davis Continuing and Professional Education",
+              "title": "TESOL",
+              "credential_url": null,
+              "credential_id": null
+            }
+          ],
+          "recommendations": [
+            "Thomas Weber “I have had the opportunity to be a guest teacher for Erika on two occasions and found her to be well organized and efficient, but most importantly, she was dedicated to the job of teaching and dedicated to her students. As a teacher of 30 years, it is easy to see a quality teacher in action and Erika is just that.”",
+            "Greg Herlein “Erika is a fantastic teacher. She did an amazing job with both my kids and consistently impressed me with her insights and expertise - the why of what she did as well as the great results. She clearly is an expert teacher. And what's more, she is incredibly loved by all the kids. All the kids I know who had her rank her as their favorite teacher ever! I highly recommend Erika and only wish my kids could have her again.”"
+          ],
+          "volunteer_experience": [
+            {
+              "cause": "Economic Empowerment",
+              "duration": "Jul 2011 · - Present · \n\n15 years 1 month",
+              "duration_short": "- Present",
+              "start_date": "Jul 2011",
+              "subtitle": "El Buen Samaritano",
+              "title": "Volunteer Teacher"
+            },
+            {
+              "cause": "Animal Welfare",
+              "duration": "Oct 2018 · - Present · \n\n7 years 10 months",
+              "duration_short": "- Present",
+              "start_date": "Oct 2018",
+              "subtitle": "Spay and Save, Inc",
+              "title": "Volunteer Staff"
+            },
+            {
+              "cause": "Education",
+              "duration": "Oct 2018 · - Present · \n\n7 years 10 months",
+              "duration_short": "- Present",
+              "start_date": "Oct 2018",
+              "subtitle": "Universidad de La Sabana",
+              "title": "Editor, Peer Editor"
+            }
+          ],
+          "followers": 667,
+          "connections": 500,
+          "current_company_name": "Lewis & Clark College",
+          "organizations": [
+            {
+              "title": "TESOL International",
+              "membership_type": "-",
+              "start_date": "Jan 2015",
+              "end_date": "Present",
+              "membership_number": null
+            },
+            {
+              "title": "MEXTESOL",
+              "membership_type": "-",
+              "membership_number": null
+            }
+          ],
+          "location": "Camas",
+          "input_url": "https://www.linkedin.com/in/erikalweber",
+          "linkedin_id": "erikalweber",
+          "activity": [
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/jonathan-haidt-2a594666_this-wonderful-new-short-film-perfectly-illustrates-activity-7471275306453069824-dtNu",
+              "title": "This wonderful new short film perfectly illustrates the predicament we put children in, in the name of \"connecting the world.\" It's by Smartphone Free Childhood , the UK organization founded a month before \"The Anxious Generation\" came out — it's been wonderful to see them bring parents together to restore healthy childhood. With the UK government expected to announce new restrictions on social media access for under-16s in the coming days, SFC has been instrumental in building the momentum that helped bring us to this moment. They also have a US org, Smartphone Free Childhood US , as well as 45 others across the world. This short film was a pro-bono project by filmmakers, creatives, and SFC supporters who brought this concept to life — and helped get it into cinemas across the UK from next week! Special shoutouts to Arts & Sciences , David Dearlove , James Bland , Charlie Orr , Kwok Yau, Linda Wu, Max Windows, Stitch Editing, Black Kite Studios , 750mph , Twenty Below Music 👏🏼 And of course, thank you SFC founders and directors Daisy Greenwell and Joe Ryrie 👏🏼 You can watch the full film in horizontal format, as it was originally made, on Smartphone-Free Childhood's site — linked in comments. And you can watch it in theaters in the UK! If you repost the film, please credit Smartphone Free Childhood . And If you'd like to get involved in the movement, you can find a Smartphone-Free Childhood national chapter wherever you are!",
+              "img": "https://media.licdn.com/dms/image/v2/D4E05AQE1vqIuilhnnQ/videocover-high/B4EZ69NQUJJMBM-/0/1781290832584?e=2147483647&v=beta&t=JejCvAP21TdOnU3OKWc3StfKWb6aPx-FQEyIXKPEHT0",
+              "id": "7471275306453069824"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/jared-cooney-horvath_education-edtech-digitalliteracy-activity-7460361118864052224-9obM",
+              "title": "One of the most common arguments for classroom technology is this: “If students need digital literacy, shouldn’t technology be integrated across every subject?” I don’t think those are the same question. In this clip from a recent AMA session, I discuss the difference between curriculum and pedagogy — and why teaching digital skills does not automatically justify teaching everything through computers. There’s a major difference between: • teaching students how technology works and • making technology the foundation of every learning experience. The distinction matters more than ever. #Education #EdTech #DigitalLiteracy #Teaching #Learning #Neuroscience #Schools",
+              "img": "https://media.licdn.com/dms/image/v2/D5605AQF83kT9qCepOA/videocover-high/B56Z4iG2qpKQBY-/0/1778688685441?e=2147483647&v=beta&t=MeUZPqJhj8Ca0zoTCQfk36zfILCb9WU_GuRV-lGKFEs",
+              "id": "7460361118864052224"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/drjosemedina_medinamondaymessage-translanguaging-duallanguage-activity-7439495522274504704-2oSb",
+              "title": "#MedinaMondayMessage : #Translanguaging Myth - If we embrace a translanguaging stance in #duallanguage , we don’t teach academic language! Lies! We can empower students to expand their linguistic repertoires WITHOUT destroying the language of their homes and communities! ✊🏽",
+              "img": "https://media.licdn.com/dms/image/v2/D5605AQGHKcdn8wyd5g/videocover-high/B56Zz5ltioHIBY-/0/1773713940682?e=2147483647&v=beta&t=LaDt9b2cIZdjxGJRmFnN-QIUQy2fDEKLS0JBptdD-7M",
+              "id": "7439495522274504704"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. shared this",
+              "link": "https://www.linkedin.com/posts/erikalweber_thank-you-so-much-rosa-dene-david-for-helping-activity-7436828480215928832-jg9U",
+              "title": "Thank you so much Rosa Dene David for helping me become a part of this amazing project! So grateful to have worked with and learned from you!",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQHSCMLSWyQ-jQ/feedshare-shrink_1280/B56ZzOGlfNIcAQ-/0/1772984359095?e=2147483647&v=beta&t=8XC7tb7h9JxurNxaJzsxUK76SwKsGCvHKdmdng-iclg",
+              "id": "7436828480215928832"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/monisha-bajaj_cies2026-activity-7435169181203054592-YW2X",
+              "title": "Who's coming to #CIES2026 ? Look forward to seeing you there!",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQEM_XrGVmi5KA/feedshare-shrink_1280/B56Zy8G.JBG4Ac-/0/1772682470219?e=2147483647&v=beta&t=aEEOsej9ncziJdw7TBGcYVGw53j3j7zFSTUiZjYY-vk",
+              "id": "7435169181203054592"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/monisha-bajaj_first-review-of-our-forthcoming-picture-book-activity-7389038908702916608-UVKy",
+              "title": "First review of our forthcoming picture book (my debut!), A YEAR OF KITES, is out from Kirkus: \"For almost 3,000 years, humans have flown kites in cultures across the globe. ... each spread features a child from a different part of the world, highlighting the seasonal, cultural, and historical significance of kite-flying in that region. Bajaj’s buoyant text is peppered with fascinating historical facts... Amber Ren ’s digital illustrations depict doe-eyed cartoon youngsters and families flying intricate and colorful kites of all shapes and sizes amid vibrant ink wash landscapes. ... A high-flying and illuminating celebration of kites, culture, and connection.\" ~Kirkus Book out Feb 17, 2026 | Pre-order at: Bookshop: https://lnkd.in/gRUY-85U Amazon: https://a.co/d/2dVZYS8 Target: https://lnkd.in/gBKD5Uj8 or wherever books are sold",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQG8LOHa0zuKRA/feedshare-shrink_800/B56ZosjurwIsAk-/0/1761684156237?e=2147483647&v=beta&t=VY9ZGs_mwEmQTasGFC8XTVJjDhRB9ArVkzIdmLz4htw",
+              "id": "7389038908702916608"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/zaretta-hammond-2b122ba_bannedbooksweek-education-letfreedomreadday-activity-7382802736129552384-LKaz",
+              "title": "I can’t let #BannedBooksWeek end without revisiting a truth that still stings: Culturally Responsive Teaching & The Brain, the book I wrote in 2014 to elevate culture as a cognitive asset and build the skill and capacity of educators to teach with both care and push so students build the muscle to reclaim their learning power, remains banned in seven state departments of education. But, it’s not just my book. The diverse narratives of gifted writers, ideas about inclusion, and the straight truth about U.S. history are being kept from children. Our students need the words and stories that wake them up to their power, or the cycle of harm keeps repeating. Remember, freedom ain’t free. What can you do? There’s plenty. If you have 5, 15, or 30 minutes, learn about the actions you can take to stand up against censorship in #education by joining in on today’s #LetFreedomReadDay ( https://lnkd.in/gxyKUZUJ ) efforts. And, if you’re looking for the next step in disrupting cognitive redlining, pick up my newest, Rebuilding Students’ Learning Power: Teaching for Instructional Equity and Cognitive Justice to go deeper into the how and tap into its good trouble: bit.ly/3UT9rmZ #Pedagogy #Books #Learning",
+              "img": "https://media.licdn.com/dms/image/v2/D5610AQFmmrkEAi07_Q/image-shrink_800/B56ZnT793mJQAc-/0/1760197337455?e=2147483647&v=beta&t=evnObFp1GrR4dOJsxGh-gflIJRhujiTx28SMAiZpW_U",
+              "id": "7382802736129552384"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. shared this",
+              "link": "https://www.linkedin.com/posts/erikalweber_archived-event-learning-for-resistance-activity-7376712992119459840-rpBC",
+              "title": null,
+              "img": null,
+              "id": "7376712992119459840"
+            },
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/monisha-bajaj_sign-on-letter-to-combat-censorship-ongoing-activity-7361630029052612608-EDIB",
+              "title": "Sign on letter to combat censorship & ongoing scholasticide —> https://lnkd.in/gaYDRwZu Background: https://lnkd.in/dUkaFEBv",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQEfeabzT9LmIw/feedshare-image-high-res/B56ZinDf_HG0As-/0/1755149369900?e=2147483647&v=beta&t=Pt_2ej5vJ_azbeOT4dYKFbWHkZT1AUDWuAzhdzjWwKQ",
+              "id": "7361630029052612608"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. commented on a post 2mo",
+              "link": "https://www.linkedin.com/posts/rosadenedavid_latest-issue-studies-in-second-language-activity-7457931257616683008-bKGU",
+              "title": "Congrats!!",
+              "img": null,
+              "id": "7457931257616683008"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/jonathan-haidt-2a594666_this-wonderful-new-short-film-perfectly-illustrates-activity-7471275306453069824-dtNu",
+              "title": "This wonderful new short film perfectly illustrates the predicament we put children in, in the name of \"connecting the world.\" It's by Smartphone Free Childhood , the UK organization founded a month before \"The Anxious Generation\" came out — it's been wonderful to see them bring parents together to restore healthy childhood. With the UK government expected to announce new restrictions on social media access for under-16s in the coming days, SFC has been instrumental in building the momentum that helped bring us to this moment. They also have a US org, Smartphone Free Childhood US , as well as 45 others across the world. This short film was a pro-bono project by filmmakers, creatives, and SFC supporters who brought this concept to life — and helped get it into cinemas across the UK from next week! Special shoutouts to Arts & Sciences , David Dearlove , James Bland , Charlie Orr , Kwok Yau, Linda Wu, Max Windows, Stitch Editing, Black Kite Studios , 750mph , Twenty Below Music 👏🏼 And of course, thank you SFC founders and directors Daisy Greenwell and Joe Ryrie 👏🏼 You can watch the full film in horizontal format, as it was originally made, on Smartphone-Free Childhood's site — linked in comments. And you can watch it in theaters in the UK! If you repost the film, please credit Smartphone Free Childhood . And If you'd like to get involved in the movement, you can find a Smartphone-Free Childhood national chapter wherever you are!",
+              "img": "https://media.licdn.com/dms/image/v2/D4E05AQE1vqIuilhnnQ/videocover-high/B4EZ69NQUJJMBM-/0/1781290832584?e=2147483647&v=beta&t=JejCvAP21TdOnU3OKWc3StfKWb6aPx-FQEyIXKPEHT0",
+              "id": "7471275306453069824"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/united-nations_all-human-beings-are-born-free-and-equal-activity-7479655365702397952-xl82",
+              "title": "All human beings are born free and equal in dignity and rights. The Universal Declaration of Human Rights enshrines that these rights are for all people, regardless of nationality, gender, race, religion, belief, or any other status. Every day, United Nations Human Rights works to promote and protect people’s rights worldwide, upholding human dignity and equality as the cornerstone of freedom, justice and peace. https://lnkd.in/gwknCdvT",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQGYzB5EjYU5eQ/feedshare-shrink_800/B4EZ8jlD89K4Ag-/0/1783008347113?e=2147483647&v=beta&t=gl0_QILzZMDDgpuSbEfOVcrDGW-bxRIE9WVNa9Q9dU4",
+              "id": "7479655365702397952"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/brenebrown_show-me-who-you-attempt-to-belittle-and-ill-activity-7472695045607800832-7VJ6",
+              "title": "Show me who you attempt to belittle and I'll better understand what makes you feel small. Grateful for Michelle Obama's wisdom and clarity.",
+              "img": "https://dms.licdn.com/playlist/vid/v2/D5605AQF-Zw8tO6gufA/thumbnail-shrink_720_1280/B56Z7RYf0xJoAg-/0/1781629322161?e=2147483647&v=beta&t=NZPt1ipMoCJHbyrOXRNs27NtmnooSMZx-Mn8DCWD2FA",
+              "id": "7472695045607800832"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/barackobama_my-sister-maya-and-i-were-profoundly-shaped-activity-7475918210677243904-j0WX",
+              "title": "My sister Maya and I were profoundly shaped by the influence of our mom, Ann Dunham. Giving Maya a preview of the Obama Presidential Center, including a new sculpture by Maya Lin dedicated to our mom’s memory, was truly special.",
+              "img": "https://media.licdn.com/dms/image/v2/D5605AQHsHE4MwaqxGg/videocover-high/B56Z7_L8IMJoBM-/0/1782397786336?e=2147483647&v=beta&t=eFrDhrMkKWMZGXX-uLHUrH6s18rSp4a1-184Ntue4rc",
+              "id": "7475918210677243904"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/chelsea-olsen-9806656a_another-fellow-pinch-me-moment-i-met-with-activity-7480419821898280961-FH2x",
+              "title": "Another Fellow pinch me moment! I met with the U.S. Ambassador to Argentina and was able to have a 1:1 meeting to talk about the impact of English Language Programs and my role as a Fellow. It was an incredible honor to meet with the Ambassador and definitely a fellowship highlight! I shared about the importance of the English Language Programs as a pillar in public diplomacy and intercultural exchange to build mutual understanding and foster relationships. As part of the Freedom 250 Roadshow, a convoy from the U.S. Embassy in Argentina with the Ambassador and Cultural Affairs Officer made a stop in Salta on their tour around the country to mark the historic America 250 festivities. Prior to the evening’s event in the Plaza Belgrano – which consisted of cultural performances by the Ballet Folklórico and local jazz band, booths, and games – Ambassador Peter Lamelas visited the Binational Center, ISICANA. What an incredible experience it is to be a Fellow! English Language Programs",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQEpH_X-MXcnCw/feedshare-shrink_800/B4DZ8_KL3UIEAg-/0/1783471062747?e=2147483647&v=beta&t=Gt6LYsYysAlr16t1Bx2H_VPcM5ZE3jHsBKW1NL1yxGY",
+              "id": "7480419821898280961"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/andreanna-staubly-33446973_stay-curious-connections-are-where-the-activity-7478496191291490304-W9Oy",
+              "title": "Stay curious! Connections are where the good stuff lives ❤️ Well, a lot of it anyway!",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQG5oPDuyCk-KQ/feedshare-image-high-res/B56Z8jtxaUKUAU-/0/1783010629604?e=2147483647&v=beta&t=vX4aisFHMCuQ6xY55LCUEXJZakopuigmMxGK7F5rh2M",
+              "id": "7478496191291490304"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/maddie-combs-ab34b428_fasten-your-seatbelts-and-prepare-the-cabin-activity-7480680113542508544-54Lk",
+              "title": "Fasten your seatbelts and prepare the cabin for behavior change! ✈️ Building Adyen v20.1 isn't just about having the right strategy—it's about helping leaders bring that strategy to life. During Leadership Day at Adyen 's Connect Week, leaders were faced with a realistic business simulation centered around three leadership behaviors that help teams navigate change: 🧭 Define the direction. 🛫 Create the flight plan. 📢 Keep everyone informed along the journey. Because even the best destination means nothing if the crew isn't aligned, the route isn't clear, or the passengers don't know what's coming next. The best part? Watching leaders roll up their sleeves, work through tough decisions together, and prove that great teamwork isn't just something we talk about—it's how we build. Speaking of great teamwork a HUGE shoutout to all the teams and leaders who helped get this one off the ground. It truly takes a village (and maybe a great flight crew and amazing captains Lahari Rao & Brendan DeWolf 😉).",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQESCDzgpZ1LAw/feedshare-image-high-res/B4EZ9C26oRK4AU-/0/1783533120573?e=2147483647&v=beta&t=Dtrc7uVc4cw5zT8ZCV6Nwg779utvGy0-HihHTTA67d0",
+              "id": "7480680113542508544"
+            },
+            {
+              "interaction": "Erika Weber-Guzman, Ed.D. liked this",
+              "link": "https://www.linkedin.com/posts/congreso-de-latinos-unidos_workforcetraining-dentalassistant-phillynonprofit-activity-7477360556086198272-tQRZ",
+              "title": "On behalf of COYS Dental Academy & Congreso, we’re proud to celebrate our Dental Pathway Program graduates! 🦷🥳 All 7 students not only passed their Dental Assisting Board Examination (RHS), but have secured employment as Dental Assistants. Graduates were also honored with official citations presented by Councilwoman Quetcy Lozada! Councilmember Quetcy Lozada Another graduating class means another group of individuals transforming their futures and their communities. 😎 Ready to start your journey? Learn more about our education and workforce programs at congreso.net . #workforcetraining #dentalassistant #phillynonprofit",
+              "img": "https://media.licdn.com/dms/image/v2/D4D10AQG2gYMwbTN7FA/image-shrink_800/B4DZ8Try7VJAAg-/0/1782741676464?e=2147483647&v=beta&t=LGPZJbzyqZPUqT6DG0nt2Fkdwj5mhSIqrFZ4D4n2iPo",
+              "id": "7477360556086198272"
+            }
+          ],
+          "linkedin_num_id": "99074772",
+          "banner_image": "https://media.licdn.com/dms/image/v2/D5616AQFgD-iEFILMdA/profile-displaybackgroundimage-shrink_200_800/B56Z1U9M2zJ0AU-/0/1775246826630?e=2147483647&v=beta&t=2ckmqUqfATad5_c2BGAHZtgkAqNwa7iN2GB1xmZf9tM",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Erika",
+          "last_name": "Weber Guzman, Ed.D.",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:34.131Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/erikalweber"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI05",
+      "url": "https://www.linkedin.com/in/hanialmarzooq212",
+      "from_cache": true,
+      "status": "success",
+      "error": null,
+      "raw": [
+        {
+          "id": "hanialmarzooq212",
+          "name": "Hani Almarzooq",
+          "city": "Saudi Arabia",
+          "country_code": "SA",
+          "position": null,
+          "about": "I am a certified English-Arabic translator with four years of professional experience…",
+          "current_company": {
+            "link": "https://at.linkedin.com/company/ilf-consulting-engineers?trk=public_profile_topcard-current-company",
+            "name": "ILF Consulting Engineers",
+            "company_id": "ilf-consulting-engineers",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://ua.linkedin.com/in/Hanialmarzooq212",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://sa.linkedin.com/in/ethar-taha-234733185",
+              "name": "Ethar Taha",
+              "about": "Self Employed",
+              "location": "421 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/amalalarfaj",
+              "name": "Amal Alarfaj",
+              "about": "Freelance Translator",
+              "location": "490 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/ahmad-alshammari-8205bbab",
+              "name": "Ahmad Alshammari",
+              "about": "The Saudi Investment Bank",
+              "location": "326 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/yasser-abunyan",
+              "name": "Yasser Abunyan",
+              "about": "Qiwa Platform Project (Takamol Holding)",
+              "location": "1K followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/sayed-moussa-9959a143",
+              "name": "Sayed Moussa",
+              "about": "German Solar Engineering and Consulting - BECR",
+              "location": "100 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/ameenahalibeck",
+              "name": "Ameenah Alibeck",
+              "about": "Day Translations, Inc.",
+              "location": "515 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://uk.linkedin.com/in/enas-habib-8a3951a9",
+              "name": "Enas Habib",
+              "about": "Senior Freelancer translator",
+              "location": "313 followers Strensall"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/farah-ahmed-149599b6",
+              "name": "Farah Ahmed",
+              "about": "Mutlaq AL-Ghowairi Contracting Company: MGC",
+              "location": "2K followers Jeddah"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/kholoud-almarwan-%D8%AE%D9%84%D9%88%D8%AF-%D8%A8%D9%86%D8%AA-%D9%85%D8%AD%D9%85%D8%AF-%D8%A7%D9%84%D9%85%D8%B1%D9%88%D8%A7%D9%86-0678b1b3",
+              "name": "Kholoud Almarwan خلود بنت محمد المروان",
+              "about": "The Cooperation Council for the Arab States of the Gulf (GCC)",
+              "location": "789 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/muna-alshehri-874687b8",
+              "name": "Muna Alshehri",
+              "about": "University of Jeddah",
+              "location": "63 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/emad-m-shurrab-a87601100",
+              "name": "Emad M. Shurrab",
+              "about": "Self- Employed Translation",
+              "location": "168 followers Jeddah"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/anasr24",
+              "name": "Abdelrahman Nasr Khedr",
+              "about": "Freelancer",
+              "location": "455 followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/sultan-salah-altherwi-626829123",
+              "name": "Sultan Salah Altherwi",
+              "about": "Renfe",
+              "location": "395 followers Jeddah"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/sarah-alamri-41a67913b",
+              "name": "Sarah Alamri",
+              "about": "Misk Foundation",
+              "location": "2K followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/mahmoud-sami-b1127788",
+              "name": "Mahmoud Sami",
+              "about": "---------",
+              "location": "190 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/ghoson-alzubiri-805017120",
+              "name": "Ghoson Alzubiri",
+              "about": "National Transformation Program | برنامج التحول الوطني",
+              "location": "1K followers Riyadh, Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/lama-alem-8b18b8127",
+              "name": "Lama Alem",
+              "about": "Khunfus Publishing",
+              "location": "357 followers Saudi Arabia"
+            },
+            {
+              "profile_link": "https://sa.linkedin.com/in/rasha-mohamed-86008627",
+              "name": "Rasha Mohamed",
+              "about": "Deputy Agency for Geospatial Information",
+              "location": "1K followers Riyadh, Saudi Arabia"
+            }
+          ],
+          "educations_details": "University of Melbourne",
+          "education": [
+            {
+              "start_year": "2017-06",
+              "end_year": "2019-05",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2011-07",
+              "end_year": "2015-06",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://media.licdn.com/dms/image/v2/D4D03AQHfaCBf_HVpvg/profile-displayphoto-shrink_200_200/B4DZR_cF8EHcAY-/0/1737304859967?e=2147483647&v=beta&t=h4bYqQz1sgQx9up8hPq0tI3PJxotd-ajCTEWtjyL_pM",
+          "languages": [
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "Arabic"
+            },
+            {
+              "subtitle": "Full professional proficiency",
+              "title": "English"
+            }
+          ],
+          "certifications": [
+            {
+              "meta": "Issued Oct 2025 Credential ID 68f9096edb6dc2c15e20b4a7 See credential",
+              "subtitle": "Canvas Credentials (Badgr)",
+              "title": "People Leadership: Melbourne Plus Credential",
+              "credential_url": "https://api.au.badgr.io/public/assertions/tuWAPs2WTrCnj0QUPQuiyg?trk=public_profile_see-credential",
+              "credential_id": "68f9096edb6dc2c15e20b4a7"
+            },
+            {
+              "meta": "Issued Oct 2025 Credential ID HQ-15202 See credential",
+              "subtitle": "International House Cairo",
+              "title": "TEFL Certificate (120-Hour)",
+              "credential_url": "https://www.linkedin.com/www.ihcairoeg.com?trk=public_profile_see-credential",
+              "credential_id": "HQ-15202"
+            },
+            {
+              "meta": "Issued Sep 2024",
+              "subtitle": "هيئة الأدب والنشر والترجمة | LPTC",
+              "title": "Certified Translator (English/Arabic)",
+              "credential_url": null,
+              "credential_id": null
+            },
+            {
+              "meta": "Issued May 2016",
+              "subtitle": "Education & Training Evaluation Commission",
+              "title": "Educational Professional License – English Language Teacher",
+              "credential_url": null,
+              "credential_id": null
+            }
+          ],
+          "followers": 158,
+          "connections": 150,
+          "current_company_company_id": "ilf-consulting-engineers",
+          "current_company_name": "ILF Consulting Engineers",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/hanialmarzooq212",
+          "linkedin_id": "hanialmarzooq212",
+          "activity": [
+            {
+              "interaction": "Hani Almarzooq shared this",
+              "link": "https://www.linkedin.com/posts/hanialmarzooq212_im-delighted-to-share-my-achievement-of-activity-7447119072124895232-3_G-",
+              "title": "I'm delighted to share my achievement of completing 120-hour TEFL Certificate with International House Cairo ! I was awarded this certificate upon the completion of a semi-intensive 120-hour course and It is incredible how much growth can happen over the course of 8 weeks. One of the highlights was completing 8 teaching practice sessions, where I had the opportunity to deliver lessons to elementary, lower-intermediate, and upper-intermediate English learners. If you're considering becoming a certified English language instructor, I highly recommend the 120-Hour TEFL Certificate at International House Cairo . The quality of training and the support from the staff is second to none. ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQGvnPw5bh3aqA/feedshare-image-high-res/B56Z1l7VVpKYAU-/0/1775531546263?e=2147483647&v=beta&t=SA42kPqfoRKUZURtpmnXxzuV84ET8DCk0xcg0QOHzEc",
+              "id": "7447119072124895232"
+            },
+            {
+              "interaction": "Hani Almarzooq shared this",
+              "link": "https://www.linkedin.com/posts/hanialmarzooq212_i-thought-i-already-knew-what-good-academic-activity-7446790287714246656-oB7u",
+              "title": "I thought I already knew what good academic writing was, having achieved a high score in the writing component of the IELTS. To my understanding, that was proof of my advanced writing skill before starting my Master of Applied Linguistics at the University of Melbourne. I assumed strong writing meant correct grammar, varied syntax, and rich vocabulary. One semester into the programme, I discovered that those are the least of your problems. One of the subjects that challenged me most in my first semester was Presenting Academic Discourse, a course that covers a wide range of academic writing genres and skills, including critical reviews, literature reviews, academic style and register, structuring arguments, managing reader expectations, and delivering seminar presentations. We were not only introduced to these genres throughout the course, we were actually required to produce them in multiple assignments. What really made the difference is that I came to understand what academic writing actually demands. It was not just the ability to express ideas, but the ability to construct them in a way that guides the reader, meets their expectations, and leaves no room for confusion. One important lesson I learned from this subject that no previous writing class ever taught me: Your reader has expectations, and you are responsible for meeting them. Every sentence sets up what the next one should do. Every paragraph signals what the section is about. Effective academic writers do not just have ideas. They guide their reader through those ideas. This completely shifted how I think about writing. Applying all of this was not easy at first. Being cohesive and coherent at every level of writing simultaneously is a skill that takes deliberate practice. I completed this subject with an H2A grade. It may not be a High Distinction, but the improvement in my scores from the first assignment to the final one tells a story that a single grade cannot. That progression is exactly why I am doing this degree. WAM is undeniably a key indicator of academic performance, but growth is what I am here for. ...more",
+              "img": "https://media.licdn.com/dms/image/v2/D5622AQEn_50_k8NX_w/feedshare-shrink_800/B56Z1hQTa0IIAc-/0/1775453157291?e=2147483647&v=beta&t=KwUhGBRKaxO4fnKiO701d64UJ3kIncnLh9TK0NqGEZI",
+              "id": "7446790287714246656"
+            },
+            {
+              "interaction": "Hani Almarzooq commented on a post 8mo",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_im-happy-to-share-that-im-starting-a-new-activity-7395913050341654528-l1T_",
+              "title": "🎉 Excited for you",
+              "img": null,
+              "id": "7395913050341654528"
+            },
+            {
+              "interaction": "Hani Almarzooq liked this",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_ertiqaa2026-teachertogether-elt-activity-7482190971011645440-4sB4",
+              "title": "Thrilled to announce my participation in the 5th Ertiqaa International Conference 2026! 🌟 Instead of a traditional stage talk, I’m hosting an interactive, hands-on Station inside the educational corridor with Teacher Development Explorers! 🤝 🎯 At my Station: Stop by for a quick 10–15 minute session where we’ll dive into practical tools, simplified frameworks, and actionable roadmaps to solve real classroom challenges on the spot! 💡📈 🎁 Exclusive Discount: Register through me or mention you're coming from my side to get a special discount on your ticket! Heartfelt thanks to the organizers Ertiqaa International Academy and Conference President Dr. Samar Samy Al Najar for making this happen. ✨ 📍 Details: 📅 Saturday, July 25, 2026 | ⏰ 08:30 AM 🏢 Helwan University, Cairo, Egypt Can't wait to connect. See you there! 🙌 🔗 Dr. Samar Alnajar: https://lnkd.in/eYPCsdNQ 🔗 Conference Page: https://lnkd.in/eiwaaMyc #Ertiqaa2026 #TeacherTogether #ELT #TeacherDevelopment #InnovationInELT #TEFL",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQHya2zIMGydfA/feedshare-image-high-res/B4EZ9YVCgjJIAY-/0/1783893338473?e=2147483647&v=beta&t=QHXAIKBN6nR5YzHlCZld5g0GWh-DPlHkaFA--1v-MVA",
+              "id": "7482190971011645440"
+            },
+            {
+              "interaction": "Hani Almarzooq liked this",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_elt-tesol-tefl-activity-7475297417136046080-CF46",
+              "title": "​I am thrilled to share that I have officially received my LRN Level 5 Certificate in Teaching English to Speakers of Other Languages (ELTAC)! After months of grinding and waiting, it feels amazing to have this Ofqual-regulated milestone in hand. A massive thank you to the team at International House Cairo and Amanda Gamble for this incredible opportunity and for the unwavering support throughout my teaching journey. ​On to the next chapter! 🚀 ​ #ELT #TESOL #TEFL #ProfessionalDevelopment #InternationalHouse #CambridgeCELTA #EnglishTeaching",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQF5HKXuVpzUFQ/feedshare-shrink_800/B4EZ72XY72JMAc-/0/1782249787591?e=2147483647&v=beta&t=e8kzA5CfvdgYFuAp3v-gXbpTB-R7cGsXeyihAkGtxek",
+              "id": "7475297417136046080"
+            },
+            {
+              "interaction": "Hani Almarzooq liked this",
+              "link": "https://www.linkedin.com/posts/mohamedhishamelaskandrany_efl-esl-teacher-activity-7446325822950531072-OO_Z",
+              "title": "I'm delighted to share my wonderful experience at \"Making Your Materials Work for You\" workshop at The British University in Egypt held by International House Cairo Huge thanks to the expert tutors for the amazing and wonderful EFL/ESL insights: Laura Woodward : Storytelling for language growth. Amanda Gamble : The power of visuals in engagement. Basma Elsebaey: Practical behavior management for YLs. #EFL #ESL #Teacher Training #BUE #ActiveLearning #ELT",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQFjkrcC1WxkBw/feedshare-shrink_1280/B4DZ1ap4EAGgAM-/0/1775342420593?e=2147483647&v=beta&t=YI19Qatix2Sxv9hCadXXocPizQ1sO-ar-0uvARp2bRs",
+              "id": "7446325822950531072"
+            }
+          ],
+          "linkedin_num_id": "725371155",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Hani",
+          "last_name": "Almarzooq",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:07.554Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/hanialmarzooq212"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI06",
+      "url": "https://www.linkedin.com/in/cecilia-de-tezanos-ab863424",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 8.16,
+      "raw": [
+        {
+          "id": "cecilia-de-tezanos-ab863424",
+          "name": "Cecilia de Tezanos",
+          "city": "Uruguay",
+          "country_code": "UY",
+          "position": null,
+          "about": "Mi experiencia permite ofrecer soluciones confiables en materia de traducciones de idioma…",
+          "current_company": {
+            "name": "Freelance Public Translator",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://www.linkedin.com/in/cecilia-de-tezanos-ab863424",
+          "people_also_viewed": [
+            {
+              "profile_link": "https://uy.linkedin.com/in/carolina-castro-bosch-030339a",
+              "name": "Carolina Castro Bosch",
+              "about": "CQ fluency",
+              "location": "278 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/matilde-mullin-68312026",
+              "name": "Matilde Mullin",
+              "about": "Escuela Integral",
+              "location": "278 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/sol-nemeth-5a8a39108",
+              "name": "Sol Nemeth",
+              "about": "Ceibal",
+              "location": "484 followers Montevideo"
+            },
+            {
+              "profile_link": "https://es.linkedin.com/in/ignaciobenitezlaurito",
+              "name": "Ignacio Benítez, MA",
+              "about": "Keywords Studios - Spain",
+              "location": "2K followers Gandía"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/gustavo-nin-elorza-04520a7b",
+              "name": "Gustavo NIN ELORZA",
+              "about": "Self-employed",
+              "location": "160 followers Montevideo"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/mariana-bercianos-10a38227",
+              "name": "Mariana Bercianos",
+              "about": "The British Schools of Montevideo",
+              "location": "556 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/adrianabutureira",
+              "name": "Adriana Butureira",
+              "about": "Free lance",
+              "location": "420 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/stefan-hofmeister-12638317",
+              "name": "Stefan Hofmeister",
+              "about": "English to German, Japanese to German, and Spanish to German",
+              "location": "937 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/nestor-fabian-pereira-7878213b",
+              "name": "Nestor Fabian Pereira",
+              "about": "Oxbridge",
+              "location": "137 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/elizabethardans",
+              "name": "Elizabeth Ardans",
+              "about": "Lengua sin fronteras",
+              "location": "193 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/raibelt-baptista-bb236180",
+              "name": "Raibelt Baptista",
+              "about": "Tata Consultancy Services",
+              "location": "338 followers Montevideo"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/patriciakangasniemi",
+              "name": "Patricia Kangasniemi",
+              "about": "Self-employed",
+              "location": "1K followers Montevideo"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/alvaro-soriano-65b923a",
+              "name": "Alvaro Soriano",
+              "about": "Independiente / Freelance",
+              "location": "591 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/pierinalanzaro",
+              "name": "Pierina Lanzaro",
+              "about": "Pierina Lanzaro",
+              "location": "382 followers Uruguay"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/patriciawild",
+              "name": "Patricia Wild",
+              "about": "Patricia Wild Interpretación y Traducción",
+              "location": "1K followers Uruguay"
+            },
+            {
+              "profile_link": "https://pr.linkedin.com/in/emilyczech",
+              "name": "Emily Czech",
+              "about": "VICE Media",
+              "location": "407 followers Vieques"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/lourdesmartino",
+              "name": "Lourdes Martino",
+              "about": "Autónomo",
+              "location": "1K followers Montevideo"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/johannheyss",
+              "name": "Johann Heyss",
+              "about": "Free-lance",
+              "location": "1K followers General Líber Seregni"
+            },
+            {
+              "profile_link": "https://uy.linkedin.com/in/nora-redaelli-7606316",
+              "name": "Nora Redaelli",
+              "about": "Freelance",
+              "location": "107 followers Uruguay"
+            },
+            {
+              "profile_link": "https://pt.linkedin.com/in/stephcsolorzanom",
+              "name": "Stephanie Solórzano",
+              "about": "Somos Inmigrantes",
+              "location": "758 followers Bombarral"
+            }
+          ],
+          "educations_details": "Universidad de la República",
+          "education": [
+            {
+              "title": "Universidad de la República",
+              "url": "https://uy.linkedin.com/school/universidad-de-la-republica/",
+              "start_year": "1982",
+              "end_year": "1985",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "1995",
+              "end_year": "1996",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "languages": [
+            {
+              "subtitle": "Professional working proficiency",
+              "title": "English"
+            },
+            {
+              "subtitle": "Elementary proficiency",
+              "title": "French"
+            },
+            {
+              "subtitle": "Elementary proficiency",
+              "title": "German"
+            },
+            {
+              "subtitle": "Elementary proficiency",
+              "title": "Italian"
+            }
+          ],
+          "followers": 73,
+          "connections": 71,
+          "current_company_name": "Freelance Public Translator",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/cecilia-de-tezanos-ab863424",
+          "linkedin_id": "cecilia-de-tezanos-ab863424",
+          "activity": [
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_al-mejor-postor-luego-de-m%C3%A1s-de-17-a%C3%B1os-activity-7252308535470944257-USO5",
+              "title": "Al mejor postor Luego de más de 17 años, esta semana llega a su fin la licitación para escaneo de contenedores, de la Administracion Nacional de…",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQGnqq6X2__7oQ/feedshare-shrink_800/feedshare-shrink_800/0/1729085094166?e=2147483647&v=beta&t=H08oz_re24ULJtd34LTYDritSGw66RLBq5dZ5xQTUFw",
+              "id": "17"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_camioneros-solicitan-estudio-de-salud-p%C3%BAblica-activity-7247258837861232640-8LDZ",
+              "title": "Llegado el momento los avances tecnológicos dan lo mismo…. Mucho se habló de la eficacia, de la eficiencia, de que es hora de implementar nueva…",
+              "img": "https://media.licdn.com/dms/image/sync/v2/D4D27AQF47ha8VaW2RQ/articleshare-shrink_800/articleshare-shrink_800/0/1727880695066?e=2147483647&v=beta&t=BKS_9sk3WTX2PjzjkIWLl3GNBK_KQOif2Xsj28615Cw",
+              "id": "7247258837861232640"
+            },
+            {
+              "interaction": "Shared by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/cecilia-de-tezanos-ab863424_la-semana-del-3-de-setiembre-participe-como-activity-7242925367575875585-S3zf",
+              "title": "La semana del 3 de setiembre participe como maestra de ceremonia en la 6th International Conference for Water Safety, gracias a la organización de…",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQEAIGtP3vBFlA/feedshare-shrink_800/feedshare-shrink_800/0/1726844070381?e=2147483647&v=beta&t=8rFoewKkJfmKYKMNOgq3sJb3wKSJwHYaaky48T8_ANE",
+              "id": "3"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_los-transportistas-se-estar%C3%ADan-negando-a-activity-7234325741599948800-cznA",
+              "title": "Los transportistas se estarían negando a ser escaneados por los equipos de rayos X de S2 Global dado que a diferencia del equipo actual de NUCTECH…",
+              "img": "https://media.licdn.com/dms/image/v2/D4E05AQHTN9rxKohPwQ/videocover-high/videocover-high/0/1724791474142?e=2147483647&v=beta&t=s60vY4eZL-Ju2G7jbjeZaT6wGRRNfOJQBnjXcR9OMwo",
+              "id": "7234325741599948800"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_embarque-de-cocaina-detectado-en-portugal-activity-7237190819244343299-2L_6",
+              "title": "Embarque de cocaina detectado en Portugal, que fuera escaneado tanto en su origen Paraguay como en su tránsito por Montevideo. Se habla de la baja…",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQErUCRTRYhIwg/feedshare-shrink_800/feedshare-shrink_800/0/1725480747698?e=2147483647&v=beta&t=tyMdRghqvwFK8gQa1Wb5UrL6nh2XeMKrVxLmywW7WPg",
+              "id": "7237190819244343299"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_los-equipos-rapiscan-systems-adquiridos-activity-7210121848632594432-7KaF",
+              "title": "Los equipos Rapiscan Systems adquiridos a S2 Global son básicamente móviles, con posibilidad de ser usados en modo portal, es decir trabajar de…",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQHnuOmYLTleyQ/feedshare-image-high-res/feedshare-image-high-res/0/1719002142626?e=2147483647&v=beta&t=W2OVmNihCvUjeZWN4ebz2vwjaHa6dWK3ObrrVpYhF2U",
+              "id": "7210121848632594432"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_en-estos-d%C3%ADas-se-cumpli%C3%B3-un-a%C3%B1o-desde-la-activity-7211461679069462528-IKpX",
+              "title": "En estos días, se cumplió un año desde la adjudicación de la licitación para la compra de los escáneres Rapiscan Systems a S2 Global por parte del…",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQHCEEG3uaPDnw/feedshare-shrink_800/feedshare-shrink_800/0/1719346445283?e=2147483647&v=beta&t=6LG2DL5Viyjv3pKY4hi8zSMZsqiqEqTokuSP33Ht0H0",
+              "id": "7211461679069462528"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_y-finalmente-llegaron-2-equipos-m%C3%B3viles-activity-7209959429767634945-5MRg",
+              "title": "Y finalmente llegaron… 2 equipos móviles, que operarán como semi fijos Los tiempos estipulados en la licitación originalmente se han ido estirando",
+              "img": "https://media.licdn.com/dms/image/v2/D4D22AQHaIou1XfzsjA/feedshare-shrink_800/feedshare-shrink_800/0/1718988281725?e=2147483647&v=beta&t=ZtcfaEA2VJ6w8RNffweGAtj43W5V3yOY1MzNBiWvEOo",
+              "id": "2"
+            },
+            {
+              "interaction": "Shared by Cecilia de Tezanos",
+              "link": "https://www.linkedin.com/posts/cecilia-de-tezanos-ab863424_merece-la-pena-exigir-a-un-profesional-que-activity-6431172219048730624-o2hv",
+              "title": "¿Merece la pena exigir a un profesional que te haga un trabajo con prisas? ¿Puede traducirse un texto de 10.000 palabras en 2 días? Debería darse un…",
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": "6431172219048730624"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://www.linkedin.com/posts/hello-translator_operaci%C3%B3n-biquini-para-traductores-de-scheherezadesl-activity-6412348368781139968-H5Uu",
+              "title": "Operación biquini para traductores (de @Scheherezade_SL). Gracias, @plluberas",
+              "img": "https://media.licdn.com/dms/image/v2/C4E22AQHcohtuaozjsA/feedshare-shrink_800/feedshare-shrink_800/0/1592822113745?e=2147483647&v=beta&t=8lV6mVQLJLRF4yg1c1gs8T4emBpxpJRo9PkW7UbOITg",
+              "id": "6412348368781139968"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://www.linkedin.com/posts/fernandobrumpereiro_sgs-joins-forces-with-abs-and-gold-tank-inspection-activity-6404416260838301696-eDe6",
+              "title": null,
+              "img": "https://media.licdn.com/dms/image/v2/C4D34AQHdPk2zmfJ0zQ/ugc-proxy-shrink_800/ugc-proxy-shrink_800/0/1593533770300?e=2147483647&v=beta&t=nRD8LGRqLhUikjtIrdg3sI7P4tvRy59sctyJrqZCPEc",
+              "id": "6404416260838301696"
+            },
+            {
+              "interaction": "Shared by Cecilia de Tezanos",
+              "link": "https://www.linkedin.com/posts/cecilia-de-tezanos-ab863424_si-algo-caracteriza-a-un-traductor-profesional-activity-6407599645098287104-_jYl",
+              "title": "Si algo caracteriza a un #traductor profesional es su entrega y su compromiso por el trabajo bien hecho. #ponuntraductorentuvida ¡Feliz fin de…",
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": "6407599645098287104"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://www.linkedin.com/posts/hello-translator_si-algo-caracteriza-a-un-traductor-profesional-activity-6403530259546857472-Ef0b",
+              "title": "Si algo caracteriza a un #traductor profesional es su entrega y su compromiso por el trabajo bien hecho. #ponuntraductorentuvida ¡Feliz fin de…",
+              "img": "https://media.licdn.com/dms/image/v2/C4E22AQHNcUYswvkZ1w/feedshare-shrink_800/feedshare-shrink_800/0/1592525455272?e=2147483647&v=beta&t=Rx5B98qhJT6v2rBRGlQgRviZozXKd96TGsIDMjPQLrM",
+              "id": "6403530259546857472"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://es.linkedin.com/posts/fernandobrumpereiro_sgs-uruguay-70-a%C3%B1os-en-el-pa%C3%ADs-brindando-activity-6400401806140141568-K3Am",
+              "title": "SGS Uruguay 70 años en el País brindando servicios a la producción",
+              "img": "https://media.licdn.com/dms/image/v2/C4E22AQFwVlwHKBElZA/feedshare-shrink_800/feedshare-shrink_800/0/1578659226118?e=2147483647&v=beta&t=p39LVrpvakV_BXw0QoN4jqB30jGUPp3Gn9g27Euakhs",
+              "id": "70"
+            },
+            {
+              "interaction": "Liked by Cecilia de Tezanos",
+              "link": "https://www.linkedin.com/posts/mat%C3%ADas-rodr%C3%ADguez-bosch_very-proud-of-being-the-winner-of-the-very-activity-6392793809868066816-bSdR",
+              "title": "Very proud of being the winner of the very first Public Speaking Competition at IESE Business School. Many thanks to all the organizers, judges and…",
+              "img": "https://media.licdn.com/dms/image/v2/C5122AQFJnl50_XBGOg/feedshare-shrink_1280/feedshare-shrink_1280/0/1578400864094?e=2147483647&v=beta&t=Cp6t3ZOhCKkZ3S1Ei8h2Fzy3ihScWsaPdeeX3rgkBcw",
+              "id": "6392793809868066816"
+            }
+          ],
+          "linkedin_num_id": "85171244",
+          "banner_image": "https://media.licdn.com/dms/image/v2/D4E16AQFKUalAD_8y-A/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1721166274545?e=2147483647&v=beta&t=cv8tUNT4WjE1ItsHnGEe9g18vrk11HxMIbFhYeN0J_g",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Cecilia",
+          "last_name": "de Tezanos",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:42.570Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/cecilia-de-tezanos-ab863424"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI07",
+      "url": "https://www.linkedin.com/in/linka-m-7227b4105",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 5.0,
+      "raw": [
+        {
+          "id": "linka-m-7227b4105",
+          "name": "Linka M.",
+          "city": "France",
+          "country_code": "FR",
+          "position": null,
+          "about": null,
+          "current_company": {
+            "link": "https://fr.linkedin.com/company/sarl-jlvtraductions?trk=public_profile_topcard-current-company",
+            "name": "JLVTRADUCTIONS",
+            "company_id": "sarl-jlvtraductions",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://www.linkedin.com/in/linka-m-7227b4105",
+          "educations_details": "Edvenn",
+          "education": [
+            {
+              "title": "Edvenn",
+              "url": "https://fr.linkedin.com/school/edvenn/",
+              "start_year": "2021-05",
+              "end_year": "2021-06",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2015",
+              "end_year": "2017",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2012",
+              "end_year": "2015",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "recommendations_count": 1,
+          "avatar": "https://static.licdn.com/aero-v1/sc/h/9c8pery4andzj6ohjkjp54ma2",
+          "languages": [
+            {
+              "subtitle": "Native or bilingual proficiency",
+              "title": "French"
+            },
+            {
+              "subtitle": "-",
+              "title": "English"
+            },
+            {
+              "subtitle": "-",
+              "title": "Spanish"
+            },
+            {
+              "subtitle": "Elementary proficiency",
+              "title": "Italian"
+            }
+          ],
+          "recommendations": [
+            "David Foust “En un evento internacional el año pasado, Linka me ayudó como traductora (francés-español-francés). Aunque algunos términos eran técnicos o desconocidos para ella, y yo hablaba un poco rápido, Linka hizo siempre su mejor esfuerzo por comprender los términos nuevos antes de empezar la presentación y por hacer la mejor traducción posible y ajustarla de un lenguaje a otro. En resumen, me sentí muy satisfecho con su trabajo y la recomiendo ampliamente. ”"
+          ],
+          "volunteer_experience": [
+            {
+              "cause": "Human Rights",
+              "duration": "Oct 2016 · - Present · \n\n9 years 10 months",
+              "duration_short": "- Present",
+              "info": "1 week in October Simultaneous, whispered and consecutive interpretation from spanish to french and from french to spanish. I dealt with the following subjects: migrations, access to right, poverty, work (access to work, unemployment and difficulties to have a syndicate in Mexico).",
+              "start_date": "Oct 2016",
+              "subtitle": "Secours Catholique-Caritas France",
+              "title": "Interprète FR<>ES"
+            },
+            {
+              "cause": "Science and Technology",
+              "duration": "Mar 2017 · - Present · \n\n9 years 5 months",
+              "duration_short": "- Present",
+              "info": "Samedi 11 Mars 2017 Interprétation simultanée de l'anglais au français et du français vers l'anglais (réalisée avec des bidules) pour une table ronde autour de la réalité virtuelle, augmentée, alternée et de ses impacts sur notre société et sur l'avenir.",
+              "start_date": "Mar 2017",
+              "subtitle": "Mirage Festival",
+              "title": "Interprète FR<>EN"
+            }
+          ],
+          "followers": 139,
+          "connections": 141,
+          "current_company_company_id": "sarl-jlvtraductions",
+          "current_company_name": "JLVTRADUCTIONS",
+          "location": null,
+          "input_url": "https://www.linkedin.com/in/linka-m-7227b4105",
+          "linkedin_id": "linka-m-7227b4105",
+          "activity": [
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/kattina-goyheneix-marmande-65772564_i-am-happy-to-share-that-i-am-starting-a-activity-6973312302829715456-FYV7",
+              "title": "I am happy to share that I am starting a new position as Localisation Project Manager - Language Review Services at Vistatec ! I am beyond excited…",
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": "6973312302829715456"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/lise-leclerc-80300710a_biofach-n%C3%BCremberg-biologiques-activity-6633353455761137665-d_di",
+              "title": "Les entreprises normandes sont prêtes pour 5 jours de rencontres BtoB à #BIOFACH #Nüremberg, rendez-vous majeur en Europe pour le secteur des…",
+              "img": "https://media.licdn.com/dms/image/v2/C4D22AQFIeNfRq_W38A/feedshare-shrink_800/feedshare-shrink_800/0/1581500764355?e=2147483647&v=beta&t=BwN8kHVscrfDiidEhBqE70RkgAyEda71Vj288nKajZQ",
+              "id": "6633353455761137665"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://fr.linkedin.com/posts/marcferrieux_compost-activity-6577244924058705920-fMLC",
+              "title": "Pas mal non ? #compost OuiCompost",
+              "img": "https://media.licdn.com/dms/image/v2/C5622AQEHdAgii1CJiA/feedshare-shrink_800/feedshare-shrink_800/0/1568137387607?e=2147483647&v=beta&t=vRAHYRFyerx3SNuZMBDE6Ezk62EhJGK23TXCMXwNHSk",
+              "id": "6577244924058705920"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/geoffrey-easton_worklife-activity-6551456634160451584-Y7Yq",
+              "title": "Five years at Alpha! Wow! Thanks to everyone who I have worked with, as well as those I continue to work with! There have been a lot of changes…",
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": "6551456634160451584"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/oriane-titeca-18b240107_choose-a-job-you-love-they-said-so-i-became-activity-6471355055596535808-UPju",
+              "title": "Choose a job you love, they said. So I became a conference interpreter 🎧🎤❤️.",
+              "img": "https://media.licdn.com/dms/image/v2/C4D22AQHjsp9_gEPqig/feedshare-shrink_1280/feedshare-shrink_1280/0/1578589255025?e=2147483647&v=beta&t=hRyek7XM1ZRHbvGC5o_IusW0PuecBB2taCqTfN72JsM",
+              "id": "6471355055596535808"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/lise-leclerc-80300710a_a-great-experience-on-the-nordic-organic-activity-6468912750356631552-UWH3",
+              "title": "A great experience on the Nordic Organic Food Fair in Malmö, Sweden. An opportunity for us to develop \"Palais d'Ébène\", the organic brand of Les…",
+              "img": "https://media.licdn.com/dms/image/v2/C5122AQFMuSGGMP0-qQ/feedshare-shrink_800/feedshare-shrink_800/0/1580016058450?e=2147483647&v=beta&t=BhACkT7Z0FTTzA3JEqVkrI9WtQTxjWALd-DyTZu2yeM",
+              "id": "6468912750356631552"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/feed/update/urn:li:activity:6464488604264730624",
+              "title": null,
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": null
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/mattstanton_success-winning-freelance-activity-6448335130082762752-zs-F",
+              "title": "To get good at translating, you need to do thousands of translations. Not hundreds, THOUSANDS! #success #winning # #freelance #translation #speed…",
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": "6448335130082762752"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/grahamperra_jumping-between-email-correspondances-in-activity-6435190954776502272-3Ba3",
+              "title": "Jumping between email correspondances in English, translating into French, and listening to a podcast in Spanish. Lets see how long I can keep…",
+              "img": "https://static.licdn.com/aero-v1/sc/h/53n89ecoxpr1qrki1do3alazb",
+              "id": "6435190954776502272"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/universite-de-caen-normandie_renforcer-ses-comp%C3%A9tences-orthographiques-activity-6418373854531448832-WHaS",
+              "title": "✒ Dès la rentrée de septembre, renforcez vos compétences en orthographe grâce au MOOC \"renforcer ses compétences orthographiques.\" Ce MOOC a été…",
+              "img": "https://media.licdn.com/dms/image/v2/C4E34AQG3-BxpQQUwqA/ugc-proxy-shrink_800/ugc-proxy-shrink_800/0/1594679474488?e=2147483647&v=beta&t=4YXKrDQp4M9To9rQm_tTEghkt4ZSarDKfHOLa4IYbbA",
+              "id": "6418373854531448832"
+            },
+            {
+              "interaction": "Liked by Linka M.",
+              "link": "https://www.linkedin.com/posts/philippe-patteyn-99927a12_tr%C3%A8s-fier-d%C3%AAtre-le-parrain-de-la-promotion-activity-6389088604349612032-ZWHc",
+              "title": "Très fier d'être le parrain de la promotion 46 de l'ESTRI, une école supérieure qui lance des étudiants passionnés de langues vers une carrière…",
+              "img": "https://media.licdn.com/dms/image/v2/C4E05AQGNvTJYRhM56Q/videocover-high/videocover-high/0/1639170297551?e=2147483647&v=beta&t=8JHB7cCdANNHY9myAnYWabIIk7SzJK6dkMnzZOrhPzU",
+              "id": "6389088604349612032"
+            }
+          ],
+          "linkedin_num_id": "446889482",
+          "banner_image": "https://media.licdn.com/dms/image/v2/C5616AQHzahclQ8DjhA/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1541253606574?e=2147483647&v=beta&t=E3ZpGHW9-vFdK1DvRIjZa_ew4lv79YSdwhM4e-T88Vw",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": true,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Linka",
+          "last_name": "M.",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:47.535Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/linka-m-7227b4105"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI08",
+      "url": "https://www.linkedin.com/in/michelle-rosslee-105096176",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 7.81,
+      "raw": [
+        {
+          "id": "michelle-rosslee-105096176",
+          "name": "Michelle Rosslee",
+          "city": "Carlsbad, Karlovy Vary, Czechia",
+          "country_code": "CZ",
+          "position": "Applied Linguistics Consultant | English Curriculum, Grammar & Assessment",
+          "about": "I am an English Language Consultant with a background in applied linguistics, English grammar, and second language acquisition. I hold a Bachelor of Arts in English Literature and Linguistics and have over eight years of experience working across ESL/EFL contexts, including exam preparation, adult education, and online language learning platforms. While my professional background includes extensive classroom instruction, my current focus is on language analysis, content quality, and learning design rather than direct teaching. My work involves reviewing and improving English learning materials, advising on grammar accuracy and clarity, and applying classroom- and e-learning-informed insight to enhance online language learning experiences. Through years of hands-on experience with digital platforms, I have developed a strong understanding of what is effective in e-learning environments and how learners engage with language content. I am particularly interested in the structure of English, common learner difficulties, and how linguistic principles can be applied to create clearer, more effective learning experiences. My consulting work is grounded in real classroom and e-learning experience and focuses on improving quality, consistency, and learner outcomes.",
+          "current_company": {
+            "name": "italki",
+            "company_id": "italki",
+            "title": "English Language Specialist",
+            "location": null
+          },
+          "experience": [
+            {
+              "title": "English Language Specialist",
+              "description": "Worked with adult English learners in a one-to-one online learning environment, tailoring instruction to individual goals and proficiency levels. Gained extensive insight into learner needs, common grammatical challenges, and effective explanation strategies. Developed a strong understanding of progress tracking, feedback practices, and learner engagement within online language learning platforms.",
+              "description_html": "Worked with adult English learners in a one-to-one online learning environment, tailoring instruction to individual goals and proficiency levels. Gained extensive insight into learner needs, common grammatical challenges, and effective explanation strategies. Developed a strong understanding of progress tracking, feedback practices, and learner engagement within online language learning platforms. <!---->",
+              "start_date": "Jan 2021",
+              "end_date": "Present",
+              "company": "italki",
+              "company_id": "italki",
+              "url": "https://es.linkedin.com/company/italki",
+              "company_logo_url": "https://media.licdn.com/dms/image/v2/C560BAQG_ohQpZzDtHw/company-logo_100_100/company-logo_100_100/0/1646126901778/italki_logo?e=2147483647&v=beta&t=C-S11BWtEqjcBLT1sxA3x81gTR7PjoBQmhMgxosiMtE"
+            },
+            {
+              "title": "English Language Specialist",
+              "location": "Carlsbad",
+              "description": "Support Cambridge English exam programs (CAE, FCE, PET) through exam-focused instruction and academic support. Work with established curricula and materials, gaining practical insight into exam requirements, assessment criteria, and effective preparation strategies. Contribute to materials adaptation, progress monitoring, and language accuracy, with particular attention to grammar, usage, and learner performance within structured programs.",
+              "description_html": "Support Cambridge English exam programs (CAE, FCE, PET) through exam-focused instruction and academic support. Work with established curricula and materials, gaining practical insight into exam requirements, assessment criteria, and effective preparation strategies. Contribute to materials adaptation, progress monitoring, and language accuracy, with particular attention to grammar, usage, and learner performance within structured programs. <!---->",
+              "start_date": "Sep 2023",
+              "end_date": "Jan 2026",
+              "company": "Wattsenglish Ltd.",
+              "company_id": "wattsenglish-ltd-",
+              "url": "https://cz.linkedin.com/company/wattsenglish-ltd-",
+              "company_logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQHsCPjONIY2kw/company-logo_100_100/B4EZfK.gglGcAQ-/0/1751457073567/wattsenglish_ltd__logo?e=2147483647&v=beta&t=a7f-qiUDQmOjd_P_Ez6GtxasBC2RW-6HLsx2BB6C3So"
+            },
+            {
+              "title": "English Language Specialist",
+              "description": "Supported adult English programs focused on Business English and exam preparation (IELTS, TOEFL). Delivered instruction using established e-learning platforms and digital course materials, gaining practical insight into what is effective in online language learning environments. Developed a strong understanding of learner engagement, content clarity, grammar presentation, and assessment practices within e-learning systems.",
+              "description_html": "Supported adult English programs focused on Business English and exam preparation (IELTS, TOEFL). Delivered instruction using established e-learning platforms and digital course materials, gaining practical insight into what is effective in online language learning environments. Developed a strong understanding of learner engagement, content clarity, grammar presentation, and assessment practices within e-learning systems. <!---->",
+              "start_date": "2021",
+              "end_date": "May 2023",
+              "company": "Skyeng",
+              "company_id": "skyeng",
+              "url": "https://cy.linkedin.com/company/skyeng",
+              "company_logo_url": "https://media.licdn.com/dms/image/v2/C4E0BAQFnjd7Vb6Zi1A/company-logo_100_100/company-logo_100_100/0/1630607355148/skyeng_logo?e=2147483647&v=beta&t=AFHa3xjWDDKR9FaBizCLEosT_hEdOALG7Z6KT40r-dY"
+            },
+            {
+              "title": "English Language Specialist",
+              "location": "Hangzhou",
+              "description": "Designed structured lesson plans and complete beginner–elementary English courses with a strong focus on grammar, vocabulary development, and skills integration. Contributed to curriculum consistency, materials development, and learner progression within a large-scale online education program. Built a solid foundation in course design, level alignment, and language accuracy.",
+              "description_html": "Designed structured lesson plans and complete beginner&#x2013;elementary English courses with a strong focus on grammar, vocabulary development, and skills integration. Contributed to curriculum consistency, materials development, and learner progression within a large-scale online education program. Built a solid foundation in course design, level alignment, and language accuracy. <!---->",
+              "start_date": "Jan 2019",
+              "end_date": "May 2023",
+              "company": "Hellokid",
+              "company_id": "hellokid",
+              "url": "https://cn.linkedin.com/company/hellokid",
+              "company_logo_url": "https://media.licdn.com/dms/image/v2/C4D0BAQE6PQ2gGV_nJQ/company-logo_100_100/company-logo_100_100/0/1630540618998/hellokid_logo?e=2147483647&v=beta&t=CuT6LLmmQxsdDMKw5bcS-xnTa6wc_2IYI_y_9zd0UPI"
+            },
+            {
+              "title": "English Language Specialist",
+              "location": "Shenyang",
+              "description": "Supported early-stage English programs through grammar-focused lesson planning and materials development. Contributed to structured vocabulary and grammar frameworks aligned with learner level and progression. Gained foundational experience in curriculum consistency, lesson design, and language accuracy within a formal education setting.",
+              "description_html": "Supported early-stage English programs through grammar-focused lesson planning and materials development. Contributed to structured vocabulary and grammar frameworks aligned with learner level and progression. Gained foundational experience in curriculum consistency, lesson design, and language accuracy within a formal education setting. <!---->",
+              "start_date": "Jan 2018",
+              "end_date": "Dec 2018",
+              "company": "Joy Education Group",
+              "company_id": "joy-education-group",
+              "url": "https://tw.linkedin.com/company/joy-education-group",
+              "company_logo_url": "https://media.licdn.com/dms/image/v2/C4D0BAQF-l85wXQqsnA/company-logo_100_100/company-logo_100_100/0/1631336329827?e=2147483647&v=beta&t=L4GhOwpj_bHY0-UJvAiitGWqTPQ4mWGrzPVbDLSEQ-U"
+            }
+          ],
+          "url": "https://ru.linkedin.com/in/michelle-rosslee-105096176",
+          "educations_details": "University of South Africa/Universiteit van Suid-Afrika",
+          "education": [
+            {
+              "title": "University of South Africa/Universiteit van Suid-Afrika",
+              "degree": "Bachelor of Arts - BA",
+              "field": "Linguistics",
+              "url": "https://za.linkedin.com/school/unisa/?trk=public_profile_school_profile-section-card_image-click",
+              "start_year": "2020",
+              "end_year": "2024",
+              "description": "Majoring in Linguistics and English Language studies.",
+              "description_html": "Majoring in Linguistics and English Language studies. <!---->",
+              "institute_logo_url": "https://media.licdn.com/dms/image/v2/D4E0BAQHCn84BQQO8Rg/company-logo_100_100/B4EZqtPF5dKoAU-/0/1763843007538/unisa_logo?e=2147483647&v=beta&t=g1Zf3aEWjpQ3GDB5LOiJamoCwNL274gayLfZji0-3Oc"
+            },
+            {
+              "title": "Premier TEFL",
+              "degree": "Certificate of achievement in teaching IELTS",
+              "url": "https://ie.linkedin.com/school/premiertefl/?trk=public_profile_school_profile-section-card_image-click",
+              "description": "Activities and Societies: Principles for teaching IELTS Exam Preparation. Teaching IELTS Listening. Teaching IELTS Reading. Teaching IELTS Writing. Teaching IELTS Speaking. Teaching IELTS Vocabulary. Exam Teaching Challenges.",
+              "description_html": "Activities and Societies: Principles for teaching IELTS Exam Preparation. Teaching IELTS Listening. Teaching IELTS Reading. Teaching IELTS Writing. Teaching IELTS Speaking. Teaching IELTS Vocabulary. Exam Teaching Challenges.",
+              "institute_logo_url": "https://media.licdn.com/dms/image/v2/C4E0BAQGnPnC4wUJiVQ/company-logo_100_100/company-logo_100_100/0/1630619051779/premiertefl_logo?e=2147483647&v=beta&t=VSYI32MGSEQj8pwY9o3IORapKYuY47pMCWFqlYXDMDw"
+            },
+            {
+              "title": "ITTT - International TEFL & TESOL training",
+              "degree": "TEFL Course",
+              "url": "https://th.linkedin.com/school/ittt-international-tefl-tesol-training/?trk=public_profile_school_profile-section-card_image-click",
+              "description": "Certificate in teaching English as a foreign language.",
+              "description_html": "Certificate in teaching English as a foreign language. <!---->",
+              "institute_logo_url": "https://media.licdn.com/dms/image/v2/D4D0BAQHnnJGNDzISzQ/company-logo_100_100/company-logo_100_100/0/1667384812709/ittt___international_tefl__tesol_training_logo?e=2147483647&v=beta&t=NWsnpnq1T7bY_CEaOW0Fqquh8QnfLbmvacfabAqfg90"
+            }
+          ],
+          "avatar": "https://media.licdn.com/dms/image/v2/D4D03AQGGl0Y-CruOwQ/profile-displayphoto-scale_200_200/B4DZyULopKGUAc-/0/1772012607435?e=2147483647&v=beta&t=Cq4371nPBYehMcDgPT0azekyhP-DjP-gFcxWNLTyhck",
+          "certifications": [
+            {
+              "meta": "Issued Jul 2024 See credential",
+              "subtitle": "LinkedIn",
+              "title": "Introduction to Career Skills in Software Development",
+              "credential_url": "https://www.linkedin.com/learning/certificates/82c8b26cf3dbe6e9dab54051e71699d46d13c18bce58877fa954b074dc51df81?trk=public_profile_see-credential",
+              "credential_id": null
+            },
+            {
+              "meta": "Issued Jun 2024 See credential",
+              "subtitle": "LinkedIn",
+              "title": "Top 10 Skills for Computational Linguistics",
+              "credential_url": "https://www.linkedin.com/learning/certificates/defc31a9ee339cdd34fd6aba32da5907ef01043e7ecc576f04df888e78fd21da?trk=public_profile_see-credential",
+              "credential_id": null
+            },
+            {
+              "meta": "Issued Sep 2021 See credential",
+              "subtitle": "LinkedIn",
+              "title": "Excel for Accountants",
+              "credential_url": "https://www.linkedin.com/learning/certificates/d65457413abbcac07590bf260974bc0e09bf69faeb31d56f9c5de6b2c80b75b9?trk=public_profile_see-credential",
+              "credential_id": null
+            },
+            {
+              "meta": "Issued Sep 2021 See credential",
+              "subtitle": "LinkedIn",
+              "title": "PowerPoint Essential Training (Office 365/Microsoft 365)",
+              "credential_url": "https://www.linkedin.com/learning/certificates/83be967f201474c401dbbc64edf1ffcc3e28dbb43cb8267dc8a314447ba07e61?trk=public_profile_see-credential",
+              "credential_id": null
+            }
+          ],
+          "followers": 153,
+          "connections": 153,
+          "current_company_company_id": "italki",
+          "current_company_name": "italki",
+          "location": "Carlsbad",
+          "input_url": "https://www.linkedin.com/in/michelle-rosslee-105096176",
+          "linkedin_id": "michelle-rosslee-105096176",
+          "activity": [
+            {
+              "interaction": null,
+              "link": "https://www.linkedin.com/posts/ron-morrain-b73619167_what-is-a-teaching-portfolio-7-great-resources-activity-7168121742278803456-tE3-",
+              "title": "What is a Teaching Portfolio? 7 Great Resources to Use for Creating a Teaching Portfolio A teaching portfolio (or dossier) is a coherent set of material representing your teaching practice related to student learning. “Teaching practice” broadly extends beyond the obvious activities that go into teaching a course to include all activities that enrich student learning. Teaching portfolios vary considerably depending on their specific purpose, audience, institutional context, and individual needs. However, the body of a portfolio is generally about 5-8 pages long and is followed by appendices, which usually make up about 8-15 more pages. Your portfolio would likely include a summary of your teaching experience and responsibilities, a reflective statement of your teaching philosophy and goals, a brief discussion of your teaching methods and strategies, as well as activities undertaken to improve teaching, and a statement of goals and plans for the future. The appendices would consist of supplemental materials that further document or support the information you provide in the body of your portfolio. A course portfolio, which focuses on a single course, has many features and benefits in common with a teaching portfolio. Although we do not discuss course portfolios in this handbook, much of the information here can be applied to developing one. 1. Teaching Portfolio: Checklist (PDF) University Center for Teaching and Learning Pittsburg University https://lnkd.in/eZVUnxQG 2. Preparing a Teaching Portfolio (PDF) By Fran Mues and Mary Deane Sorcinelli The Center for Teaching - University of Massachusetts Amherst https://lnkd.in/eWcK8jcE 3. CREATE A DIGITAL TEACHING PORTFOLIO FOR FREE USING GOOGLE SITES - By Martha Moore https://lnkd.in/eai-sji4 4. Why and How to Assemble a Teaching Portfolio? Via Center for Teaching - Vanderbilt University https://lnkd.in/ef5JDxa2 5. The Teaching Portfolio - a handbook for faculty, teaching assistants, and teaching fellows The Harriet W. Sheridan Center for Teaching and Learning Brown University https://lnkd.in/eib35nAS 6. Examples of Teaching Portfolios Center for Teaching and Learning DePaul University https://lnkd.in/eE3xDhWu 7. Reflective Teaching Statement Resources University of Virginia - Center for Teaching Excellence https://lnkd.in/e6NqSiq4",
+              "img": "https://media.licdn.com/dms/image/v2/D4E22AQGC5_7UroOBNA/feedshare-shrink_800/feedshare-shrink_800/0/1709013399204?e=2147483647&v=beta&t=K3AfORB0x9QWiuK9TpqqU967lrxZN_X2AOXt67wbWI0",
+              "id": "7"
+            },
+            {
+              "interaction": "Michelle Rosslee shared this",
+              "link": "https://www.linkedin.com/posts/michelle-rosslee-105096176_hi-everyone-check-out-this-video-to-find-activity-6854321350979543040-ROHF",
+              "title": "Hi Everyone! Check out this video to find some information about me, my teaching style and what I teach.",
+              "img": "https://media.licdn.com/dms/image/v2/C5605AQG6hJPaLLLvpw/videocover-high/videocover-high/0/1634197525397?e=2147483647&v=beta&t=ucIEborQpwR20KRDrz1fmK458xpx4SqA2OsRjS39Pnk",
+              "id": "6854321350979543040"
+            },
+            {
+              "interaction": "Michelle Rosslee liked this",
+              "link": "https://www.linkedin.com/posts/maria-del-milagro-cunibertti-_translation-traducci%C3%B3n-degree-activity-6922153644393930753-IW0B",
+              "title": "It's official ! :) I finally got my degree as a translator. #translation #traducción #degree",
+              "img": "https://media.licdn.com/dms/image/v2/C4D22AQEuU4JVfHqG1A/feedshare-shrink_800/feedshare-shrink_800/0/1650370035533?e=2147483647&v=beta&t=xlQDW239viuEHqm_fkeN4pTm___WubqfTjv9BLq6SjY",
+              "id": "6922153644393930753"
+            },
+            {
+              "interaction": "Michelle Rosslee liked this",
+              "link": "https://www.linkedin.com/posts/atsresumewriterexpert_agree-or-no-activity-6895966556862722049-xt-j",
+              "title": "Agree or no?",
+              "img": "https://media.licdn.com/dms/image/v2/C4D22AQEaxZb92bbEVg/feedshare-shrink_1280/feedshare-shrink_1280/0/1644126545279?e=2147483647&v=beta&t=iveh2kkZ-Nw46R3RRyN1iruq9V5-hlcKdUf-N9jv1is",
+              "id": "6895966556862722049"
+            },
+            {
+              "interaction": "Michelle Rosslee liked this",
+              "link": "https://www.linkedin.com/posts/teachergoals_love-this-so-much-rainbow-sprinkle-activity-6855202137278881792-Ma8d",
+              "title": "Love this so much! 🧡 📷 Rainbow Sprinkle Studio",
+              "img": "https://media.licdn.com/dms/image/v2/C4E22AQExd6bRjdwRcQ/feedshare-shrink_1280/feedshare-shrink_1280/0/1634407551597?e=2147483647&v=beta&t=XuUtv8XHe11aQkuGTeOHrk2EIOhvkArIC7fAPQYGYgw",
+              "id": "6855202137278881792"
+            },
+            {
+              "interaction": "Michelle Rosslee liked this",
+              "link": "https://www.linkedin.com/posts/hi-teacher-b703a41ba_sustainabledevelopmentgoals-teaching-effeciency-activity-6847835339269169152-kU9V",
+              "title": "These were some of the one-on-one debates. The task I gave him is to prepare a speech where he should design a system for a society where he needs to make transportation: 1. More efficient, 2. More environmentally friendly, 3. Making it affordable and how to implement it. Criticism welcome! #sustainabledevelopmentgoals #teaching #effeciency #environmentalawareness",
+              "img": "https://media.licdn.com/dms/image/v2/C4E05AQG0iii63H7F3Q/videocover-high/videocover-high/0/1632651113496?e=2147483647&v=beta&t=g-UyTp5m4zNQQ6DW5FrJYfjVJQsloOkos2ctTbI1eeA",
+              "id": "6847835339269169152"
+            }
+          ],
+          "linkedin_num_id": "698917397",
+          "banner_image": "https://media.licdn.com/dms/image/v2/C4D16AQEqoJkxm6Uq_Q/profile-displaybackgroundimage-shrink_200_800/profile-displaybackgroundimage-shrink_200_800/0/1650437989465?e=2147483647&v=beta&t=bFDwFaOQYDPv9tm6anufgMBhiFx-qUyqvxQpNSOvrsA",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Michelle",
+          "last_name": "Rosslee",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:44:55.137Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/michelle-rosslee-105096176"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI09",
+      "url": "https://www.linkedin.com/in/chloe-zhang-8b6aba414",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 11.64,
+      "raw": [
+        {
+          "id": "chloe-zhang-8b6aba414",
+          "name": "Chloe Zhang",
+          "city": "California, United States",
+          "country_code": "US",
+          "position": null,
+          "about": null,
+          "current_company": {
+            "link": "https://cn.linkedin.com/company/qingting-fm?trk=public_profile_topcard-current-company",
+            "name": "Qingting.FM",
+            "company_id": "qingting-fm",
+            "location": null
+          },
+          "experience": null,
+          "url": "https://au.linkedin.com/in/chloe-zhang-8b6aba414",
+          "educations_details": "De Anza College",
+          "education": [
+            {
+              "title": "De Anza College",
+              "url": "https://www.linkedin.com/school/de-anza-college/",
+              "start_year": "2025-10",
+              "end_year": "2028-11",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            },
+            {
+              "start_year": "2008-09",
+              "end_year": "2012-06",
+              "description": null,
+              "description_html": null,
+              "institute_logo_url": null
+            }
+          ],
+          "avatar": "https://media.licdn.com/dms/image/v2/D4E03AQE48YEDyTkTQQ/profile-displayphoto-scale_200_200/B4EZ6klw9YIwAc-/0/1780877825235?e=2147483647&v=beta&t=tdtK813AappDOxbG3VI5AntR5agetTcte4s_mRhenAo",
+          "current_company_company_id": "qingting-fm",
+          "current_company_name": "Qingting.FM",
+          "location": "California",
+          "input_url": "https://www.linkedin.com/in/chloe-zhang-8b6aba414",
+          "linkedin_id": "chloe-zhang-8b6aba414",
+          "activity": null,
+          "linkedin_num_id": "1770437514",
+          "banner_image": "https://static.licdn.com/aero-v1/sc/h/5q92mjc5c51bjlwaj3rs9aa82",
+          "honors_and_awards": null,
+          "similar_profiles": [],
+          "default_avatar": false,
+          "memorialized_account": false,
+          "bio_links": [],
+          "first_name": "Chloe",
+          "last_name": "Zhang",
+          "influencer": false,
+          "timestamp": "2026-07-27T02:45:07.029Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/chloe-zhang-8b6aba414"
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "LI10",
+      "url": "https://www.linkedin.com/in/invalid-profile-example",
+      "status": "success",
+      "error": null,
+      "elapsed_s": 8.29,
+      "raw": [
+        {
+          "timestamp": "2026-07-27T02:45:15.293Z",
+          "input": {
+            "url": "https://www.linkedin.com/in/invalid-profile-example"
+          }
+        }
+      ]
+    }
+  ]
+}

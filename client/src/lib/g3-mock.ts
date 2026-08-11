@@ -25,10 +25,12 @@ export interface Lead {
   country?: string;
   recruiter_id: string;
   years_experience?: number;
+  vendor_experience?: string;
   verified_email: boolean;
   confirmed_language_pair: boolean;
   match_confidence?: number; // 0-1, for ambiguous records
   last_activity: string;
+  created_at?: string;
 }
 
 export interface Recruiter {
@@ -185,158 +187,7 @@ export interface ClientDueDateAlert {
   recommended_action: string;
 }
 
-export const recruiters: Recruiter[] = [
-  {
-    id: "r1",
-    name: "Divya",
-    role: "full_access",
-    status: "healthy",
-    reply_rate: 0.34,
-    read_rate: 0.71,
-    leads_onboarded: 18,
-    leads_offboarded: 3,
-    hours_saved_self_reported: 6,
-    hours_saved_system_logged: 5.4,
-    unresolved_5d: 1,
-    avatar_hue: 268,
-    kpis: {
-      outreach_effectiveness: 78,
-      response_rate: 34,
-      dnc_pct: 6,
-      interview_to_offer: 41,
-      offer_acceptance: 82,
-      sla_adherence: 94,
-      profile_quality: 86,
-      client_satisfaction: 91,
-      ai_adoption: 72,
-      pipeline_health: 83,
-      email_open_rate: 71,
-      outreach_volume: 412,
-      avg_turnaround_days: 6.4,
-      overall_score: 84,
-    },
-  },
-  {
-    id: "r2",
-    name: "Madhu",
-    role: "full_access",
-    status: "attention",
-    reply_rate: 0.22,
-    read_rate: 0.58,
-    leads_onboarded: 11,
-    leads_offboarded: 5,
-    hours_saved_self_reported: 8,
-    hours_saved_system_logged: 3.9,
-    unresolved_5d: 4,
-    avatar_hue: 55,
-    kpis: {
-      outreach_effectiveness: 61,
-      response_rate: 22,
-      dnc_pct: 14,
-      interview_to_offer: 28,
-      offer_acceptance: 66,
-      sla_adherence: 71,
-      profile_quality: 68,
-      client_satisfaction: 72,
-      ai_adoption: 48,
-      pipeline_health: 61,
-      email_open_rate: 58,
-      outreach_volume: 268,
-      avg_turnaround_days: 9.8,
-      overall_score: 63,
-    },
-  },
-  {
-    id: "r3",
-    name: "Sharmista",
-    role: "full_access",
-    status: "healthy",
-    reply_rate: 0.41,
-    read_rate: 0.76,
-    leads_onboarded: 22,
-    leads_offboarded: 2,
-    hours_saved_self_reported: 7,
-    hours_saved_system_logged: 7.2,
-    unresolved_5d: 0,
-    avatar_hue: 275,
-    kpis: {
-      outreach_effectiveness: 84,
-      response_rate: 41,
-      dnc_pct: 5,
-      interview_to_offer: 46,
-      offer_acceptance: 88,
-      sla_adherence: 97,
-      profile_quality: 90,
-      client_satisfaction: 93,
-      ai_adoption: 79,
-      pipeline_health: 88,
-      email_open_rate: 76,
-      outreach_volume: 488,
-      avg_turnaround_days: 5.2,
-      overall_score: 89,
-    },
-  },
-  {
-    id: "c1",
-    name: "Contractor A",
-    role: "contractor",
-    status: "healthy",
-    reply_rate: 0.19,
-    read_rate: 0.5,
-    leads_onboarded: 4,
-    leads_offboarded: 1,
-    hours_saved_self_reported: 2,
-    hours_saved_system_logged: 2.1,
-    unresolved_5d: 0,
-    avatar_hue: 200,
-    kpis: {
-      outreach_effectiveness: 58,
-      response_rate: 19,
-      dnc_pct: 11,
-      interview_to_offer: 24,
-      offer_acceptance: 60,
-      sla_adherence: 78,
-      profile_quality: 70,
-      client_satisfaction: 74,
-      ai_adoption: 40,
-      pipeline_health: 60,
-      email_open_rate: 50,
-      outreach_volume: 104,
-      avg_turnaround_days: 8.6,
-      overall_score: 62,
-    },
-  },
-  {
-    id: "c2",
-    name: "Contractor B",
-    role: "contractor",
-    status: "stalled",
-    reply_rate: 0.08,
-    read_rate: 0.31,
-    leads_onboarded: 1,
-    leads_offboarded: 0,
-    hours_saved_self_reported: 3,
-    hours_saved_system_logged: 0.8,
-    unresolved_5d: 2,
-    avatar_hue: 30,
-    kpis: {
-      outreach_effectiveness: 32,
-      response_rate: 8,
-      dnc_pct: 22,
-      interview_to_offer: 12,
-      offer_acceptance: 40,
-      sla_adherence: 54,
-      profile_quality: 51,
-      client_satisfaction: 58,
-      ai_adoption: 21,
-      pipeline_health: 36,
-      email_open_rate: 31,
-      outreach_volume: 46,
-      avg_turnaround_days: 13.2,
-      overall_score: 38,
-    },
-  },
-];
+export const recruiters: Recruiter[] = [];
 
 const _recruiterListeners = new Set<() => void>();
 let _recruitersSnapshot = [...recruiters];
@@ -456,158 +307,13 @@ function makeDemand(
   };
 }
 
-export const languageDemand: LanguageDemand[] = [
-  makeDemand("French", "Client Alpha", "r1", [
-    { service: "Subtitling", needed: 5, filled: 2, gap: 3 },
-    { service: "Dubbing", needed: 3, filled: 1, gap: 2 },
-    { service: "Voiceover", needed: 4, filled: 1, gap: 3 },
-  ]),
-  makeDemand("Japanese", "Client Beta", "r2", [
-    { service: "Subtitling", needed: 5, filled: 1, gap: 4 },
-    { service: "Voiceover", needed: 3, filled: 1, gap: 2 },
-  ]),
-  makeDemand("German", "Client Alpha", "r3", [{ service: "Dubbing", needed: 6, filled: 5, gap: 1 }]),
-  makeDemand("Korean", "Client Gamma", "r1", [
-    { service: "Subtitling", needed: 4, filled: 1, gap: 3 },
-    { service: "Voiceover", needed: 4, filled: 1, gap: 3 },
-    { service: "Transcription", needed: 2, filled: 1, gap: 1 },
-  ]),
-  makeDemand("Spanish (LatAm)", "Client Beta", "r3", [
-    { service: "Dubbing", needed: 5, filled: 5, gap: 0 },
-    { service: "Voiceover", needed: 4, filled: 3, gap: 1 },
-  ]),
-  makeDemand("Arabic", "Client Gamma", "r2", [{ service: "Subtitling", needed: 5, filled: 1, gap: 4 }]),
-  makeDemand("Mandarin", "Client Alpha", "r1", [
-    { service: "Subtitling", needed: 4, filled: 2, gap: 2 },
-    { service: "Dubbing", needed: 3, filled: 2, gap: 1 },
-  ]),
-  makeDemand("Portuguese (BR)", "Client Beta", "r3", [{ service: "Voiceover", needed: 4, filled: 4, gap: 0 }]),
-];
+export const languageDemand: LanguageDemand[] = [];
 
 /* ------------------------------------------------------------------ */
-/* Reactive ClientDemand store — seeded from languageDemand           */
+/* Reactive ClientDemand store                                         */
 /* ------------------------------------------------------------------ */
 
-function makeCd(
-  id: string,
-  base: LanguageDemand,
-  extra: Partial<Pick<ClientDemand, "project_name" | "priority" | "deadline" | "status" | "contact_name" | "contact_email" | "notes" | "sheet_row_id">>,
-): ClientDemand {
-  return { ...base, id, priority: "standard", status: "active", ...extra };
-}
-
-// Initial seed — multi-language and multi-service client demands
-const _clientDemands: ClientDemand[] = [
-  {
-    id: "cd1",
-    client: "Netflix",
-    project_name: "Q3 Global Drama Slate",
-    language: "French, Mandarin, German",
-    services: ["Subtitling", "Dubbing", "Voiceover"],
-    headcount_needed: 18,
-    filled: 9,
-    gap: 9,
-    recruiter_id: "r1",
-    priority: "critical",
-    deadline: "2026-09-30",
-    status: "active",
-    contact_name: "Ava Chen",
-    contact_email: "ava@netflix.com",
-    service_breakdown: [
-      { language: "French", service: "Subtitling", needed: 5, filled: 2, gap: 3 },
-      { language: "French", service: "Dubbing", needed: 3, filled: 1, gap: 2 },
-      { language: "French", service: "Voiceover", needed: 4, filled: 2, gap: 2 },
-      { language: "Mandarin", service: "Subtitling", needed: 4, filled: 2, gap: 2 },
-      { language: "German", service: "Dubbing", needed: 2, filled: 2, gap: 0 },
-    ],
-  },
-  {
-    id: "cd2",
-    client: "Amazon Prime Video",
-    project_name: "Streaming Originals Pipeline",
-    language: "Japanese, Spanish (LatAm), Portuguese (BR)",
-    services: ["Subtitling", "Voiceover", "Dubbing"],
-    headcount_needed: 16,
-    filled: 9,
-    gap: 7,
-    recruiter_id: "r2",
-    priority: "high",
-    deadline: "2026-08-15",
-    status: "active",
-    contact_name: "Tom Reid",
-    contact_email: "tom@amazon.com",
-    service_breakdown: [
-      { language: "Japanese", service: "Subtitling", needed: 5, filled: 1, gap: 4 },
-      { language: "Japanese", service: "Voiceover", needed: 3, filled: 1, gap: 2 },
-      { language: "Spanish (LatAm)", service: "Dubbing", needed: 4, filled: 4, gap: 0 },
-      { language: "Portuguese (BR)", service: "Voiceover", needed: 4, filled: 3, gap: 1 },
-    ],
-  },
-  {
-    id: "cd3",
-    client: "Disney+",
-    project_name: "Asia-Pacific & MENA Localization",
-    language: "Korean, Arabic, Italian",
-    services: ["Subtitling", "Voiceover", "Transcription", "Audio Description"],
-    headcount_needed: 17,
-    filled: 5,
-    gap: 12,
-    recruiter_id: "r1",
-    priority: "high",
-    deadline: "2026-08-31",
-    status: "active",
-    contact_name: "Soo-Jin Park",
-    contact_email: "soojin@disney.com",
-    service_breakdown: [
-      { language: "Korean", service: "Subtitling", needed: 4, filled: 1, gap: 3 },
-      { language: "Korean", service: "Voiceover", needed: 4, filled: 1, gap: 3 },
-      { language: "Korean", service: "Transcription", needed: 2, filled: 1, gap: 1 },
-      { language: "Arabic", service: "Subtitling", needed: 5, filled: 1, gap: 4 },
-      { language: "Italian", service: "Audio Description", needed: 2, filled: 1, gap: 1 },
-    ],
-  },
-  {
-    id: "cd4",
-    client: "Warner Bros. Discovery",
-    project_name: "LatAm & European Expansion",
-    language: "Spanish (Spain), Polish, Swedish",
-    services: ["Dubbing", "Voiceover", "Subtitling"],
-    headcount_needed: 12,
-    filled: 10,
-    gap: 2,
-    recruiter_id: "r3",
-    priority: "standard",
-    deadline: "2026-10-01",
-    status: "active",
-    contact_name: "Carlos Gomez",
-    contact_email: "carlos@warnerbros.com",
-    service_breakdown: [
-      { language: "Spanish (Spain)", service: "Dubbing", needed: 5, filled: 4, gap: 1 },
-      { language: "Polish", service: "Subtitling", needed: 4, filled: 4, gap: 0 },
-      { language: "Swedish", service: "Voiceover", needed: 3, filled: 2, gap: 1 },
-    ],
-  },
-  {
-    id: "cd5",
-    client: "Apple TV+",
-    project_name: "European Documentaries",
-    language: "German, French, Italian",
-    services: ["Subtitling", "Audio Description"],
-    headcount_needed: 9,
-    filled: 9,
-    gap: 0,
-    recruiter_id: "r2",
-    priority: "standard",
-    status: "fulfilled",
-    contact_name: "Elena Rossi",
-    contact_email: "elena@apple.com",
-    service_breakdown: [
-      { language: "German", service: "Subtitling", needed: 3, filled: 3, gap: 0 },
-      { language: "French", service: "Audio Description", needed: 3, filled: 3, gap: 0 },
-      { language: "Italian", service: "Subtitling", needed: 3, filled: 3, gap: 0 },
-    ],
-  },
-];
+const _clientDemands: ClientDemand[] = [];
 
 export const initialClientDemands = _clientDemands;
 
@@ -719,12 +425,41 @@ export interface RecruiterLanguageMapping {
   languages: string[];
 }
 
-// Recruiter-language mapping is purely a SEARCH AID for the owner.
-// It does NOT auto-assign. Owner always makes the final manual decision.
+// Official Region-Wise Language Recruitment Mapping (Madhu, Divya, Sharmistha, Varsha, Sunaina)
 let _recruiterLanguageMappings: RecruiterLanguageMapping[] = [
-  { recruiter_id: "r1", languages: ["English", "French", "Mandarin"] },
-  { recruiter_id: "r2", languages: ["Japanese", "Korean", "Tamil", "Telugu"] },
-  { recruiter_id: "r3", languages: ["Spanish (LatAm)", "Spanish (Spain)", "Polish", "Swedish", "Italian", "Tamil", "Malayalam"] },
+  {
+    recruiter_id: "r2", // Madhu (Recruiter 1 - South Asian & English Canada/UK)
+    languages: [
+      "Bengali", "Gujarati", "Hindi", "Kannada", "Malayalam", "Marathi",
+      "Oriya", "Panjabi", "Tamil", "Telugu", "Urdu", "English (Canada)", "English (UK)", "English (British)"
+    ]
+  },
+  {
+    recruiter_id: "r1", // Divya (Recruiter 2 - East/Southeast Asian, Italian & English)
+    languages: [
+      "Mandarin (Simplified)", "Chinese (Simplified)", "Mandarin (Traditional)", "Chinese (Traditional)",
+      "Indonesian", "Japanese", "Korean", "Malay", "Thai", "Urdu", "Vietnamese", "Italian", "English", "English (AUS)"
+    ]
+  },
+  {
+    recruiter_id: "r3", // Sharmistha (Contractor / Partner - Finno-Ugric, Germanic & Romance)
+    languages: [
+      "Cantonese", "Finnish", "Hungarian", "Kazakh", "Icelandic", "Norwegian", "Hebrew", "Spanish (Latin American)", "Spanish (LatAm)"
+    ]
+  },
+  {
+    recruiter_id: "r4", // Varsha (Contractor / Partner - Slavic & Turkic)
+    languages: [
+      "Bulgarian", "Croatian", "Czech", "Polish", "Russian", "Slovak", "Slovenian", "Turkish", "Ukrainian"
+    ]
+  },
+  {
+    recruiter_id: "r5", // Sunaina (Contractor / Partner - Germanic, Hellenic/Semitic & Romance)
+    languages: [
+      "Danish", "Dutch", "German", "Swedish", "Arabic", "Greek", "Castilian Spanish", "Catalan",
+      "French (Canadian)", "French (Parisian)", "French", "Portuguese (Brazilian)", "Portuguese (BR)", "Portuguese (Portugal)", "Romanian"
+    ]
+  }
 ];
 
 export interface RecruiterRecommendation {
@@ -812,14 +547,7 @@ export function updateRecruiterLanguages(recruiterId: string, languages: string[
 
 // ─── Client & Requirement stores ──────────────────────────────────────────
 
-const _clients: Client[] = [
-  { id: "cl1", name: "Netflix",             industry: "Streaming",     contact_name: "Ava Chen",      contact_email: "ava@netflix.com" },
-  { id: "cl2", name: "Amazon Prime Video",  industry: "Streaming",     contact_name: "Tom Reid",      contact_email: "tom@amazon.com" },
-  { id: "cl3", name: "Disney+",             industry: "Entertainment", contact_name: "Soo-Jin Park",  contact_email: "soojin@disney.com" },
-  { id: "cl4", name: "Warner Bros. Discovery", industry: "Media",      contact_name: "Carlos Gomez",  contact_email: "carlos@warnerbros.com" },
-  { id: "cl5", name: "Apple TV+",           industry: "Tech/Streaming", contact_name: "Elena Rossi",   contact_email: "elena@apple.com" },
-  { id: "cl6", name: "Sony Pictures",       industry: "Entertainment", contact_name: "James Tanaka",  contact_email: "james@sony.com" },
-];
+const _clients: Client[] = [];
 
 const _clientsListeners = new Set<() => void>();
 let _clientsSnapshot = [..._clients];
@@ -838,165 +566,7 @@ export function addClient(entry: Omit<Client, "id">): void {
   _emitClients();
 }
 
-const _requirements: Requirement[] = [
-  // Netflix — 4 independent requirements
-  {
-    id: "req1", client_id: "cl1", title: "Tamil Dubbing",
-    language: "Tamil", service: "Dubbing", project_name: "Q3 Drama Slate",
-    headcount_needed: 6, filled: 0, gap: 6,
-    priority: "critical", status: "unassigned", recruiter_id: undefined,
-    assignment_history: [],
-    deadline: "2026-08-13", created_at: "2026-07-01T09:00:00Z",
-  },
-  {
-    id: "req2", client_id: "cl1", title: "French Translation",
-    language: "French", service: "Translation", project_name: "European Content",
-    headcount_needed: 4, filled: 2, gap: 2,
-    priority: "high", status: "active", recruiter_id: "r1",
-    assignment_history: [
-      { recruiter_id: "r1", assigned_at: "2026-07-15T10:00:00Z", assigned_by: "Sundar", note: "Divya has strong French network" },
-    ],
-    deadline: "2026-10-15", created_at: "2026-07-10T09:00:00Z",
-  },
-  {
-    id: "req3", client_id: "cl1", title: "English QA",
-    language: "English", service: "QA", project_name: "Quality Review",
-    headcount_needed: 3, filled: 1, gap: 2,
-    priority: "standard", status: "active", recruiter_id: "r3",
-    assignment_history: [
-      { recruiter_id: "r1", assigned_at: "2026-07-12T10:00:00Z", assigned_by: "Sundar" },
-      { recruiter_id: "r3", assigned_at: "2026-07-20T14:00:00Z", assigned_by: "Sundar", note: "Sharmista has more bandwidth this week" },
-    ],
-    deadline: "2026-11-01", created_at: "2026-07-12T09:00:00Z",
-  },
-  {
-    id: "req4", client_id: "cl1", title: "Japanese Voice Over",
-    language: "Japanese", service: "Voice Over", project_name: "Asia Pacific",
-    headcount_needed: 5, filled: 0, gap: 5,
-    priority: "high", status: "unassigned", recruiter_id: undefined,
-    assignment_history: [],
-    deadline: "2026-09-15", created_at: "2026-07-20T09:00:00Z",
-  },
-  // Amazon Prime Video
-  {
-    id: "req5", client_id: "cl2", title: "Japanese Subtitling",
-    language: "Japanese", service: "Subtitling", project_name: "Streaming Originals",
-    headcount_needed: 5, filled: 1, gap: 4,
-    priority: "high", status: "active", recruiter_id: "r2",
-    assignment_history: [
-      { recruiter_id: "r2", assigned_at: "2026-07-05T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    deadline: "2026-08-15", created_at: "2026-06-28T09:00:00Z",
-  },
-  {
-    id: "req6", client_id: "cl2", title: "Spanish LatAm Dubbing",
-    language: "Spanish (LatAm)", service: "Dubbing",
-    headcount_needed: 4, filled: 4, gap: 0,
-    priority: "standard", status: "fulfilled", recruiter_id: "r3",
-    assignment_history: [
-      { recruiter_id: "r3", assigned_at: "2026-06-20T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    created_at: "2026-06-15T09:00:00Z",
-  },
-  {
-    id: "req7", client_id: "cl2", title: "Portuguese (BR) Voice Over",
-    language: "Portuguese (BR)", service: "Voice Over",
-    headcount_needed: 4, filled: 3, gap: 1,
-    priority: "standard", status: "active", recruiter_id: "r3",
-    assignment_history: [
-      { recruiter_id: "r3", assigned_at: "2026-07-01T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    deadline: "2026-09-01", created_at: "2026-06-28T09:00:00Z",
-  },
-  // Disney+
-  {
-    id: "req8", client_id: "cl3", title: "Korean Subtitling",
-    language: "Korean", service: "Subtitling", project_name: "Asia-Pacific Localization",
-    headcount_needed: 4, filled: 1, gap: 3,
-    priority: "high", status: "active", recruiter_id: "r2",
-    assignment_history: [
-      { recruiter_id: "r2", assigned_at: "2026-07-10T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    deadline: "2026-08-18", created_at: "2026-07-01T09:00:00Z",
-  },
-  {
-    id: "req9", client_id: "cl3", title: "Arabic Subtitling",
-    language: "Arabic", service: "Subtitling", project_name: "MENA Localization",
-    headcount_needed: 5, filled: 1, gap: 4,
-    priority: "critical", status: "unassigned", recruiter_id: undefined,
-    assignment_history: [],
-    deadline: "2026-08-22", created_at: "2026-07-05T09:00:00Z",
-  },
-  {
-    id: "req10", client_id: "cl3", title: "Italian Audio Description",
-    language: "Italian", service: "Audio Description",
-    headcount_needed: 2, filled: 1, gap: 1,
-    priority: "standard", status: "active", recruiter_id: "r3",
-    assignment_history: [
-      { recruiter_id: "r3", assigned_at: "2026-07-12T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    deadline: "2026-10-01", created_at: "2026-07-05T09:00:00Z",
-  },
-  // Warner Bros. Discovery
-  {
-    id: "req11", client_id: "cl4", title: "Spanish (Spain) Dubbing",
-    language: "Spanish (Spain)", service: "Dubbing", project_name: "European Expansion",
-    headcount_needed: 5, filled: 4, gap: 1,
-    priority: "standard", status: "active", recruiter_id: "r3",
-    assignment_history: [
-      { recruiter_id: "r3", assigned_at: "2026-06-25T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    deadline: "2026-10-01", created_at: "2026-06-20T09:00:00Z",
-  },
-  {
-    id: "req12", client_id: "cl4", title: "Polish Subtitling",
-    language: "Polish", service: "Subtitling",
-    headcount_needed: 4, filled: 4, gap: 0,
-    priority: "standard", status: "fulfilled", recruiter_id: "r3",
-    assignment_history: [
-      { recruiter_id: "r3", assigned_at: "2026-06-25T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    created_at: "2026-06-20T09:00:00Z",
-  },
-  // Apple TV+
-  {
-    id: "req13", client_id: "cl5", title: "German Subtitling",
-    language: "German", service: "Subtitling", project_name: "European Documentaries",
-    headcount_needed: 3, filled: 3, gap: 0,
-    priority: "standard", status: "fulfilled", recruiter_id: "r1",
-    assignment_history: [
-      { recruiter_id: "r1", assigned_at: "2026-06-10T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    created_at: "2026-06-05T09:00:00Z",
-  },
-  {
-    id: "req14", client_id: "cl5", title: "French Audio Description",
-    language: "French", service: "Audio Description",
-    headcount_needed: 3, filled: 3, gap: 0,
-    priority: "standard", status: "fulfilled", recruiter_id: "r1",
-    assignment_history: [
-      { recruiter_id: "r1", assigned_at: "2026-06-10T09:00:00Z", assigned_by: "Sundar" },
-    ],
-    created_at: "2026-06-05T09:00:00Z",
-  },
-  // Sony Pictures
-  {
-    id: "req15", client_id: "cl6", title: "Tamil Subtitling",
-    language: "Tamil", service: "Subtitling", project_name: "South Asia Release",
-    headcount_needed: 8, filled: 2, gap: 6,
-    priority: "high", status: "unassigned", recruiter_id: undefined,
-    assignment_history: [],
-    deadline: "2026-08-16", created_at: "2026-07-25T09:00:00Z",
-  },
-  {
-    id: "req16", client_id: "cl6", title: "Telugu Voice Over",
-    language: "Telugu", service: "Voice Over",
-    headcount_needed: 5, filled: 0, gap: 5,
-    priority: "high", status: "unassigned", recruiter_id: undefined,
-    assignment_history: [],
-    deadline: "2026-10-30", created_at: "2026-07-25T09:00:00Z",
-  },
-];
+const _requirements: Requirement[] = [];
 
 const _reqListeners = new Set<() => void>();
 let _reqSnapshot = [..._requirements];
@@ -1184,7 +754,7 @@ export function convertGoogleSheetUrlToCsv(url: string): string {
   return url;
 }
 
-/** Helper: Parse CSV text content into ClientDemand objects. */
+/** Helper: Parse CSV/Excel sheet text content into ClientDemand objects. */
 export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">[] {
   const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length <= 1) return [];
@@ -1212,7 +782,7 @@ export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">
   const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
 
   const clientIdx = findIdx(["client", "company", "customer"]);
-  const langIdx = findIdx(["language", "lang", "target"]);
+  const langIdx = findIdx(["language", "lang", "target", "source"]);
   const serviceIdx = findIdx(["service", "role", "job"]);
   const headcountIdx = findIdx(["headcount", "needed", "required", "seats", "count"]);
   const priorityIdx = findIdx(["priority", "urgency"]);
@@ -1224,27 +794,113 @@ export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">
     const row = parseRow(lines[i]);
     if (row.length < 2) continue;
 
-    const client = clientIdx >= 0 && row[clientIdx] ? row[clientIdx] : `Sheet Client #${i}`;
-    const language = langIdx >= 0 && row[langIdx] ? row[langIdx] : "Spanish (LatAm)";
-    const serviceName = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "Subtitling";
-    const needed = headcountIdx >= 0 && !isNaN(Number(row[headcountIdx])) ? Math.max(1, Number(row[headcountIdx])) : 6;
+    const client = clientIdx >= 0 && row[clientIdx] ? row[clientIdx] : "";
+    const language = langIdx >= 0 && row[langIdx] ? row[langIdx] : "";
+    const serviceName = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "";
+    const needed = headcountIdx >= 0 && !isNaN(Number(row[headcountIdx])) ? Math.max(1, Number(row[headcountIdx])) : 1;
     const priorityVal = priorityIdx >= 0 && row[priorityIdx] ? row[priorityIdx].toLowerCase() : "standard";
     const priority = priorityVal.includes("crit") ? "critical" : priorityVal.includes("high") ? "high" : "standard";
     const project_name = projectIdx >= 0 && row[projectIdx] ? row[projectIdx] : undefined;
 
+    if (!client && !language && !serviceName) continue;
+
     result.push({
-      client,
-      language,
-      services: [serviceName],
+      client: client || "Imported Client Demand",
+      language: language || "English",
+      services: serviceName ? [serviceName] : ["Subtitling"],
       headcount_needed: needed,
       filled: 0,
       gap: needed,
       recruiter_id: "r1",
-      service_breakdown: [{ service: serviceName, needed, filled: 0, gap: needed }],
+      service_breakdown: [{ service: serviceName || "Subtitling", needed, filled: 0, gap: needed }],
       priority,
       status: "active",
       project_name,
-      sheet_row_id: `sheet_row_${i}_${client.replace(/\s+/g, "_")}`,
+      sheet_row_id: `sheet_row_${i}_${(client || "demand").replace(/\s+/g, "_")}`,
+    });
+  }
+
+  return result;
+}
+
+/** Helper: Parse CSV/Excel sheet text content into Lead objects. */
+export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
+  const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
+  if (lines.length <= 1) return [];
+
+  const parseRow = (line: string): string[] => {
+    const res: string[] = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') {
+        inQuotes = !inQuotes;
+      } else if (c === "," && !inQuotes) {
+        res.push(cur.trim());
+        cur = "";
+      } else {
+        cur += c;
+      }
+    }
+    res.push(cur.trim());
+    return res;
+  };
+
+  const headers = parseRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+
+  const nameIdx = findIdx(["name", "candidate", "full_name", "lead"]);
+  const emailIdx = findIdx(["email", "mail", "contact_email"]);
+  const langIdx = findIdx(["language", "lang", "source_language", "target_language"]);
+  const serviceIdx = findIdx(["service", "services", "role"]);
+  const countryIdx = findIdx(["country", "location", "residence"]);
+  const expIdx = findIdx(["exp", "experience", "years"]);
+  const vendorIdx = findIdx(["vendor", "clients", "history"]);
+  const sourceIdx = findIdx(["source", "channel"]);
+
+  const result: Omit<Lead, "id">[] = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const row = parseRow(lines[i]);
+    if (row.length < 2) continue;
+
+    const name = nameIdx >= 0 && row[nameIdx] ? row[nameIdx] : "";
+    const email = emailIdx >= 0 && row[emailIdx] ? row[emailIdx] : "";
+    const language = langIdx >= 0 && row[langIdx] ? row[langIdx] : "";
+    const serviceName = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "";
+    const exp = expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined;
+    const vendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx] : undefined;
+    const rawSource = sourceIdx >= 0 && row[sourceIdx] ? row[sourceIdx] : "";
+    const source: Source = rawSource.toLowerCase().includes("linkedin")
+      ? "LinkedIn"
+      : rawSource.toLowerCase().includes("proz")
+      ? "ProZ"
+      : rawSource.toLowerCase().includes("apollo")
+      ? "Apollo"
+      : rawSource.toLowerCase().includes("referral")
+      ? "Referral"
+      : "Import";
+
+    if (!name && !email && !language) continue;
+
+    result.push({
+      masked_label: name ? `Lead #${name}` : `Lead #${i}`,
+      display_name: name || `Imported Candidate #${i}`,
+      identity_resolved: !!email,
+      language: language || "English",
+      services: serviceName ? [serviceName] : ["Subtitling"],
+      stage: "New",
+      availability: "Available Now",
+      flags: [],
+      source,
+      recruiter_id: "r1",
+      verified_email: !!email,
+      confirmed_language_pair: !!language,
+      years_experience: exp,
+      vendor_experience: vendor,
+      last_activity: "Just now",
+      created_at: new Date().toISOString(),
     });
   }
 
@@ -1274,41 +930,8 @@ export async function syncFromGoogleSheet(customUrl?: string): Promise<{ added: 
         sheetRows = parseCsvClientDemands(text);
       }
     } catch {
-      // CORS or network fallback
+      // Network or CORS handling
     }
-  }
-
-  // Fallback: If network / CORS prevents client-side CSV fetch (e.g. non-public sheet),
-  // dynamically generate structured rows seeded by the URL so Sync ALWAYS adds live data!
-  if (sheetRows.length === 0) {
-    await new Promise((r) => setTimeout(r, 600)); // simulate network roundtrip
-    const urlHash = urlToUse ? Math.abs(urlToUse.split("").reduce((a, c) => (a * 31 + c.charCodeAt(0)) | 0, 0)) : Date.now();
-    const sheetLangs = ["Italian", "Japanese", "German", "Korean", "Portuguese (Brazil)", "Polish"];
-    const sheetClients = ["Client Epsilon", "Client Zeta", "Client Omega", "Paramount", "Sony Pictures"];
-    const lang = sheetLangs[urlHash % sheetLangs.length];
-    const client = sheetClients[urlHash % sheetClients.length];
-
-    sheetRows = [
-      {
-        ...makeDemand(lang, client, "r3", [{ service: "Subtitling", needed: 8, filled: 1, gap: 7 }]),
-        project_name: "Google Sheet Live Import",
-        priority: "high",
-        deadline: "2026-11-15",
-        status: "active",
-        sheet_row_id: `sheet_row_${urlHash}`,
-      },
-      {
-        ...languageDemand[0], // French / Client Alpha — update filled count
-        filled: 4, gap: 4,
-        service_breakdown: [
-          { service: "Subtitling", needed: 5, filled: 3, gap: 2 },
-          { service: "Dubbing", needed: 3, filled: 0, gap: 3 },
-          { service: "Voiceover", needed: 4, filled: 1, gap: 3 },
-        ],
-        project_name: "Q3 Drama Slate", priority: "critical", deadline: "2026-09-30", status: "active",
-        sheet_row_id: "sheet_row_fr_alpha",
-      },
-    ];
   }
 
   let added = 0, updated = 0;
@@ -1332,264 +955,21 @@ export function useClientDemands(): ClientDemand[] {
   );
 }
 
-export const leads: Lead[] = [
-  {
-    id: "l1",
-    masked_label: "Lead #A-1042",
-    display_name: "Lead #A-1042",
-    identity_resolved: false,
-    language: "French",
-    services: ["Subtitling"],
-    stage: "New",
-    availability: "Unknown",
-    flags: ["Watching"],
-    source: "Import",
-    recruiter_id: "r1",
-    verified_email: false,
-    confirmed_language_pair: false,
-    match_confidence: 0.42,
-    last_activity: "2d ago",
-  },
-  {
-    id: "l2",
-    masked_label: "Lead #B-2201",
-    identity_resolved: true,
-    display_name: "Verified Lead 2201",
-    language: "Japanese",
-    services: ["Voiceover", "Subtitling"],
-    stage: "Contacted",
-    availability: "Available Now",
-    flags: ["High Priority"],
-    source: "LinkedIn",
-    recruiter_id: "r2",
-    years_experience: 9,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "4h ago",
-  },
-  {
-    id: "l3",
-    masked_label: "Lead #C-0987",
-    identity_resolved: true,
-    display_name: "Verified Lead 0987",
-    language: "German",
-    services: ["Dubbing"],
-    stage: "Negotiating",
-    availability: "Available from date",
-    flags: [],
-    source: "ProZ",
-    recruiter_id: "r3",
-    years_experience: 12,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "1h ago",
-  },
-  {
-    id: "l4",
-    masked_label: "Lead #A-1198",
-    identity_resolved: true,
-    display_name: "Verified Lead 1198",
-    language: "French",
-    services: ["Dubbing"],
-    stage: "Replied",
-    availability: "Available Now",
-    flags: [],
-    source: "Referral",
-    recruiter_id: "r1",
-    years_experience: 6,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "1d ago",
-  },
-  {
-    id: "l5",
-    masked_label: "Lead #D-3310",
-    identity_resolved: false,
-    language: "Korean",
-    services: ["Subtitling"],
-    stage: "New",
-    availability: "Unknown",
-    flags: [],
-    source: "Import",
-    recruiter_id: "r1",
-    verified_email: false,
-    confirmed_language_pair: false,
-    match_confidence: 0.31,
-    last_activity: "5d ago",
-  },
-  {
-    id: "l6",
-    masked_label: "Lead #B-2277",
-    identity_resolved: true,
-    display_name: "Verified Lead 2277",
-    language: "Japanese",
-    services: ["Subtitling"],
-    stage: "Invite Sent",
-    availability: "Available Now",
-    flags: ["High Priority"],
-    source: "LinkedIn",
-    recruiter_id: "r2",
-    years_experience: 8,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "6h ago",
-  },
-  {
-    id: "l7",
-    masked_label: "Lead #E-4401",
-    identity_resolved: true,
-    display_name: "Verified Lead 4401",
-    language: "Spanish (LatAm)",
-    services: ["Dubbing"],
-    stage: "Onboarded",
-    availability: "Available Now",
-    flags: [],
-    source: "ProZ",
-    recruiter_id: "r3",
-    years_experience: 11,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "8h ago",
-  },
-  {
-    id: "l8",
-    masked_label: "Lead #F-5502",
-    identity_resolved: true,
-    display_name: "Verified Lead 5502",
-    language: "Arabic",
-    services: ["Subtitling"],
-    stage: "Cold",
-    availability: "Unavailable",
-    flags: ["On Hold"],
-    source: "Apollo",
-    recruiter_id: "r2",
-    years_experience: 4,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "14d ago",
-  },
-  {
-    id: "l9",
-    masked_label: "Lead #G-6613",
-    identity_resolved: true,
-    display_name: "Verified Lead 6613",
-    language: "Mandarin",
-    services: ["Dubbing"],
-    stage: "Contacted",
-    availability: "Available Now",
-    flags: [],
-    source: "LinkedIn",
-    recruiter_id: "r1",
-    years_experience: 7,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "2h ago",
-  },
-  {
-    id: "l10",
-    masked_label: "Lead #H-7724",
-    identity_resolved: false,
-    language: "Korean",
-    services: ["Voiceover"],
-    stage: "New",
-    availability: "Unknown",
-    flags: [],
-    source: "Import",
-    recruiter_id: "c1",
-    verified_email: false,
-    confirmed_language_pair: false,
-    match_confidence: 0.55,
-    last_activity: "3d ago",
-  },
-  {
-    id: "l11",
-    masked_label: "Lead #I-8835",
-    identity_resolved: true,
-    display_name: "Verified Lead 8835",
-    language: "French",
-    services: ["Voiceover"],
-    stage: "Replied",
-    availability: "Available Now",
-    flags: ["High Priority"],
-    source: "Referral",
-    recruiter_id: "r1",
-    years_experience: 10,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "45m ago",
-  },
-  {
-    id: "l12",
-    masked_label: "Lead #J-9946",
-    identity_resolved: true,
-    display_name: "Verified Lead 9946",
-    language: "Portuguese (BR)",
-    services: ["Voiceover"],
-    stage: "Onboarded",
-    availability: "Available Now",
-    flags: [],
-    source: "ProZ",
-    recruiter_id: "r3",
-    years_experience: 5,
-    verified_email: true,
-    confirmed_language_pair: true,
-    last_activity: "1d ago",
-  },
-];
+export const leads: Lead[] = [];
 
-export const escalations: Escalation[] = [
-  {
-    id: "e1",
-    priority: "P1",
-    status: "Open",
-    category: "Email Queue Threshold Alert",
-    owner: "System",
-    title: "Email Queue Threshold Alert — 4 messages awaiting manual review",
-    detail: "The email queue has reached threshold capacity. 4 messages require manual review before candidate outreach can proceed.",
-    recommended_action: "Review email queue in Recruiter/Contractor Email Queue tab.",
-    age_days: 1,
-    sla_hours_remaining: 12,
-    impact: "Outreach delayed for 4 candidates",
-  },
-  {
-    id: "e2",
-    priority: "P2",
-    status: "Open",
-    category: "Recruiter Status Notification",
-    owner: "Sharmista",
-    title: "Recruiter Status Notification — Contractor B activity stalled",
-    detail: "Contractor B score is 38 (below team average). Placement success is 22% and SLA adherence is 54%.",
-    recommended_action: "Schedule 1:1 check-in and reassign stalled Korean subtitling leads.",
-    age_days: 2,
-    impact: "2 Korean lead seats delayed",
-    recruiter_id: "c2",
-  },
-  {
-    id: "e3",
-    priority: "P2",
-    status: "Open",
-    category: "Contractor Status Notification",
-    owner: "Ethan",
-    title: "Contractor Status Notification — Lead enrichment on hold",
-    detail: "Leads submitted by contractors are waiting for manual enrichment review before moving to Global Leads.",
-    recommended_action: "Review My Leads tab to complete manual enrichment.",
-    age_days: 1,
-    impact: "Global lead pipeline pending verification",
-    recruiter_id: "c1",
-  },
-];
+export const escalations: Escalation[] = [];
 
 export const outreachBatch = {
-  contacted: 142,
-  awaiting_reply: 86,
-  replied: 38,
-  in_negotiation: 14,
-  dnc: 21, // Did Not Connect — bounced, no-touch, or explicit opt-out
+  contacted: 0,
+  awaiting_reply: 0,
+  replied: 0,
+  in_negotiation: 0,
+  dnc: 0,
 };
 
 export function teamKpis() {
   const rs = recruiters;
-  const avg = (fn: (r: Recruiter) => number) => Math.round(rs.reduce((a, r) => a + fn(r), 0) / rs.length);
+  const avg = (fn: (r: Recruiter) => number) => (rs.length ? Math.round(rs.reduce((a, r) => a + fn(r), 0) / rs.length) : 0);
   return {
     overall_score: avg((r) => r.kpis.overall_score),
     sla_adherence: avg((r) => r.kpis.sla_adherence),
@@ -1673,22 +1053,22 @@ export const KPI_DEFINITIONS: {
   },
 ];
 
-// AI Draft Analytics — how recruiters actually interact with AI-generated outreach.
+// AI Draft Analytics
 export const aiDraftStats = {
-  total_generated: 1284,
-  sent_without_edit_pct: 38,
-  edited_before_send_pct: 47,
-  discarded_pct: 15,
-  avg_edit_rate_pct: 22, // avg share of tokens changed on edited drafts
-  acceptance_rate_pct: 85, // sent (edited or not) / generated
+  total_generated: 0,
+  sent_without_edit_pct: 0,
+  edited_before_send_pct: 0,
+  discarded_pct: 0,
+  avg_edit_rate_pct: 0,
+  acceptance_rate_pct: 0,
 };
 
 export const profileCompleteness = {
-  before_enrichment: 0.41,
-  after_enrichment: 0.73,
-  verified_email_pct: 0.68,
-  confirmed_language_pair_pct: 0.79,
-  experience_data_pct: 0.62,
+  before_enrichment: 0,
+  after_enrichment: 0,
+  verified_email_pct: 0,
+  confirmed_language_pair_pct: 0,
+  experience_data_pct: 0,
 };
 
 export const stageOrder: Stage[] = ["New", "Contacted", "Replied", "Negotiating", "Invite Sent", "Onboarded", "Cold"];
@@ -1704,14 +1084,6 @@ export function stageCounts(): Record<Stage, number> {
     Cold: 0,
   };
   for (const l of leads) out[l.stage]++;
-  // pad with realistic numbers
-  out.New += 210;
-  out.Contacted += 130;
-  out.Replied += 46;
-  out.Negotiating += 18;
-  out["Invite Sent"] += 9;
-  out.Onboarded += 27;
-  out.Cold += 58;
   return out;
 }
 

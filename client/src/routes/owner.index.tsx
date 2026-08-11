@@ -51,7 +51,7 @@ function Overview() {
       <section className="rounded-2xl border border-border bg-gradient-to-br from-primary/[0.04] via-accent/[0.05] to-warning/[0.06] p-6">
         <div>
           <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Owner overview</div>
-          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Good morning, Ethan.</h2>
+          <h2 className="mt-1 text-2xl font-semibold tracking-tight">Overview Dashboard</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             {escalationsList.length} items need your attention across {recruiters.length} recruiters and{" "}
             {clientDemands.length} active language demands.

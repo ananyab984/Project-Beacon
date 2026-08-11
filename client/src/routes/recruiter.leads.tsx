@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { leads, recruiters, stageOrder, setLeadStage, useLeadStage, type Stage } from "@/lib/g3-mock";
+import { leads, recruiters, stageOrder, setLeadStage, useLeadStage, addLead, parseCsvLeads, type Stage } from "@/lib/g3-mock";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -562,8 +562,25 @@ function BulkUploadDialog() {
 
   function submit() {
     if (!file) { toast.error("Choose a CSV or Excel file first"); return; }
-    toast.success(`Uploading ${file.name}. You'll be notified when processing finishes.`);
-    setOpen(false); setFile(null);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      const parsed = parseCsvLeads(text);
+      if (parsed.length > 0) {
+        parsed.forEach((l) => {
+          addLead({
+            ...l,
+            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          });
+        });
+        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
+        setOpen(false);
+        setFile(null);
+      } else {
+        toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Service headers.`);
+      }
+    };
+    reader.readAsText(file);
   }
 
   return (

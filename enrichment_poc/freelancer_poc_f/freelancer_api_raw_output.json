@@ -1,0 +1,7123 @@
+{
+  "3503767": {
+    "id": 3503767,
+    "username": "Juanma28",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.958442981988562,
+        "on_budget": 0.9872102449144573,
+        "on_time": 0.9718248352398812,
+        "positive": 0.0020525634598145635,
+        "category_ratings": {
+          "quality": 4.947606688457088,
+          "communication": 4.974954451982221,
+          "expertise": 4.955308760858716,
+          "professionalism": 4.963530329228003,
+          "hire_again": 4.950814679416783
+        },
+        "all": 699,
+        "reviews": 657,
+        "incomplete_reviews": 4,
+        "complete": 695,
+        "incomplete": 4,
+        "earnings": null,
+        "completion_rate": 0.994277539341917,
+        "rehire_rate": null,
+        "user_id": 3503767,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 2,
+        "reviews": 2,
+        "incomplete_reviews": 0,
+        "complete": 2,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 3503767,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 23,
+        "reviews": 23,
+        "incomplete_reviews": 0,
+        "complete": 23,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 3503767,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 3503767,
+      "role": "freelancer",
+      "earnings_score": 8.5267,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 3,
+        "name": "PHP",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "php",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 17,
+        "name": "Website Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "website_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 20,
+        "name": "Graphic Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "graphic_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 21,
+        "name": "Copywriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copywriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 24,
+        "name": "Legal",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "legal",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 25,
+        "name": "Internet Marketing",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "internet_marketing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 27,
+        "name": "Photography",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photography",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 28,
+        "name": "Audio Services",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "audio_services",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 32,
+        "name": "Logo Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "logo_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 36,
+        "name": "Data Processing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_processing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 39,
+        "name": "Data Entry",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_entry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 47,
+        "name": "Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 53,
+        "name": "Accounting",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "accounting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 55,
+        "name": "Excel",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 57,
+        "name": "Photoshop",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photoshop",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 58,
+        "name": "iPhone",
+        "category": {
+          "id": 9,
+          "name": "Mobile Phones & Computing"
+        },
+        "active_project_count": null,
+        "seo_url": "iphone_app_development",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 64,
+        "name": "Sales",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "sales",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 75,
+        "name": "Blog",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "blog",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 77,
+        "name": "CSS",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "css",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 79,
+        "name": "Customer Support",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "customer_support",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 82,
+        "name": "Marketing",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "marketing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 86,
+        "name": "Financial Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "financial_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 100,
+        "name": "Advertising",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "advertising",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 103,
+        "name": "Technical Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "technical_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 104,
+        "name": "Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 116,
+        "name": "Software Architecture",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "software_architecture",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 121,
+        "name": "Transcription",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "transcription",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 123,
+        "name": "Report Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "report_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 129,
+        "name": "Virtual Assistant",
+        "category": {
+          "id": 99,
+          "name": "Jobs for Anyone"
+        },
+        "active_project_count": null,
+        "seo_url": "virtual_assistant",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 160,
+        "name": "eBooks",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "ebooks",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 172,
+        "name": "Music",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "music",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 174,
+        "name": "Article Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "articles",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 175,
+        "name": "Fiction",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "fiction",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 179,
+        "name": "Finance",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "finance",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 181,
+        "name": "Tax",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "tax",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 182,
+        "name": "Contracts",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "contracts",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 183,
+        "name": "Legal Research",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "legal_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 194,
+        "name": "Research Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 197,
+        "name": "Word",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "word",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 199,
+        "name": "Web Search",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "web_search",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 202,
+        "name": "Reviews",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "reviews",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 203,
+        "name": "Product Descriptions",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "product_descriptions",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 204,
+        "name": "Photo Editing",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photo_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 212,
+        "name": "Logistics",
+        "category": {
+          "id": 100,
+          "name": "Freight, Shipping & Transportation"
+        },
+        "active_project_count": null,
+        "seo_url": "logistics_shipping",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 238,
+        "name": "Travel Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "travel_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 250,
+        "name": "Article Rewriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "article_rewriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 284,
+        "name": "Photoshop Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photoshop_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 294,
+        "name": "Prolog",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "prolog",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 327,
+        "name": "Tax Law",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "tax_law",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 331,
+        "name": "Odd Jobs",
+        "category": {
+          "id": 99,
+          "name": "Jobs for Anyone"
+        },
+        "active_project_count": null,
+        "seo_url": "odd_jobs",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 335,
+        "name": "HTML",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "html",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 339,
+        "name": "Market Research",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "market_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 347,
+        "name": "Article Submission",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "article_submission",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 361,
+        "name": "Speech Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "speech_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 367,
+        "name": "Book Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "book_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 375,
+        "name": "Copy Typing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copy_typing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 381,
+        "name": "Visa / Immigration",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "visa_immigration",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 431,
+        "name": "Poetry",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "poetry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 432,
+        "name": "Short Stories",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "short_stories",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 436,
+        "name": "Presentations",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "presentations",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 519,
+        "name": "English (UK) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_uk_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 521,
+        "name": "Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 522,
+        "name": "Castilian Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "castilian_spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 529,
+        "name": "Italian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "italian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 536,
+        "name": "Portuguese (Brazil) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_brazil_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 537,
+        "name": "Portuguese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 561,
+        "name": "English (US) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_us_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 605,
+        "name": "Wikipedia",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "wikipedia",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 623,
+        "name": "Creative Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "creative_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 662,
+        "name": "Content Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "content_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 675,
+        "name": "English Spelling",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_spelling",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 677,
+        "name": "English Grammar",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_grammar",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 692,
+        "name": "Internet Research",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "internet_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 707,
+        "name": "Statistical Analysis",
+        "category": {
+          "id": 5,
+          "name": "Engineering & Science"
+        },
+        "active_project_count": null,
+        "seo_url": "statistical_analysis",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 708,
+        "name": "Legal Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "legal_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 952,
+        "name": "Attorney",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "attorney",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 15.0,
+    "registration_date": 1336420527,
+    "limited_account": false,
+    "display_name": "Juan Manuel Gimenez",
+    "tagline": "Spanish Translator, Lawyer, Writer and Wiki Expert",
+    "location": {
+      "country": {
+        "name": "Argentina",
+        "flag_url": "/img/flags/png/ar.png",
+        "code": "ar",
+        "highres_flag_url": "/img/flags/highres_png/argentina.png",
+        "flag_url_cdn": "//cdn5.f-cdn.com/img/flags/png/ar.png",
+        "highres_flag_url_cdn": "//cdn6.f-cdn.com/img/flags/highres_png/argentina.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "La Plata",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 1,
+      "code": "USD",
+      "sign": "$",
+      "name": "US Dollar",
+      "exchange_rate": 1.0,
+      "country": "US",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [
+      {
+        "id": 426,
+        "name": "Spanish - Level 2",
+        "level": 2,
+        "type": "Spanish",
+        "icon_url": "/img/insignia/spanish-2.png",
+        "description": "Spanish 2",
+        "icon_name": "spanish-2",
+        "score_percentage": 93.0,
+        "user_percentile": 2.0,
+        "insignia_id": 588,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 533,
+        "name": "Preferred Freelancer Program SLA Exam",
+        "level": 1,
+        "type": "Preferred Freelancer Program SLA",
+        "icon_url": "/img/insignia/preferredfreelancer-1.png",
+        "description": "Preferred Freelancer Program SLA",
+        "icon_name": "preferredfreelancer-1",
+        "score_percentage": 94.0,
+        "user_percentile": 2.0,
+        "insignia_id": 701,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 69,
+        "name": "Freelancer Orientation",
+        "level": 1,
+        "type": "Freelancer Orientation",
+        "icon_url": "/img/insignia/freelancer_orientation.png",
+        "description": "Freelancer Orientation",
+        "icon_name": "freelancer_orientation",
+        "score_percentage": 80.0,
+        "user_percentile": 4.0,
+        "insignia_id": 106,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 422,
+        "name": "Spanish to English Translation",
+        "level": 1,
+        "type": "Spanish to English Translation",
+        "icon_url": "/img/insignia/span-eng.png",
+        "description": "Spanish - English Translation",
+        "icon_name": "span-eng",
+        "score_percentage": 95.0,
+        "user_percentile": 5.0,
+        "insignia_id": 586,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 105,
+        "name": "UK English - Level 1",
+        "level": 1,
+        "type": "UK English",
+        "icon_url": "/img/insignia/uk_english1.png",
+        "description": "UK English 1",
+        "icon_name": "uk_english1",
+        "score_percentage": 88.0,
+        "user_percentile": 6.0,
+        "insignia_id": 289,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 420,
+        "name": "Spanish - Level 1",
+        "level": 1,
+        "type": "Spanish",
+        "icon_url": "/img/insignia/spanish-1.png",
+        "description": "Spanish 1",
+        "icon_name": "spanish-1",
+        "score_percentage": 97.0,
+        "user_percentile": 15.0,
+        "insignia_id": 587,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 446,
+        "name": "French - Level 1",
+        "level": 1,
+        "type": "French ",
+        "icon_url": "/img/insignia/french-1.png",
+        "description": "French 1",
+        "icon_name": "french-1",
+        "score_percentage": 90.0,
+        "user_percentile": 20.0,
+        "insignia_id": 562,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 2,
+        "name": "US English - Level 1",
+        "level": 1,
+        "type": "US English",
+        "icon_url": "/img/insignia/us_eng_1.png",
+        "description": "US English Level 1",
+        "icon_name": "us_eng_1",
+        "score_percentage": 88.0,
+        "user_percentile": 26.0,
+        "insignia_id": 100,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 483,
+        "name": "Italian - Level 1",
+        "level": 1,
+        "type": "Italian",
+        "icon_url": "/img/insignia/italian-1.png",
+        "description": "Italian 1",
+        "icon_name": "italian-1",
+        "score_percentage": 95.0,
+        "user_percentile": 28.0,
+        "insignia_id": 633,
+        "insignia_type": "exam"
+      },
+      {
+        "id": null,
+        "name": null,
+        "level": null,
+        "type": null,
+        "icon_url": "/img/insignia/nubelo.png",
+        "description": "Foundation Nubelo Member",
+        "icon_name": "nubelo",
+        "score_percentage": null,
+        "user_percentile": null,
+        "insignia_id": 700,
+        "insignia_type": null
+      },
+      {
+        "id": null,
+        "name": null,
+        "level": null,
+        "type": null,
+        "icon_url": "/img/insignia/vworker.png",
+        "description": "Foundation vWorker Member",
+        "icon_name": "vworker",
+        "score_percentage": null,
+        "user_percentile": null,
+        "insignia_id": 665,
+        "insignia_type": null
+      }
+    ],
+    "badges": null,
+    "primary_language": "es",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Juan Manuel",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 56,
+      "country": "AR",
+      "timezone": "America/Argentina/Buenos_Aires",
+      "offset": 21.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "35881161": {
+    "id": 35881161,
+    "username": "Powby",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.995884471397578,
+        "on_budget": 0.9946146996847297,
+        "on_time": 0.9915342657658069,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.999040582888706,
+          "communication": 4.99375177359352,
+          "expertise": 4.999040582888706,
+          "professionalism": 4.992878226912145,
+          "hire_again": 4.994711190704814
+        },
+        "all": 91,
+        "reviews": 81,
+        "incomplete_reviews": 0,
+        "complete": 91,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 35881161,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 1,
+        "reviews": 1,
+        "incomplete_reviews": 0,
+        "complete": 1,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 35881161,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 4,
+        "reviews": 4,
+        "incomplete_reviews": 0,
+        "complete": 4,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 35881161,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 35881161,
+      "role": "freelancer",
+      "earnings_score": 6.5745,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 21,
+        "name": "Copywriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copywriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 36,
+        "name": "Data Processing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_processing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 39,
+        "name": "Data Entry",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_entry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 47,
+        "name": "Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 95,
+        "name": "Web Scraping",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "web_scraping",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 104,
+        "name": "Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 129,
+        "name": "Virtual Assistant",
+        "category": {
+          "id": 99,
+          "name": "Jobs for Anyone"
+        },
+        "active_project_count": null,
+        "seo_url": "virtual_assistant",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 174,
+        "name": "Article Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "articles",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 199,
+        "name": "Web Search",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "web_search",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 209,
+        "name": "Voice Talent",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "voice_talent",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 375,
+        "name": "Copy Typing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copy_typing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 519,
+        "name": "English (UK) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_uk_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 521,
+        "name": "Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 522,
+        "name": "Castilian Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "castilian_spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 526,
+        "name": "French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 529,
+        "name": "Italian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "italian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 561,
+        "name": "English (US) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_us_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 626,
+        "name": "Catch Phrases",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "catch_phrases",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1075,
+        "name": "Data Scraping",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_scraping",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1077,
+        "name": "Data Extraction",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_extraction",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1182,
+        "name": "Shipping",
+        "category": {
+          "id": 100,
+          "name": "Freight, Shipping & Transportation"
+        },
+        "active_project_count": null,
+        "seo_url": "shipping",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 1386,
+        "name": "Local Job",
+        "category": {
+          "id": 99,
+          "name": "Jobs for Anyone"
+        },
+        "active_project_count": null,
+        "seo_url": "local_job",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 1712,
+        "name": "Amazon",
+        "category": {
+          "id": 8,
+          "name": "Product Sourcing & Manufacturing"
+        },
+        "active_project_count": null,
+        "seo_url": "amazon",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 9.0,
+    "registration_date": 1560950542,
+    "limited_account": false,
+    "display_name": "Powby",
+    "tagline": "Professional Translator & Proofreader",
+    "location": {
+      "country": {
+        "name": "Italy",
+        "flag_url": "/img/flags/png/it.png",
+        "code": "it",
+        "highres_flag_url": "/img/flags/highres_png/italy.png",
+        "flag_url_cdn": "//cdn6.f-cdn.com/img/flags/png/it.png",
+        "highres_flag_url_cdn": "//cdn3.f-cdn.com/img/flags/highres_png/italy.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "Milano",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 8,
+      "code": "EUR",
+      "sign": "€",
+      "name": "Euro",
+      "exchange_rate": 1.154273,
+      "country": "EU",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [],
+    "badges": null,
+    "primary_language": "en",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Laura Carolina",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 275,
+      "country": "IT",
+      "timezone": "Europe/Rome",
+      "offset": 2.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "36744275": {
+    "id": 36744275,
+    "username": "sjobergsimon",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.932104298759529,
+        "on_budget": 1.0,
+        "on_time": 0.994146922306856,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.935616145375416,
+          "communication": 4.929763067682272,
+          "expertise": 4.935616145375416,
+          "professionalism": 4.935616145375416,
+          "hire_again": 4.923909989989128
+        },
+        "all": 42,
+        "reviews": 39,
+        "incomplete_reviews": 1,
+        "complete": 41,
+        "incomplete": 1,
+        "earnings": null,
+        "completion_rate": 0.9761904761904762,
+        "rehire_rate": null,
+        "user_id": 36744275,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 1,
+        "reviews": 1,
+        "incomplete_reviews": 0,
+        "complete": 1,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 36744275,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 12,
+        "reviews": 11,
+        "incomplete_reviews": 0,
+        "complete": 12,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 36744275,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 36744275,
+      "role": "freelancer",
+      "earnings_score": 5.5239,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 20,
+        "name": "Graphic Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "graphic_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 21,
+        "name": "Copywriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copywriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 24,
+        "name": "Legal",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "legal",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 36,
+        "name": "Data Processing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_processing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 38,
+        "name": "SEO",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "seo",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 39,
+        "name": "Data Entry",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_entry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 47,
+        "name": "Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 55,
+        "name": "Excel",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 70,
+        "name": "Illustrator",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "illustrator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 75,
+        "name": "Blog",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "blog",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 79,
+        "name": "Customer Support",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "customer_support",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 80,
+        "name": "Powerpoint",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "powerpoint",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 103,
+        "name": "Technical Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "technical_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 104,
+        "name": "Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 123,
+        "name": "Report Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "report_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 149,
+        "name": "Business Plans",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "business_plans",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 156,
+        "name": "Ghostwriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "ghostwriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 158,
+        "name": "PDF",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "pdf",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 170,
+        "name": "Illustration",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "illustration",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 174,
+        "name": "Article Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "articles",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 183,
+        "name": "Legal Research",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "legal_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 194,
+        "name": "Research Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 199,
+        "name": "Web Search",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "web_search",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 203,
+        "name": "Product Descriptions",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "product_descriptions",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 222,
+        "name": "Microsoft Exchange",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "microsoft_exchange",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 234,
+        "name": "Caricature & Cartoons",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "caricature_cartoons",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 245,
+        "name": "Business Analysis",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "business_analysis",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 246,
+        "name": "Grant Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "grant_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 360,
+        "name": "Resumes",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "resumes",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 491,
+        "name": "Proposal Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proposal_bid_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 515,
+        "name": "Czech Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "czech_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 517,
+        "name": "Danish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "danish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 518,
+        "name": "German Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "german_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 519,
+        "name": "English (UK) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_uk_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 521,
+        "name": "Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 522,
+        "name": "Castilian Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "castilian_spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 525,
+        "name": "Canadian French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "canadian_french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 526,
+        "name": "French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 527,
+        "name": "Korean Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "korean_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 528,
+        "name": "Croatian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "croatian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 529,
+        "name": "Italian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "italian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 531,
+        "name": "Hungarian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "hungarian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 532,
+        "name": "Dutch Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "dutch_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 533,
+        "name": "Japanese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "japanese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 534,
+        "name": "Norwegian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "norwegian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 535,
+        "name": "Polish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "polish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 536,
+        "name": "Portuguese (Brazil) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_brazil_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 537,
+        "name": "Portuguese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 539,
+        "name": "Russian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "russian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 540,
+        "name": "Slovakian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "slovakian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 541,
+        "name": "Slovenian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "slovenian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 542,
+        "name": "Finnish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "finnish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 543,
+        "name": "Swedish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "swedish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 544,
+        "name": "Thai Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "thai_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 546,
+        "name": "Turkish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "turkish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 548,
+        "name": "Traditional Chinese (Taiwan)",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "traditional_chinese_taiwan",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 550,
+        "name": "Greek Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "greek_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 551,
+        "name": "Bulgarian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "bulgarian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 553,
+        "name": "Hebrew Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "hebrew_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 561,
+        "name": "English (US) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_us_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 576,
+        "name": "Latvian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "latvian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 623,
+        "name": "Creative Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "creative_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 662,
+        "name": "Content Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "content_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 672,
+        "name": "General Office",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "general_office",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 675,
+        "name": "English Spelling",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_spelling",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 677,
+        "name": "English Grammar",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_grammar",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 679,
+        "name": "Microsoft Outlook",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "microsoft_outlook",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 680,
+        "name": "Financial Analysis",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "financial_analysis",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 686,
+        "name": "Microsoft Office",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "microsoft_office",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 708,
+        "name": "Legal Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "legal_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1018,
+        "name": "Typing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "typing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1035,
+        "name": "Excel VBA",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel_vba",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1039,
+        "name": "Data Analytics",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_analytics",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1045,
+        "name": "Excel Macros",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel_macros",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1072,
+        "name": "Data Cleansing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_cleansing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1080,
+        "name": "Copy Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copy_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1091,
+        "name": "Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1417,
+        "name": "Excel VB Capabilities",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel_vb_capabilities",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2202,
+        "name": "English Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "english_translation",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2222,
+        "name": "Book Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "book_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2464,
+        "name": "LinkedIn Profile",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "linkedin_profile",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2483,
+        "name": "Legal Assistance",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "legal_assistance",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2505,
+        "name": "Microsoft Word",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "microsoft_word",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2560,
+        "name": "Technical Translation",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "technical_translation",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2634,
+        "name": "Legal Analysis",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "legal_analysis",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 25.0,
+    "registration_date": 1564146268,
+    "limited_account": false,
+    "display_name": "sjobergsimon",
+    "tagline": "Translation Expert with a thirst for language",
+    "location": {
+      "country": {
+        "name": "Sweden",
+        "flag_url": "/img/flags/png/se.png",
+        "code": "se",
+        "highres_flag_url": "/img/flags/highres_png/sweden.png",
+        "flag_url_cdn": "//cdn2.f-cdn.com/img/flags/png/se.png",
+        "highres_flag_url_cdn": "//cdn3.f-cdn.com/img/flags/highres_png/sweden.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "Jönköping",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 1,
+      "code": "USD",
+      "sign": "$",
+      "name": "US Dollar",
+      "exchange_rate": 1.0,
+      "country": "US",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [
+      {
+        "id": 533,
+        "name": "Preferred Freelancer Program SLA Exam",
+        "level": 1,
+        "type": "Preferred Freelancer Program SLA",
+        "icon_url": "/img/insignia/preferredfreelancer-1.png",
+        "description": "Preferred Freelancer Program SLA",
+        "icon_name": "preferredfreelancer-1",
+        "score_percentage": 80.0,
+        "user_percentile": 23.0,
+        "insignia_id": 701,
+        "insignia_type": "exam"
+      }
+    ],
+    "badges": null,
+    "primary_language": "en",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Frank Simon",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 75,
+      "country": "CO",
+      "timezone": "America/Bogota",
+      "offset": 19.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "44921792": {
+    "id": 44921792,
+    "username": "khanma1585",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.958254029380331,
+        "on_budget": 0.9856551750161264,
+        "on_time": 0.9943008478154489,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.89953462934155,
+          "communication": 5.0000000000000036,
+          "expertise": 4.970554397038869,
+          "professionalism": 4.9638542374757755,
+          "hire_again": 4.95732688304546
+        },
+        "all": 157,
+        "reviews": 151,
+        "incomplete_reviews": 0,
+        "complete": 157,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 44921792,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 0.0,
+        "on_budget": 0.0,
+        "on_time": 0.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 0.0,
+          "communication": 0.0,
+          "expertise": 0.0,
+          "professionalism": 0.0,
+          "hire_again": 0.0
+        },
+        "all": 0,
+        "reviews": 0,
+        "incomplete_reviews": 0,
+        "complete": 0,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 0.0,
+        "rehire_rate": null,
+        "user_id": 44921792,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 4.862553291279697,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.803647558970996,
+          "communication": 4.999999999999999,
+          "expertise": 4.852735669228247,
+          "professionalism": 4.852735669228247,
+          "hire_again": 4.803647558970996
+        },
+        "all": 7,
+        "reviews": 7,
+        "incomplete_reviews": 0,
+        "complete": 7,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 44921792,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 44921792,
+      "role": "freelancer",
+      "earnings_score": 6.868,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 104,
+        "name": "Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 121,
+        "name": "Transcription",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "transcription",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 158,
+        "name": "PDF",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "pdf",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 197,
+        "name": "Word",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "word",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 335,
+        "name": "HTML",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "html",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 511,
+        "name": "Afrikaans Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "afrikaans_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 512,
+        "name": "Indonesian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "indonesian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 513,
+        "name": "Malay Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "malay_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 514,
+        "name": "Catalan Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "catalan_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 515,
+        "name": "Czech Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "czech_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 516,
+        "name": "Welsh Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "welsh_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 517,
+        "name": "Danish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "danish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 518,
+        "name": "German Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "german_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 519,
+        "name": "English (UK) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_uk_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 521,
+        "name": "Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 522,
+        "name": "Castilian Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "castilian_spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 523,
+        "name": "Basque Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "basque_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 524,
+        "name": "Filipino Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "filipino_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 525,
+        "name": "Canadian French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "canadian_french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 526,
+        "name": "French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 527,
+        "name": "Korean Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "korean_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 528,
+        "name": "Croatian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "croatian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 529,
+        "name": "Italian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "italian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 530,
+        "name": "Lithuanian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "lithuanian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 531,
+        "name": "Hungarian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "hungarian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 532,
+        "name": "Dutch Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "dutch_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 533,
+        "name": "Japanese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "japanese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 534,
+        "name": "Norwegian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "norwegian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 535,
+        "name": "Polish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "polish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 536,
+        "name": "Portuguese (Brazil) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_brazil_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 537,
+        "name": "Portuguese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 538,
+        "name": "Romanian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "romanian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 539,
+        "name": "Russian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "russian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 540,
+        "name": "Slovakian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "slovakian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 541,
+        "name": "Slovenian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "slovenian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 542,
+        "name": "Finnish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "finnish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 543,
+        "name": "Swedish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "swedish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 545,
+        "name": "Vietnamese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "vietnamese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 548,
+        "name": "Traditional Chinese (Taiwan)",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "traditional_chinese_taiwan",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 550,
+        "name": "Greek Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "greek_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 551,
+        "name": "Bulgarian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "bulgarian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 553,
+        "name": "Hebrew Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "hebrew_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 554,
+        "name": "Arabic Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "arabic_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 555,
+        "name": "Hindi Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "hindi_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 556,
+        "name": "Bengali Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "bengali_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 557,
+        "name": "Punjabi Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "punjabi_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 558,
+        "name": "Tamil Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "tamil_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 559,
+        "name": "Telugu Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "telugu_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 560,
+        "name": "Malayalam Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "malayalam_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 562,
+        "name": "Urdu Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "urdu_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 573,
+        "name": "Kannada Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "kannada_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 575,
+        "name": "Albanian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "albanian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 576,
+        "name": "Latvian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "latvian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 585,
+        "name": "Macedonian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "macedonian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 586,
+        "name": "Bosnian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "bosnian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 677,
+        "name": "English Grammar",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_grammar",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 684,
+        "name": "Ukrainian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "ukrainian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 686,
+        "name": "Microsoft Office",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "microsoft_office",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 720,
+        "name": "Maltese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "maltese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 735,
+        "name": "Estonian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "estonian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 743,
+        "name": "Dari Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "dari_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 947,
+        "name": "Adobe Premiere Pro",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "adobe_premiere_pro",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 970,
+        "name": "Yiddish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "yiddish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1196,
+        "name": "Linguistics",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "linguistics",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1324,
+        "name": "Georgian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "georgian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1844,
+        "name": "Pashto Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "pashto_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1932,
+        "name": "Swahili Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "swahili_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2210,
+        "name": "Voice Over",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "voice_over",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 20.0,
+    "registration_date": 1585503293,
+    "limited_account": false,
+    "display_name": "Multilingual Connections",
+    "tagline": "TRANSLATION / TRANSCRIPTION / PROOFREADING",
+    "location": {
+      "country": {
+        "name": "Germany",
+        "flag_url": "/img/flags/png/de.png",
+        "code": "de",
+        "highres_flag_url": "/img/flags/highres_png/germany.png",
+        "flag_url_cdn": "//cdn6.f-cdn.com/img/flags/png/de.png",
+        "highres_flag_url_cdn": "//cdn5.f-cdn.com/img/flags/highres_png/germany.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "Göttinegn",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 1,
+      "code": "USD",
+      "sign": "$",
+      "name": "US Dollar",
+      "exchange_rate": 1.0,
+      "country": "US",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [
+      {
+        "id": 533,
+        "name": "Preferred Freelancer Program SLA Exam",
+        "level": 1,
+        "type": "Preferred Freelancer Program SLA",
+        "icon_url": "/img/insignia/preferredfreelancer-1.png",
+        "description": "Preferred Freelancer Program SLA",
+        "icon_name": "preferredfreelancer-1",
+        "score_percentage": 94.0,
+        "user_percentile": 7.0,
+        "insignia_id": 701,
+        "insignia_type": "exam"
+      }
+    ],
+    "badges": null,
+    "primary_language": "en",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": {
+      "status": "active",
+      "founder_id": 63726870
+    },
+    "public_name": "Multilingual Connections",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "Multilingual Connections",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 245,
+      "country": "DE",
+      "timezone": "Europe/Berlin",
+      "offset": 2.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "66906607": {
+    "id": 66906607,
+    "username": "ReemaAyman2023",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 4,
+        "reviews": 4,
+        "incomplete_reviews": 0,
+        "complete": 4,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 66906607,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 0.0,
+        "on_budget": 0.0,
+        "on_time": 0.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 0.0,
+          "communication": 0.0,
+          "expertise": 0.0,
+          "professionalism": 0.0,
+          "hire_again": 0.0
+        },
+        "all": 0,
+        "reviews": 0,
+        "incomplete_reviews": 0,
+        "complete": 0,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 0.0,
+        "rehire_rate": null,
+        "user_id": 66906607,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 4,
+        "reviews": 4,
+        "incomplete_reviews": 0,
+        "complete": 4,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 66906607,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 66906607,
+      "role": "freelancer",
+      "earnings_score": 5.7676,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 39,
+        "name": "Data Entry",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_entry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 55,
+        "name": "Excel",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 104,
+        "name": "Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 105,
+        "name": "Freelance",
+        "category": {
+          "id": 99,
+          "name": "Jobs for Anyone"
+        },
+        "active_project_count": null,
+        "seo_url": "freelance",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 199,
+        "name": "Web Search",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "web_search",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 375,
+        "name": "Copy Typing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copy_typing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 432,
+        "name": "Short Stories",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "short_stories",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 554,
+        "name": "Arabic Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "arabic_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 561,
+        "name": "English (US) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_us_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 609,
+        "name": "Communications",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "communications",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 675,
+        "name": "English Spelling",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_spelling",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 677,
+        "name": "English Grammar",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_grammar",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2092,
+        "name": "English Teaching",
+        "category": {
+          "id": 102,
+          "name": "Education"
+        },
+        "active_project_count": null,
+        "seo_url": "english_teaching",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2093,
+        "name": "English Tutoring",
+        "category": {
+          "id": 102,
+          "name": "Education"
+        },
+        "active_project_count": null,
+        "seo_url": "english_tutoring",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2096,
+        "name": "Education Consulting",
+        "category": {
+          "id": 102,
+          "name": "Education"
+        },
+        "active_project_count": null,
+        "seo_url": "education_consulting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2099,
+        "name": "Reading Tutoring",
+        "category": {
+          "id": 102,
+          "name": "Education"
+        },
+        "active_project_count": null,
+        "seo_url": "reading_tutoring",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2116,
+        "name": "Writing Tutoring",
+        "category": {
+          "id": 102,
+          "name": "Education"
+        },
+        "active_project_count": null,
+        "seo_url": "writing_tutoring",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2202,
+        "name": "English Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "english_translation",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 20.0,
+    "registration_date": 1672942927,
+    "limited_account": false,
+    "display_name": "ReemaAyman2023",
+    "tagline": "Teacher~translator~I put my best in your work ",
+    "location": {
+      "country": {
+        "name": "Palestinian Territory",
+        "flag_url": "/img/flags/png/ps.png",
+        "code": "ps",
+        "highres_flag_url": "/img/flags/highres_png/palestinian-territory.png",
+        "flag_url_cdn": "//cdn2.f-cdn.com/img/flags/png/ps.png",
+        "highres_flag_url_cdn": "//cdn5.f-cdn.com/img/flags/highres_png/palestinian-territory.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "Gaza",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 1,
+      "code": "USD",
+      "sign": "$",
+      "name": "US Dollar",
+      "exchange_rate": 1.0,
+      "country": "US",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [],
+    "badges": null,
+    "primary_language": "en",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Reema",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "freelancer.com",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": null,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 398,
+      "country": "PS",
+      "timezone": "Asia/Hebron",
+      "offset": 3.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "68092281": {
+    "id": 68092281,
+    "username": "ibrahimqq",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.884855743994579,
+        "on_budget": 0.7876114348554757,
+        "on_time": 0.9230228374464479,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.8992542208650525,
+          "communication": 4.866911983583517,
+          "expertise": 4.88174356897761,
+          "professionalism": 4.89929459980807,
+          "hire_again": 4.877074346738646
+        },
+        "all": 145,
+        "reviews": 131,
+        "incomplete_reviews": 3,
+        "complete": 142,
+        "incomplete": 3,
+        "earnings": null,
+        "completion_rate": 0.9793103448275862,
+        "rehire_rate": null,
+        "user_id": 68092281,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 4.896659795639109,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 4.741649489097773,
+          "professionalism": 5.0,
+          "hire_again": 4.741649489097773
+        },
+        "all": 5,
+        "reviews": 5,
+        "incomplete_reviews": 0,
+        "complete": 5,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 68092281,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 4.926729032742337,
+        "on_budget": 0.5352888160382171,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.9503706502565095,
+          "communication": 4.914276577715788,
+          "expertise": 4.909313642741439,
+          "professionalism": 4.9503706502565095,
+          "hire_again": 4.909313642741439
+        },
+        "all": 45,
+        "reviews": 39,
+        "incomplete_reviews": 0,
+        "complete": 45,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 68092281,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 68092281,
+      "role": "freelancer",
+      "earnings_score": 6.9094,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 17,
+        "name": "Website Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "website_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 20,
+        "name": "Graphic Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "graphic_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 26,
+        "name": "Banner Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "banner_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 32,
+        "name": "Logo Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "logo_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 36,
+        "name": "Data Processing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_processing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 37,
+        "name": "Project Management",
+        "category": {
+          "id": 7,
+          "name": "Business, Accounting, Human Resources & Legal"
+        },
+        "active_project_count": null,
+        "seo_url": "project_management",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 39,
+        "name": "Data Entry",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_entry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 55,
+        "name": "Excel",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 57,
+        "name": "Photoshop",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photoshop",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 70,
+        "name": "Illustrator",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "illustrator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 80,
+        "name": "Powerpoint",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "powerpoint",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 95,
+        "name": "Web Scraping",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "web_scraping",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 107,
+        "name": "Animation",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "animation",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 129,
+        "name": "Virtual Assistant",
+        "category": {
+          "id": 99,
+          "name": "Jobs for Anyone"
+        },
+        "active_project_count": null,
+        "seo_url": "virtual_assistant",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 158,
+        "name": "PDF",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "pdf",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 160,
+        "name": "eBooks",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "ebooks",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 168,
+        "name": "Adobe InDesign",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "indesign",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 170,
+        "name": "Illustration",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "illustration",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 197,
+        "name": "Word",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "word",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 204,
+        "name": "Photo Editing",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photo_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 232,
+        "name": "Corporate Identity",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "corporate_identity",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 278,
+        "name": "Business Card Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "business_cards",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 284,
+        "name": "Photoshop Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photoshop_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 310,
+        "name": "Brochure Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "brochure_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 334,
+        "name": "Data Mining",
+        "category": {
+          "id": 5,
+          "name": "Engineering & Science"
+        },
+        "active_project_count": null,
+        "seo_url": "data_mining",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 365,
+        "name": "T-Shirts",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "tshirts",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 368,
+        "name": "Icon Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "icon_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 412,
+        "name": "Flyer Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "flyer_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 519,
+        "name": "English (UK) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_uk_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 554,
+        "name": "Arabic Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "arabic_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 662,
+        "name": "Content Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "content_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 663,
+        "name": "Social Media Marketing",
+        "category": {
+          "id": 6,
+          "name": "Sales & Marketing"
+        },
+        "active_project_count": null,
+        "seo_url": "social_media_marketing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 688,
+        "name": "Video Editing",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "video_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 709,
+        "name": "Database Development",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "database_development",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 947,
+        "name": "Adobe Premiere Pro",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "adobe_premiere_pro",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1013,
+        "name": "Adobe Illustrator",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "adobe_illustrator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1035,
+        "name": "Excel VBA",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel_vba",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2163,
+        "name": "Canva",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "canva",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2282,
+        "name": "Data Collection",
+        "category": {
+          "id": 1,
+          "name": "Websites, IT & Software"
+        },
+        "active_project_count": null,
+        "seo_url": "data_collection",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2507,
+        "name": "Adobe Photoshop",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "adobe_photoshop",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2585,
+        "name": "Catalog Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "catalog_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 20.0,
+    "registration_date": 1677836034,
+    "limited_account": false,
+    "display_name": "ibrahimqq",
+    "tagline": "PDF | Word | Excel | PPT | Forms | Graphics",
+    "location": {
+      "country": {
+        "name": "Egypt",
+        "flag_url": "/img/flags/png/eg.png",
+        "code": "eg",
+        "highres_flag_url": "/img/flags/highres_png/egypt.png",
+        "flag_url_cdn": "//cdn5.f-cdn.com/img/flags/png/eg.png",
+        "highres_flag_url_cdn": "//cdn3.f-cdn.com/img/flags/highres_png/egypt.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "Al Hawamdiya",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 1,
+      "code": "USD",
+      "sign": "$",
+      "name": "US Dollar",
+      "exchange_rate": 1.0,
+      "country": "US",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [
+      {
+        "id": 69,
+        "name": "Freelancer Orientation",
+        "level": 1,
+        "type": "Freelancer Orientation",
+        "icon_url": "/img/insignia/freelancer_orientation.png",
+        "description": "Freelancer Orientation",
+        "icon_name": "freelancer_orientation",
+        "score_percentage": 80.0,
+        "user_percentile": 4.0,
+        "insignia_id": 106,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 533,
+        "name": "Preferred Freelancer Program SLA Exam",
+        "level": 1,
+        "type": "Preferred Freelancer Program SLA",
+        "icon_url": "/img/insignia/preferredfreelancer-1.png",
+        "description": "Preferred Freelancer Program SLA",
+        "icon_name": "preferredfreelancer-1",
+        "score_percentage": 93.0,
+        "user_percentile": 11.0,
+        "insignia_id": 701,
+        "insignia_type": "exam"
+      },
+      {
+        "id": 2,
+        "name": "US English - Level 1",
+        "level": 1,
+        "type": "US English",
+        "icon_url": "/img/insignia/us_eng_1.png",
+        "description": "US English Level 1",
+        "icon_name": "us_eng_1",
+        "score_percentage": 77.0,
+        "user_percentile": 48.0,
+        "insignia_id": 100,
+        "insignia_type": "exam"
+      }
+    ],
+    "badges": null,
+    "primary_language": "en",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Ibrahim",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 14,
+      "country": "EG",
+      "timezone": "Africa/Cairo",
+      "offset": 3.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "74808074": {
+    "id": 74808074,
+    "username": "rahman553",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.98808497761201,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.970212444030022,
+          "communication": 5.000000000000002,
+          "expertise": 5.000000000000002,
+          "professionalism": 5.000000000000002,
+          "hire_again": 4.970212444030022
+        },
+        "all": 27,
+        "reviews": 27,
+        "incomplete_reviews": 0,
+        "complete": 27,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 74808074,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 0.0,
+        "on_budget": 0.0,
+        "on_time": 0.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 0.0,
+          "communication": 0.0,
+          "expertise": 0.0,
+          "professionalism": 0.0,
+          "hire_again": 0.0
+        },
+        "all": 0,
+        "reviews": 0,
+        "incomplete_reviews": 0,
+        "complete": 0,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 0.0,
+        "rehire_rate": null,
+        "user_id": 74808074,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 4.983245338900406,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.958113347251012,
+          "communication": 5.000000000000001,
+          "expertise": 5.000000000000001,
+          "professionalism": 5.000000000000001,
+          "hire_again": 4.958113347251012
+        },
+        "all": 13,
+        "reviews": 13,
+        "incomplete_reviews": 0,
+        "complete": 13,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 74808074,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 74808074,
+      "role": "freelancer",
+      "earnings_score": 4.8581,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 21,
+        "name": "Copywriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copywriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 36,
+        "name": "Data Processing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_processing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 39,
+        "name": "Data Entry",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_entry",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 47,
+        "name": "Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 55,
+        "name": "Excel",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 57,
+        "name": "Photoshop",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "photoshop",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 80,
+        "name": "Powerpoint",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "powerpoint",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 86,
+        "name": "Financial Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "financial_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 104,
+        "name": "Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 121,
+        "name": "Transcription",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "transcription",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 158,
+        "name": "PDF",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "pdf",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 174,
+        "name": "Article Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "articles",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 175,
+        "name": "Fiction",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "fiction",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 194,
+        "name": "Research Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "research_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 198,
+        "name": "Video Upload",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "video_upload",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 199,
+        "name": "Web Search",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "web_search",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 203,
+        "name": "Product Descriptions",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "product_descriptions",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 209,
+        "name": "Voice Talent",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "voice_talent",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 250,
+        "name": "Article Rewriting",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "article_rewriting",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 264,
+        "name": "Format and Layout",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "format_layout",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 310,
+        "name": "Brochure Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "brochure_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 360,
+        "name": "Resumes",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "resumes",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 375,
+        "name": "Copy Typing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copy_typing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 513,
+        "name": "Malay Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "malay_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 515,
+        "name": "Czech Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "czech_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 517,
+        "name": "Danish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "danish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 518,
+        "name": "German Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "german_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 519,
+        "name": "English (UK) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_uk_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 521,
+        "name": "Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 522,
+        "name": "Castilian Spanish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "castilian_spanish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 525,
+        "name": "Canadian French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "canadian_french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 526,
+        "name": "French Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "french_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 532,
+        "name": "Dutch Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "dutch_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 534,
+        "name": "Norwegian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "norwegian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 536,
+        "name": "Portuguese (Brazil) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_brazil_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 537,
+        "name": "Portuguese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "portuguese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 542,
+        "name": "Finnish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "finnish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 543,
+        "name": "Swedish Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "swedish_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 547,
+        "name": "Simplified Chinese Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "simplified_chinese_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 552,
+        "name": "Serbian Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "serbian_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 554,
+        "name": "Arabic Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "arabic_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 561,
+        "name": "English (US) Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_us_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 662,
+        "name": "Content Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "content_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 675,
+        "name": "English Spelling",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_spelling",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 677,
+        "name": "English Grammar",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "english_grammar",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 688,
+        "name": "Video Editing",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "video_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1018,
+        "name": "Typing",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "typing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1029,
+        "name": "Essay Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "essay_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1035,
+        "name": "Excel VBA",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel_vba",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1045,
+        "name": "Excel Macros",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "excel_macros",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1070,
+        "name": "Blog Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "blog_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1075,
+        "name": "Data Scraping",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "data_scraping",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1080,
+        "name": "Copy Editing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "copy_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1081,
+        "name": "SEO Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "seo_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1091,
+        "name": "Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1700,
+        "name": "Audio Editing",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "audio_editing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 1806,
+        "name": "Academic Research",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "academic_research",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2202,
+        "name": "English Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "english_translation",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2349,
+        "name": "Subtitles & Captions",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "subtitles_and_captions",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2445,
+        "name": "Cover Letter",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "cover_letter",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2461,
+        "name": "Non-Fiction Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "non_fiction_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2463,
+        "name": "Case Study Writing",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "case_study_writing",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2464,
+        "name": "LinkedIn Profile",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "linkedin_profile",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2505,
+        "name": "Microsoft Word",
+        "category": {
+          "id": 4,
+          "name": "Data Entry & Admin"
+        },
+        "active_project_count": null,
+        "seo_url": "microsoft_word",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2507,
+        "name": "Adobe Photoshop",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "adobe_photoshop",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 2551,
+        "name": "CV Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "cv_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 25.0,
+    "registration_date": 1709035193,
+    "limited_account": false,
+    "display_name": "rahman553",
+    "tagline": "PhD-Researcher, Editor, Resume Writer",
+    "location": {
+      "country": {
+        "name": "United Kingdom",
+        "flag_url": "/img/flags/png/gb.png",
+        "code": "gb",
+        "highres_flag_url": "/img/flags/highres_png/united-kingdom.png",
+        "flag_url_cdn": "//cdn3.f-cdn.com/img/flags/png/gb.png",
+        "highres_flag_url_cdn": "//cdn5.f-cdn.com/img/flags/highres_png/united-kingdom.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "London",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 4,
+      "code": "GBP",
+      "sign": "£",
+      "name": "British Pounds",
+      "exchange_rate": 1.345643,
+      "country": "UK",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [],
+    "badges": null,
+    "primary_language": "en",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Md Hadisur",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 262,
+      "country": "UK",
+      "timezone": "Europe/London",
+      "offset": 1.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  },
+  "74933261": {
+    "id": 74933261,
+    "username": "Gulie81",
+    "suspended": null,
+    "closed": false,
+    "is_active": null,
+    "force_verify": null,
+    "avatar": null,
+    "email": null,
+    "reputation": {
+      "entire_history": {
+        "overall": 4.580670632558397,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 4.368259249924223,
+          "communication": 4.899287706509659,
+          "expertise": 4.368259249924223,
+          "professionalism": 4.368259249924223,
+          "hire_again": 4.899287706509659
+        },
+        "all": 9,
+        "reviews": 7,
+        "incomplete_reviews": 0,
+        "complete": 9,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 74933261,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last3months": {
+        "overall": 0.0,
+        "on_budget": 0.0,
+        "on_time": 0.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 0.0,
+          "communication": 0.0,
+          "expertise": 0.0,
+          "professionalism": 0.0,
+          "hire_again": 0.0
+        },
+        "all": 0,
+        "reviews": 0,
+        "incomplete_reviews": 0,
+        "complete": 0,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 0.0,
+        "rehire_rate": null,
+        "user_id": 74933261,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "last12months": {
+        "overall": 5.0,
+        "on_budget": 1.0,
+        "on_time": 1.0,
+        "positive": 0.0,
+        "category_ratings": {
+          "quality": 5.0,
+          "communication": 5.0,
+          "expertise": 5.0,
+          "professionalism": 5.0,
+          "hire_again": 5.0
+        },
+        "all": 2,
+        "reviews": 1,
+        "incomplete_reviews": 0,
+        "complete": 2,
+        "incomplete": 0,
+        "earnings": null,
+        "completion_rate": 1.0,
+        "rehire_rate": null,
+        "user_id": 74933261,
+        "completed_relevant_job_count": null,
+        "job_ranks": null,
+        "rehire_rank": null
+      },
+      "user_id": 74933261,
+      "role": "freelancer",
+      "earnings_score": 4.1631,
+      "job_history": null,
+      "project_stats": null,
+      "accept_rate": null,
+      "retention_rate": null
+    },
+    "jobs": [
+      {
+        "id": 22,
+        "name": "Translation",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "translation",
+        "seo_info": null,
+        "local": true,
+        "questions": null
+      },
+      {
+        "id": 32,
+        "name": "Logo Design",
+        "category": {
+          "id": 3,
+          "name": "Design, Media & Architecture"
+        },
+        "active_project_count": null,
+        "seo_url": "logo_design",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 48,
+        "name": "Proofreading",
+        "category": {
+          "id": 2,
+          "name": "Writing & Content"
+        },
+        "active_project_count": null,
+        "seo_url": "proofreading",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      },
+      {
+        "id": 532,
+        "name": "Dutch Translator",
+        "category": {
+          "id": 10,
+          "name": "Translation & Languages"
+        },
+        "active_project_count": null,
+        "seo_url": "dutch_translator",
+        "seo_info": null,
+        "local": false,
+        "questions": null
+      }
+    ],
+    "profile_description": null,
+    "hourly_rate": 15.0,
+    "registration_date": 1709678819,
+    "limited_account": false,
+    "display_name": "Gulie81",
+    "tagline": "administrative assistant",
+    "location": {
+      "country": {
+        "name": "Turkey",
+        "flag_url": "/img/flags/png/tr.png",
+        "code": "tr",
+        "highres_flag_url": "/img/flags/highres_png/turkey.png",
+        "flag_url_cdn": "//cdn5.f-cdn.com/img/flags/png/tr.png",
+        "highres_flag_url_cdn": "//cdn6.f-cdn.com/img/flags/highres_png/turkey.png",
+        "iso3": null,
+        "region_id": null,
+        "phone_code": null,
+        "demonym": null,
+        "person": null,
+        "seo_url": null,
+        "sanction": null,
+        "language_code": null,
+        "language_id": null
+      },
+      "city": "Antalya",
+      "latitude": null,
+      "longitude": null,
+      "vicinity": null,
+      "administrative_area": null,
+      "full_address": null,
+      "administrative_area_code": null,
+      "postal_code": null,
+      "id": null,
+      "timezone": null
+    },
+    "avatar_large": null,
+    "role": "freelancer",
+    "chosen_role": "freelancer",
+    "employer_reputation": null,
+    "status": {
+      "payment_verified": null,
+      "email_verified": true,
+      "deposit_made": null,
+      "profile_complete": null,
+      "phone_verified": null,
+      "identity_verified": null,
+      "facebook_connected": null,
+      "freelancer_verified_user": null,
+      "linkedin_connected": null,
+      "custom_charge_verified": null
+    },
+    "avatar_cdn": null,
+    "avatar_large_cdn": null,
+    "primary_currency": {
+      "id": 4,
+      "code": "GBP",
+      "sign": "£",
+      "name": "British Pounds",
+      "exchange_rate": 1.345643,
+      "country": "UK",
+      "is_external": null,
+      "is_escrowcom_supported": null
+    },
+    "account_balances": null,
+    "membership_package": null,
+    "qualifications": [],
+    "badges": null,
+    "primary_language": "nl",
+    "search_languages": null,
+    "cover_image": null,
+    "true_location": null,
+    "portfolio_count": null,
+    "preferred_freelancer": null,
+    "support_status": null,
+    "first_name": null,
+    "last_name": null,
+    "mobile_tracking": null,
+    "corporate": null,
+    "public_name": "Gülümser",
+    "corporate_users": null,
+    "is_local": null,
+    "address": null,
+    "company": "",
+    "recommendations": null,
+    "pool_ids": [],
+    "enterprise_ids": [],
+    "date_of_birth": null,
+    "escrowcom_account_linked": true,
+    "escrowcom_interaction_required": false,
+    "marketing_mobile_number": null,
+    "user_sanctions": null,
+    "freelancer_verified_status": null,
+    "secure_phone": null,
+    "directory_follow_preferences": null,
+    "is_payment_confirmation_required": null,
+    "is_nominated_payment_controlled": null,
+    "is_nominated_payment_share_setup_complete": null,
+    "enterprises": [],
+    "spam_profile": null,
+    "endorsements": null,
+    "timezone": {
+      "id": 424,
+      "country": "TR",
+      "timezone": "Europe/Istanbul",
+      "offset": 3.0
+    },
+    "responsiveness": null,
+    "bid_quality_details": null,
+    "test_user": null,
+    "online_offline_status": null,
+    "deposit_methods": null,
+    "oauth_password_credentials_allowed": false,
+    "registration_completed": true,
+    "is_profile_visible": true,
+    "enterprise_metadata_values": null,
+    "mfa": null,
+    "grants": null,
+    "operating_areas": null,
+    "equipment_groups": null,
+    "quality_details": null,
+    "avatar_xlarge": null,
+    "avatar_xlarge_cdn": null,
+    "document_submissions": null,
+    "rising_star_status": null,
+    "is_shareholder": null,
+    "has_marketing_mobile_number": null,
+    "is_staff": null
+  }
+}

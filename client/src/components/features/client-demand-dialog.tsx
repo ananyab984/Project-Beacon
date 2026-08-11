@@ -22,39 +22,39 @@ const EVENT = "g3:open-client-demand";
 export const openClientDemand = () => window.dispatchEvent(new Event(EVENT));
 
 const STANDARD_LANGUAGES = [
-  "Spanish (LatAm)",
-  "Japanese",
-  "German",
-  "French",
-  "Portuguese (Brazil)",
-  "Italian",
-  "Korean",
-  "Chinese (Simplified)",
-  "Arabic",
-  "Dutch",
-  "Polish",
-  "Swedish",
-  "Turkish",
-  "Spanish (Spain)",
-  "Vietnamese",
-  "Hindi",
-  "Tamil",
-  "Telugu",
-  "Malayalam",
+  // Region 1 — East and South Asia
+  "Bengali", "Cantonese", "Chinese (Simplified)", "Chinese (Traditional)", "Gujarati",
+  "Hindi", "Indonesian", "Japanese", "Kannada", "Korean", "Malay", "Malayalam", "Marathi",
+  "Odia", "Punjabi", "Tamil", "Telugu", "Thai", "Urdu", "Vietnamese",
+  // Region 2 — Finno-Ugric, Slavic & Turkic
+  "Bulgarian", "Croatian", "Czech", "Finnish", "Hungarian", "Kazakh", "Polish",
+  "Russian", "Slovak", "Slovenian", "Turkish", "Ukrainian",
+  // Region 3 — Germanic Languages
+  "Danish", "Dutch", "German", "Icelandic", "Norwegian", "Swedish",
+  // Region 4 — Hellenic & Semitic
+  "Arabic", "Greek", "Hebrew",
+  // Region 5 — Romance Languages
+  "Castilian Spanish", "Catalan", "French (Canadian)", "French (Parisian)", "French",
+  "Italian", "Portuguese (Brazilian)", "Portuguese (Portugal)", "Romanian", "Spanish (Latin America)", "Spanish (LatAm)",
+  // Region 6 — Other / English
+  "English", "English (AUS)", "English (Canada)", "English (UK)",
   "Custom..."
 ];
 
 const STANDARD_SERVICES = [
   "Subtitling",
   "Dubbing",
-  "Localization QA",
-  "AI Post-editing",
   "Translation",
   "Voice Over",
+  "SDH (Subtitles for Deaf & Hard of Hearing)",
+  "Audio Description (AD)",
+  "Localization QA",
+  "AI Post-editing",
   "Transcreation",
   "Quality Control",
   "Interpretation",
   "Transcription",
+  "Closed Captioning",
   "Custom..."
 ];
 
@@ -89,7 +89,10 @@ function findMappedRecruiterId(
   if (!lang || lang === "Custom...") return undefined;
   const clean = lang.trim().toLowerCase();
   const found = mappings.find(m =>
-    m.languages.some(l => l.trim().toLowerCase() === clean)
+    m.languages.some(l => {
+      const target = l.trim().toLowerCase();
+      return target === clean || clean.includes(target) || target.includes(clean);
+    })
   );
   return found?.recruiter_id;
 }

@@ -20,7 +20,7 @@ export const Route = createFileRoute("/owner/reports")({
   component: ReportsPage,
 });
 
-interface ReportItem {
+export interface ReportItem {
   id: string;
   name: string;
   type: "pdf" | "csv" | "log";
@@ -28,13 +28,7 @@ interface ReportItem {
   generated: string;
 }
 
-const RECENT_REPORTS: ReportItem[] = [
-  { id: "r0", name: "Assignment History & Activity Log", type: "log", range: "Real-time", generated: "live updated" },
-  { id: "r1", name: "Weekly Recruiter Scorecard", type: "pdf", range: "Nov 11–17", generated: "generated today, 08:12" },
-  { id: "r2", name: "Q4 Language Fill Analysis", type: "pdf", range: "Q4", generated: "generated 2d ago" },
-  { id: "r3", name: "Leads Pipeline Export", type: "csv", range: "Last 30d", generated: "generated 3d ago" },
-  { id: "r4", name: "Outreach Volume Trend", type: "csv", range: "Last 90d", generated: "generated last week" },
-];
+const RECENT_REPORTS: ReportItem[] = [];
 
 function ReportsPage() {
   const [range, setRange] = useState("30d");

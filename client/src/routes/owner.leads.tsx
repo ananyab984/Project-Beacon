@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { leads, recruiters, stageOrder, type Lead } from "@/lib/g3-mock";
+import { leads, recruiters, stageOrder, addLead, parseCsvLeads, type Lead } from "@/lib/g3-mock";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, AlertTriangle } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 
@@ -20,8 +20,6 @@ export const Route = createFileRoute("/owner/leads")({
   component: LeadsPage,
 });
 
-const CURRENT_GLOBAL_RECRUITER_ID = "r1"; // Divya
-
 // Language → country proxy for filtering + display.
 const languageCountry: Record<string, string> = {
   French: "France", Japanese: "Japan", German: "Germany", Korean: "South Korea",
@@ -30,10 +28,8 @@ const languageCountry: Record<string, string> = {
 };
 
 type SortKey = "lead" | "language" | "country" | "stage" | "recruiter" | "activity";
-type LeadScope = "global" | "mine";
 
 function LeadsPage() {
-  const [scope, setScope] = useState<LeadScope>("global");
   const [q, setQ] = useState("");
   const [lang, setLang] = useState("all");
   const [country, setCountry] = useState("all");
@@ -49,19 +45,9 @@ function LeadsPage() {
   const [version, setVersion] = useState(0);
   const pageSize = 12;
 
-  const globalEnrichedLeads = useMemo(
+  const baseSet = useMemo(
     () => leads.filter((l) => l.identity_resolved && !l.flags.includes("On Hold")),
     [version],
-  );
-
-  const mineCount = useMemo(
-    () => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID).length,
-    [version],
-  );
-
-  const baseSet = useMemo(
-    () => (scope === "mine" ? leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID) : globalEnrichedLeads),
-    [scope, version, globalEnrichedLeads],
   );
 
   const languages = useMemo(() => Array.from(new Set(leads.map((l) => l.language))), []);
@@ -129,50 +115,14 @@ function LeadsPage() {
     }
   };
 
-  const manualEnrichmentNeededCount = useMemo(
-    () => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID && (!l.identity_resolved || l.flags.includes("On Hold"))).length,
-    [version],
-  );
-
   return (
     <div className="mx-auto max-w-[1400px] space-y-4">
-      {/* Manual Enrichment Banner */}
-      {manualEnrichmentNeededCount > 0 && scope === "mine" && (
-        <div className="flex items-center justify-between rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 text-xs text-warning">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>
-              <strong>{manualEnrichmentNeededCount} leads require manual enrichment.</strong> Please review missing candidate details to promote them to Global Leads.
-            </span>
-          </div>
-          <Button
-            size="sm"
-            className="bg-warning text-warning-foreground hover:bg-warning/90 text-xs font-semibold h-7"
-            onClick={() => {
-              const firstOnHold = leads.find((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID && (!l.identity_resolved || l.flags.includes("On Hold")));
-              if (firstOnHold) {
-                setEnrichLead({
-                  id: firstOnHold.id,
-                  name: firstOnHold.display_name || firstOnHold.masked_label,
-                  language: firstOnHold.language,
-                  services: firstOnHold.services,
-                  years_experience: firstOnHold.years_experience,
-                  verified_email: firstOnHold.verified_email,
-                });
-              }
-            }}
-          >
-            Review Now
-          </Button>
-        </div>
-      )}
-
-      {/* Toolbar: search + scope switcher tabs */}
+      {/* Toolbar: search + bulk actions */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="relative min-w-[280px] flex-1 max-w-md">
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Search leads by name or ID…"
+            placeholder="Search global leads by name or ID…"
             value={q}
             onChange={(e) => { setQ(e.target.value); setPage(1); }}
             className="pl-9"
@@ -180,11 +130,6 @@ function LeadsPage() {
         </div>
         <div className="flex items-center gap-2">
           <BulkUploadDialog />
-          {/* Scope Tab Switcher: Global Leads vs My Leads */}
-          <div role="tablist" aria-label="Lead scope" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalEnrichedLeads.length} />
-            <ScopeTab active={scope === "mine"} onClick={() => { setScope("mine"); setPage(1); setSelected(new Set()); }} label="My Leads" count={mineCount} />
-          </div>
         </div>
       </div>
 
@@ -352,23 +297,7 @@ function LeadsPage() {
   );
 }
 
-function ScopeTab({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
-  return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1 text-xs font-semibold transition-colors ${
-        active ? "bg-primary text-primary-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <span>{label}</span>
-      <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${active ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-        {count}
-      </span>
-    </button>
-  );
-}
+
 
 function FilterSelect({
   value, onChange, placeholder, options, labelFor,
@@ -441,6 +370,31 @@ function matchesDate(ago: string, range: string): boolean {
 
 function BulkUploadDialog() {
   const [open, setOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = (event.target?.result as string) || "";
+      const parsed = parseCsvLeads(text);
+      if (parsed.length > 0) {
+        parsed.forEach((l) => {
+          addLead({
+            ...l,
+            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          });
+        });
+        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
+        setOpen(false);
+      } else {
+        toast.info(`Uploaded ${file.name}. Ensure file contains Name, Email, Language, or Service headers.`);
+      }
+    };
+    reader.readAsText(file);
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -453,14 +407,14 @@ function BulkUploadDialog() {
           <DialogTitle>Bulk Upload Leads</DialogTitle>
           <DialogDescription>Upload a CSV or Excel sheet with candidate info to create leads in bulk.</DialogDescription>
         </DialogHeader>
-        <div className="border-2 border-dashed border-border rounded-xl p-8 text-center space-y-2">
+        <label className="cursor-pointer block border-2 border-dashed border-border rounded-xl p-8 text-center space-y-2 hover:border-primary/50 transition-colors">
+          <input ref={fileInputRef} type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
           <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
-          <div className="text-xs font-semibold">Drop CSV/XLSX file here, or click to browse</div>
+          <div className="text-xs font-semibold">Click to select or drop CSV/XLSX file here</div>
           <div className="text-[11px] text-muted-foreground">Supported fields: name, email, language, country, services, source</div>
-        </div>
+        </label>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => { toast.success("Bulk import complete!"); setOpen(false); }}>Upload &amp; Process</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
