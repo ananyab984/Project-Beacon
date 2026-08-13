@@ -18,8 +18,14 @@ unipileRouter.post("/connect", authenticateJwt, async (req: Request, res: Respon
     const result = await UnipileService.mintHostedAuthLink(userId, provider, "create", clientUrl, rolePath);
     return res.json({ success: true, url: result.url, nonce: result.nonce });
   } catch (err: any) {
-    const status = err.statusCode || 500;
-    return res.status(status).json({ error: "CONNECT_FAILED", message: err.message || "Failed to mint hosted link" });
+    // err.message alone is often just axios's generic "Request failed with
+    // status code 404" -- Unipile's actual reason (bad DSN, plan limit,
+    // invalid provider combo, etc.) lives in err.response.data and was being
+    // discarded entirely, making failures like this unfixable from logs.
+    console.error("[unipile] /connect failed:", req.user?.id, err?.response?.status, err?.response?.data || err.message);
+    const status = err.statusCode || err?.response?.status || 500;
+    const detail = err?.response?.data?.detail || err?.response?.data?.message;
+    return res.status(status).json({ error: "CONNECT_FAILED", message: detail || err.message || "Failed to mint hosted link" });
   }
 });
 
@@ -35,8 +41,10 @@ unipileRouter.post("/reconnect", authenticateJwt, async (req: Request, res: Resp
     const result = await UnipileService.mintHostedAuthLink(userId, provider, "reconnect");
     return res.json({ success: true, url: result.url, nonce: result.nonce });
   } catch (err: any) {
-    const status = err.statusCode || 500;
-    return res.status(status).json({ error: "RECONNECT_FAILED", message: err.message || "Failed to mint reconnect link" });
+    console.error("[unipile] /reconnect failed:", req.user?.id, err?.response?.status, err?.response?.data || err.message);
+    const status = err.statusCode || err?.response?.status || 500;
+    const detail = err?.response?.data?.detail || err?.response?.data?.message;
+    return res.status(status).json({ error: "RECONNECT_FAILED", message: detail || err.message || "Failed to mint reconnect link" });
   }
 });
 

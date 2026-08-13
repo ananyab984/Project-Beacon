@@ -47,6 +47,22 @@ function mapAccountStatus(raw: string): AccountStatus {
 // than mid-word.
 const INVITE_NOTE_MAX_CHARS = 200;
 
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Unipile renders `body` as HTML, so a plain-text draft's "\n\n" paragraph
+// breaks are just whitespace to the recipient's mail client and collapse
+// into one run-on block (this was the actual bug behind the squashed-looking
+// outreach emails) -- wrap each paragraph in its own <p> so the spacing the
+// template author intended actually survives.
+function plainTextToEmailHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((para) => `<p style="margin:0 0 1em 0;">${escapeHtml(para).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
 function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS): string {
   if (text.length <= max) return text;
   const ellipsis = "…";
@@ -166,6 +182,16 @@ export class UnipileService {
       const items = response.data?.items || response.data || [];
       if (Array.isArray(items) && items.length > 0) {
         for (const item of items) {
+          // `/accounts` is scoped to the whole Unipile API key, i.e. every
+          // user's accounts, not just this one, and (unlike the webhook's
+          // `body.name`) items here carry no correlator back to our
+          // UnipileAuthAttempt -- `item.name` is the account's own
+          // display name/email, not our `g3_${userId}_${nonce}` string.
+          const existing = await prisma.connectedAccount.findUnique({
+            where: { unipileAccountId: item.id },
+          });
+          if (existing && existing.userId !== userId) continue; // belongs to a different user -- never touch
+
           const rawProvider = (item.provider || item.type || "").toUpperCase();
           let provider: UnipileProvider = UnipileProvider.EMAIL;
           if (rawProvider.includes("LINKEDIN")) provider = UnipileProvider.LINKEDIN;
@@ -173,26 +199,27 @@ export class UnipileService {
           else if (rawProvider.includes("OUTLOOK")) provider = UnipileProvider.OUTLOOK;
           else if (rawProvider.includes("MAIL")) provider = UnipileProvider.MAIL;
 
+          if (!existing) {
+            // This is the fallback path for when the notify_url webhook never
+            // landed (e.g. local dev, where APP_BASE_URL isn't publicly
+            // reachable from Unipile's servers) -- best-effort attribution:
+            // this user's own most recent still-relevant hosted-auth attempt
+            // for this provider group. Every hosted link is minted as either
+            // LINKEDIN or EMAIL (see mintHostedAuthLink/connect-account-dialog),
+            // so a live GOOGLE/OUTLOOK/MAIL account always traces back to an
+            // EMAIL-category attempt. Unlike the webhook's exact nonce match,
+            // this can't disambiguate two different users connecting the same
+            // provider group at the same instant -- skip (never guess) if
+            // this user has no matching attempt at all.
+            const attempt = await this.findRecentAttemptForProvider(userId, provider);
+            if (!attempt) continue;
+          }
+
           const rawStatus = (item.status || "OK").toUpperCase();
           const mappedStatus = rawStatus === "OK" || rawStatus === "CONNECTED" ? AccountStatus.OK : AccountStatus.RECONNECTION_NEEDED;
+          const accountName = item.name || item.username || `${provider} Account`;
 
-          await prisma.connectedAccount.upsert({
-            where: { unipileAccountId: item.id },
-            create: {
-              userId,
-              provider,
-              unipileAccountId: item.id,
-              accountName: item.name || item.username || `${provider} Account`,
-              status: mappedStatus,
-              statusMessage: rawStatus,
-            },
-            update: {
-              userId,
-              status: mappedStatus,
-              statusMessage: rawStatus,
-              accountName: item.name || item.username || undefined,
-            },
-          }).catch(() => null);
+          await this.upsertConnectedAccountForUser(userId, provider, item.id, accountName, mappedStatus, rawStatus);
         }
       }
     } catch (err: any) {
@@ -202,6 +229,51 @@ export class UnipileService {
     return prisma.connectedAccount.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /**
+   * Writes a ConnectedAccount for this user+provider, respecting the
+   * `@@unique([userId, provider])` DB constraint. Every reconnect of the same
+   * mailbox/LinkedIn profile mints a brand new Unipile account id, so a plain
+   * upsert-by-id tries to INSERT a second row for a provider this user
+   * already has -- which violates that constraint and either throws (in the
+   * webhook handler, killing the whole webhook call) or gets silently
+   * swallowed (in the old sync loop's `.catch(() => null)`), so the
+   * reconnect just vanishes and the recruiter sees nothing happen. Instead:
+   * if this user already has a row for this provider under a *different*
+   * unipileAccountId, treat it as a replace (update in place); otherwise
+   * upsert normally by id.
+   */
+  private static async upsertConnectedAccountForUser(
+    userId: string,
+    provider: UnipileProvider,
+    unipileAccountId: string,
+    accountName: string,
+    status: AccountStatus,
+    statusMessage: string
+  ) {
+    const existingForProvider = await prisma.connectedAccount.findUnique({
+      where: { userId_provider: { userId, provider } },
+    });
+
+    if (existingForProvider && existingForProvider.unipileAccountId !== unipileAccountId) {
+      return prisma.connectedAccount.update({
+        where: { id: existingForProvider.id },
+        data: { unipileAccountId, accountName, status, statusMessage },
+      }).catch((err) => {
+        console.warn("Failed to replace reconnected account:", err.message);
+        return null;
+      });
+    }
+
+    return prisma.connectedAccount.upsert({
+      where: { unipileAccountId },
+      create: { userId, provider, unipileAccountId, accountName, status, statusMessage },
+      update: { status, statusMessage, accountName },
+    }).catch((err) => {
+      console.warn("Failed to upsert connected account:", err.message);
+      return null;
     });
   }
 
@@ -428,7 +500,7 @@ export class UnipileService {
         },
       ],
       subject,
-      body,
+      body: plainTextToEmailHtml(body),
       tracking_options: {
         opens: true,
         links: true,
@@ -534,6 +606,23 @@ export class UnipileService {
   }
 
   /**
+   * Best-effort attribution used only by the /accounts fallback sync (see
+   * getUserConnectedAccounts), for when the notify_url webhook never landed.
+   * Every hosted link is minted with provider LINKEDIN or EMAIL only, so a
+   * live GOOGLE/OUTLOOK/MAIL account is matched against this user's most
+   * recent EMAIL-category attempt.
+   */
+  private static async findRecentAttemptForProvider(userId: string, provider: UnipileProvider) {
+    const candidateProviders =
+      provider === UnipileProvider.LINKEDIN ? [UnipileProvider.LINKEDIN] : [UnipileProvider.EMAIL, provider];
+
+    return prisma.unipileAuthAttempt.findFirst({
+      where: { userId, provider: { in: candidateProviders } },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /**
    * Unified Webhook Event Handler (Idempotent & Deduplicated)
    */
   static async handleWebhookEvent(token: string, secretHeader: string | undefined, body: any) {
@@ -581,21 +670,20 @@ export class UnipileService {
         const attempt = await this.resolveAuthAttemptFromName(body.name);
 
         if (attempt) {
-          connAcc = await prisma.connectedAccount.upsert({
-            where: { unipileAccountId: accountId },
-            create: {
-              userId: attempt.userId,
-              provider: attempt.provider,
-              unipileAccountId: accountId,
-              accountName: body.name || body.account_name || `${attempt.provider} Account`,
-              status: mappedStatus,
-              statusMessage: rawStatus,
-            },
-            update: {
-              status: mappedStatus,
-              statusMessage: rawStatus,
-            },
-          });
+          // Goes through the same userId+provider-aware helper as the manual
+          // sync path -- a recruiter reconnecting (new Unipile account id,
+          // same provider) must replace their existing row, not attempt a
+          // second INSERT that violates @@unique([userId, provider]) and
+          // throws, which would otherwise fail this whole webhook call and
+          // make the reconnect look like it silently didn't work.
+          connAcc = await this.upsertConnectedAccountForUser(
+            attempt.userId,
+            attempt.provider,
+            accountId,
+            body.name || body.account_name || `${attempt.provider} Account`,
+            mappedStatus,
+            rawStatus
+          );
         } else {
           console.warn(`No UnipileAuthAttempt matched for new account ${accountId} (name=${body.name}) -- dropping status update.`);
         }

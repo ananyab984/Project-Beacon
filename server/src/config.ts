@@ -36,5 +36,8 @@ export const config = {
   // during local development), that ambiguity silently routes the request
   // to the wrong service instead of a clean connection error.
   draftingServiceUrl: process.env.DRAFTING_SERVICE_URL || "http://127.0.0.1:8001",
-  enrichmentServiceUrl: process.env.ENRICHMENT_SERVICE_URL || "http://127.0.0.1:8002",
+  // Must match enrichment_pipeline/main.py's own --port default (8000, see its
+  // argparse default and .env) -- a mismatch here means every enrichment call
+  // fails with connection-refused and the lead just cycles PENDING forever.
+  enrichmentServiceUrl: process.env.ENRICHMENT_SERVICE_URL || "http://127.0.0.1:8000",
 };
