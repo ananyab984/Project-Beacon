@@ -64,7 +64,7 @@ emailQueueRouter.post(
       data: {
         leadId: lead.id,
         recruiterId: req.user!.id,
-        candidateName: lead.fullName || lead.displayName || "Candidate",
+        candidateName: lead.displayName || lead.fullName || "Candidate",
         candidateRole: lead.services.join(", ") || lead.targetLanguage || "Freelance Linguist",
         status: "REVIEW_NEEDED",
         subject: draft.subject,

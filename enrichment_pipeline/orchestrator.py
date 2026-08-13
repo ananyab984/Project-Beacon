@@ -110,12 +110,28 @@ class EnrichmentOrchestrator:
             parser = self.parsers.get(parser_name, GenericParser())
             stage3_parsed = parser.parse(profile_link, raw_scraped_data)
 
-            # Merge rules: NEVER overwrite existing data
+            # Merge rules: NEVER overwrite existing data -- EXCEPT the
+            # person's own name. Full_Name/First_Name are always non-empty by
+            # the time a lead reaches here (required at Add-Lead), so the
+            # never-overwrite rule would otherwise permanently discard the
+            # name actually scraped off the profile the lead points to. A
+            # manually-typed name is frequently an approximation (spelling
+            # variant, nickname, partial); the scraped profile is the source
+            # of truth once we have it, so it wins.
+            NAME_FIELDS = {"Full_Name", "First_Name"}
             for k, v in stage3_parsed.items():
-                if is_empty_value(lead.get(k)) and not is_empty_value(v):
+                if is_empty_value(v):
+                    continue
+                source = "brightdata" if provider_type == "brightdata" else "tavily"
+                if k in NAME_FIELDS:
+                    if lead.get(k) != v:
+                        lead[k] = v
+                        field_sources[k] = source
+                        logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, verified name overrides manual entry)")
+                elif is_empty_value(lead.get(k)):
                     lead[k] = v
-                    field_sources[k] = "brightdata" if provider_type == "brightdata" else "tavily"
-                    logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {field_sources[k]})")
+                    field_sources[k] = source
+                    logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source})")
 
         post_stage3_audit = audit_lead_fields(lead)
         logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")

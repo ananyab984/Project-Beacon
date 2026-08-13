@@ -83,7 +83,9 @@ conversationRouter.post(
       data: {
         leadId: lead.id,
         recruiterId: req.user!.id,
-        candidateName: lead.fullName || lead.displayName || "Candidate",
+        // displayName (the enrichment-verified name) wins once it exists --
+        // fullName is just whatever was typed at Add-Lead time.
+        candidateName: lead.displayName || lead.fullName || "Candidate",
         candidateRole: lead.services.join(", ") || lead.targetLanguage || "Freelance Linguist",
         channel: ConversationChannel.LINKEDIN,
         unread: false,

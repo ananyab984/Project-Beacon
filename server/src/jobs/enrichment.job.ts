@@ -50,6 +50,11 @@ export async function enrichLeadById(leadId: string) {
     let enrichedContactNumber = lead.contactNumber;
     let enrichedYearsOfExp = lead.yearsOfExperience;
     let enrichedVendorExp = lead.vendorExperience;
+    // displayName is the schema's dedicated slot for "the real, verified
+    // name -- shown once identityResolved" (every lead card falls back to
+    // the random maskedLabel placeholder until this is set). fullName stays
+    // untouched as the audit trail of what was actually typed at Add-Lead.
+    let enrichedDisplayName = lead.displayName;
 
     if (data?.lead) {
       const el = data.lead;
@@ -60,6 +65,8 @@ export async function enrichLeadById(leadId: string) {
         if (!isNaN(parsed)) enrichedYearsOfExp = parsed as any;
       }
       if (el.Vendor_Experience) enrichedVendorExp = el.Vendor_Experience;
+      const resolvedName = String(el.Full_Name || el.First_Name || "").trim();
+      if (resolvedName) enrichedDisplayName = resolvedName;
     }
 
     // Trust the pipeline's own verdict: "enrichment_complete" means it
@@ -77,6 +84,7 @@ export async function enrichLeadById(leadId: string) {
         contactNumber: enrichedContactNumber,
         yearsOfExperience: enrichedYearsOfExp,
         vendorExperience: enrichedVendorExp,
+        displayName: enrichedDisplayName,
         identityResolved: isComplete,
         enrichmentStatus: isComplete ? "COMPLETE" : "FLAGGED_REVIEW",
         promotedToGlobalAt: isComplete ? new Date() : undefined,

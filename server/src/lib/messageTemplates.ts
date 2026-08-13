@@ -9,7 +9,11 @@
  *  email-queue.routes.ts, which calls the Python service's grounded LLM
  *  prompt (prompts/prompt_builder.py) rather than a hardcoded phrase here. */
 
-function firstNameOf(fullName: string | null, firstName: string | null): string {
+// displayName is the enrichment-verified name (set once identityResolved) --
+// it takes priority over firstName/fullName, which are just whatever was
+// typed at Add-Lead time and can be a typo, nickname, or approximation.
+function firstNameOf(fullName: string | null, firstName: string | null, displayName?: string | null): string {
+  if (displayName?.trim()) return displayName.trim().split(/\s+/)[0];
   if (firstName?.trim()) return firstName.trim();
   if (fullName?.trim()) return fullName.trim().split(/\s+/)[0];
   return "there";
@@ -26,17 +30,18 @@ function languageOf(sourceLanguage: string | null, targetLanguage: string | null
 interface NameAndLanguageLead {
   fullName: string | null;
   firstName: string | null;
+  displayName?: string | null;
   sourceLanguage: string | null;
   targetLanguage: string | null;
 }
 
 export function buildEmailDraft(lead: NameAndLanguageLead): { subject: string; body: string } {
-  const name = firstNameOf(lead.fullName, lead.firstName);
+  const name = firstNameOf(lead.fullName, lead.firstName, lead.displayName);
   const language = languageOf(lead.sourceLanguage, lead.targetLanguage);
   const linguistPhrase = language ? `freelance ${language} linguists` : "freelance linguists";
 
   return {
-    subject: `Global3 Outreach · Freelance Partnership (${lead.fullName || name})`,
+    subject: `Global3 Outreach · Freelance Partnership (${lead.displayName || lead.fullName || name})`,
     body:
       `Hi ${name},\n\n` +
       `I hope this email finds you well.\n\n` +
@@ -55,7 +60,7 @@ export function buildEmailDraft(lead: NameAndLanguageLead): { subject: string; b
 }
 
 export function buildLinkedInDraft(lead: NameAndLanguageLead): { body: string } {
-  const name = firstNameOf(lead.fullName, lead.firstName);
+  const name = firstNameOf(lead.fullName, lead.firstName, lead.displayName);
   const language = languageOf(lead.sourceLanguage, lead.targetLanguage);
   const rolePhrase = language ? `freelance Native ${language}` : "freelance linguist";
 
