@@ -73,11 +73,16 @@ app.use("/api", evaluationRouter);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start Server
-app.listen(config.port, () => {
-  console.log(`====================================================`);
-  console.log(`Global3 Auth Server running on http://localhost:${config.port}`);
-  console.log(`Client URL: ${config.clientUrl}`);
-  console.log(`====================================================`);
-  startBackgroundJobs();
-});
+export default app;
+
+// Keep the local dev experience the same, but avoid starting a long-lived
+// listener or in-process cron jobs inside Vercel's serverless runtime.
+if (process.env.VERCEL !== "1") {
+  app.listen(config.port, () => {
+    console.log(`====================================================`);
+    console.log(`Global3 Auth Server running on http://localhost:${config.port}`);
+    console.log(`Client URL: ${config.clientUrl}`);
+    console.log(`====================================================`);
+    startBackgroundJobs();
+  });
+}
