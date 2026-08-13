@@ -21,16 +21,39 @@ import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { startBackgroundJobs } from "./jobs";
 
 const app = express();
+const allowedOrigins = new Set(
+  [
+    config.clientUrl,
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8002",
+    "http://127.0.0.1:8002",
+  ]
+    .map((value) => {
+      try {
+        return new URL(value).origin;
+      } catch {
+        return value;
+      }
+    })
+    .filter(Boolean)
+);
 
 app.use(helmet());
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      if (!origin) {
         callback(null, true);
-      } else {
-        callback(null, true);
+        return;
       }
+
+      if (allowedOrigins.has(origin) || /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error(`CORS blocked for origin ${origin}`));
     },
     credentials: true,
   })

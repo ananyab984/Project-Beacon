@@ -15,10 +15,21 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function resolveEnv(name: string, fallback: string, requireInProduction = false): string {
+  const value = (process.env[name] || "").trim();
+  if (value) return value;
+  if (requireInProduction) {
+    throw new Error(`${name} must be set in production -- refusing to fall back to ${fallback}.`);
+  }
+  return fallback;
+}
+
+const isProduction = (process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+
 export const config = {
   port: parseInt(process.env.PORT || "5001", 10),
   nodeEnv: process.env.NODE_ENV || "development",
-  clientUrl: process.env.CLIENT_URL || "http://localhost:5173",
+  clientUrl: resolveEnv("CLIENT_URL", "http://localhost:5173", isProduction),
   databaseUrl: process.env.DATABASE_URL || "",
   jwtSecret: process.env.JWT_SECRET || "super_secret_jwt_access_key_global3_2026",
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "15m",
@@ -28,16 +39,16 @@ export const config = {
   unipileApiKey: process.env.UNIPILE_API_KEY || "",
   unipileWebhookSecret: requireEnv("UNIPILE_WEBHOOK_SECRET"),
   unipileWebhookPathToken: requireEnv("UNIPILE_WEBHOOK_PATH_TOKEN"),
-  appBaseUrl: process.env.APP_BASE_URL || "http://localhost:5001",
+  appBaseUrl: resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction),
   // 127.0.0.1, not "localhost": both Python services bind IPv4-only, but
   // "localhost" can resolve to the IPv6 loopback first depending on the
   // process's DNS resolution order -- if anything else happens to be
   // listening on the same port on ::1/[::] (e.g. the client dev server
   // during local development), that ambiguity silently routes the request
   // to the wrong service instead of a clean connection error.
-  draftingServiceUrl: process.env.DRAFTING_SERVICE_URL || "http://127.0.0.1:8001",
+  draftingServiceUrl: resolveEnv("DRAFTING_SERVICE_URL", "http://127.0.0.1:8001", isProduction),
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
-  enrichmentServiceUrl: process.env.ENRICHMENT_SERVICE_URL || "http://127.0.0.1:8000",
+  enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction),
 };
