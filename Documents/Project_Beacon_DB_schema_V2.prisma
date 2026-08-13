@@ -263,7 +263,6 @@ model User {
   manualActivities    ManualActivityLog[]
   emailQueueItems     EmailQueueItem[]
   conversations       Conversation[]
-  contractorProfile   ContractorProfile?
   escalationsOwned    Escalation[]        @relation("EscalationOwner")
 
   // Contractor-management (recruiter <-> assigned contractors)
@@ -275,6 +274,56 @@ model User {
   scoreSnapshots   RecruiterScoreSnapshot[]
   kpiSummary       RecruiterKpiSummary?
   clientDemands    ClientDemand[]        @relation("ClientDemandOwner")
+  refreshTokens    RefreshToken[]
+
+  // --- contractor profile fields (merged from the former ContractorProfile table) ---
+  // Populated only when role = CONTRACTOR. Merged onto User (rather than a separate
+  // 1:1 extension table) so a flag set anywhere against this person -- e.g. a DNU flag
+  // via UserFlagEvent below -- lives on the same row as everything else about them and
+  // is visible from every view, instead of depending on a join that some code path
+  // might not follow. See UserFlagEvent for the DNU mechanism itself.
+  headline            String?
+  country              String?           @map("country_of_residence")
+  timezone             String?
+  bio                   String?
+  avatarUrl               String?           @map("avatar_url")
+  phone                    String?
+  whatsapp                  String?
+  preferredContact           PreferredContact? @map("preferred_contact")
+
+  services              String[]          @default([])
+  sourceLanguage          String?           @map("source_language")
+  targetLanguages           String[]          @default([]) @map("target_languages")
+  secondaryLanguages         String[]          @default([]) @map("secondary_languages")
+  yearsOfExperience            Decimal?          @map("years_of_experience") @db.Decimal(4, 1)
+  vendorExperience               String?           @map("vendor_experience")
+
+  rateAmount            Decimal?          @map("rate_amount") @db.Decimal(10, 2)
+  rateUnit               RateUnit?         @map("rate_unit")
+  currency                 Currency?         @default(USD)
+
+  resumeFilename        String?           @map("resume_filename")
+  resumeSizeKb            Int?              @map("resume_size_kb")
+  portfolioUrl              String?           @map("portfolio_url")
+  linkedinUrl                 String?           @map("linkedin_url")
+  prozUrl                       String?           @map("proz_url")
+  websiteUrl                      String?           @map("website_url")
+
+  availabilityStatus    Availability      @default(UNKNOWN) @map("availability_status")
+  availableFrom           DateTime?         @map("available_from")
+  weeklyCapacityHours       Int?              @map("weekly_capacity_hours")
+  blackoutDates               DateTime[]        @default([]) @map("blackout_dates")
+
+  notifyNewLead         Boolean           @default(true) @map("notify_new_lead")
+  notifyDuplicate         Boolean           @default(true) @map("notify_duplicate")
+  notifyMessage             Boolean           @default(true) @map("notify_message")
+  notifyWeeklyDigest          Boolean           @default(false) @map("notify_weekly_digest")
+  twoFaEnabled                  Boolean           @default(false) @map("two_fa_enabled")
+
+  // --- DNU / standing flags on this person's own record (see UserFlagEvent) ---
+  flagEventsSetOnMe       UserFlagEvent[]   @relation("UserFlagSubject")
+  flagEventsSetByMe        UserFlagEvent[]   @relation("UserFlagSetBy")
+  flagEventsConfirmedByMe   UserFlagEvent[]   @relation("UserFlagConfirmedBy")
 
   @@map("users")
 }
@@ -293,6 +342,20 @@ model VisibilityRule {
 
   @@unique([role])
   @@map("visibility_rules")
+}
+
+/// Refresh tokens table for secure session rotation & revocation
+model RefreshToken {
+  id          String   @id @default(uuid())
+  tokenHash   String   @unique @map("token_hash")
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revoked     Boolean  @default(false)
+  expiresAt   DateTime @map("expires_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 // ----------------------------------------------------------------------------
@@ -776,55 +839,44 @@ model ConversationMessage {
 }
 
 // ----------------------------------------------------------------------------
-// CONTRACTOR PROFILE — rich self-service profile
-// (recruiter-mock.ts ContractorProfile). Entirely new in V2: not covered by
-// any prior document, only discovered from the live repo. Covers rate card,
-// availability, portfolio links, resume, and notification preferences.
+// CONTRACTOR PROFILE FIELDS — merged onto User directly, see User model above.
+// (Formerly a separate `ContractorProfile` 1:1 extension table — recruiter-mock.ts
+// ContractorProfile. Merged per Sundar's direction: a contractor's rate card,
+// availability, portfolio etc. now live on the same row as their identity/auth,
+// not a joined table, so a flag against this person is visible everywhere they're
+// looked up. See UserFlagEvent immediately below for the DNU mechanism this enables.)
 // ----------------------------------------------------------------------------
 
-model ContractorProfile {
-  id                  String            @id @default(uuid())
-  userId              String            @unique @map("user_id")
-  user                User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  headline            String?
-  country             String?           @map("country_of_residence")
-  timezone            String?
-  bio                 String?
-  avatarUrl           String?           @map("avatar_url")
-  phone               String?
-  whatsapp            String?
-  preferredContact    PreferredContact? @map("preferred_contact")
+enum UserFlagType {
+  DNU  // Do Not Use — a contractor Global3 has decided not to source/work with again
+}
 
-  services            String[]          @default([])
-  sourceLanguage      String?           @map("source_language")
-  targetLanguages     String[]          @default([]) @map("target_languages")
-  secondaryLanguages  String[]          @default([]) @map("secondary_languages")
-  yearsOfExperience   Decimal?          @map("years_of_experience") @db.Decimal(4, 1)
-  vendorExperience    String?           @map("vendor_experience")
+/// Standing/flag events against a person's own record (User), distinct from
+/// LeadFlagEvent which only ever flags a Lead. Exists because a Lead has no
+/// connection to the User a person might already be (contractors are the ones
+/// who *submit* leads via Lead.createdByContractorId — they aren't leads
+/// themselves), so a DNU flag needs its own home directly on User to be
+/// enforceable wherever that contractor's identity shows up, including at
+/// Lead-creation time (check the submitting contractor's flag status via
+/// createdByContractorId before accepting their submission).
+model UserFlagEvent {
+  id                     String       @id @default(uuid())
+  userId                 String       @map("user_id")
+  user                   User         @relation("UserFlagSubject", fields: [userId], references: [id], onDelete: Cascade)
+  flag                   UserFlagType
+  action                 FlagAction
+  setByRecruiterId       String       @map("set_by_recruiter_id")
+  setBy                  User         @relation("UserFlagSetBy", fields: [setByRecruiterId], references: [id])
+  setAt                  DateTime     @default(now()) @map("set_at")
+  confirmedByRecruiterId String?      @map("confirmed_by_recruiter_id")
+  confirmedBy            User?        @relation("UserFlagConfirmedBy", fields: [confirmedByRecruiterId], references: [id])
+  confirmedAt             DateTime?    @map("confirmed_at")
+  reason                  String?
+  removedAt                DateTime?    @map("removed_at")
 
-  rateAmount          Decimal?          @map("rate_amount") @db.Decimal(10, 2)
-  rateUnit            RateUnit?         @map("rate_unit")
-  currency            Currency?         @default(USD)
-
-  resumeFilename      String?           @map("resume_filename")
-  resumeSizeKb        Int?              @map("resume_size_kb")
-  portfolioUrl        String?           @map("portfolio_url")
-  linkedinUrl         String?           @map("linkedin_url")
-  prozUrl             String?           @map("proz_url")
-  websiteUrl          String?           @map("website_url")
-
-  availabilityStatus  Availability      @default(UNKNOWN) @map("availability_status")
-  availableFrom       DateTime?         @map("available_from")
-  weeklyCapacityHours Int?              @map("weekly_capacity_hours")
-  blackoutDates       DateTime[]        @default([]) @map("blackout_dates")
-
-  notifyNewLead       Boolean           @default(true) @map("notify_new_lead")
-  notifyDuplicate     Boolean           @default(true) @map("notify_duplicate")
-  notifyMessage       Boolean           @default(true) @map("notify_message")
-  notifyWeeklyDigest  Boolean           @default(false) @map("notify_weekly_digest")
-  twoFaEnabled        Boolean           @default(false) @map("two_fa_enabled")
-
-  @@map("contractor_profiles")
+  @@index([userId])
+  @@index([flag])
+  @@map("user_flag_events")
 }
 
 /// Which recruiter manages which contractor (recruiter-mock.ts

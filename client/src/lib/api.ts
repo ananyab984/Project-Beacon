@@ -127,4 +127,73 @@ export const api = {
     }
     return [];
   },
+
+  /** Mint Unipile hosted auth link for connecting accounts */
+  async connectAccount(provider: string): Promise<{ url: string }> {
+    const token = getAccessToken();
+    const res = await fetch("http://localhost:5001/api/unipile/connect", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ provider }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to generate connection link");
+    return data;
+  },
+
+  /** Get user's connected Unipile accounts */
+  async getConnectedAccounts(): Promise<any[]> {
+    const token = getAccessToken();
+    if (!token) return [];
+    try {
+      const res = await fetch("http://localhost:5001/api/unipile/accounts", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.accounts || [];
+    } catch {
+      return [];
+    }
+  },
+
+  /** Send outreach via Unipile (LinkedIn DM or Tracked Email) */
+  async sendOutreach(payload: {
+    leadId: string;
+    channel: "LINKEDIN" | "EMAIL" | string;
+    to?: string;
+    subject?: string;
+    body: string;
+    emailQueueId?: string;
+  }) {
+    const token = getAccessToken();
+    const res = await fetch("http://localhost:5001/api/outreach/send", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw { code: data.error || "SEND_FAILED", message: data.message || "Failed to send message" };
+    }
+    return data;
+  },
 };
+
+function getAccessToken(): string | null {
+  try {
+    const raw = localStorage.getItem("g3.session.v2");
+    if (raw) {
+      const session = JSON.parse(raw);
+      return session.accessToken || null;
+    }
+  } catch {}
+  return null;
+}
+

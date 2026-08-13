@@ -36,6 +36,7 @@ import { Route as OwnerReportsRouteImport } from './routes/owner.reports'
 import { Route as OwnerSettingsRouteImport } from './routes/owner.settings'
 import { Route as RecruiterIndexRouteImport } from './routes/recruiter.index'
 import { Route as RecruiterClientsRouteImport } from './routes/recruiter.clients'
+import { Route as RecruiterContractorsRouteImport } from './routes/recruiter.contractors'
 import { Route as RecruiterConversationsRouteImport } from './routes/recruiter.conversations'
 import { Route as RecruiterEmailQueueRouteImport } from './routes/recruiter.email-queue'
 import { Route as RecruiterLeadsRouteImport } from './routes/recruiter.leads'
@@ -177,6 +178,11 @@ const RecruiterClientsRoute = RecruiterClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => RecruiterRoute,
 } as any)
+const RecruiterContractorsRoute = RecruiterContractorsRouteImport.update({
+  id: '/contractors',
+  path: '/contractors',
+  getParentRoute: () => RecruiterRoute,
+} as any)
 const RecruiterConversationsRoute = RecruiterConversationsRouteImport.update({
   id: '/conversations',
   path: '/conversations',
@@ -229,6 +235,7 @@ export interface FileRoutesByFullPath {
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
   '/recruiter/clients': typeof RecruiterClientsRoute
+  '/recruiter/contractors': typeof RecruiterContractorsRoute
   '/recruiter/conversations': typeof RecruiterConversationsRoute
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
@@ -260,6 +267,7 @@ export interface FileRoutesByTo {
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
   '/recruiter/clients': typeof RecruiterClientsRoute
+  '/recruiter/contractors': typeof RecruiterContractorsRoute
   '/recruiter/conversations': typeof RecruiterConversationsRoute
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
@@ -295,6 +303,7 @@ export interface FileRoutesById {
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
   '/recruiter/clients': typeof RecruiterClientsRoute
+  '/recruiter/contractors': typeof RecruiterContractorsRoute
   '/recruiter/conversations': typeof RecruiterConversationsRoute
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
@@ -331,6 +340,7 @@ export interface FileRouteTypes {
     | '/owner/reports'
     | '/owner/settings'
     | '/recruiter/clients'
+    | '/recruiter/contractors'
     | '/recruiter/conversations'
     | '/recruiter/email-queue'
     | '/recruiter/leads'
@@ -362,6 +372,7 @@ export interface FileRouteTypes {
     | '/owner/reports'
     | '/owner/settings'
     | '/recruiter/clients'
+    | '/recruiter/contractors'
     | '/recruiter/conversations'
     | '/recruiter/email-queue'
     | '/recruiter/leads'
@@ -396,6 +407,7 @@ export interface FileRouteTypes {
     | '/owner/reports'
     | '/owner/settings'
     | '/recruiter/clients'
+    | '/recruiter/contractors'
     | '/recruiter/conversations'
     | '/recruiter/email-queue'
     | '/recruiter/leads'
@@ -610,6 +622,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecruiterClientsRouteImport
       parentRoute: typeof RecruiterRoute
     }
+    '/recruiter/contractors': {
+      id: '/recruiter/contractors'
+      path: '/contractors'
+      fullPath: '/recruiter/contractors'
+      preLoaderRoute: typeof RecruiterContractorsRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
     '/recruiter/conversations': {
       id: '/recruiter/conversations'
       path: '/conversations'
@@ -700,6 +719,7 @@ const OwnerRouteWithChildren = OwnerRoute._addFileChildren(OwnerRouteChildren)
 
 interface RecruiterRouteChildren {
   RecruiterClientsRoute: typeof RecruiterClientsRoute
+  RecruiterContractorsRoute: typeof RecruiterContractorsRoute
   RecruiterConversationsRoute: typeof RecruiterConversationsRoute
   RecruiterEmailQueueRoute: typeof RecruiterEmailQueueRoute
   RecruiterLeadsRoute: typeof RecruiterLeadsRoute
@@ -709,6 +729,7 @@ interface RecruiterRouteChildren {
 
 const RecruiterRouteChildren: RecruiterRouteChildren = {
   RecruiterClientsRoute: RecruiterClientsRoute,
+  RecruiterContractorsRoute: RecruiterContractorsRoute,
   RecruiterConversationsRoute: RecruiterConversationsRoute,
   RecruiterEmailQueueRoute: RecruiterEmailQueueRoute,
   RecruiterLeadsRoute: RecruiterLeadsRoute,

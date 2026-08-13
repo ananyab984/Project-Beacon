@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { LayoutGrid, ContactRound, Building2, Mail, MessagesSquare, LineChart, Plus } from "lucide-react";
+import { LayoutGrid, ContactRound, Building2, Mail, MessagesSquare, LineChart, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { RoleGuard } from "@/components/features/role-guard";
@@ -18,6 +18,7 @@ const nav: NavItem[] = [
   { to: "/recruiter", label: "Dashboard", icon: LayoutGrid },
   { to: "/recruiter/clients", label: "Clients & Market", icon: Building2 },
   { to: "/recruiter/leads", label: "Leads", icon: ContactRound },
+  { to: "/recruiter/contractors", label: "Contractors", icon: Users },
   { to: "/recruiter/email-queue", label: "Email Queue", icon: Mail },
   { to: "/recruiter/conversations", label: "Conversations", icon: MessagesSquare },
   { to: "/recruiter/performance", label: "Recruiter Performance", icon: LineChart },

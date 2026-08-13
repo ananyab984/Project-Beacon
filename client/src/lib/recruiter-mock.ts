@@ -163,8 +163,13 @@ const store: Store = {
   leads: [],
   emailQueue: [],
   conversations: [],
-  contractors: [],
-  unassignedContractors: [],
+  contractors: [
+    { id: "ct_alex", name: "Alex Kim", email: "alex@global3.co", assigned_at: Date.now() - 1000 * 60 * 60 * 24 * 40, leads_added_30d: 12, last_active: "2h ago" },
+  ],
+  unassignedContractors: [
+    { id: "ct_priya", name: "Priya Nair", email: "priya.nair@example.com", assigned_at: 0, leads_added_30d: 0, last_active: "—" },
+    { id: "ct_marco", name: "Marco Rossi", email: "marco.rossi@example.com", assigned_at: 0, leads_added_30d: 0, last_active: "—" },
+  ],
   weekly: [],
 };
 

@@ -99,14 +99,7 @@ function LoginPage() {
         >
           {loading ? "Signing in…" : "Sign in"}
         </Button>
-        <div className="rounded-md border border-border/70 bg-muted/40 p-3 text-[11px] leading-relaxed text-muted-foreground">
-          <div className="font-medium text-foreground/80">
-            Demo accounts (password: <span className="font-mono">demo1234</span>)
-          </div>
-          <div>owner@global3.co · Owner</div>
-          <div>recruiter@global3.co · Recruiter</div>
-          <div>contractor@global3.co · Contractor</div>
-        </div>
+
       </form>
     </AuthShell>
   );

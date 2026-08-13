@@ -11,14 +11,14 @@ import { addLead, parseCsvLeads, Lead } from "@/lib/g3-mock";
 const SOURCES = [
   "LinkedIn",
   "ProZ",
+  "Ada",
+  "ATA",
+  "ATAA",
+  "Bodalgo",
+  "Freelancer",
+  "Apollo",
   "Referral",
-  "GitHub",
-  "Google / Search Engine",
-  "Social Media (Twitter/X, Instagram, Facebook)",
-  "Email Outreach",
-  "Job Board / Portal",
-  "Direct / Word of Mouth",
-  "Other",
+  "Import",
 ];
 
 const LANGUAGES = [
@@ -246,12 +246,34 @@ export function AddLeadDialog({
           </Field>
 
           <Field label="Source *" error={errors.source}>
-            <Select value={values.source} onValueChange={(v) => set("source", v)}>
+            <Select
+              value={SOURCES.includes(values.source) ? values.source : values.source ? "__custom__" : ""}
+              onValueChange={(v) => {
+                if (v === "__custom__") {
+                  set("source", "");
+                } else {
+                  set("source", v);
+                }
+              }}
+            >
               <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
               <SelectContent>
                 {SOURCES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                <SelectItem value="__custom__">
+                  <span className="flex items-center gap-1.5 text-primary font-medium">+ Custom</span>
+                </SelectItem>
               </SelectContent>
             </Select>
+            {(!SOURCES.includes(values.source) && (values.source !== "" || !SOURCES.includes(values.source))) &&
+              (!SOURCES.includes(values.source)) && (
+              <Input
+                className="mt-2"
+                value={values.source}
+                onChange={(e) => set("source", e.target.value)}
+                placeholder="Enter custom source…"
+                autoFocus
+              />
+            )}
           </Field>
 
           <Field label="Profile Link" error={errors.profile_link} full>

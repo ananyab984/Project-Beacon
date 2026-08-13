@@ -10,7 +10,6 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 
@@ -39,9 +38,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -92,8 +88,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:title", content: "Global3 — Owner Dashboard" },
       { name: "twitter:description", content: "Global3 recruitment automation — owner oversight dashboard for lead health, recruiter performance, and language coverage." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/2b16d95c-c538-4255-8389-c931c7184970/id-preview-ad3a8c99--a865b560-c149-40dc-89cb-48fd88a87e77.lovable.app-1784441410299.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/2b16d95c-c538-4255-8389-c931c7184970/id-preview-ad3a8c99--a865b560-c149-40dc-89cb-48fd88a87e77.lovable.app-1784441410299.png" },
     ],
     links: [
       {

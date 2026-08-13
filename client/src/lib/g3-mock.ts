@@ -6,7 +6,7 @@ export type Stage = "New" | "Contacted" | "Replied" | "Negotiating" | "Invite Se
 
 export type Availability = "Available Now" | "Available from date" | "Unavailable" | "Unknown";
 export type Flag = "DNC" | "On Hold" | "Watching" | "High Priority";
-export type Source = "LinkedIn" | "ProZ" | "Apollo" | "Referral" | "Import";
+export type Source = "LinkedIn" | "ProZ" | "Ada" | "ATA" | "ATAA" | "Bodalgo" | "Freelancer" | "Apollo" | "Referral" | "Import" | string;
 
 export interface Lead {
   id: string;
@@ -208,7 +208,7 @@ export function useRecruiters(): Recruiter[] {
   );
 }
 
-export function addNewRecruiter(name: string, languages: string[] = []): Recruiter {
+export function addNewRecruiter(name: string, languages: string[] = [], role: "full_access" | "contractor" = "full_access"): Recruiter {
   const trimmed = name.trim();
   if (!trimmed) return recruiters[0];
   const existing = recruiters.find((r) => r.name.toLowerCase() === trimmed.toLowerCase());
@@ -225,7 +225,7 @@ export function addNewRecruiter(name: string, languages: string[] = []): Recruit
   const newR: Recruiter = {
     id,
     name: trimmed,
-    role: "full_access",
+    role,
     status: "healthy",
     reply_rate: 0.35,
     read_rate: 0.70,

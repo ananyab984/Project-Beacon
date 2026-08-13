@@ -9,6 +9,9 @@ import { useAiToolsEnabled } from "@/hooks/use-ai-tools";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
 
+import { api } from "@/lib/api";
+import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
+
 export function generateEmailDraft(name: string, language: string = "Linguist") {
   return `Hi ${name},\n\nI hope this email finds you well.\n\nI'm reaching out from the Resource Management team at Global3. We recently reviewed your profile and believe your expertise would be a strong asset to our current and upcoming project pipelines.\n\nWe are actively looking to connect with talented freelance ${language} linguists who value long-term, meaningful collaboration over one-off tasks.\n\nAt Global3, we pride ourselves on building lasting partnerships with our global network of professionals. You can find more details about our mission and the scope of our work at global3.io.\n\nIf you are open to exploring a partnership, please submit your application through our portal so we can align your profile with relevant opportunities: https://app.global3.io/apply\n\nShould you have any questions before applying, please feel free to reach out to us at resources@global3.io. We're happy to provide more information.\n\nBest regards,\nResources Team`;
 }
@@ -29,6 +32,40 @@ export function EmailQueuePageView() {
   const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const autosaveTimer = useRef<number | null>(null);
+  const [connectDialogOpen, setConnectDialogOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  async function handleSend() {
+    if (!selected) return;
+    setSending(true);
+    try {
+      const channel = selected.candidate_role?.toLowerCase().includes("linkedin") ? "LINKEDIN" : "EMAIL";
+      await api.sendOutreach({
+        leadId: selected.id,
+        channel,
+        to,
+        subject,
+        body,
+        emailQueueId: selected.id,
+      });
+      approveAndSendDraft(selected.id);
+      toast.success(`Message sent via Unipile to ${selected.candidate_name}!`);
+    } catch (err: any) {
+      if (err.code === "ACCOUNT_NOT_CONNECTED" || err.message?.includes("connect")) {
+        toast.error("Unipile account not connected", {
+          description: err.message,
+          action: {
+            label: "Connect Account",
+            onClick: () => setConnectDialogOpen(true),
+          },
+        });
+      } else {
+        toast.error(err.message || "Failed to send message via Unipile");
+      }
+    } finally {
+      setSending(false);
+    }
+  }
 
   function pick(id: string) {
     setSelectedId(id);
@@ -117,8 +154,15 @@ export function EmailQueuePageView() {
                     <Wand2 className="h-3.5 w-3.5" /> Generate Draft
                   </Button>
                   <Button variant="outline" size="sm" onClick={saveDraft} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
-                  <Button variant="ghost" size="sm" className="h-8 text-xs text-destructive"><Trash2 className="h-3.5 w-3.5" />Discard</Button>
-                  <Button size="sm" className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90" onClick={() => toast.success("Email sent")}><Send className="h-3.5 w-3.5" />Send</Button>
+                  <Button
+                    size="sm"
+                    disabled={sending}
+                    className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                    onClick={handleSend}
+                  >
+                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    {sending ? "Sending via Unipile..." : "Send"}
+                  </Button>
                 </div>
               </div>
             </div>
@@ -152,6 +196,7 @@ export function EmailQueuePageView() {
           </div>
         )}
       </div>
+      <ConnectAccountDialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen} />
     </div>
   );
 }

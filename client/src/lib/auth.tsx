@@ -17,10 +17,11 @@ type StoredUser = AuthUser & {
   resetExpiresAt?: number | null;
 };
 
-type Session = { userId: string; issuedAt: number };
+type Session = { userId: string; issuedAt: number; accessToken?: string };
 
 const USERS_KEY = "g3.users.v2";
 const SESSION_KEY = "g3.session.v2";
+const API_BASE_URL = "http://localhost:5001/api/auth";
 
 const seedUsers: StoredUser[] = [
   {
@@ -108,7 +109,7 @@ type AuthCtx = {
     name: string;
     email: string;
     password: string;
-    role: Exclude<Role, "owner">;
+    role: Role;
   }) => Promise<{ user: AuthUser; verifyToken: string }>;
   signOut: () => void;
   requestPasswordReset: (email: string) => Promise<string>;
@@ -124,17 +125,61 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isHydrating, setIsHydrating] = useState(true);
 
   useEffect(() => {
-    const users = loadUsers();
     const s = loadSession();
-    if (s) {
-      const u = users.find((x) => x.id === s.userId);
-      if (u) setUser(toPublic(u));
-      else saveSession(null);
+    if (s && s.accessToken) {
+      // Try verifying session with Node JWT server
+      fetch(`${API_BASE_URL}/me`, {
+        headers: { Authorization: `Bearer ${s.accessToken}` },
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.user) {
+            setUser(data.user);
+          } else {
+            fallbackLocalHydration(s);
+          }
+        })
+        .catch(() => fallbackLocalHydration(s))
+        .finally(() => setIsHydrating(false));
+    } else if (s) {
+      fallbackLocalHydration(s);
+      setIsHydrating(false);
+    } else {
+      setIsHydrating(false);
     }
-    setIsHydrating(false);
   }, []);
 
+  const fallbackLocalHydration = (s: Session) => {
+    const users = loadUsers();
+    const u = users.find((x) => x.id === s.userId);
+    if (u) setUser(toPublic(u));
+    else saveSession(null);
+  };
+
   const signIn = useCallback(async (email: string, password: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+
+      if (res.ok && data.user && data.accessToken) {
+        const s: Session = { userId: data.user.id, issuedAt: Date.now(), accessToken: data.accessToken };
+        saveSession(s);
+        setUser(data.user);
+        return data.user;
+      } else if (data && data.message) {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) {
+        throw err;
+      }
+    }
+
+    // Local mock fallback if server offline
     const users = loadUsers();
     const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
     if (!u || u.password !== password) throw new Error("Invalid email or password");
@@ -146,6 +191,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signUp = useCallback<AuthCtx["signUp"]>(async ({ name, email, password, role }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, role }),
+      });
+      const data = await res.json();
+      if (res.ok && data.user) {
+        return { user: data.user, verifyToken: data.verifyToken || token() };
+      } else if (data && data.message) {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) {
+        throw err;
+      }
+    }
+
     const users = loadUsers();
     const normalized = email.trim().toLowerCase();
     if (users.some((x) => x.email.toLowerCase() === normalized))
@@ -165,6 +228,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(() => {
+    const s = loadSession();
+    if (s && s.accessToken) {
+      fetch(`${API_BASE_URL}/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${s.accessToken}`,
+        },
+      }).catch(() => {});
+    }
     saveSession(null);
     setUser(null);
   }, []);

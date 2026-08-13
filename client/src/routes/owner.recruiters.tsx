@@ -76,7 +76,7 @@ function RecruitersPage() {
       toast.error("Please enter recruiter full name.");
       return;
     }
-    const created = addNewRecruiter(newRecruiterName.trim(), selectedInitialLangs);
+    const created = addNewRecruiter(newRecruiterName.trim(), selectedInitialLangs, newRecruiterRole);
     toast.success(
       `Recruiter onboarding record created for ${onboardingDate}! Sent login credentials & invite email to ${created.name.toLowerCase().replace(/\s+/g, ".")}@global3.io.`
     );
@@ -401,7 +401,7 @@ function CleanRecruiterCard({
               {r.name.charAt(0)}
             </div>
             <div>
-              <div className="font-bold text-base text-foreground">
+              <div className="font-bold text-base text-foreground flex items-center gap-1.5">
                 {r.name}
               </div>
               <div className="text-xs text-muted-foreground font-medium">
