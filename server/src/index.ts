@@ -21,6 +21,7 @@ import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { startBackgroundJobs } from "./jobs";
 
 const app = express();
+let keepaliveTimer: NodeJS.Timeout | null = null;
 const allowedOrigins = new Set(
   [
     config.clientUrl,
@@ -98,6 +99,28 @@ app.use(errorHandler);
 
 export default app;
 
+function startKeepalivePing() {
+  if (!config.keepaliveEnabled) return;
+
+  const targetUrl = config.keepaliveUrl.replace(/\/+$/, "");
+  const ping = async () => {
+    try {
+      const res = await fetch(`${targetUrl}/health`, {
+        method: "GET",
+        headers: { "User-Agent": "ProjectBeacon-Keepalive/1.0" },
+      });
+      if (!res.ok) {
+        console.warn(`[keepalive] ping to ${targetUrl}/health returned ${res.status}`);
+      }
+    } catch (err) {
+      console.warn(`[keepalive] ping to ${targetUrl}/health failed:`, err);
+    }
+  };
+
+  void ping();
+  keepaliveTimer = setInterval(ping, Math.max(60_000, config.keepaliveIntervalMs));
+}
+
 // Keep the local dev experience the same, but avoid starting a long-lived
 // listener or in-process cron jobs inside Vercel's serverless runtime.
 if (process.env.VERCEL !== "1") {
@@ -107,5 +130,6 @@ if (process.env.VERCEL !== "1") {
     console.log(`Client URL: ${config.clientUrl}`);
     console.log(`====================================================`);
     startBackgroundJobs();
+    startKeepalivePing();
   });
 }

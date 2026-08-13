@@ -51,4 +51,7 @@ export const config = {
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
   enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction),
+  keepaliveEnabled: (process.env.KEEPALIVE_ENABLED || (isProduction ? "true" : "false")).trim().toLowerCase() !== "false",
+  keepaliveUrl: resolveEnv("KEEPALIVE_URL", resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction), isProduction),
+  keepaliveIntervalMs: parseInt(process.env.KEEPALIVE_INTERVAL_MS || "600000", 10),
 };

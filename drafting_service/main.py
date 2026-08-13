@@ -5,8 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
+import time
 from typing import Any, Dict, List, Optional
 
+import requests
 from pydantic import BaseModel
 
 from config import ConfigError, load_config
@@ -16,6 +19,29 @@ from core.rate_card import RateCardService
 from orchestrator import DraftingOrchestrator
 
 log = get_logger(__name__)
+
+
+def _start_keepalive_ping(service_name: str, keepalive_url: str, interval_seconds: int) -> None:
+    if not keepalive_url:
+        return
+
+    target = keepalive_url.rstrip("/")
+    health_url = target if target.endswith("/health") else f"{target}/health"
+    interval = max(60, interval_seconds)
+
+    def _loop() -> None:
+        while True:
+            try:
+                res = requests.get(health_url, timeout=10, headers={"User-Agent": f"ProjectBeacon-{service_name}/1.0"})
+                if res.status_code >= 400:
+                    log.warning("[%s] keepalive ping returned %s from %s", service_name, res.status_code, health_url)
+                else:
+                    log.info("[%s] keepalive ping OK -> %s", service_name, health_url)
+            except Exception as exc:
+                log.warning("[%s] keepalive ping failed -> %s: %s", service_name, health_url, exc)
+            time.sleep(interval)
+
+    threading.Thread(target=_loop, name=f"{service_name}-keepalive", daemon=True).start()
 
 
 def run_cli(args, config) -> None:
@@ -197,6 +223,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     configure_logging(config.log_level)
 
     if args.serve:
+        if config.keepalive_enabled:
+            _start_keepalive_ping("drafting", config.keepalive_url, config.keepalive_interval_seconds)
         run_server(args.host, args.port, config)
     else:
         run_cli(args, config)

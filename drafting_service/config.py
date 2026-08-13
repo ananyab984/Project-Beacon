@@ -66,6 +66,9 @@ class Config:
     retry_backoff_base: float = 2.0
 
     log_level: str = "INFO"
+    keepalive_enabled: bool = False
+    keepalive_url: str = "http://127.0.0.1:8001"
+    keepalive_interval_seconds: int = 600
 
     def masked_key(self) -> str:
         """Return the API key with the middle redacted, safe for logging."""
@@ -92,4 +95,7 @@ def load_config(require_api_key: bool = True) -> Config:
         max_retries=_get_int("MAX_RETRIES", 4),
         retry_backoff_base=_get_float("RETRY_BACKOFF_BASE", 2.0),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
+        keepalive_enabled=(os.getenv("KEEPALIVE_ENABLED", "true" if os.getenv("KEEPALIVE_URL", "").strip() else "false").strip().lower() != "false"),
+        keepalive_url=os.getenv("KEEPALIVE_URL", "http://127.0.0.1:8001").strip(),
+        keepalive_interval_seconds=_get_int("KEEPALIVE_INTERVAL_SECONDS", 600),
     )

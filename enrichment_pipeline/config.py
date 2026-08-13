@@ -65,6 +65,9 @@ class Config:
     # Duplicate/identity-resolution stage ("Danny M rule") -- pairs scoring >= this are
     # flagged for human review, never auto-merged.
     dedup_match_threshold: float = 0.8
+    keepalive_enabled: bool = False
+    keepalive_url: str = "http://127.0.0.1:8000"
+    keepalive_interval_seconds: int = 600
 
     def masked_key(self, key: str) -> str:
         if not key:
@@ -101,6 +104,10 @@ def load_config(require_keys: bool = False) -> Config:
             raw_threshold, dedup_match_threshold,
         )
 
+    keepalive_url = os.getenv("KEEPALIVE_URL", "").strip()
+    keepalive_enabled = (os.getenv("KEEPALIVE_ENABLED", "true" if keepalive_url else "false").strip().lower() != "false")
+    keepalive_interval_seconds = int(os.getenv("KEEPALIVE_INTERVAL_SECONDS", "600"))
+
     return Config(
         brightdata_api_key=bd_key,
         dataset_id=dataset_id,
@@ -113,4 +120,7 @@ def load_config(require_keys: bool = False) -> Config:
         max_retries=int(os.getenv("MAX_RETRIES", "3")),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         dedup_match_threshold=dedup_match_threshold,
+        keepalive_enabled=keepalive_enabled,
+        keepalive_url=keepalive_url or "http://127.0.0.1:8000",
+        keepalive_interval_seconds=keepalive_interval_seconds,
     )

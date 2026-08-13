@@ -204,7 +204,7 @@ function LeadsPage() {
   const enrichLead: LeadForEnrichment | null = enrichRaw
     ? {
         id: enrichRaw.id,
-        name: enrichRaw.displayName ?? enrichRaw.maskedLabel ?? "",
+        name: enrichRaw.displayName ?? enrichRaw.fullName ?? enrichRaw.maskedLabel ?? "",
         email: enrichRaw.email,
         phone: enrichRaw.contactNumber,
         language: enrichRaw.targetLanguage ?? "",
