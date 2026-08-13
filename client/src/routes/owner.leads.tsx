@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { leads, recruiters, stageOrder, addLead, parseCsvLeads, type Lead } from "@/lib/g3-mock";
+import { parseCsvLeads } from "@/lib/g3-mock";
+import { api } from "@/lib/api";
+import type { ApiLead, ApiUser, LeadSource, LeadStage } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, AlertTriangle } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Trash2 } from "lucide-react";
 import { useMemo, useState, useRef } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 
@@ -20,55 +23,125 @@ export const Route = createFileRoute("/owner/leads")({
   component: LeadsPage,
 });
 
-// Language → country proxy for filtering + display.
-const languageCountry: Record<string, string> = {
-  French: "France", Japanese: "Japan", German: "Germany", Korean: "South Korea",
-  "Spanish (LatAm)": "Mexico", Arabic: "UAE", Mandarin: "China",
-  "Portuguese (BR)": "Brazil", Italian: "Italy", Dutch: "Netherlands",
-};
+const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+
+/** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
+function mapToLeadSource(raw: string | undefined | null): LeadSource {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
+  return hit ?? "LINKEDIN";
+}
+
+/** "NEGOTIATING" -> "Negotiating"; "INVITE_SENT" -> "Invite sent". */
+function formatStageLabel(stage: string): string {
+  return stage.charAt(0) + stage.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+/** Relative time string from an ISO date, without pulling in a date library. */
+function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const STAGE_OPTIONS: LeadStage[] = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"];
 
 type SortKey = "lead" | "language" | "country" | "stage" | "recruiter" | "activity";
 
 function LeadsPage() {
+  const queryClient = useQueryClient();
   const [q, setQ] = useState("");
   const [lang, setLang] = useState("all");
   const [country, setCountry] = useState("all");
   const [service, setService] = useState("all");
   const [rec, setRec] = useState("all");
   const [stage, setStage] = useState<string>("all");
-  const [dateRange, setDateRange] = useState("all");
+  const [dateRange, setDateRange] = useState<"all" | "24h" | "7d" | "30d">("all");
   const [sortBy, setSortBy] = useState<SortKey>("activity");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [enrichLead, setEnrichLead] = useState<LeadForEnrichment | null>(null);
-  const [version, setVersion] = useState(0);
+  const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
+  const [assignOpen, setAssignOpen] = useState(false);
   const pageSize = 12;
 
-  const baseSet = useMemo(
-    () => leads.filter((l) => l.identity_resolved && !l.flags.includes("On Hold")),
-    [version],
+  const filters = useMemo(
+    () => ({
+      q: q || undefined,
+      language: lang !== "all" ? lang : undefined,
+      country: country !== "all" ? country : undefined,
+      service: service !== "all" ? service : undefined,
+      recruiterId: rec !== "all" ? rec : undefined,
+      stage: stage !== "all" ? stage : undefined,
+      dateRange: dateRange !== "all" ? dateRange : undefined,
+      limit: 200,
+    }),
+    [q, lang, country, service, rec, stage, dateRange],
   );
 
-  const languages = useMemo(() => Array.from(new Set(leads.map((l) => l.language))), []);
-  const services = useMemo(() => Array.from(new Set(leads.flatMap((l) => l.services))), []);
-  const countries = useMemo(() => Array.from(new Set(leads.map((l) => languageCountry[l.language] ?? "—"))), []);
+  const leadsQuery = useQuery({
+    queryKey: ["leads", filters],
+    queryFn: () => api.getLeads(filters),
+  });
+  // Unfiltered pull (best-effort, capped) purely to populate the filter dropdown
+  // option lists — the backend has no "distinct values" endpoint, so this is an
+  // approximation over a bounded sample rather than the true global set.
+  const optionsQuery = useQuery({
+    queryKey: ["leads", "filter-options"],
+    queryFn: () => api.getLeads({ limit: 200 }),
+    staleTime: 60_000,
+  });
+
+  const recruitersQuery = useQuery({
+    queryKey: ["users", "RECRUITER"],
+    queryFn: () => api.getUsers("RECRUITER"),
+  });
+  const recruiterList: ApiUser[] = recruitersQuery.data?.users ?? [];
+
+  const allLeads = leadsQuery.data?.leads ?? [];
+  const optionLeads = optionsQuery.data?.leads ?? [];
+
+  const languages = useMemo(
+    () => Array.from(new Set(optionLeads.map((l) => l.targetLanguage).filter((v): v is string => !!v))),
+    [optionLeads],
+  );
+  const services = useMemo(
+    () => Array.from(new Set(optionLeads.flatMap((l) => l.services))),
+    [optionLeads],
+  );
+  const countries = useMemo(
+    () => Array.from(new Set(optionLeads.map((l) => l.country).filter((v): v is string => !!v))),
+    [optionLeads],
+  );
+
+  const deleteMutation = useMutation({
+    mutationFn: (leadIds: string[]) => api.deleteLeads(leadIds),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      setSelected(new Set());
+      toast.success(`Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to delete leads");
+    },
+  });
+
+  const baseSet = useMemo(
+    () => allLeads.filter((l) => l.identityResolved && !l.flags.includes("ON_HOLD")),
+    [allLeads],
+  );
 
   const filtered = useMemo(() => {
-    const rows = baseSet.filter((l) => {
-      const c = languageCountry[l.language] ?? "—";
-      return (
-        (q === "" ||
-          l.masked_label.toLowerCase().includes(q.toLowerCase()) ||
-          (l.display_name?.toLowerCase().includes(q.toLowerCase()) ?? false)) &&
-        (lang === "all" || l.language === lang) &&
-        (country === "all" || c === country) &&
-        (service === "all" || l.services.includes(service)) &&
-        (rec === "all" || l.recruiter_id === rec) &&
-        (stage === "all" || l.stage === stage) &&
-        (dateRange === "all" || matchesDate(l.last_activity, dateRange))
-      );
-    });
+    const rows = [...baseSet];
     rows.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       const va = sortVal(a, sortBy);
@@ -76,7 +149,7 @@ function LeadsPage() {
       return va < vb ? -dir : va > vb ? dir : 0;
     });
     return rows;
-  }, [baseSet, q, lang, country, service, rec, stage, dateRange, sortBy, sortDir]);
+  }, [baseSet, sortBy, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const view = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -103,16 +176,75 @@ function LeadsPage() {
     setRec("all"); setStage("all"); setDateRange("all"); setPage(1);
   }
 
+  function invalidateLeads() {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+    queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
+  }
+
+  const enrichMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update lead"),
+  });
+
+  const assignMutation = useMutation({
+    mutationFn: ({ ids, recruiterId }: { ids: string[]; recruiterId: string }) =>
+      api.bulkUpdateLeads(ids, { recruiterId }),
+    onSuccess: (res) => {
+      toast.success(`Assigned ${res.updated} lead(s)`);
+      invalidateLeads();
+      setSelected(new Set());
+      setAssignOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to assign leads"),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      invalidateLeads();
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
+  const enrichLead: LeadForEnrichment | null = enrichRaw
+    ? {
+        id: enrichRaw.id,
+        name: enrichRaw.displayName ?? enrichRaw.maskedLabel ?? "",
+        email: enrichRaw.email,
+        phone: enrichRaw.contactNumber,
+        language: enrichRaw.targetLanguage ?? "",
+        source_language: enrichRaw.sourceLanguage,
+        target_language: enrichRaw.targetLanguage,
+        services: enrichRaw.services,
+        years_experience: enrichRaw.yearsOfExperience,
+        vendor_experience: enrichRaw.vendorExperience,
+      }
+    : null;
+
   const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
-    const targetLead = leads.find((l) => l.id === id);
-    if (targetLead) {
-      targetLead.identity_resolved = true;
-      targetLead.display_name = updated.name || targetLead.display_name || "Enriched Lead";
-      targetLead.language = updated.language || targetLead.language;
-      targetLead.services = updated.services || targetLead.services;
-      targetLead.flags = targetLead.flags.filter((f) => f !== "On Hold");
-      setVersion((v) => v + 1);
-    }
+    const currentFlags = enrichRaw?.flags ?? [];
+    enrichMutation.mutate({
+      id,
+      patch: {
+        identityResolved: true,
+        enrichmentStatus: "COMPLETE",
+        displayName: updated.name,
+        services: updated.services,
+        sourceLanguage: updated.source_language,
+        targetLanguage: updated.target_language,
+        yearsOfExperience: updated.years_experience,
+        vendorExperience: updated.vendor_experience,
+        contactNumber: updated.phone,
+        email: updated.email,
+        flags: currentFlags.filter((f) => f !== "ON_HOLD"),
+      },
+    });
+    setEnrichRaw(null);
+    toast.success("Lead marked as Enriched & Email Queue updated!");
   };
 
   return (
@@ -129,7 +261,7 @@ function LeadsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <BulkUploadDialog />
+          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
         </div>
       </div>
 
@@ -142,13 +274,19 @@ function LeadsPage() {
           value={rec}
           onChange={(v) => { setRec(v); setPage(1); }}
           placeholder="Recruiter"
-          options={recruiters.map((r) => r.id)}
-          labelFor={(v) => recruiters.find((r) => r.id === v)?.name ?? v}
+          options={recruiterList.map((r) => r.id)}
+          labelFor={(v) => recruiterList.find((r) => r.id === v)?.name ?? v}
         />
-        <FilterSelect value={stage} onChange={(v) => { setStage(v); setPage(1); }} placeholder="Status" options={stageOrder as unknown as string[]} />
+        <FilterSelect
+          value={stage}
+          onChange={(v) => { setStage(v); setPage(1); }}
+          placeholder="Status"
+          options={STAGE_OPTIONS}
+          labelFor={formatStageLabel}
+        />
         <FilterSelect
           value={dateRange}
-          onChange={(v) => { setDateRange(v); setPage(1); }}
+          onChange={(v) => { setDateRange(v as typeof dateRange); setPage(1); }}
           placeholder="Date Added"
           options={["24h", "7d", "30d"]}
           labelFor={(v) => ({ "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days" })[v] ?? v}
@@ -165,14 +303,27 @@ function LeadsPage() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast.success(`Assigning ${selected.size} leads…`)}>
+            <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={() => setAssignOpen(true)}>
               <UserPlus className="h-3.5 w-3.5" /> Assign
             </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.success(`Queued ${selected.size} emails`)}>
-              <Mail className="h-3.5 w-3.5" /> Email
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.success("Exporting selection…")}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                window.open(api.leadsExportUrl(filters as unknown as Record<string, string | undefined>), "_blank");
+              }}
+            >
               <Download className="h-3.5 w-3.5" /> Export
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(Array.from(selected))}
+              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
             </Button>
           </div>
         </div>
@@ -200,12 +351,17 @@ function LeadsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {view.map((l) => {
-                const r = recruiters.find((x) => x.id === l.recruiter_id);
-                const label = l.identity_resolved ? l.display_name ?? l.masked_label : l.masked_label;
-                const c = languageCountry[l.language] ?? "—";
+              {leadsQuery.isLoading && (
+                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
+              )}
+              {leadsQuery.isError && (
+                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
+              )}
+              {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
+                const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
+                const label = l.identityResolved ? l.displayName ?? l.maskedLabel ?? "—" : l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
-                const isOnHold = !l.identity_resolved || l.flags.includes("On Hold");
+                const isOnHold = !l.identityResolved || l.flags.includes("ON_HOLD");
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -219,14 +375,7 @@ function LeadsPage() {
                     <td className="px-4 py-3">
                       {isOnHold ? (
                         <button
-                          onClick={() => setEnrichLead({
-                            id: l.id,
-                            name: label,
-                            language: l.language,
-                            services: l.services,
-                            years_experience: l.years_experience,
-                            verified_email: l.verified_email,
-                          })}
+                          onClick={() => setEnrichRaw(l)}
                           className="font-semibold text-xs text-warning hover:underline cursor-pointer"
                         >
                           On Hold
@@ -239,10 +388,10 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                        {l.language}
+                        {l.targetLanguage ?? "—"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{c}</td>
+                    <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {l.services.map((s) => (
@@ -251,16 +400,16 @@ function LeadsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="rounded-md border border-border px-2 py-0.5 text-xs font-medium">{l.stage}</span>
+                      <span className="rounded-md border border-border px-2 py-0.5 text-xs font-medium">{formatStageLabel(l.stage)}</span>
                     </td>
                     <td className="px-4 py-3 text-foreground/80">{l.availability}</td>
                     <td className="px-4 py-3 text-foreground/80">{l.source}</td>
                     <td className="px-4 py-3 text-foreground/80">{r?.name ?? "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{l.last_activity}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{relativeTime(l.lastActivityAt)}</td>
                   </tr>
                 );
               })}
-              {view.length === 0 && (
+              {!leadsQuery.isLoading && !leadsQuery.isError && view.length === 0 && (
                 <tr>
                   <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
@@ -289,15 +438,56 @@ function LeadsPage() {
       {/* Manual Enrichment Modal */}
       <ManualEnrichmentDialog
         open={!!enrichLead}
-        onOpenChange={(o) => !o && setEnrichLead(null)}
+        onOpenChange={(o) => !o && setEnrichRaw(null)}
         lead={enrichLead}
         onMarkEnriched={handleMarkEnriched}
+      />
+
+      {/* Assign picker */}
+      <AssignRecruiterDialog
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        recruiters={recruiterList}
+        onAssign={(recruiterId) => assignMutation.mutate({ ids: Array.from(selected), recruiterId })}
+        pending={assignMutation.isPending}
       />
     </div>
   );
 }
 
-
+function AssignRecruiterDialog({
+  open, onOpenChange, recruiters, onAssign, pending,
+}: {
+  open: boolean;
+  onOpenChange: (o: boolean) => void;
+  recruiters: ApiUser[];
+  onAssign: (recruiterId: string) => void;
+  pending: boolean;
+}) {
+  const [recruiterId, setRecruiterId] = useState<string>("");
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Assign to recruiter</DialogTitle>
+          <DialogDescription>Choose a recruiter to assign the selected leads to.</DialogDescription>
+        </DialogHeader>
+        <Select value={recruiterId} onValueChange={setRecruiterId}>
+          <SelectTrigger><SelectValue placeholder="Select recruiter" /></SelectTrigger>
+          <SelectContent>
+            {recruiters.map((r) => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button disabled={!recruiterId || pending} onClick={() => recruiterId && onAssign(recruiterId)}>
+            {pending ? "Assigning…" : "Assign"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function FilterSelect({
   value, onChange, placeholder, options, labelFor,
@@ -348,27 +538,19 @@ function SortableTh({
   );
 }
 
-function sortVal(l: (typeof leads)[number], k: SortKey): string | number {
+function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.display_name ?? l.masked_label;
-    case "language": return l.language;
-    case "country": return languageCountry[l.language] ?? "";
-    case "stage": return stageOrder.indexOf(l.stage);
-    case "recruiter": return l.recruiter_id;
-    case "activity": return l.last_activity;
+    case "lead": return l.displayName ?? l.maskedLabel ?? "";
+    case "language": return l.targetLanguage ?? "";
+    case "country": return l.country ?? "";
+    case "stage": return STAGE_OPTIONS.indexOf(l.stage);
+    case "recruiter": return l.assignedRecruiterId ?? "";
+    case "activity": return l.lastActivityAt ?? "";
     default: return "";
   }
 }
 
-function matchesDate(ago: string, range: string): boolean {
-  if (range === "all") return true;
-  if (range === "24h") return ago.includes("m ago") || ago.includes("h ago");
-  if (range === "7d") return ago.includes("m ago") || ago.includes("h ago") || (ago.includes("d ago") && parseInt(ago) <= 7);
-  if (range === "30d") return true;
-  return true;
-}
-
-function BulkUploadDialog() {
+function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
   const [open, setOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -380,13 +562,14 @@ function BulkUploadDialog() {
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
       if (parsed.length > 0) {
-        parsed.forEach((l) => {
-          addLead({
-            ...l,
-            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          });
-        });
-        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
+        const rows = parsed.map((l) => ({
+          fullName: l.display_name ?? l.masked_label,
+          source: mapToLeadSource(l.source),
+          services: l.services,
+          targetLanguage: l.language,
+        }));
+        onSubmitRows(rows);
+        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
         setOpen(false);
       } else {
         toast.info(`Uploaded ${file.name}. Ensure file contains Name, Email, Language, or Service headers.`);

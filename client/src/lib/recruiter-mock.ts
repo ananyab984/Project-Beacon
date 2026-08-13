@@ -239,21 +239,6 @@ export function addLead(input: AddLeadInput): RecruiterLead {
     incrementLanguageFilled(targetLang, input.services[0]);
   }
 
-  // Simulated background enrichment job.
-  setTimeout(() => {
-    const idx = store.leads.findIndex((l) => l.id === lead.id);
-    if (idx === -1) return;
-    const enriched: RecruiterLead = {
-      ...store.leads[idx],
-      years_of_exp: 3 + Math.floor(Math.random() * 12),
-      vendor_experience: "Netflix, Prime Video",
-      enrichment_status: "complete",
-      just_enriched_until: Date.now() + 60_000,
-    };
-    store.leads = store.leads.map((l) => (l.id === lead.id ? enriched : l));
-    emit();
-  }, 2000);
-
   return lead;
 }
 
@@ -321,99 +306,6 @@ export function leadsOffboardedCount() {
   return 18;
 }
 
-// -------------------- contractor profile --------------------
-
-export interface ContractorProfile {
-  full_name: string;
-  headline: string;
-  country_of_residence: string;
-  timezone: string;
-  bio: string;
-  avatar_data_url: string | null;
-  email: string;
-  email_verified: boolean;
-  phone: string;
-  whatsapp: string;
-  preferred_contact: "Email" | "Phone" | "WhatsApp";
-  services: string[];
-  source_language: string;
-  target_languages: string[];
-  secondary_languages: string[];
-  years_of_exp: number;
-  vendor_experience: string;
-  rate_amount: number;
-  rate_unit: "hour" | "minute" | "project";
-  currency: "USD" | "EUR" | "GBP" | "INR";
-  resume_filename: string | null;
-  resume_size_kb: number | null;
-  portfolio_url: string;
-  linkedin_url: string;
-  proz_url: string;
-  website_url: string;
-  availability_status: "Available Now" | "Available from date" | "Unavailable";
-  available_from: string | null;
-  weekly_capacity_hours: number;
-  blackout_dates: string[];
-  notify_new_lead: boolean;
-  notify_duplicate: boolean;
-  notify_message: boolean;
-  notify_weekly_digest: boolean;
-  two_fa_enabled: boolean;
-}
-
-const contractorProfile: ContractorProfile = {
-  full_name: "Alex Kim",
-  headline: "Senior Subtitler · EN ↔ KO",
-  country_of_residence: "South Korea",
-  timezone: "Asia/Seoul (GMT+9)",
-  bio: "10+ years subtitling and QC for streaming platforms. Focus on drama and documentary.",
-  avatar_data_url: null,
-  email: "alex@global3.co",
-  email_verified: true,
-  phone: "+82 10 5555 0134",
-  whatsapp: "+82 10 5555 0134",
-  preferred_contact: "Email",
-  services: ["Subtitling", "SDH"],
-  source_language: "Korean",
-  target_languages: ["English"],
-  secondary_languages: ["Japanese"],
-  years_of_exp: 11,
-  vendor_experience: "Netflix, Disney+, Sony Pictures",
-  rate_amount: 6.5,
-  rate_unit: "minute",
-  currency: "USD",
-  resume_filename: "alex-kim-cv-2026.pdf",
-  resume_size_kb: 284,
-  portfolio_url: "https://alexkim.work",
-  linkedin_url: "https://linkedin.com/in/alexkim",
-  proz_url: "https://proz.com/profile/alexkim",
-  website_url: "",
-  availability_status: "Available Now",
-  available_from: null,
-  weekly_capacity_hours: 28,
-  blackout_dates: [],
-  notify_new_lead: true,
-  notify_duplicate: true,
-  notify_message: true,
-  notify_weekly_digest: false,
-  two_fa_enabled: false,
-};
-
-const profileListeners = new Set<() => void>();
-function emitProfile() { profileListeners.forEach((l) => l()); }
-
-export function useContractorProfile(): ContractorProfile {
-  return useSyncExternalStore(
-    (l) => { profileListeners.add(l); return () => { profileListeners.delete(l); }; },
-    () => contractorProfile,
-    () => contractorProfile,
-  );
-}
-
-export function updateContractorProfile(patch: Partial<ContractorProfile>) {
-  Object.assign(contractorProfile, patch);
-  emitProfile();
-}
 
 // -------------------- shared lead status store --------------------
 // Cards on My Leads / Global Leads can update the pipeline status directly.

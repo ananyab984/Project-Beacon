@@ -1,20 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  useRecruiters,
-  deleteRecruiter,
-  escalations,
-  useRecruiterLanguageMappings,
-  updateRecruiterLanguages,
-  addNewRecruiter,
-  type Recruiter,
-} from "@/lib/g3-mock";
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiUser, ApiEscalation, ApiRecruiterMetricSnapshot } from "@/lib/api-types";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { RecruiterLanguageMappingDialog } from "@/components/features/recruiter-language-mapping-dialog";
 import { ScoreRing } from "@/components/features/kpi";
-import { getEvaluation, type MetricSnapshot } from "@/lib/evaluation";
 import { EvaluationDashboard } from "@/components/features/evaluation-dashboard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,9 +33,24 @@ const COMMON_LANGUAGES = [
   "Korean", "Mandarin", "Italian", "Portuguese (BR)", "Tamil", "Telugu", "Arabic", "Dutch", "Polish", "Swedish",
 ];
 
+/** ApiUser has no avatar_hue field — derive a stable per-user hue deterministically
+ *  from the id so avatars keep distinct colors without fabricating server data. */
+function avatarHue(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) % 360;
+  return hash;
+}
+
 function RecruitersPage() {
-  const recruiters = useRecruiters();
-  const mappings = useRecruiterLanguageMappings();
+  const queryClient = useQueryClient();
+
+  const { data: recruiterData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const { data: contractorData } = useQuery({ queryKey: ["users", "CONTRACTOR"], queryFn: () => api.getUsers("CONTRACTOR") });
+  const { data: escalationData } = useQuery({ queryKey: ["escalations"], queryFn: () => api.getEscalations() });
+
+  const full = recruiterData?.users ?? [];
+  const contractors = contractorData?.users ?? [];
+  const escalationsList = escalationData?.escalations ?? [];
 
   const [openId, setOpenId] = useState<string | null>(null);
   const [escalatedRecruiterId, setEscalatedRecruiterId] = useState<string | null>(null);
@@ -51,38 +59,69 @@ function RecruitersPage() {
   // Add Recruiter Onboarding Modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [newRecruiterName, setNewRecruiterName] = useState("");
-  const [newRecruiterRole, setNewRecruiterRole] = useState<"full_access" | "contractor">("full_access");
+  const [newRecruiterEmail, setNewRecruiterEmail] = useState("");
+  const [newRecruiterWorkStatus, setNewRecruiterWorkStatus] = useState<"permanent" | "contractor">("permanent");
   const [onboardingDate, setOnboardingDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [selectedInitialLangs, setSelectedInitialLangs] = useState<string[]>([]);
 
-  const active = recruiters.find((r) => r.id === openId) ?? null;
-  const escalatedRecruiter = recruiters.find((r) => r.id === escalatedRecruiterId) ?? null;
-
-  const full = [...recruiters.filter((r) => r.role === "full_access")].sort((a, b) => b.kpis.overall_score - a.kpis.overall_score);
-  const contractors = [...recruiters.filter((r) => r.role === "contractor")].sort((a, b) => b.kpis.overall_score - a.kpis.overall_score);
+  const allUsers = [...full, ...contractors];
+  const active = allUsers.find((r) => r.id === openId) ?? null;
+  const escalatedRecruiter = allUsers.find((r) => r.id === escalatedRecruiterId) ?? null;
 
   const recruiterEscalations = escalatedRecruiter
-    ? escalations.filter(
-        (e) =>
-          e.recruiter_id === escalatedRecruiter.id ||
-          e.owner.toLowerCase().includes(escalatedRecruiter.name.toLowerCase()) ||
-          e.detail.toLowerCase().includes(escalatedRecruiter.name.toLowerCase()) ||
-          (escalatedRecruiter.unresolved_5d > 0 && e.priority === "P1"),
-      )
+    ? escalationsList.filter((e) => e.recruiterId === escalatedRecruiter.id)
     : [];
+
+  const createUserMutation = useMutation({
+    mutationFn: (input: { name: string; email: string; workStatus: "PERMANENT" | "CONTRACTOR"; languages: string[] }) =>
+      api.createUser({ name: input.name, email: input.email, role: "RECRUITER", workStatus: input.workStatus, languages: input.languages }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      toast.success(
+        `Recruiter "${result.user.name}" onboarded. Temporary password: ${result.tempPassword} — share this with them securely (no automated invite email yet).`,
+        { duration: 12000 },
+      );
+      setNewRecruiterName("");
+      setNewRecruiterEmail("");
+      setSelectedInitialLangs([]);
+      setShowAddModal(false);
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to create recruiter"),
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id: string) => api.deactivateUser(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      queryClient.invalidateQueries({ queryKey: ["users", "CONTRACTOR"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to deactivate recruiter"),
+  });
+
+  const updateLanguagesMutation = useMutation({
+    mutationFn: ({ id, languages }: { id: string; languages: string[] }) => api.updateUserLanguages(id, languages),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      queryClient.invalidateQueries({ queryKey: ["users", "CONTRACTOR"] });
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to update languages"),
+  });
 
   const handleCreateRecruiter = () => {
     if (!newRecruiterName.trim()) {
       toast.error("Please enter recruiter full name.");
       return;
     }
-    const created = addNewRecruiter(newRecruiterName.trim(), selectedInitialLangs, newRecruiterRole);
-    toast.success(
-      `Recruiter onboarding record created for ${onboardingDate}! Sent login credentials & invite email to ${created.name.toLowerCase().replace(/\s+/g, ".")}@global3.io.`
-    );
-    setNewRecruiterName("");
-    setSelectedInitialLangs([]);
-    setShowAddModal(false);
+    if (!newRecruiterEmail.trim()) {
+      toast.error("Please enter recruiter email.");
+      return;
+    }
+    createUserMutation.mutate({
+      name: newRecruiterName.trim(),
+      email: newRecruiterEmail.trim(),
+      workStatus: newRecruiterWorkStatus === "contractor" ? "CONTRACTOR" : "PERMANENT",
+      languages: selectedInitialLangs,
+    });
   };
 
   return (
@@ -123,14 +162,16 @@ function RecruitersPage() {
             <CleanRecruiterCard
               key={r.id}
               r={r}
-              mappings={mappings}
+              escalationsList={escalationsList}
               onOpen={() => setOpenId(r.id)}
               onOpenEscalated={() => setEscalatedRecruiterId(r.id)}
+              onUpdateLanguages={(languages) => updateLanguagesMutation.mutate({ id: r.id, languages })}
+              onDeactivate={() => deactivateMutation.mutate(r.id)}
             />
           ))}
           {full.length === 0 && (
             <div className="col-span-full p-8 text-center text-xs text-muted-foreground border border-dashed border-border rounded-xl">
-              No recruiters found. Click "Onboard Recruiter" above to add a team member.
+              No recruiters found. Click "+ Add Recruiter" above to add a team member.
             </div>
           )}
         </div>
@@ -148,9 +189,11 @@ function RecruitersPage() {
               <CleanRecruiterCard
                 key={r.id}
                 r={r}
-                mappings={mappings}
+                escalationsList={escalationsList}
                 onOpen={() => setOpenId(r.id)}
                 onOpenEscalated={() => setEscalatedRecruiterId(r.id)}
+                onUpdateLanguages={(languages) => updateLanguagesMutation.mutate({ id: r.id, languages })}
+                onDeactivate={() => deactivateMutation.mutate(r.id)}
               />
             ))}
           </div>
@@ -181,6 +224,17 @@ function RecruitersPage() {
               />
             </div>
 
+            <div className="space-y-1.5">
+              <Label className="text-xs uppercase tracking-wide text-muted-foreground">Email *</Label>
+              <Input
+                type="email"
+                placeholder="e.g. sharmista.roy@global3.io"
+                value={newRecruiterEmail}
+                onChange={(e) => setNewRecruiterEmail(e.target.value)}
+                className="h-9 text-xs bg-card"
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label className="text-xs uppercase tracking-wide text-muted-foreground flex items-center gap-1">
@@ -195,13 +249,13 @@ function RecruitersPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Roster Role</Label>
-                <Select value={newRecruiterRole} onValueChange={(v) => setNewRecruiterRole(v as any)}>
+                <Label className="text-xs uppercase tracking-wide text-muted-foreground">Work Status</Label>
+                <Select value={newRecruiterWorkStatus} onValueChange={(v) => setNewRecruiterWorkStatus(v as any)}>
                   <SelectTrigger className="h-9 text-xs bg-card">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="full_access">Full Access</SelectItem>
+                    <SelectItem value="permanent">Permanent</SelectItem>
                     <SelectItem value="contractor">Contractor</SelectItem>
                   </SelectContent>
                 </Select>
@@ -240,8 +294,13 @@ function RecruitersPage() {
             <Button variant="ghost" size="sm" onClick={() => setShowAddModal(false)} className="h-8 text-xs">
               Cancel
             </Button>
-            <Button size="sm" onClick={handleCreateRecruiter} className="h-8 text-xs bg-primary text-primary-foreground gap-1.5">
-              <UserPlus className="h-3.5 w-3.5" /> Submit &amp; Send Credentials
+            <Button
+              size="sm"
+              onClick={handleCreateRecruiter}
+              disabled={createUserMutation.isPending}
+              className="h-8 text-xs bg-primary text-primary-foreground gap-1.5"
+            >
+              <UserPlus className="h-3.5 w-3.5" /> {createUserMutation.isPending ? "Creating…" : "Submit & Create Account"}
             </Button>
           </div>
         </DialogContent>
@@ -257,7 +316,7 @@ function RecruitersPage() {
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
-                      style={{ background: `oklch(0.55 0.16 ${active.avatar_hue})` }}
+                      style={{ background: `oklch(0.55 0.16 ${avatarHue(active.id)})` }}
                     >
                       {active.name.charAt(0)}
                     </div>
@@ -266,7 +325,7 @@ function RecruitersPage() {
                         <span>{active.name}</span>
                       </div>
                       <div className="text-xs font-normal text-muted-foreground">
-                        {active.role === "contractor" ? "Contractor Evaluation" : "Full-Access Recruiter Evaluation"}
+                        {active.role === "CONTRACTOR" ? "Contractor Evaluation" : "Full-Access Recruiter Evaluation"}
                       </div>
                     </div>
                   </div>
@@ -275,14 +334,14 @@ function RecruitersPage() {
                     size="sm"
                     className="gap-1.5 text-xs"
                     onClick={() => {
-                      if (confirm(`Are you sure you want to remove ${active.name} from the recruiter roster?`)) {
-                        deleteRecruiter(active.id);
+                      if (confirm(`Deactivate ${active.name}? Their history is preserved — this is a soft deactivation, not a permanent delete.`)) {
+                        deactivateMutation.mutate(active.id);
                         setOpenId(null);
-                        toast.success(`Removed recruiter ${active.name}`);
+                        toast.success(`Deactivated ${active.name}`);
                       }
                     }}
                   >
-                    <Trash2 className="h-3.5 w-3.5" /> Delete Recruiter
+                    <Trash2 className="h-3.5 w-3.5" /> Deactivate Recruiter
                   </Button>
                 </SheetTitle>
               </SheetHeader>
@@ -290,7 +349,7 @@ function RecruitersPage() {
               <EvaluationDashboard
                 subjectId={active.id}
                 subjectName={active.name}
-                roleLabel={active.role === "contractor" ? "Contractor" : "Recruiter"}
+                roleLabel={active.role === "CONTRACTOR" ? "Contractor" : "Recruiter"}
               />
             </div>
           )}
@@ -312,37 +371,40 @@ function RecruitersPage() {
           <div className="mt-2 space-y-3 max-h-96 overflow-y-auto pr-1">
             {recruiterEscalations.length === 0 ? (
               <div className="rounded-xl border border-border bg-card p-4 text-center text-xs text-muted-foreground">
-                No active P1/P2 escalations logged for {escalatedRecruiter?.name}.
+                No active escalations logged for {escalatedRecruiter?.name}.
               </div>
             ) : (
-              recruiterEscalations.map((esc) => (
-                <div key={esc.id} className="rounded-xl border border-warning/30 bg-warning/5 p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
-                        esc.priority === "P1"
-                          ? "bg-destructive/20 text-destructive"
-                          : "bg-warning/20 text-warning"
-                      }`}>
-                        {esc.priority}
+              recruiterEscalations.map((esc) => {
+                const ageDays = Math.max(0, Math.floor((Date.now() - new Date(esc.createdAt).getTime()) / 86400000));
+                return (
+                  <div key={esc.id} className="rounded-xl border border-warning/30 bg-warning/5 p-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                          esc.priority === "P1"
+                            ? "bg-destructive/20 text-destructive"
+                            : "bg-warning/20 text-warning"
+                        }`}>
+                          {esc.priority}
+                        </span>
+                        <span className="text-xs font-semibold text-foreground">{esc.category}</span>
+                      </div>
+                      <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3 w-3" /> {ageDays}d aging
                       </span>
-                      <span className="text-xs font-semibold text-foreground">{esc.category}</span>
                     </div>
-                    <span className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <Clock className="h-3 w-3" /> {esc.age_days}d aging
-                    </span>
+
+                    <h4 className="text-xs font-semibold text-foreground">{esc.title}</h4>
+                    <p className="text-[11px] text-muted-foreground">{esc.detail}</p>
+
+                    {esc.recommendedAction && (
+                      <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-[11px] text-primary">
+                        <strong>Recommended Action:</strong> {esc.recommendedAction}
+                      </div>
+                    )}
                   </div>
-
-                  <h4 className="text-xs font-semibold text-foreground">{esc.title}</h4>
-                  <p className="text-[11px] text-muted-foreground">{esc.detail}</p>
-
-                  {esc.recommended_action && (
-                    <div className="mt-2 rounded-lg border border-primary/20 bg-primary/5 p-2.5 text-[11px] text-primary">
-                      <strong>Recommended Action:</strong> {esc.recommended_action}
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </DialogContent>
@@ -353,50 +415,61 @@ function RecruitersPage() {
 
 function CleanRecruiterCard({
   r,
-  mappings,
+  escalationsList,
   onOpen,
   onOpenEscalated,
+  onUpdateLanguages,
+  onDeactivate,
 }: {
-  r: Recruiter;
-  mappings: ReturnType<typeof useRecruiterLanguageMappings>;
+  r: ApiUser;
+  escalationsList: ApiEscalation[];
   onOpen: () => void;
   onOpenEscalated: () => void;
+  onUpdateLanguages: (languages: string[]) => void;
+  onDeactivate: () => void;
 }) {
-  const ev = getEvaluation(r.id, r.name);
-  const band = ev.band;
-  const bandTone =
-    band.tone === "positive" ? "bg-accent/15 text-accent border-accent/30" :
-    band.tone === "warning" ? "bg-warning/15 text-warning border-warning/30" :
-    band.tone === "critical" ? "bg-destructive/15 text-destructive border-destructive/30" :
-    "bg-primary/15 text-primary border-primary/30";
+  const { data: scoreData } = useQuery({
+    queryKey: ["recruiter-score", r.id],
+    queryFn: () => api.getRecruiterScore(r.id),
+  });
+  const snapshot = scoreData?.snapshot ?? null;
+  const metricSnapshots: ApiRecruiterMetricSnapshot[] = scoreData?.metricSnapshots ?? [];
 
-  const activityMetrics = ev.metrics.filter((m: MetricSnapshot) => m.def.group === "Activity & Effort");
+  const score = snapshot?.overallScore ?? 0;
+  const bandLabel = snapshot?.bandLabel ?? "No data";
+  const bandTone = !snapshot
+    ? "bg-muted text-muted-foreground border-border"
+    : score >= 85 ? "bg-accent/15 text-accent border-accent/30"
+    : score >= 70 ? "bg-primary/15 text-primary border-primary/30"
+    : score >= 55 ? "bg-warning/15 text-warning border-warning/30"
+    : "bg-destructive/15 text-destructive border-destructive/30";
+  const bandMeaning = snapshot ? (snapshot.summary ?? "") : "No score computed yet";
 
-  const outreachVolume = activityMetrics.find((m: MetricSnapshot) => m.def.id === "outreach_volume");
-  const proactiveSourcing = activityMetrics.find((m: MetricSnapshot) => m.def.id === "proactive_sourcing");
-  const timeToFirstTouch = activityMetrics.find((m: MetricSnapshot) => m.def.id === "time_to_first_touch");
+  const outreachVolume = metricSnapshots.find((m) => m.metricKey === "outreach_volume");
+  const proactiveSourcing = metricSnapshots.find((m) => m.metricKey === "proactive_sourcing");
+  const timeToFirstTouch = metricSnapshots.find((m) => m.metricKey === "time_to_first_touch");
 
-  // Language mapping logic
-  const myMapping = mappings.find((m) => m.recruiter_id === r.id);
-  const mappedLangs = myMapping?.languages ?? [];
+  const mappedLangs = r.languages ?? [];
 
   const toggleLang = (lang: string) => {
     const next = mappedLangs.includes(lang)
       ? mappedLangs.filter((l) => l !== lang)
       : [...mappedLangs, lang];
-    updateRecruiterLanguages(r.id, next);
+    onUpdateLanguages(next);
     toast.success(`Updated language mapping for ${r.name}`);
   };
+
+  const myEscalations = escalationsList.filter((e) => e.recruiterId === r.id);
 
   return (
     <div className="group flex flex-col justify-between rounded-2xl border border-border bg-card p-4 space-y-3.5 transition-all hover:border-accent/40 hover:shadow-lg">
       <div className="space-y-3.5">
-        {/* Header: Avatar + Name + Right Corner Language Popover & Trash Icon (Green/Yellow/Red dots removed) */}
+        {/* Header: Avatar + Name + Right Corner Language Popover & Trash Icon */}
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 cursor-pointer" onClick={onOpen}>
             <div
               className="flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white shrink-0 shadow-xs"
-              style={{ background: `oklch(0.55 0.16 ${r.avatar_hue})` }}
+              style={{ background: `oklch(0.55 0.16 ${avatarHue(r.id)})` }}
             >
               {r.name.charAt(0)}
             </div>
@@ -405,7 +478,7 @@ function CleanRecruiterCard({
                 {r.name}
               </div>
               <div className="text-xs text-muted-foreground font-medium">
-                {r.role === "contractor" ? "Contractor" : "Full access"}
+                {r.role === "CONTRACTOR" ? "Contractor" : "Full access"}
               </div>
             </div>
           </div>
@@ -446,16 +519,16 @@ function CleanRecruiterCard({
               </PopoverContent>
             </Popover>
 
-            {/* Dustbin delete icon button */}
+            {/* Dustbin (deactivate) icon button */}
             <button
               onClick={() => {
-                if (confirm(`Delete recruiter ${r.name}?`)) {
-                  deleteRecruiter(r.id);
-                  toast.success(`Deleted ${r.name}`);
+                if (confirm(`Deactivate recruiter ${r.name}? Their history is preserved — this is a soft deactivation, not a permanent delete.`)) {
+                  onDeactivate();
+                  toast.success(`Deactivated ${r.name}`);
                 }
               }}
               className="p-1.5 rounded-lg border border-border bg-muted/20 hover:bg-destructive/15 text-muted-foreground hover:text-destructive transition-colors"
-              title={`Delete ${r.name}`}
+              title={`Deactivate ${r.name}`}
             >
               <Trash2 className="h-4 w-4" />
             </button>
@@ -467,12 +540,12 @@ function CleanRecruiterCard({
           onClick={onOpen}
           className="cursor-pointer flex items-center justify-between rounded-xl border border-border/70 bg-muted/20 p-3.5"
         >
-          <ScoreRing score={r.kpis.overall_score} size={64} label="Score" />
+          <ScoreRing score={score} size={64} label="Score" />
           <div className="text-right">
             <span className={`rounded-md border px-2.5 py-1 text-xs font-semibold ${bandTone}`}>
-              {band.label}
+              {bandLabel}
             </span>
-            <div className="mt-1.5 text-xs text-muted-foreground">{band.meaning}</div>
+            <div className="mt-1.5 text-xs text-muted-foreground">{bandMeaning}</div>
           </div>
         </div>
 
@@ -481,28 +554,28 @@ function CleanRecruiterCard({
           <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Outreach</div>
             <div className="text-base font-bold tabular-nums text-foreground">
-              {outreachVolume?.current ?? r.kpis.outreach_volume}
+              {outreachVolume?.currentValue ?? "—"}
             </div>
           </div>
 
           <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">1st Touch</div>
             <div className="text-base font-bold tabular-nums text-accent">
-              {timeToFirstTouch?.current ?? "1.0"}d
+              {timeToFirstTouch ? `${timeToFirstTouch.currentValue}d` : "—"}
             </div>
           </div>
 
           <div className="rounded-xl border border-border/70 bg-muted/15 p-2.5 space-y-1">
             <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Proactive</div>
             <div className="text-base font-bold tabular-nums text-foreground">
-              {proactiveSourcing?.current ?? 14}
+              {proactiveSourcing?.currentValue ?? "—"}
             </div>
           </div>
         </div>
       </div>
 
       {/* Escalated Items Banner */}
-      {r.unresolved_5d > 0 && (
+      {myEscalations.length > 0 && (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -512,7 +585,7 @@ function CleanRecruiterCard({
         >
           <span className="flex items-center gap-2">
             <span className="inline-block h-2 w-2 rounded-full bg-warning animate-pulse" />
-            {r.unresolved_5d} escalated {r.unresolved_5d === 1 ? "item" : "items"} unresolved
+            {myEscalations.length} escalated {myEscalations.length === 1 ? "item" : "items"} unresolved
           </span>
           <span className="text-[11px] underline">Inspect →</span>
         </button>

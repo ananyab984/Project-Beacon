@@ -37,6 +37,9 @@ export interface Recruiter {
   id: string;
   name: string;
   role: "full_access" | "contractor";
+  /** Independent of `role` above: whether this recruiter is permanent staff or a
+   *  non-permanent/contract recruiter (Granola 2026-08-13: "Work Status" field). */
+  work_status: "permanent" | "contractor";
   status: "healthy" | "attention" | "stalled";
   reply_rate: number;
   read_rate: number;
@@ -208,7 +211,16 @@ export function useRecruiters(): Recruiter[] {
   );
 }
 
-export function addNewRecruiter(name: string, languages: string[] = [], role: "full_access" | "contractor" = "full_access"): Recruiter {
+/** `workStatus` is the only real distinction the owner picks when onboarding
+ *  here (Granola 2026-08-13: everyone created via this form is a RECRUITER;
+ *  Permanent vs Contractor is a Work Status, not a different role). `role`
+ *  below is derived from it and kept only because the rest of this page groups
+ *  the roster by it. */
+export function addNewRecruiter(
+  name: string,
+  languages: string[] = [],
+  workStatus: "permanent" | "contractor" = "permanent",
+): Recruiter {
   const trimmed = name.trim();
   if (!trimmed) return recruiters[0];
   const existing = recruiters.find((r) => r.name.toLowerCase() === trimmed.toLowerCase());
@@ -225,7 +237,8 @@ export function addNewRecruiter(name: string, languages: string[] = [], role: "f
   const newR: Recruiter = {
     id,
     name: trimmed,
-    role,
+    role: workStatus === "contractor" ? "contractor" : "full_access",
+    work_status: workStatus,
     status: "healthy",
     reply_rate: 0.35,
     read_rate: 0.70,

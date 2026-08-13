@@ -97,7 +97,8 @@ class DraftingOrchestrator:
 
         log.info("Drafting [%s] channel=%s lead=%s rate_match=%s", draft_id, channel, lead.first_name, bool(rate_match))
 
-        # Stage 3: Prompt Building & LLM Generation
+        # Stage 3: Prompt Building & LLM Generation, grounded strictly in
+        # lead.grounding_facts() -- see prompts/prompt_builder.py's STRICT RULES.
         if not self.client:
             raise RuntimeError("CLAUDE_API_KEY is not configured in drafting service.")
 

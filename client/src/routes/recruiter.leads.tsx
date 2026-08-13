@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { leads, recruiters, stageOrder, setLeadStage, useLeadStage, addLead, parseCsvLeads, type Stage } from "@/lib/g3-mock";
+import { parseCsvLeads } from "@/lib/g3-mock";
+import { api } from "@/lib/api";
+import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Activity, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Activity, Clock, AlertTriangle, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 
@@ -24,19 +26,40 @@ export const Route = createFileRoute("/recruiter/leads")({
   component: LeadsPage,
 });
 
-// Treat one global recruiter as "me" so the My Leads toggle has data.
-const CURRENT_GLOBAL_RECRUITER_ID = "r1";
+const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
 
-const languageCountry: Record<string, string> = {
-  French: "France", Japanese: "Japan", German: "Germany", Korean: "South Korea",
-  "Spanish (LatAm)": "Mexico", Arabic: "UAE", Mandarin: "China",
-  "Portuguese (BR)": "Brazil", Italian: "Italy", Dutch: "Netherlands",
-};
+function mapToLeadSource(raw: string | undefined | null): LeadSource {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
+  return hit ?? "LINKEDIN";
+}
+
+function formatStageLabel(stage: string): string {
+  return stage.charAt(0) + stage.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const STAGE_OPTIONS: LeadStage[] = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"];
 
 type SortKey = "lead" | "language" | "country" | "stage" | "recruiter" | "activity";
 type Scope = "global" | "mine";
 
 function LeadsPage() {
+  const queryClient = useQueryClient();
   const initialScope = Route.useSearch().scope;
   const [scope, setScope] = useState<Scope>(initialScope);
   const [q, setQ] = useState("");
@@ -45,49 +68,68 @@ function LeadsPage() {
   const [service, setService] = useState("all");
   const [rec, setRec] = useState("all");
   const [stage, setStage] = useState<string>("all");
-  const [dateRange, setDateRange] = useState("all");
+  const [dateRange, setDateRange] = useState<"all" | "24h" | "7d" | "30d">("all");
   const [sortBy, setSortBy] = useState<SortKey>("activity");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [enrichLead, setEnrichLead] = useState<LeadForEnrichment | null>(null);
-  const [version, setVersion] = useState(0); // force rerender on lead enrichment
+  const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
   const pageSize = 12;
 
-  // Global Leads shows ONLY enriched leads. My Leads shows recruiter's leads including On Hold items.
-  const globalEnrichedLeads = useMemo(
-    () => leads.filter((l) => l.identity_resolved && !l.flags.includes("On Hold")),
-    [version]
-  );
-  const scoped = useMemo(
-    () => (scope === "mine" ? leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID) : globalEnrichedLeads),
-    [scope, version, globalEnrichedLeads],
-  );
-  const mineCount = useMemo(() => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID).length, [version]);
-  const onHoldCount = useMemo(
-    () => leads.filter((l) => l.recruiter_id === CURRENT_GLOBAL_RECRUITER_ID && (!l.identity_resolved || l.flags.includes("On Hold"))).length,
-    [version]
+  const filters = useMemo(
+    () => ({
+      q: q || undefined,
+      language: lang !== "all" ? lang : undefined,
+      country: country !== "all" ? country : undefined,
+      service: service !== "all" ? service : undefined,
+      recruiterId: rec !== "all" ? rec : undefined,
+      stage: stage !== "all" ? stage : undefined,
+      dateRange: dateRange !== "all" ? dateRange : undefined,
+      limit: 200,
+    }),
+    [q, lang, country, service, rec, stage, dateRange],
   );
 
-  const languages = useMemo(() => Array.from(new Set(leads.map((l) => l.language))), []);
-  const services = useMemo(() => Array.from(new Set(leads.flatMap((l) => l.services))), []);
-  const countries = useMemo(() => Array.from(new Set(leads.map((l) => languageCountry[l.language] ?? "—"))), []);
+  // Global Leads: server-scoped (already filters to enriched + own leads for this
+  // recruiter per RBAC rules) via GET /api/leads. My Leads: GET /api/leads/mine.
+  // Both queries run regardless of active tab so the ScopeTab counts + the
+  // On-Hold banner stay accurate no matter which tab is showing.
+  const globalQuery = useQuery({
+    queryKey: ["leads", filters],
+    queryFn: () => api.getLeads(filters),
+  });
+  const mineQuery = useQuery({
+    queryKey: ["leads", "mine"],
+    queryFn: () => api.getMyLeads(),
+  });
+  const recruitersQuery = useQuery({
+    queryKey: ["users", "RECRUITER"],
+    queryFn: () => api.getUsers("RECRUITER"),
+  });
+  const recruiterList: ApiUser[] = recruitersQuery.data?.users ?? [];
+
+  const globalLeads = globalQuery.data?.leads ?? [];
+  const mineLeads = mineQuery.data?.leads ?? [];
+
+  const scoped = scope === "mine" ? mineLeads : globalLeads;
+  const mineCount = mineLeads.length;
+  const onHoldCount = useMemo(
+    () => mineLeads.filter((l) => !l.identityResolved || l.flags.includes("ON_HOLD")).length,
+    [mineLeads],
+  );
+
+  const languages = useMemo(
+    () => Array.from(new Set(globalLeads.map((l) => l.targetLanguage).filter((v): v is string => !!v))),
+    [globalLeads],
+  );
+  const services = useMemo(() => Array.from(new Set(globalLeads.flatMap((l) => l.services))), [globalLeads]);
+  const countries = useMemo(
+    () => Array.from(new Set(globalLeads.map((l) => l.country).filter((v): v is string => !!v))),
+    [globalLeads],
+  );
 
   const filtered = useMemo(() => {
-    const rows = scoped.filter((l) => {
-      const c = languageCountry[l.language] ?? "—";
-      return (
-        (q === "" ||
-          l.masked_label.toLowerCase().includes(q.toLowerCase()) ||
-          (l.display_name?.toLowerCase().includes(q.toLowerCase()) ?? false)) &&
-        (lang === "all" || l.language === lang) &&
-        (country === "all" || c === country) &&
-        (service === "all" || l.services.includes(service)) &&
-        (rec === "all" || l.recruiter_id === rec) &&
-        (stage === "all" || l.stage === stage) &&
-        (dateRange === "all" || matchesDate(l.last_activity, dateRange))
-      );
-    });
+    const rows = [...scoped];
     rows.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       const va = sortVal(a, sortBy);
@@ -95,7 +137,7 @@ function LeadsPage() {
       return va < vb ? -dir : va > vb ? dir : 0;
     });
     return rows;
-  }, [scoped, q, lang, country, service, rec, stage, dateRange, sortBy, sortDir]);
+  }, [scoped, sortBy, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const view = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -122,16 +164,90 @@ function LeadsPage() {
     setRec("all"); setStage("all"); setDateRange("all"); setPage(1);
   }
 
+  function invalidateLeads() {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+    queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+    queryClient.invalidateQueries({ queryKey: ["conversations"] });
+  }
+
+  const enrichMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update lead"),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      invalidateLeads();
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
+  const claimMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(ids.map((id) => api.claimLead(id)));
+      return results;
+    },
+    onSuccess: (results) => {
+      const ok = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.length - ok;
+      if (failed === 0) toast.success(`Claimed ${ok} lead(s)`);
+      else toast.warning(`Claimed ${ok} lead(s), ${failed} already claimed or failed`);
+      invalidateLeads();
+      setSelected(new Set());
+    },
+  });
+
+  const enrichLead: LeadForEnrichment | null = enrichRaw
+    ? {
+        id: enrichRaw.id,
+        name: enrichRaw.displayName ?? enrichRaw.maskedLabel ?? "",
+        email: enrichRaw.email,
+        phone: enrichRaw.contactNumber,
+        language: enrichRaw.targetLanguage ?? "",
+        source_language: enrichRaw.sourceLanguage,
+        target_language: enrichRaw.targetLanguage,
+        services: enrichRaw.services,
+        years_experience: enrichRaw.yearsOfExperience,
+        vendor_experience: enrichRaw.vendorExperience,
+      }
+    : null;
+
+  const deleteMutation = useMutation({
+    mutationFn: (leadIds: string[]) => api.deleteLeads(leadIds),
+    onSuccess: (data) => {
+      invalidateLeads();
+      setSelected(new Set());
+      toast.success(`Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`);
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "Failed to delete leads");
+    },
+  });
+
   const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
-    const targetLead = leads.find((x) => x.id === id);
-    if (targetLead) {
-      targetLead.identity_resolved = true;
-      targetLead.display_name = updated.name || targetLead.display_name || "Enriched Lead";
-      targetLead.flags = targetLead.flags.filter((f) => f !== "On Hold");
-      if (updated.services?.length) targetLead.services = updated.services;
-      if (updated.target_language) targetLead.language = updated.target_language;
-    }
-    setVersion((v) => v + 1);
+    const currentFlags = enrichRaw?.flags ?? [];
+    enrichMutation.mutate({
+      id,
+      patch: {
+        identityResolved: true,
+        enrichmentStatus: "COMPLETE",
+        displayName: updated.name,
+        services: updated.services,
+        sourceLanguage: updated.source_language,
+        targetLanguage: updated.target_language,
+        yearsOfExperience: updated.years_experience,
+        vendorExperience: updated.vendor_experience,
+        contactNumber: updated.phone,
+        email: updated.email,
+        flags: currentFlags.filter((f) => f !== "ON_HOLD"),
+      },
+    });
+    setEnrichRaw(null);
+    toast.success("Lead marked as Enriched & Email Queue updated!");
   };
 
   return (
@@ -150,15 +266,8 @@ function LeadsPage() {
             size="sm"
             className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
             onClick={() => {
-              const firstOnHold = scoped.find((l) => !l.identity_resolved || l.flags.includes("On Hold"));
-              if (firstOnHold) {
-                setEnrichLead({
-                  id: firstOnHold.id,
-                  name: firstOnHold.display_name ?? firstOnHold.masked_label,
-                  language: firstOnHold.language,
-                  services: firstOnHold.services,
-                });
-              }
+              const firstOnHold = scoped.find((l) => !l.identityResolved || l.flags.includes("ON_HOLD"));
+              if (firstOnHold) setEnrichRaw(firstOnHold);
             }}
           >
             Review Now
@@ -178,10 +287,10 @@ function LeadsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <BulkUploadDialog />
+          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
           {/* Toggle replaces owner's Export slot */}
           <div role="tablist" aria-label="Lead scope" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalEnrichedLeads.length} />
+            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalLeads.length} />
             <ScopeTab active={scope === "mine"} onClick={() => { setScope("mine"); setPage(1); setSelected(new Set()); }} label="My Leads" count={mineCount} />
           </div>
         </div>
@@ -196,13 +305,13 @@ function LeadsPage() {
           value={rec}
           onChange={(v) => { setRec(v); setPage(1); }}
           placeholder="Recruiter"
-          options={recruiters.map((r) => r.id)}
-          labelFor={(v) => recruiters.find((r) => r.id === v)?.name ?? v}
+          options={recruiterList.map((r) => r.id)}
+          labelFor={(v) => recruiterList.find((r) => r.id === v)?.name ?? v}
         />
-        <FilterSelect value={stage} onChange={(v) => { setStage(v); setPage(1); }} placeholder="Status" options={stageOrder as unknown as string[]} />
+        <FilterSelect value={stage} onChange={(v) => { setStage(v); setPage(1); }} placeholder="Status" options={STAGE_OPTIONS} labelFor={formatStageLabel} />
         <FilterSelect
           value={dateRange}
-          onChange={(v) => { setDateRange(v); setPage(1); }}
+          onChange={(v) => { setDateRange(v as typeof dateRange); setPage(1); }}
           placeholder="Date Added"
           options={["24h", "7d", "30d"]}
           labelFor={(v) => ({ "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days" })[v] ?? v}
@@ -219,14 +328,24 @@ function LeadsPage() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => toast.success(`Claiming ${selected.size} leads…`)}>
-              <UserPlus className="h-3.5 w-3.5" /> Claim
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.success(`Queued ${selected.size} emails`)}>
-              <Mail className="h-3.5 w-3.5" /> Email
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => toast.success("Exporting selection…")}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                window.open(api.leadsExportUrl(filters as unknown as Record<string, string | undefined>), "_blank");
+              }}
+            >
               <Download className="h-3.5 w-3.5" /> Export
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(Array.from(selected))}
+              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
             </Button>
           </div>
         </div>
@@ -254,12 +373,19 @@ function LeadsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
+              {(scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading) && (
+                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
+              )}
+              {(scope === "mine" ? mineQuery.isError : globalQuery.isError) && (
+                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
+              )}
               {view.map((l) => {
-                const r = recruiters.find((x) => x.id === l.recruiter_id);
-                const label = l.identity_resolved ? l.display_name ?? l.masked_label : l.masked_label;
-                const c = languageCountry[l.language] ?? "—";
+                const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
+                const label = l.identityResolved ? l.displayName ?? l.maskedLabel ?? "—" : l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
-                const isOnHold = !l.identity_resolved || l.flags.includes("On Hold");
+                const isEnriched = l.identityResolved && l.enrichmentStatus === "COMPLETE";
+                const isPending = l.enrichmentStatus === "IN_PROGRESS";
+                const isOnHold = !l.identityResolved || l.flags.includes("ON_HOLD");
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -271,32 +397,29 @@ function LeadsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {isOnHold ? (
+                      {isEnriched ? (
+                        <span className="font-semibold text-xs text-emerald-400">
+                          Enriched
+                        </span>
+                      ) : isPending ? (
+                        <span className="font-semibold text-xs text-amber-400">
+                          Enriching…
+                        </span>
+                      ) : (
                         <button
-                          onClick={() => setEnrichLead({
-                            id: l.id,
-                            name: label,
-                            language: l.language,
-                            services: l.services,
-                            years_experience: l.years_experience,
-                            verified_email: l.verified_email,
-                          })}
+                          onClick={() => setEnrichRaw(l)}
                           className="font-semibold text-xs text-warning hover:underline cursor-pointer"
                         >
                           On Hold
                         </button>
-                      ) : (
-                        <span className="font-semibold text-xs text-emerald-400">
-                          Enriched
-                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                        {l.language}
+                        {l.targetLanguage ?? "—"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{c}</td>
+                    <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
                         {l.services.map((s) => (
@@ -306,10 +429,10 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {scope === "mine" ? (
-                        <StageCell id={l.id} initial={l.stage} />
+                        <StageCell lead={l} onChanged={invalidateLeads} />
                       ) : (
                         <span className="inline-flex items-center rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
-                          {l.stage}
+                          {formatStageLabel(l.stage)}
                         </span>
                       )}
                     </td>
@@ -320,13 +443,13 @@ function LeadsPage() {
                       {scope === "mine" ? (
                         <ActivityCell lead={l} recruiterName={r?.name ?? "—"} />
                       ) : (
-                        <span className="text-muted-foreground">{l.last_activity}</span>
+                        <span className="text-muted-foreground">{relativeTime(l.lastActivityAt)}</span>
                       )}
                     </td>
                   </tr>
                 );
               })}
-              {view.length === 0 && (
+              {view.length === 0 && !(scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading) && (
                 <tr>
                   <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
@@ -354,7 +477,7 @@ function LeadsPage() {
       {/* Manual Enrichment Modal */}
       <ManualEnrichmentDialog
         open={!!enrichLead}
-        onOpenChange={(o) => !o && setEnrichLead(null)}
+        onOpenChange={(o) => !o && setEnrichRaw(null)}
         lead={enrichLead}
         onMarkEnriched={handleMarkEnriched}
       />
@@ -380,67 +503,91 @@ function ScopeTab({ active, onClick, label, count }: { active: boolean; onClick:
   );
 }
 
-function StageCell({ id, initial }: { id: string; initial: Stage }) {
-  const value = useLeadStage(id, initial);
+function StageCell({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
+  const mutation = useMutation({
+    mutationFn: (patch: { stage: string; closureReason?: string }) => api.updateLead(lead.id, patch as Partial<ApiLead>),
+    onSuccess: () => onChanged(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
+  });
+
+  function onValueChange(v: string) {
+    if (v === "COLD") {
+      // Server requires a closureReason in the same PATCH when stage -> COLD
+      // (400 REASON_REQUIRED otherwise), so prompt for one up front.
+      const reason = window.prompt("Reason for marking this lead Cold?");
+      if (!reason || !reason.trim()) {
+        toast.info("Stage change cancelled — a reason is required for Cold");
+        return;
+      }
+      mutation.mutate({ stage: v, closureReason: reason.trim() });
+    } else {
+      mutation.mutate({ stage: v });
+    }
+  }
+
   return (
-    <Select value={value} onValueChange={(v) => setLeadStage(id, v as Stage)}>
+    <Select value={lead.stage} onValueChange={onValueChange}>
       <SelectTrigger className="h-7 w-[135px] text-xs">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {stageOrder.map((s) => (
-          <SelectItem key={s} value={s} className="text-xs">{s}</SelectItem>
+        {STAGE_OPTIONS.map((s) => (
+          <SelectItem key={s} value={s} className="text-xs">{formatStageLabel(s)}</SelectItem>
         ))}
       </SelectContent>
     </Select>
   );
 }
 
-type ActivityEvent = { at: string; icon: string; title: string; detail?: string };
-
-function buildTimeline(lead: (typeof leads)[number], recruiterName: string): ActivityEvent[] {
-  const currentIdx = stageOrder.indexOf(lead.stage);
-  const stageIcons: Record<string, string> = {
-    New: "🟦", Contacted: "📤", Replied: "💬", Negotiating: "🤝",
-    "Invite Sent": "📧", Onboarded: "✅", Cold: "❄️",
-  };
-  const stageDetail: Record<string, string> = {
-    New: `Sourced via ${lead.source}. Assigned to ${recruiterName}.`,
-    Contacted: `Outreach sent by ${recruiterName} on ${lead.source === "LinkedIn" ? "LinkedIn" : "Email"}.`,
-    Replied: "Candidate replied — thread active.",
-    Negotiating: "Rate & availability under discussion.",
-    "Invite Sent": "Onboarding invite delivered.",
-    Onboarded: "Contract signed. Added to roster.",
-    Cold: "No reply after 3 nudges. Marked cold.",
-  };
-  const buckets = ["14d ago", "9d ago", "5d ago", "3d ago", "2d ago", "1d ago", lead.last_activity];
-  const events: ActivityEvent[] = [];
-  const upto = currentIdx === -1 ? stageOrder.length - 1 : currentIdx;
-  for (let i = 0; i <= upto; i++) {
-    const stage = stageOrder[i];
-    events.push({
-      at: i === upto ? lead.last_activity : buckets[i] ?? `${(upto - i) * 2}d ago`,
-      icon: stageIcons[stage] ?? "•",
-      title: `Stage → ${stage}`,
-      detail: stageDetail[stage],
-    });
+function timelineIcon(type: LeadTimelineEvent["type"]): string {
+  switch (type) {
+    case "STAGE_CHANGE": return "🟦";
+    case "FLAG": return "🚩";
+    case "INTERACTION": return "💬";
+    case "MANUAL_ACTIVITY": return "📝";
+    default: return "•";
   }
-  if (lead.verified_email) {
-    events.push({ at: lead.last_activity, icon: "✔︎", title: "Email verified", detail: "Deliverability check passed." });
-  }
-  if (lead.confirmed_language_pair) {
-    events.push({ at: lead.last_activity, icon: "🌐", title: "Language pair confirmed", detail: `${lead.language} verified.` });
-  }
-  if (lead.flags?.length) {
-    events.push({ at: lead.last_activity, icon: "🚩", title: "Flags applied", detail: lead.flags.join(", ") });
-  }
-  return events.reverse();
 }
 
-function ActivityCell({ lead, recruiterName }: { lead: (typeof leads)[number]; recruiterName: string }) {
+function timelineTitle(e: LeadTimelineEvent): string {
+  switch (e.type) {
+    case "STAGE_CHANGE":
+      return `Stage → ${formatStageLabel(e.data.toStage ?? "")}`;
+    case "FLAG":
+      return `Flag ${e.data.action === "removed" ? "removed" : "added"}: ${e.data.flag ?? ""}`;
+    case "INTERACTION":
+      return `${e.data.direction === "OUTBOUND" ? "Outreach sent" : "Reply received"} · ${e.data.channel ?? ""}`;
+    case "MANUAL_ACTIVITY":
+      return e.data.type ?? "Manual activity";
+    default:
+      return e.type;
+  }
+}
+
+function timelineDetail(e: LeadTimelineEvent): string | undefined {
+  switch (e.type) {
+    case "STAGE_CHANGE":
+      return e.data.reason ? `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}. Reason: ${e.data.reason}` : `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}`;
+    case "FLAG":
+      return e.data.reason;
+    case "INTERACTION":
+      return e.data.occurredAt ? new Date(e.data.occurredAt).toLocaleString() : undefined;
+    case "MANUAL_ACTIVITY":
+      return [e.data.purpose, e.data.outcome, e.data.notes].filter(Boolean).join(" — ") || undefined;
+    default:
+      return undefined;
+  }
+}
+
+function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: string }) {
   const [open, setOpen] = useState(false);
-  const timeline = useMemo(() => buildTimeline(lead, recruiterName), [lead, recruiterName]);
-  const label = lead.identity_resolved ? lead.display_name ?? lead.masked_label : lead.masked_label;
+  const detailQuery = useQuery({
+    queryKey: ["lead", lead.id],
+    queryFn: () => api.getLead(lead.id),
+    enabled: open,
+  });
+  const label = lead.identityResolved ? lead.displayName ?? lead.maskedLabel ?? "—" : lead.maskedLabel ?? "—";
+  const timeline = [...(detailQuery.data?.timeline ?? [])].reverse();
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -449,7 +596,7 @@ function ActivityCell({ lead, recruiterName }: { lead: (typeof leads)[number]; r
           className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-[11px] font-medium text-foreground/80 transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
         >
           <Clock className="h-3 w-3" />
-          {lead.last_activity}
+          {relativeTime(lead.lastActivityAt)}
         </button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
@@ -458,24 +605,31 @@ function ActivityCell({ lead, recruiterName }: { lead: (typeof leads)[number]; r
             <Activity className="h-4 w-4 text-primary" /> Activity — {label}
           </DialogTitle>
           <DialogDescription>
-            Full timeline of interactions, stage changes, and enrichment events.
+            Full timeline of interactions, stage changes, and enrichment events{recruiterName !== "—" ? ` for ${recruiterName}` : ""}.
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto pr-1">
-          <ol className="relative space-y-4 border-l border-border pl-5">
-            {timeline.map((e, i) => (
-              <li key={i} className="relative">
-                <span className="absolute -left-[27px] flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
-                  {e.icon}
-                </span>
-                <div className="flex items-baseline justify-between gap-3">
-                  <div className="text-sm font-medium text-foreground">{e.title}</div>
-                  <div className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{e.at}</div>
-                </div>
-                {e.detail && <div className="mt-0.5 text-xs text-muted-foreground">{e.detail}</div>}
-              </li>
-            ))}
-          </ol>
+          {detailQuery.isLoading && <div className="py-8 text-center text-xs text-muted-foreground">Loading…</div>}
+          {detailQuery.isError && <div className="py-8 text-center text-xs text-destructive">Failed to load activity.</div>}
+          {!detailQuery.isLoading && !detailQuery.isError && (
+            <ol className="relative space-y-4 border-l border-border pl-5">
+              {timeline.map((e, i) => (
+                <li key={i} className="relative">
+                  <span className="absolute -left-[27px] flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
+                    {timelineIcon(e.type)}
+                  </span>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="text-sm font-medium text-foreground">{timelineTitle(e)}</div>
+                    <div className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{relativeTime(e.at)}</div>
+                  </div>
+                  {timelineDetail(e) && <div className="mt-0.5 text-xs text-muted-foreground">{timelineDetail(e)}</div>}
+                </li>
+              ))}
+              {timeline.length === 0 && (
+                <li className="text-xs text-muted-foreground">No activity recorded yet.</li>
+              )}
+            </ol>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Close</Button>
@@ -485,27 +639,15 @@ function ActivityCell({ lead, recruiterName }: { lead: (typeof leads)[number]; r
   );
 }
 
-function sortVal(l: (typeof leads)[number], k: SortKey): string | number {
+function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.display_name ?? l.masked_label;
-    case "language": return l.language;
-    case "country": return languageCountry[l.language] ?? "";
-    case "stage": return stageOrder.indexOf(l.stage);
-    case "recruiter": return l.recruiter_id;
-    case "activity": return l.last_activity;
+    case "lead": return l.displayName ?? l.maskedLabel ?? "";
+    case "language": return l.targetLanguage ?? "";
+    case "country": return l.country ?? "";
+    case "stage": return STAGE_OPTIONS.indexOf(l.stage);
+    case "recruiter": return l.assignedRecruiterId ?? "";
+    case "activity": return l.lastActivityAt ?? "";
   }
-}
-
-function matchesDate(activity: string, r: string) {
-  const m = activity.match(/^(\d+)([mhd])/);
-  if (!m) return true;
-  const n = parseInt(m[1]);
-  const unit = m[2];
-  const hours = unit === "m" ? n / 60 : unit === "h" ? n : n * 24;
-  if (r === "24h") return hours <= 24;
-  if (r === "7d") return hours <= 24 * 7;
-  if (r === "30d") return hours <= 24 * 30;
-  return true;
 }
 
 function SortableTh({
@@ -542,7 +684,7 @@ function FilterSelect({
   );
 }
 
-function BulkUploadDialog() {
+function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
 
@@ -567,13 +709,14 @@ function BulkUploadDialog() {
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
       if (parsed.length > 0) {
-        parsed.forEach((l) => {
-          addLead({
-            ...l,
-            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          });
-        });
-        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
+        const rows = parsed.map((l) => ({
+          fullName: l.display_name ?? l.masked_label,
+          source: mapToLeadSource(l.source),
+          services: l.services,
+          targetLanguage: l.language,
+        }));
+        onSubmitRows(rows);
+        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
         setOpen(false);
         setFile(null);
       } else {

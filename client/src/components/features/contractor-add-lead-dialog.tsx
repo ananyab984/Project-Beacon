@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertTriangle, CheckCircle2, Upload, Download, FileSpreadsheet, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { addLead, parseCsvLeads, leads, Lead } from "@/lib/g3-mock";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiLead, LeadSource } from "@/lib/api-types";
+import { parseCsvLeads } from "@/lib/g3-mock";
 
 const SOURCES = [
   "LinkedIn",
@@ -20,6 +23,16 @@ const SOURCES = [
   "Referral",
   "Import",
 ];
+
+const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+
+/** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
+function mapToLeadSource(raw: string | undefined | null): LeadSource {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
+  return hit ?? "LINKEDIN";
+}
 
 const LANGUAGES = [
   // Region 1 — East and South Asia
@@ -65,6 +78,7 @@ export function ContractorAddLeadDialog({
   setOpen?: (open: boolean) => void;
   trigger?: ReactNode;
 }) {
+  const queryClient = useQueryClient();
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledSetOpen ?? setInternalOpen;
@@ -86,6 +100,31 @@ export function ContractorAddLeadDialog({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dup, setDup] = useState<{ checked: boolean; hit: boolean; matchName?: string }>({ checked: false, hit: false });
 
+  function invalidateLeads() {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (lead: Partial<ApiLead> & { fullName: string; source: string }) => api.createLead(lead),
+    onSuccess: (_res, lead) => {
+      toast.success(`Lead ${lead.fullName} submitted to pipeline!`);
+      invalidateLeads();
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to submit lead"),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      invalidateLeads();
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
   function set(k: string, v: string) {
     setValues((prev) => ({ ...prev, [k]: v }));
     setErrors((prev) => ({ ...prev, [k]: "" }));
@@ -106,52 +145,61 @@ export function ContractorAddLeadDialog({
     return Object.keys(next).length === 0;
   }
 
-  function onCheck() {
+  async function onCheck() {
     if (!validate()) return;
-    const name = values.full_name.trim().toLowerCase();
-    const hit = leads.find((l) => (l.display_name || l.masked_label).toLowerCase().includes(name));
-    setDup({ checked: true, hit: !!hit, matchName: hit?.display_name || hit?.masked_label });
+    try {
+      const res = await api.checkDuplicateLead({
+        email: values.email_address || undefined,
+        contactNumber: values.contact_number || undefined,
+        fullName: values.full_name.trim(),
+      });
+      setDup({ checked: true, hit: res.isDuplicate, matchName: res.isDuplicate ? values.full_name.trim() : undefined });
+    } catch (err: any) {
+      toast.error(err?.message ?? "Duplicate check failed");
+    }
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
 
     const trimmed = values.full_name.trim();
-    const id = `clead_${Date.now()}`;
-    const name = values.first_name ? `${values.first_name} (${trimmed})` : trimmed;
     const resolvedService = values.services === "Custom" ? customService.trim() : values.services;
     const services = resolvedService
       ? resolvedService.split(",").map((s) => s.trim()).filter(Boolean)
       : ["Subtitling"];
 
-    const newLead: Partial<Lead> & { id: string } = {
-      id,
-      display_name: name,
-      masked_label: name,
-      language: values.target_language || "German",
-      source_language: values.source_language || "English",
-      target_language: values.target_language || "German",
-      secondary_languages: values.secondary_languages
+    // Earlier UX hint only — the backend itself also flags duplicates on
+    // create, so we never block submission on this check.
+    if (!dup.checked) {
+      try {
+        const res = await api.checkDuplicateLead({
+          email: values.email_address || undefined,
+          contactNumber: values.contact_number || undefined,
+          fullName: trimmed,
+        });
+        if (res.isDuplicate) toast.warning("A similar lead may already exist — submitting anyway.");
+      } catch {
+        // ignore — non-blocking hint
+      }
+    }
+
+    createMutation.mutate({
+      fullName: trimmed,
+      firstName: values.first_name || undefined,
+      source: mapToLeadSource(values.source),
+      profileLink: values.profile_link || undefined,
+      email: values.email_address || undefined,
+      contactNumber: values.contact_number || undefined,
+      reachoutDate: values.reachout_date || undefined,
+      sourceLanguage: values.source_language || undefined,
+      targetLanguage: values.target_language || undefined,
+      secondaryLanguages: values.secondary_languages
         ? values.secondary_languages.split(",").map((l) => l.trim()).filter(Boolean)
         : [],
       services,
-      stage: "Contacted",
-      source: (values.source as any) || "LinkedIn",
-      country: values.country_of_residence || "Germany",
-      verified_email: true,
-      confirmed_language_pair: true,
-      years_experience: 4,
-      recruiter_id: "r1",
-      last_activity: "Just now",
-      identity_resolved: true,
-      flags: [],
-      availability: "Available Now",
-    };
-
-    addLead(newLead as Lead);
-    toast.success(`Lead ${trimmed} submitted to pipeline!`);
-    setOpen(false);
+      country: values.country_of_residence || undefined,
+    });
   }
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -162,14 +210,14 @@ export function ContractorAddLeadDialog({
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
       if (parsed.length > 0) {
-        parsed.forEach((l) => {
-          addLead({
-            ...l,
-            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          });
-        });
-        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
-        setOpen(false);
+        const rows = parsed.map((l) => ({
+          fullName: l.display_name ?? l.masked_label,
+          source: mapToLeadSource(l.source),
+          services: l.services,
+          targetLanguage: l.language,
+        }));
+        bulkCreateMutation.mutate(rows);
+        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
       } else {
         toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Services columns.`);
       }
@@ -384,9 +432,10 @@ export function ContractorAddLeadDialog({
             <Button type="button" variant="outline" onClick={onCheck}>Check for duplicates</Button>
             <Button
               type="submit"
+              disabled={createMutation.isPending}
               className={dup.hit ? "bg-warning text-warning-foreground hover:bg-warning/90 font-semibold" : "bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"}
             >
-              {dup.hit ? "Submit anyway" : "Submit lead"}
+              {createMutation.isPending ? "Submitting…" : dup.hit ? "Submit anyway" : "Submit lead"}
             </Button>
           </DialogFooter>
         </form>

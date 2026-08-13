@@ -1,11 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { myContractorLeads, useRecruiterStore, type RecruiterLead } from "@/lib/recruiter-mock";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiLead } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ArrowUpDown, AlertTriangle } from "lucide-react";
+import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 
 export const Route = createFileRoute("/contractor/leads")({
@@ -21,8 +24,13 @@ export const Route = createFileRoute("/contractor/leads")({
 type SortKey = "lead" | "country" | "source" | "submitted";
 
 function MyLeadsPage() {
-  useRecruiterStore();
-  const all = useMemo(() => myContractorLeads(), []);
+  const queryClient = useQueryClient();
+  const leadsQuery = useQuery({
+    queryKey: ["leads", "mine"],
+    queryFn: () => api.getMyLeads(),
+  });
+  const all = leadsQuery.data?.leads ?? [];
+
   const [q, setQ] = useState("");
   const [country, setCountry] = useState("all");
   const [source, setSource] = useState("all");
@@ -30,30 +38,31 @@ function MyLeadsPage() {
   const [sortBy, setSortBy] = useState<SortKey>("submitted");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
-  const [enrichLead, setEnrichLead] = useState<LeadForEnrichment | null>(null);
-  const [version, setVersion] = useState(0);
+  const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
   const pageSize = 12;
 
-  const countries = useMemo(() => Array.from(new Set(all.map((l) => l.country_of_residence).filter(Boolean))), [all]);
+  const countries = useMemo(() => Array.from(new Set(all.map((l) => l.country).filter((v): v is string => !!v))), [all]);
   const sources = useMemo(() => Array.from(new Set(all.map((l) => l.source).filter(Boolean))), [all]);
 
   const onHoldCount = useMemo(
-    () => all.filter((l) => l.enrichment_status === "pending" || l.dup_flagged).length,
-    [all, version]
+    () => all.filter((l) => l.enrichmentStatus === "PENDING" || l.dupFlagged).length,
+    [all],
   );
 
   const filtered = useMemo(() => {
     const rows = all.filter((l) => {
       const ql = q.toLowerCase();
+      const name = (l.fullName ?? "").toLowerCase();
+      const email = (l.email ?? "").toLowerCase();
       return (
-        (q === "" || l.full_name.toLowerCase().includes(ql) || l.email_address.toLowerCase().includes(ql)) &&
-        (country === "all" || l.country_of_residence === country) &&
+        (q === "" || name.includes(ql) || email.includes(ql)) &&
+        (country === "all" || l.country === country) &&
         (source === "all" || l.source === source) &&
         (status === "all" ||
-          (status === "flagged" && l.dup_flagged) ||
-          (status === "clean" && !l.dup_flagged) ||
-          (status === "pending" && l.enrichment_status === "pending") ||
-          (status === "complete" && l.enrichment_status === "complete"))
+          (status === "flagged" && l.dupFlagged) ||
+          (status === "clean" && !l.dupFlagged) ||
+          (status === "pending" && l.enrichmentStatus === "PENDING") ||
+          (status === "complete" && l.enrichmentStatus === "COMPLETE"))
       );
     });
     rows.sort((a, b) => {
@@ -63,7 +72,7 @@ function MyLeadsPage() {
       return va < vb ? -dir : va > vb ? dir : 0;
     });
     return rows;
-  }, [all, q, country, source, status, sortBy, sortDir, version]);
+  }, [all, q, country, source, status, sortBy, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const view = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -76,16 +85,43 @@ function MyLeadsPage() {
     setQ(""); setCountry("all"); setSource("all"); setStatus("all"); setPage(1);
   }
 
+  const enrichMutation = useMutation({
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads", "mine"] }),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update lead"),
+  });
+
+  const enrichLead: LeadForEnrichment | null = enrichRaw
+    ? {
+        id: enrichRaw.id,
+        name: enrichRaw.fullName ?? enrichRaw.displayName ?? enrichRaw.maskedLabel ?? "",
+        email: enrichRaw.email,
+        phone: enrichRaw.contactNumber,
+        language: enrichRaw.targetLanguage ?? enrichRaw.sourceLanguage ?? "",
+        source_language: enrichRaw.sourceLanguage,
+        target_language: enrichRaw.targetLanguage,
+        services: enrichRaw.services?.length ? enrichRaw.services : ["Subtitling"],
+        years_experience: enrichRaw.yearsOfExperience,
+        vendor_experience: enrichRaw.vendorExperience,
+      }
+    : null;
+
   const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
-    const targetLead = all.find((x) => x.id === id);
-    if (targetLead) {
-      targetLead.enrichment_status = "complete";
-      targetLead.dup_flagged = false;
-      if (updated.name) targetLead.full_name = updated.name;
-      if (updated.email) targetLead.email_address = updated.email;
-      if (updated.services?.length) targetLead.services = updated.services;
-    }
-    setVersion((v) => v + 1);
+    enrichMutation.mutate({
+      id,
+      patch: {
+        identityResolved: true,
+        fullName: updated.name,
+        email: updated.email,
+        contactNumber: updated.phone,
+        services: updated.services,
+        sourceLanguage: updated.source_language,
+        targetLanguage: updated.target_language,
+        yearsOfExperience: updated.years_experience,
+        vendorExperience: updated.vendor_experience,
+      },
+    });
+    setEnrichRaw(null);
   };
 
   return (
@@ -104,16 +140,8 @@ function MyLeadsPage() {
             size="sm"
             className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
             onClick={() => {
-              const firstOnHold = all.find((l) => l.enrichment_status === "pending" || l.dup_flagged);
-              if (firstOnHold) {
-                setEnrichLead({
-                  id: firstOnHold.id,
-                  name: firstOnHold.full_name,
-                  email: firstOnHold.email_address,
-                  language: firstOnHold.target_language || firstOnHold.source_language || "Spanish (LatAm)",
-                  services: firstOnHold.services ?? ["Subtitling"],
-                });
-              }
+              const firstOnHold = all.find((l) => l.enrichmentStatus === "PENDING" || l.dupFlagged);
+              if (firstOnHold) setEnrichRaw(firstOnHold);
             }}
           >
             Review Now
@@ -158,29 +186,30 @@ function MyLeadsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {view.map((l) => {
-                const isOnHold = l.enrichment_status === "pending" || l.dup_flagged;
+              {leadsQuery.isLoading && (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
+              )}
+              {leadsQuery.isError && (
+                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-destructive">Failed to load your leads.</td></tr>
+              )}
+              {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
+                const isOnHold = l.enrichmentStatus === "PENDING" || l.dupFlagged;
+                const label = l.fullName ?? l.displayName ?? l.maskedLabel ?? "—";
                 return (
                   <tr key={l.id} className="transition-colors hover:bg-muted/40">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{l.full_name}</span>
-                        {l.dup_flagged && (
+                        <span className="font-medium">{label}</span>
+                        {l.dupFlagged && (
                           <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">duplicate</Badge>
                         )}
                       </div>
-                      {l.first_name && <div className="text-[11px] text-muted-foreground">{l.first_name}</div>}
+                      {l.firstName && <div className="text-[11px] text-muted-foreground">{l.firstName}</div>}
                     </td>
                     <td className="px-4 py-3">
                       {isOnHold ? (
                         <button
-                          onClick={() => setEnrichLead({
-                            id: l.id,
-                            name: l.full_name,
-                            email: l.email_address,
-                            language: l.target_language || l.source_language || "Spanish (LatAm)",
-                            services: l.services ?? ["Subtitling"],
-                          })}
+                          onClick={() => setEnrichRaw(l)}
                           className="font-semibold text-xs text-warning hover:underline cursor-pointer"
                         >
                           On Hold
@@ -191,13 +220,13 @@ function MyLeadsPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.country_of_residence || "—"}</td>
+                    <td className="px-4 py-3 text-foreground/80">{l.country || "—"}</td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">{l.source}</span>
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.email_address || l.contact_number || "—"}</td>
+                    <td className="px-4 py-3 text-foreground/80">{l.email || l.contactNumber || "—"}</td>
                     <td className="px-4 py-3 text-foreground/80">
-                      {l.source_language && l.target_language ? `${l.source_language} → ${l.target_language}` : "—"}
+                      {l.sourceLanguage && l.targetLanguage ? `${l.sourceLanguage} → ${l.targetLanguage}` : "—"}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
@@ -207,11 +236,11 @@ function MyLeadsPage() {
                         {!l.services?.length && <span className="text-xs text-muted-foreground">—</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{new Date(l.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-muted-foreground">{new Date(l.createdAt).toLocaleDateString()}</td>
                   </tr>
                 );
               })}
-              {view.length === 0 && (
+              {!leadsQuery.isLoading && !leadsQuery.isError && view.length === 0 && (
                 <tr>
                   <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
@@ -239,7 +268,7 @@ function MyLeadsPage() {
       {/* Manual Enrichment Modal for Contractors */}
       <ManualEnrichmentDialog
         open={!!enrichLead}
-        onOpenChange={(o) => !o && setEnrichLead(null)}
+        onOpenChange={(o) => !o && setEnrichRaw(null)}
         lead={enrichLead}
         onMarkEnriched={handleMarkEnriched}
       />
@@ -247,12 +276,12 @@ function MyLeadsPage() {
   );
 }
 
-function sortVal(l: RecruiterLead, k: SortKey): string | number {
+function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.full_name;
-    case "country": return l.country_of_residence;
+    case "lead": return l.fullName ?? l.displayName ?? l.maskedLabel ?? "";
+    case "country": return l.country ?? "";
     case "source": return l.source;
-    case "submitted": return l.created_at;
+    case "submitted": return l.createdAt;
   }
 }
 

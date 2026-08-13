@@ -1,6 +1,13 @@
 """Draft generation layer — Lead + rate context -> Claude -> {subject?, body}.
 
-Synced 1-to-1 with draft_poc/draft_generator.py.
+The LLM is given ONLY `Lead.grounding_facts()` (every real enriched field the
+lead record actually has: name, country, languages, services, years of
+experience, current role/company) plus the approved template as a structural
+pattern to follow -- never a hardcoded phrase spliced into the output. The
+system prompt (prompts/prompt_builder.py) is strict about using nothing else,
+so personalization is genuine (drawn from whatever facts are actually present)
+without inventing employers, rates, or credentials that aren't in LEAD FACTS.
+
 Includes _ensure_links() guardrail to guarantee brand URLs survive generation.
 """
 
@@ -36,19 +43,25 @@ class Draft:
 
 
 def _ensure_links(body: str, channel: str) -> str:
-    """Guardrail: make sure the canonical brand links survived generation."""
+    """Guardrail: make sure the canonical brand links survived generation.
+
+    LinkedIn connection notes are hard-capped at 200 characters (see
+    prompt_builder.LINKEDIN_CHAR_TARGET) -- only the apply link is enforced
+    there, since it's the one actual call to action; the separate "Visit:
+    site" line email gets would otherwise burn chars that should go to the
+    lead's actual enriched facts (e.g. years of experience).
+    """
     text = body
     if pb.BRAND["apply_url"] not in text and "app.global3.io/apply" not in text:
         sep = " " if channel == "linkedin" else "\n\n"
         text += f"{sep}Apply here: {pb.BRAND['apply_url']}"
-    if pb.BRAND["site"] not in text:
-        sep = " " if channel == "linkedin" else "\n\n"
-        text += f"{sep}Visit: {pb.BRAND['site']}"
+    if channel != "linkedin" and pb.BRAND["site"] not in text:
+        text += f"\n\nVisit: {pb.BRAND['site']}"
     return text.strip()
 
 
 def generate_email(client: ClaudeClient, cfg: Config, lead: Lead, rate_match: Optional[Dict[str, Any]] = None, rate_flag: Optional[str] = None) -> Draft:
-    """Generate an outreach email draft."""
+    """Generate an outreach email draft, personalized from the lead's real enriched facts."""
     system, user = pb.build_email_prompt(lead, rate_match)
     completion = client.chat(
         system, user, model=cfg.gen_model,
@@ -66,7 +79,7 @@ def generate_email(client: ClaudeClient, cfg: Config, lead: Lead, rate_match: Op
 
 
 def generate_linkedin(client: ClaudeClient, cfg: Config, lead: Lead, rate_match: Optional[Dict[str, Any]] = None, rate_flag: Optional[str] = None) -> Draft:
-    """Generate a LinkedIn connection note draft."""
+    """Generate a LinkedIn connection note draft, personalized from the lead's real enriched facts."""
     system, user = pb.build_linkedin_prompt(lead, rate_match)
     completion = client.chat(
         system, user, model=cfg.gen_model,

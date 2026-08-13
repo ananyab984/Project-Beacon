@@ -26,6 +26,7 @@ import { Route as ContractorLeadsRouteImport } from './routes/contractor.leads'
 import { Route as ContractorPerformanceRouteImport } from './routes/contractor.performance'
 import { Route as ContractorRequirementsRouteImport } from './routes/contractor.requirements'
 import { Route as ContractorSettingsRouteImport } from './routes/contractor.settings'
+import { Route as OnboardingConnectRouteImport } from './routes/onboarding.connect'
 import { Route as OwnerIndexRouteImport } from './routes/owner.index'
 import { Route as OwnerAssignmentConfigRouteImport } from './routes/owner.assignment-config'
 import { Route as OwnerClientsRouteImport } from './routes/owner.clients'
@@ -41,6 +42,7 @@ import { Route as RecruiterConversationsRouteImport } from './routes/recruiter.c
 import { Route as RecruiterEmailQueueRouteImport } from './routes/recruiter.email-queue'
 import { Route as RecruiterLeadsRouteImport } from './routes/recruiter.leads'
 import { Route as RecruiterPerformanceRouteImport } from './routes/recruiter.performance'
+import { Route as RecruiterSettingsRouteImport } from './routes/recruiter.settings'
 import { Route as OwnerRecruiterEvaluationIdRouteImport } from './routes/owner.recruiter-evaluation.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -128,6 +130,11 @@ const ContractorSettingsRoute = ContractorSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => ContractorRoute,
 } as any)
+const OnboardingConnectRoute = OnboardingConnectRouteImport.update({
+  id: '/onboarding/connect',
+  path: '/onboarding/connect',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OwnerIndexRoute = OwnerIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -203,6 +210,11 @@ const RecruiterPerformanceRoute = RecruiterPerformanceRouteImport.update({
   path: '/performance',
   getParentRoute: () => RecruiterRoute,
 } as any)
+const RecruiterSettingsRoute = RecruiterSettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => RecruiterRoute,
+} as any)
 const OwnerRecruiterEvaluationIdRoute =
   OwnerRecruiterEvaluationIdRouteImport.update({
     id: '/recruiter-evaluation/$id',
@@ -227,6 +239,7 @@ export interface FileRoutesByFullPath {
   '/contractor/performance': typeof ContractorPerformanceRoute
   '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
+  '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
@@ -240,6 +253,7 @@ export interface FileRoutesByFullPath {
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
   '/recruiter/performance': typeof RecruiterPerformanceRoute
+  '/recruiter/settings': typeof RecruiterSettingsRoute
   '/contractor/': typeof ContractorIndexRoute
   '/owner/': typeof OwnerIndexRoute
   '/recruiter/': typeof RecruiterIndexRoute
@@ -259,6 +273,7 @@ export interface FileRoutesByTo {
   '/contractor/performance': typeof ContractorPerformanceRoute
   '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
+  '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
@@ -272,6 +287,7 @@ export interface FileRoutesByTo {
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
   '/recruiter/performance': typeof RecruiterPerformanceRoute
+  '/recruiter/settings': typeof RecruiterSettingsRoute
   '/contractor': typeof ContractorIndexRoute
   '/owner': typeof OwnerIndexRoute
   '/recruiter': typeof RecruiterIndexRoute
@@ -295,6 +311,7 @@ export interface FileRoutesById {
   '/contractor/performance': typeof ContractorPerformanceRoute
   '/contractor/requirements': typeof ContractorRequirementsRoute
   '/contractor/settings': typeof ContractorSettingsRoute
+  '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
   '/owner/leads': typeof OwnerLeadsRoute
@@ -308,6 +325,7 @@ export interface FileRoutesById {
   '/recruiter/email-queue': typeof RecruiterEmailQueueRoute
   '/recruiter/leads': typeof RecruiterLeadsRoute
   '/recruiter/performance': typeof RecruiterPerformanceRoute
+  '/recruiter/settings': typeof RecruiterSettingsRoute
   '/contractor/': typeof ContractorIndexRoute
   '/owner/': typeof OwnerIndexRoute
   '/recruiter/': typeof RecruiterIndexRoute
@@ -332,6 +350,7 @@ export interface FileRouteTypes {
     | '/contractor/performance'
     | '/contractor/requirements'
     | '/contractor/settings'
+    | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
     | '/owner/leads'
@@ -345,6 +364,7 @@ export interface FileRouteTypes {
     | '/recruiter/email-queue'
     | '/recruiter/leads'
     | '/recruiter/performance'
+    | '/recruiter/settings'
     | '/contractor/'
     | '/owner/'
     | '/recruiter/'
@@ -364,6 +384,7 @@ export interface FileRouteTypes {
     | '/contractor/performance'
     | '/contractor/requirements'
     | '/contractor/settings'
+    | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
     | '/owner/leads'
@@ -377,6 +398,7 @@ export interface FileRouteTypes {
     | '/recruiter/email-queue'
     | '/recruiter/leads'
     | '/recruiter/performance'
+    | '/recruiter/settings'
     | '/contractor'
     | '/owner'
     | '/recruiter'
@@ -399,6 +421,7 @@ export interface FileRouteTypes {
     | '/contractor/performance'
     | '/contractor/requirements'
     | '/contractor/settings'
+    | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
     | '/owner/leads'
@@ -412,6 +435,7 @@ export interface FileRouteTypes {
     | '/recruiter/email-queue'
     | '/recruiter/leads'
     | '/recruiter/performance'
+    | '/recruiter/settings'
     | '/contractor/'
     | '/owner/'
     | '/recruiter/'
@@ -429,6 +453,7 @@ export interface RootRouteChildren {
   SignupRoute: typeof SignupRoute
   UnauthorizedRoute: typeof UnauthorizedRoute
   VerifyEmailRoute: typeof VerifyEmailRoute
+  OnboardingConnectRoute: typeof OnboardingConnectRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -552,6 +577,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContractorSettingsRouteImport
       parentRoute: typeof ContractorRoute
     }
+    '/onboarding/connect': {
+      id: '/onboarding/connect'
+      path: '/onboarding/connect'
+      fullPath: '/onboarding/connect'
+      preLoaderRoute: typeof OnboardingConnectRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/owner/': {
       id: '/owner/'
       path: '/'
@@ -657,6 +689,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecruiterPerformanceRouteImport
       parentRoute: typeof RecruiterRoute
     }
+    '/recruiter/settings': {
+      id: '/recruiter/settings'
+      path: '/settings'
+      fullPath: '/recruiter/settings'
+      preLoaderRoute: typeof RecruiterSettingsRouteImport
+      parentRoute: typeof RecruiterRoute
+    }
     '/owner/recruiter-evaluation/$id': {
       id: '/owner/recruiter-evaluation/$id'
       path: '/recruiter-evaluation/$id'
@@ -724,6 +763,7 @@ interface RecruiterRouteChildren {
   RecruiterEmailQueueRoute: typeof RecruiterEmailQueueRoute
   RecruiterLeadsRoute: typeof RecruiterLeadsRoute
   RecruiterPerformanceRoute: typeof RecruiterPerformanceRoute
+  RecruiterSettingsRoute: typeof RecruiterSettingsRoute
   RecruiterIndexRoute: typeof RecruiterIndexRoute
 }
 
@@ -734,6 +774,7 @@ const RecruiterRouteChildren: RecruiterRouteChildren = {
   RecruiterEmailQueueRoute: RecruiterEmailQueueRoute,
   RecruiterLeadsRoute: RecruiterLeadsRoute,
   RecruiterPerformanceRoute: RecruiterPerformanceRoute,
+  RecruiterSettingsRoute: RecruiterSettingsRoute,
   RecruiterIndexRoute: RecruiterIndexRoute,
 }
 
@@ -752,6 +793,7 @@ const rootRouteChildren: RootRouteChildren = {
   SignupRoute: SignupRoute,
   UnauthorizedRoute: UnauthorizedRoute,
   VerifyEmailRoute: VerifyEmailRoute,
+  OnboardingConnectRoute: OnboardingConnectRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

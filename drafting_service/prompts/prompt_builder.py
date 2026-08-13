@@ -1,8 +1,9 @@
-"""Prompt builder —Synced 1-to-1 with draft_poc/prompt_builder.py.
+"""Prompt builder — personalizes the two approved templates using the lead's
+real enriched data, never inventing facts beyond what's already known.
 
 Personalization strategy: "personalize within the template": the model keeps
-Global3's structure, links and sign-off, and only tailors the opening + phrasing
-to the specific linguist using the provided facts.
+Global3's structure, links and sign-off, and only tailors the opening +
+phrasing to the specific linguist using the facts actually provided.
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ BRAND = {
     "team": "Resource Management team at Global3",
 }
 
-LINKEDIN_CHAR_TARGET = "STRICTLY under 280 characters total (LinkedIn connection note hard cap is 300 characters)"
+LINKEDIN_CHAR_TARGET = "STRICTLY under 200 characters total (LinkedIn connection note hard cap on free accounts)"
 EMAIL_WORD_TARGET = "roughly 120-180 words"
 
 # --- Shared brand-voice + anti-hallucination rules --------------------------
@@ -31,11 +32,13 @@ specialists, etc.). Voice: warm, professional, respectful, concise. No hype, no
 salesy buzzwords, no exaggerated claims.
 
 STRICT RULES:
-- Use ONLY the facts provided in LEAD FACTS. Do NOT invent achievements, employers,
-  projects, credentials, or numbers.
-- Ground all personalization directly in listed attributes (e.g., 'your work in Audio Description',
-  'your background in English and Polish', 'your 16 years of experience'). Do NOT add unstated
-  subjective titles like 'renowned expert' or 'master specialist'.
+- Use ONLY the facts provided in LEAD FACTS below. Do NOT invent achievements, employers,
+  projects, credentials, rates, or numbers that are not explicitly listed there.
+- If LEAD FACTS includes years of experience, services, languages, country, or current
+  role/company, weave the ones that are actually present naturally into the opening --
+  do not list every fact mechanically, and do not mention a fact that is not in LEAD FACTS.
+- If a fact is absent from LEAD FACTS, simply don't mention it -- never guess, estimate,
+  or use a generic placeholder in its place.
 - NEVER fabricate, invent, or guess a rate figure. Rates are cited ONLY if provided in RATE CONTEXT.
   If RATE CONTEXT says 'No rate card match', do NOT mention any specific rate numbers or pricing figures.
 - Keep {BRAND['company']}'s structure, links and sign-off intact:
@@ -43,7 +46,7 @@ STRICT RULES:
 - Exactly ONE clear, low-friction call to action.
 - Return STRICT JSON only — no markdown, no commentary outside the JSON."""
 
-# --- Few-shot exemplars (the user's real, approved templates) ---------------
+# --- Approved reference templates (the pattern every draft must follow) -----
 _EMAIL_EXEMPLAR = (
     "Hi [Name],\n\nI hope this email finds you well.\n\n"
     f"I'm reaching out from the {BRAND['team']}. We recently reviewed your profile "
@@ -60,13 +63,16 @@ _EMAIL_EXEMPLAR = (
 )
 
 _LINKEDIN_EXEMPLAR = (
-    "Hi [Name], we noticed your background in [language/service] and would love to introduce you to "
-    f"{BRAND['company']}. Learn more at {BRAND['site']} and apply to partner with us here: {BRAND['apply_url']}"
+    "Hi [Name], noticed your [X yrs] in [language/service] -- we'd love to have you at "
+    f"{BRAND['company']}. Apply here: {BRAND['apply_url']}"
 )
 
 
 def _facts_block(lead: Lead) -> str:
-    """Render the lead's grounding facts as a compact, labeled block."""
+    """Render the lead's grounding facts as a compact, labeled block -- this
+    is the ONLY data the model is given, and it already includes every real
+    enriched field the Lead record has (years of experience, services,
+    languages, country, current role/company) via Lead.grounding_facts()."""
     lines = [f"- {k}: {v}" for k, v in lead.grounding_facts().items()]
     return "\n".join(lines)
 
@@ -89,10 +95,14 @@ RATE CONTEXT:
 {_rate_block(rate_match)}
 
 CHANNEL: Email (long-form, {EMAIL_WORD_TARGET}).
-Must include: a personalized opening mentioning their language or service, {BRAND['site']}, the apply portal
-link {BRAND['apply_url']}, the contact {BRAND['contact_email']}, and the sign-off "Resources Team".
+Must include: a personalized opening naturally referencing whichever LEAD FACTS are
+present (language, services, years of experience, current role/company -- only the
+ones actually listed above), {BRAND['site']}, the apply portal link {BRAND['apply_url']},
+the contact {BRAND['contact_email']}, and the sign-off "Resources Team".
 
-STRUCTURE TO FOLLOW:
+PATTERN TO FOLLOW (this is the approved structure -- match its shape, tone, links,
+and sign-off; personalize the opening sentence with the real LEAD FACTS instead of
+the bracketed placeholders):
 ---
 {_EMAIL_EXEMPLAR}
 ---
@@ -114,13 +124,21 @@ RATE CONTEXT:
 {_rate_block(rate_match)}
 
 CHANNEL: LinkedIn connection note ({LINKEDIN_CHAR_TARGET}).
-CRITICAL REQUIREMENT: Total text length MUST NOT EXCEED 270 CHARACTERS. No subject line.
+CRITICAL REQUIREMENT: Total text length MUST NOT EXCEED 200 CHARACTERS, including the
+apply link. No subject line.
 
-STRUCTURE TO FOLLOW (keep it concise and within character limit):
+PRIORITY: If years of experience is present in LEAD FACTS, it MUST be worked into the
+note (e.g. "10 yrs in Dubbing") even briefly -- this is the single most important fact
+to keep if something has to be cut for length. Prefer short numerals/abbreviations
+("10 yrs", "German dubbing") over full sentences to stay under the cap.
+
+PATTERN TO FOLLOW (this is the approved structure -- match its shape and links;
+personalize using the real LEAD FACTS instead of the bracketed placeholders,
+trimming filler words rather than dropping the years-of-experience fact):
 ---
 {_LINKEDIN_EXEMPLAR}
 ---
 
 Return STRICT JSON exactly:
-{{"body": "<the LinkedIn message under 270 chars>"}}"""
+{{"body": "<the LinkedIn message, STRICTLY under 200 chars total>"}}"""
     return system, user

@@ -1,55 +1,138 @@
 import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEmailQueueStore } from "@/stores/useEmailQueueStore";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Sparkles, Send, Trash2, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2 } from "lucide-react";
+import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search } from "lucide-react";
 import { useAiToolsEnabled } from "@/hooks/use-ai-tools";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
 
 import { api } from "@/lib/api";
+import type { ApiEmailQueueItem, EmailQueueStatus } from "@/lib/api-types";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
+import { AddLeadDialog } from "@/components/features/add-lead-dialog";
+import { SearchLeadDialog } from "@/components/features/search-lead-dialog";
+import { SelectAccountDialog } from "@/components/features/select-account-dialog";
 
-export function generateEmailDraft(name: string, language: string = "Linguist") {
-  return `Hi ${name},\n\nI hope this email finds you well.\n\nI'm reaching out from the Resource Management team at Global3. We recently reviewed your profile and believe your expertise would be a strong asset to our current and upcoming project pipelines.\n\nWe are actively looking to connect with talented freelance ${language} linguists who value long-term, meaningful collaboration over one-off tasks.\n\nAt Global3, we pride ourselves on building lasting partnerships with our global network of professionals. You can find more details about our mission and the scope of our work at global3.io.\n\nIf you are open to exploring a partnership, please submit your application through our portal so we can align your profile with relevant opportunities: https://app.global3.io/apply\n\nShould you have any questions before applying, please feel free to reach out to us at resources@global3.io. We're happy to provide more information.\n\nBest regards,\nResources Team`;
+function candidateName(item: ApiEmailQueueItem): string {
+  return item.candidateName || item.lead?.fullName || item.lead?.displayName || "Unknown";
 }
 
-export function generateLinkedInDraft(name: string, language: string = "Linguist") {
-  return `Hi ${name},\n\nWe're urgently looking for a freelance Native ${language} to join us at Global3. For more information about our team and services, please visit global3.io.\n\nIf you're interested in this opportunity, you can apply through our application form here: https://app.global3.io/apply`;
+function candidateEmail(item: ApiEmailQueueItem): string {
+  return item.lead?.email || "";
+}
+
+function timeAgo(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  if (Number.isNaN(diffMs)) return "";
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function preview(item: ApiEmailQueueItem): string {
+  if (!item.body) return "No draft yet";
+  return item.body.replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
 export function EmailQueuePageView() {
-  const { emailQueue, updateDraft, approveAndSendDraft } = useEmailQueueStore();
-  const [selectedId, setSelectedId] = useState(emailQueue[0]?.id);
-  const selected = emailQueue.find((e) => e.id === selectedId) ?? emailQueue[0];
+  const queryClient = useQueryClient();
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: ["email-queue"],
+    queryFn: api.getEmailQueue,
+  });
+  const emailQueue = data?.items ?? [];
+
+  const { data: leadsData } = useQuery({
+    queryKey: ["leads"],
+    queryFn: () => api.getLeads({ limit: 100 }),
+  });
+  const availableLeads = leadsData?.leads ?? [];
+
+  const { isGeneratingDraft, setIsGeneratingDraft } = useEmailQueueStore();
+
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+  const selected = emailQueue.find((e) => e.id === selectedId);
   const [aiPref] = useAiToolsEnabled();
   const ai = FEATURES.ai && aiPref;
   const [body, setBody] = useState("");
-  const [subject, setSubject] = useState(selected ? `Global3 Outreach · Freelance Partnership (${selected.candidate_name})` : "");
-  const [to, setTo] = useState(selected ? mockEmail(selected.candidate_name) : "");
+  const [subject, setSubject] = useState("");
+  const [to, setTo] = useState("");
   const [saveState, setSaveState] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const autosaveTimer = useRef<number | null>(null);
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
+  const [addLeadOpen, setAddLeadOpen] = useState(false);
+  const [searchLeadQuery, setSearchLeadQuery] = useState("");
   const [sending, setSending] = useState(false);
+  const [addingLeadId, setAddingLeadId] = useState<string | null>(null);
 
-  async function handleSend() {
+  // Auto-select the first item on initial load, and re-select whenever the
+  // currently selected item disappears from the list (e.g. a newly-added
+  // lead superseding an in-flight selection).
+  useEffect(() => {
+    if (emailQueue.length === 0) return;
+    if (!selectedId || !emailQueue.some((e) => e.id === selectedId)) {
+      pick(emailQueue[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [emailQueue]);
+
+  const [selectAccountDialogOpen, setSelectAccountDialogOpen] = useState(false);
+  const [targetChannelAccounts, setTargetChannelAccounts] = useState<any[]>([]);
+  const [targetChannel, setTargetChannel] = useState<"EMAIL" | "LINKEDIN">("EMAIL");
+
+  async function initiateSend() {
+    if (!selected) return;
+    const channel = selected.candidateRole?.toLowerCase().includes("linkedin") ? "LINKEDIN" : "EMAIL";
+
+    try {
+      const accounts = await api.getConnectedAccounts();
+      const active = accounts.filter((a: any) => a.status !== "DISCONNECTED");
+
+      const channelAccs = active.filter((a: any) => {
+        const p = (a.provider || "").toUpperCase();
+        if (channel === "LINKEDIN") return p.includes("LINKEDIN");
+        return ["EMAIL", "GOOGLE", "MAIL", "OUTLOOK"].some((type) => p.includes(type));
+      });
+
+      if (channelAccs.length === 0) {
+        toast.error(`No connected ${channel === "LINKEDIN" ? "LinkedIn" : "Email"} account found`, {
+          action: { label: "Connect Account", onClick: () => setConnectDialogOpen(true) },
+        });
+        return;
+      }
+
+      if (channelAccs.length > 1) {
+        setTargetChannelAccounts(channelAccs);
+        setTargetChannel(channel);
+        setSelectAccountDialogOpen(true);
+        return;
+      }
+
+      // Single connected account -> send directly
+      await executeSend(channelAccs[0].unipileAccountId);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to check connected accounts");
+    }
+  }
+
+  async function executeSend(accountId?: string) {
     if (!selected) return;
     setSending(true);
     try {
-      const channel = selected.candidate_role?.toLowerCase().includes("linkedin") ? "LINKEDIN" : "EMAIL";
-      await api.sendOutreach({
-        leadId: selected.id,
-        channel,
-        to,
-        subject,
-        body,
-        emailQueueId: selected.id,
-      });
-      approveAndSendDraft(selected.id);
-      toast.success(`Message sent via Unipile to ${selected.candidate_name}!`);
+      const channel = selected.candidateRole?.toLowerCase().includes("linkedin") ? "LINKEDIN" : "EMAIL";
+      await api.sendEmailQueueItem(selected.id, { to, subject, body, channel, accountId });
+      await queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+      toast.success(`Message sent via Unipile to ${candidateName(selected)}!`);
+      setSelectAccountDialogOpen(false);
     } catch (err: any) {
       if (err.code === "ACCOUNT_NOT_CONNECTED" || err.message?.includes("connect")) {
         toast.error("Unipile account not connected", {
@@ -71,19 +154,50 @@ export function EmailQueuePageView() {
     setSelectedId(id);
     const e = emailQueue.find((x) => x.id === id);
     setBody(e?.body || "");
-    setSubject(e ? `Global3 Outreach · Freelance Partnership (${e.candidate_name})` : "");
-    setTo(e ? mockEmail(e.candidate_name) : "");
+    setSubject(e?.subject || (e ? `Global3 Outreach · Freelance Partnership (${candidateName(e)})` : ""));
+    setTo(e ? candidateEmail(e) : "");
     setSaveState("idle");
     setSavedAt(null);
   }
 
-  function handleGenerateDraft() {
+  async function handleAddLeadToQueue(leadId: string) {
+    setAddingLeadId(leadId);
+    try {
+      const { item } = await api.addToEmailQueue(leadId);
+      await queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+      setSelectedId(item.id);
+      setBody(item.body);
+      setSubject(item.subject);
+      setTo(item.lead?.email || "");
+      toast.success(`Added ${item.candidateName} to Email Queue!`);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to add lead to queue");
+    } finally {
+      setAddingLeadId(null);
+      setSearchLeadQuery("");
+    }
+  }
+
+  async function handleGenerateDraft() {
     if (!selected) return;
-    const generated = generateEmailDraft(selected.candidate_name, selected.candidate_role || "Linguist");
-    setBody(generated);
-    setSubject(`Global3 Outreach · Freelance Partnership (${selected.candidate_name})`);
-    markDirty();
-    toast.success(`Generated official email draft for ${selected.candidate_name}!`);
+    setIsGeneratingDraft(true);
+    try {
+      const { item } = await api.generateEmailDraft(selected.id);
+      setBody(item.body);
+      setSubject(item.subject);
+      setSaveState("saved");
+      setSavedAt(new Date());
+      queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+      toast.success(`Generated official email draft for ${candidateName(selected)}!`);
+    } catch (err: any) {
+      if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
+        toast.error("Drafting service unavailable — write the message manually");
+      } else {
+        toast.error(err.message || "Failed to generate draft");
+      }
+    } finally {
+      setIsGeneratingDraft(false);
+    }
   }
 
   function markDirty() {
@@ -92,12 +206,18 @@ export function EmailQueuePageView() {
     autosaveTimer.current = window.setTimeout(saveDraft, 1500);
   }
 
-  function saveDraft() {
+  async function saveDraft() {
+    if (!selected) return;
     setSaveState("saving");
-    window.setTimeout(() => {
+    try {
+      await api.updateEmailQueueItem(selected.id, { subject, body });
       setSaveState("saved");
       setSavedAt(new Date());
-    }, 500);
+      queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+    } catch (err: any) {
+      setSaveState("dirty");
+      toast.error(err.message || "Failed to save draft");
+    }
   }
 
   useEffect(() => () => { if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current); }, []);
@@ -105,15 +225,76 @@ export function EmailQueuePageView() {
   return (
     <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl overflow-hidden rounded-2xl border border-border bg-card">
       <div className="grid h-full grid-cols-1 md:grid-cols-[340px_1fr]">
-        <div className="border-r border-border">
-          <div className="border-b border-border p-3">
+        <div className="border-r border-border flex flex-col h-full">
+          <div className="border-b border-border p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Queue <span className="text-muted-foreground font-normal">({emailQueue.length})</span></div>
-              <Badge variant="outline" className="text-[10px]">All Statuses</Badge>
+              <div className="flex items-center gap-1.5">
+                <SearchLeadDialog
+                  onSelectLead={(lead) => handleAddLeadToQueue(lead.id)}
+                  trigger={
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1 px-2 border-border">
+                      <Search className="h-3 w-3 text-primary" /> Search Lead
+                    </Button>
+                  }
+                />
+                <AddLeadDialog
+                  open={addLeadOpen}
+                  setOpen={setAddLeadOpen}
+                  trigger={
+                    <Button size="sm" className="h-7 text-xs bg-primary text-primary-foreground font-medium gap-1 px-2 shadow-xs">
+                      <Plus className="h-3.5 w-3.5" /> Add
+                    </Button>
+                  }
+                />
+              </div>
+            </div>
+            {/* Quick search existing lead to add to queue */}
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search lead to add to queue…"
+                value={searchLeadQuery}
+                onChange={(e) => setSearchLeadQuery(e.target.value)}
+                className="pl-8 h-8 text-xs bg-muted/30"
+              />
+              {searchLeadQuery.trim() && (
+                <div className="absolute left-0 right-0 top-full z-20 mt-1 max-h-48 overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg">
+                  {availableLeads
+                    .filter((l) =>
+                      (l.fullName || l.displayName || "").toLowerCase().includes(searchLeadQuery.toLowerCase()) ||
+                      (l.email || "").toLowerCase().includes(searchLeadQuery.toLowerCase())
+                    )
+                    .slice(0, 5)
+                    .map((l) => (
+                      <button
+                        key={l.id}
+                        disabled={addingLeadId === l.id}
+                        onClick={() => handleAddLeadToQueue(l.id)}
+                        className="w-full text-left px-2.5 py-1.5 rounded text-xs hover:bg-accent hover:text-accent-foreground flex items-center justify-between transition-colors"
+                      >
+                        <span className="font-medium truncate">{l.fullName || l.displayName}</span>
+                        <span className="text-[10px] text-muted-foreground ml-2 shrink-0">
+                          {addingLeadId === l.id ? "Adding…" : "+ Add"}
+                        </span>
+                      </button>
+                    ))}
+                </div>
+              )}
             </div>
           </div>
           <div className="divide-y divide-border overflow-y-auto">
-            {emailQueue.length === 0 && (
+            {isLoading && (
+              <div className="p-6 text-center text-xs text-muted-foreground">
+                <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" /> Loading email queue…
+              </div>
+            )}
+            {isError && (
+              <div className="p-6 text-center text-xs text-destructive">
+                Failed to load email queue{(error as any)?.message ? `: ${(error as any).message}` : "."}
+              </div>
+            )}
+            {!isLoading && !isError && emailQueue.length === 0 && (
               <div className="p-6 text-center text-xs text-muted-foreground">
                 No items in queue.
               </div>
@@ -122,16 +303,16 @@ export function EmailQueuePageView() {
               <button key={e.id} onClick={() => pick(e.id)} className={`block w-full p-3 text-left transition-colors ${selected?.id === e.id ? "bg-muted/60" : "hover:bg-muted/30"}`}>
                 <div className="flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-medium">{e.candidate_name}</div>
-                    <div className="truncate text-[11px] text-muted-foreground">{e.candidate_role}</div>
+                    <div className="truncate text-sm font-medium">{candidateName(e)}</div>
+                    <div className="truncate text-[11px] text-muted-foreground">{e.candidateRole}</div>
                   </div>
-                  <span className="shrink-0 text-[10px] text-muted-foreground">{e.received_ago}</span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(e.receivedAt)}</span>
                 </div>
                 <div className="mt-1.5 flex items-center gap-1">
-                  <Badge variant="outline" className={`text-[9px] ${statusTone(e.status)}`}>{e.status}</Badge>
-                  {e.ai_generated && ai && <Badge className="bg-primary/15 text-primary border-0 text-[9px] gap-1"><Sparkles className="h-2.5 w-2.5" />AI</Badge>}
+                  <Badge variant="outline" className={`text-[9px] ${statusTone(e.status)}`}>{statusLabel(e.status)}</Badge>
+                  {e.aiGenerated && ai && <Badge className="bg-primary/15 text-primary border-0 text-[9px] gap-1"><Sparkles className="h-2.5 w-2.5" />AI</Badge>}
                 </div>
-                <div className="mt-1 truncate text-[11px] text-muted-foreground/80">{e.preview}</div>
+                <div className="mt-1 truncate text-[11px] text-muted-foreground/80">{preview(e)}</div>
               </button>
             ))}
           </div>
@@ -142,27 +323,36 @@ export function EmailQueuePageView() {
             <div className="border-b border-border p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="text-lg font-semibold">{selected.candidate_name}</div>
-                  <div className="text-xs text-muted-foreground">{selected.candidate_role}</div>
+                  <div className="text-lg font-semibold">{candidateName(selected)}</div>
+                  <div className="text-xs text-muted-foreground">{selected.candidateRole}</div>
                   <SaveStatus state={saveState} savedAt={savedAt} />
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={handleGenerateDraft}
+                    disabled={isGeneratingDraft}
                     className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
                   >
-                    <Wand2 className="h-3.5 w-3.5" /> Generate Draft
+                    {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                    {isGeneratingDraft ? "Generating…" : "Generate Draft"}
                   </Button>
-                  <Button variant="outline" size="sm" onClick={saveDraft} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
-                  <Button
-                    size="sm"
-                    disabled={sending}
-                    className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
-                    onClick={handleSend}
-                  >
-                    {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                    {sending ? "Sending via Unipile..." : "Send"}
-                  </Button>
+                  <Button variant="outline" size="sm" onClick={saveDraft} disabled={selected.status === "SENT"} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
+                  {selected.status === "SENT" ? (
+                    <Badge className="h-8 gap-1.5 border-0 bg-[oklch(0.55_0.14_155)]/15 px-3 text-xs font-semibold text-[oklch(0.55_0.14_155)]">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      Delivered{selected.sentChannel ? ` via ${selected.sentChannel === "LINKEDIN" ? "LinkedIn" : "Email"}` : ""}
+                    </Badge>
+                  ) : (
+                    <Button
+                      size="sm"
+                      disabled={sending}
+                      className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
+                      onClick={initiateSend}
+                    >
+                      {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {sending ? "Sending via Unipile..." : "Send"}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -197,6 +387,14 @@ export function EmailQueuePageView() {
         )}
       </div>
       <ConnectAccountDialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen} />
+      <SelectAccountDialog
+        open={selectAccountDialogOpen}
+        onOpenChange={setSelectAccountDialogOpen}
+        accounts={targetChannelAccounts}
+        channel={targetChannel}
+        onSelectAccount={(accountId) => executeSend(accountId)}
+        isSending={sending}
+      />
     </div>
   );
 }
@@ -217,12 +415,16 @@ function SaveStatus({ state, savedAt }: { state: "idle" | "dirty" | "saving" | "
   );
 }
 
-function mockEmail(name: string) {
-  return name.toLowerCase().replace(/[^a-z]+/g, ".").replace(/^\.|\.$/g, "") + "@example.com";
+function statusLabel(s: EmailQueueStatus) {
+  if (s === "AI_DRAFTED") return "AI Drafted";
+  if (s === "FOLLOW_UP") return "Follow-up";
+  if (s === "SENT") return "Delivered";
+  return "Review Needed";
 }
 
-function statusTone(s: string) {
-  if (s === "AI Drafted") return "border-primary/40 text-primary";
-  if (s === "Follow-up") return "border-accent/40 text-accent";
+function statusTone(s: EmailQueueStatus) {
+  if (s === "AI_DRAFTED") return "border-primary/40 text-primary";
+  if (s === "FOLLOW_UP") return "border-accent/40 text-accent";
+  if (s === "SENT") return "border-[oklch(0.55_0.14_155)]/40 text-[oklch(0.55_0.14_155)]";
   return "border-warning/40 text-warning";
 }

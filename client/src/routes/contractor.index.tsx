@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { myContractorLeads, useRecruiterStore } from "@/lib/recruiter-mock";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { ArrowUpRight, Mail, UserPlus, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
-import { outreachBatch, useClientDemands } from "@/lib/g3-mock";
+import { outreachBatch } from "@/lib/g3-mock";
 import { DateRangeToggle, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
 import { useMemo } from "react";
 
@@ -11,17 +12,21 @@ export const Route = createFileRoute("/contractor/")({
 });
 
 function DashboardPage() {
-  const store = useRecruiterStore();
-  const mine = myContractorLeads();
-  const dupCount = mine.filter((l) => l.dup_flagged).length;
+  const { data: myLeadsData } = useQuery({ queryKey: ["leads", "mine"], queryFn: api.getMyLeads });
+  const mine = myLeadsData?.leads ?? [];
+  const dupCount = mine.filter((l) => l.dupFlagged).length;
   const { scale, label: rangeLabel } = useDateRange();
+
+  // No real backend endpoint for a contractor's own email queue exists (email
+  // queue is recruiter/owner-scoped) -- this tile is left off rather than
+  // pointing at data a contractor was never meant to see.
 
   const activities = mine.slice(0, 6).map((l) => ({
     id: l.id,
-    icon: l.dup_flagged ? AlertTriangle : UserPlus,
-    title: l.dup_flagged ? `Duplicate flagged · ${l.full_name}` : `Lead submitted · ${l.full_name}`,
-    detail: `${l.full_name}${l.services?.length ? " · " + l.services.join(", ") : ""}`,
-    ago: relative(l.created_at),
+    icon: l.dupFlagged ? AlertTriangle : UserPlus,
+    title: l.dupFlagged ? `Duplicate flagged · ${l.fullName}` : `Lead submitted · ${l.fullName}`,
+    detail: `${l.fullName}${l.services?.length ? " · " + l.services.join(", ") : ""}`,
+    ago: relative(l.createdAt),
   }));
 
   return (
@@ -45,25 +50,9 @@ function DashboardPage() {
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2">
         <MetricCard label="Leads Submitted" value={mine.length} delta="+" tone="positive" />
         <MetricCard label="Duplicates Flagged" value={dupCount} delta={dupCount ? "review" : "0"} tone={dupCount ? "negative" : "positive"} />
-        <div className="rounded-2xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-accent/15 p-2 text-accent"><Mail className="h-4 w-4" /></div>
-              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Email Queue</div>
-            </div>
-            <span className="text-[11px] text-primary">+4 today</span>
-          </div>
-          <div className="mt-4 flex items-baseline gap-2">
-            <div className="text-3xl font-semibold tracking-tight">{store.emailQueue.length}</div>
-            <div className="text-xs text-muted-foreground">pending manual review</div>
-          </div>
-          <Link to="/contractor/email-queue" className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-border py-2 text-xs font-medium hover:bg-muted">
-            Review Queue
-          </Link>
-        </div>
       </div>
 
       {/* Language & Service Demand Requirements Section for Contractors */}
@@ -79,8 +68,8 @@ function DashboardPage() {
         </div>
         <div className="mt-5 grid grid-cols-3 gap-4 border-t border-border pt-4">
           <Stat n={mine.length} label="Submitted" />
-          <Stat n={mine.filter((l) => l.enrichment_status === "complete").length} label="Enriched" />
-          <Stat n={mine.filter((l) => l.enrichment_status === "pending").length} label="Enriching" />
+          <Stat n={mine.filter((l) => l.enrichmentStatus === "COMPLETE").length} label="Enriched" />
+          <Stat n={mine.filter((l) => l.enrichmentStatus === "PENDING").length} label="Enriching" />
         </div>
       </section>
 
@@ -111,10 +100,11 @@ function DashboardPage() {
 }
 
 function ContractorRequirementsSection() {
-  const demands = useClientDemands();
+  const { data } = useQuery({ queryKey: ["client-demands"], queryFn: api.getClientDemands });
+  const demands = data?.clientDemands ?? [];
 
   const summary = useMemo(() => {
-    const totalNeeded = demands.reduce((s, d) => s + d.headcount_needed, 0);
+    const totalNeeded = demands.reduce((s, d) => s + d.headcountNeeded, 0);
     const totalFilled = demands.reduce((s, d) => s + d.filled, 0);
     const totalRemaining = Math.max(0, totalNeeded - totalFilled);
     return { totalNeeded, totalFilled, totalRemaining };
@@ -124,9 +114,9 @@ function ContractorRequirementsSection() {
     const map = new Map<string, { needed: number; filled: number; services: Set<string> }>();
     for (const d of demands) {
       const cur = map.get(d.language) ?? { needed: 0, filled: 0, services: new Set() };
-      d.services.forEach(s => cur.services.add(s));
+      d.serviceBreakdown.forEach(s => cur.services.add(s.service));
       map.set(d.language, {
-        needed: cur.needed + d.headcount_needed,
+        needed: cur.needed + d.headcountNeeded,
         filled: cur.filled + d.filled,
         services: cur.services,
       });
@@ -239,7 +229,8 @@ function BatchTile({ icon: Icon, label, value, tone }: { icon: React.ComponentTy
   );
 }
 
-function relative(time: number) {
+function relative(isoOrTs: string | number) {
+  const time = typeof isoOrTs === "number" ? isoOrTs : new Date(isoOrTs).getTime();
   const diff = Date.now() - time;
   if (diff < 60000) return "just now";
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;

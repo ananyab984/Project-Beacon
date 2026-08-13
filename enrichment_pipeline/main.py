@@ -8,6 +8,8 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel
+
 from config import ConfigError, load_config
 from core.dedup import find_duplicate_candidates
 from logger import configure_logging, get_logger
@@ -72,11 +74,54 @@ def run_cli(input_path: str, output_path: str, config) -> None:
     log.info("Enrichment complete! Saved results to %s", output_path)
 
 
+class LeadRequest(BaseModel):
+    First_Name: Optional[str] = None
+    Full_Name: Optional[str] = None
+    Country_of_Residence: Optional[str] = None
+    Source: Optional[str] = "LinkedIn"
+    Profile_Link: Optional[str] = None
+    Contact_Number: Optional[str] = None
+    Email_Address: Optional[str] = None
+    Services: Optional[str] = None
+    Source_Language: Optional[str] = None
+    Target_Language: Optional[str] = None
+    Secondary_Languages: Optional[str] = None
+    Years_of_Exp: Optional[Any] = None
+    Vendor_Experience: Optional[str] = None
+
+
+class EnrichmentResponse(BaseModel):
+    lead: Dict[str, Any]
+    enrichment_status: str
+    enrichment_percentage: int
+    field_sources: Dict[str, str]
+    audit: Dict[str, Any]
+    execution_time_ms: int
+    logs: List[str]
+    duplicate_flag: Optional[Dict[str, Any]] = None
+
+
+class BatchEnrichmentResponse(BaseModel):
+    results: List[EnrichmentResponse]
+    duplicate_review_queue: List[Dict[str, Any]]
+    dedup_threshold_used: float
+
+
 def run_server(host: str, port: int, config) -> None:
-    """Run pipeline as a FastAPI HTTP service (ready for Node.js backend integration)."""
+    """Run pipeline as a FastAPI HTTP service (ready for Node.js backend integration).
+
+    The three Pydantic models above are deliberately module-level, not nested in
+    this function: with `from __future__ import annotations` active (PEP 563,
+    used throughout this file), FastAPI/Pydantic resolve every type annotation
+    as a lazily-evaluated string against the *module's* globals. A class
+    defined inside this function is invisible to that resolution and raises
+    `PydanticUndefinedAnnotation: name 'LeadRequest' is not defined` the moment
+    a route referencing it is registered -- this previously meant `--serve`
+    could never start at all, so every enrichment call from Node failed
+    before reaching BrightData, not because of a parsing gap.
+    """
     import uvicorn
     from fastapi import FastAPI, HTTPException
-    from pydantic import BaseModel, Field
 
     app = FastAPI(
         title="Project Beacon — Production Enrichment Pipeline",
@@ -85,36 +130,6 @@ def run_server(host: str, port: int, config) -> None:
     )
 
     orchestrator = EnrichmentOrchestrator(config)
-
-    class LeadRequest(BaseModel):
-        First_Name: Optional[str] = None
-        Full_Name: Optional[str] = None
-        Country_of_Residence: Optional[str] = None
-        Source: Optional[str] = "LinkedIn"
-        Profile_Link: Optional[str] = None
-        Contact_Number: Optional[str] = None
-        Email_Address: Optional[str] = None
-        Services: Optional[str] = None
-        Source_Language: Optional[str] = None
-        Target_Language: Optional[str] = None
-        Secondary_Languages: Optional[str] = None
-        Years_of_Exp: Optional[Any] = None
-        Vendor_Experience: Optional[str] = None
-
-    class EnrichmentResponse(BaseModel):
-        lead: Dict[str, Any]
-        enrichment_status: str
-        enrichment_percentage: int
-        field_sources: Dict[str, str]
-        audit: Dict[str, Any]
-        execution_time_ms: int
-        logs: List[str]
-        duplicate_flag: Optional[Dict[str, Any]] = None
-
-    class BatchEnrichmentResponse(BaseModel):
-        results: List[EnrichmentResponse]
-        duplicate_review_queue: List[Dict[str, Any]]
-        dedup_threshold_used: float
 
     @app.get("/health")
     def health_check():

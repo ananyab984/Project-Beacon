@@ -1,22 +1,16 @@
 import { useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, UserCheck, UserPlus } from "lucide-react";
+import { Plus, Trash2, UserCheck, UserPlus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { GoogleSheetsSyncSection } from "@/components/features/google-sheets-sync-section";
-import {
-  addClientDemand,
-  addRequirement,
-  addClient,
-  useClients,
-  useRecruiters,
-  addNewRecruiter,
-  useRecruiterLanguageMappings,
-} from "@/lib/g3-mock";
+import { api } from "@/lib/api";
+import type { ApiUser } from "@/lib/api-types";
 
 const EVENT = "g3:open-client-demand";
 export const openClientDemand = () => window.dispatchEvent(new Event(EVENT));
@@ -71,6 +65,7 @@ type LanguageBlock = {
   customLanguage?: string;
   assignedRecruiterId?: string;
   customRecruiterName?: string;
+  customRecruiterEmail?: string;
   services: ServiceRow[];
 };
 
@@ -82,38 +77,37 @@ const createEmptyServiceRow = (): ServiceRow => ({
   headcount: "1",
 });
 
-function findMappedRecruiterId(
-  lang: string,
-  mappings: { recruiter_id: string; languages: string[] }[]
-): string | undefined {
+/** Auto-suggest a recruiter for a language based on their `languages` list. */
+function findMappedRecruiterId(lang: string, recruiters: ApiUser[]): string | undefined {
   if (!lang || lang === "Custom...") return undefined;
   const clean = lang.trim().toLowerCase();
-  const found = mappings.find(m =>
-    m.languages.some(l => {
+  const found = recruiters.find((u) =>
+    (u.languages ?? []).some((l) => {
       const target = l.trim().toLowerCase();
       return target === clean || clean.includes(target) || target.includes(clean);
     })
   );
-  return found?.recruiter_id;
+  return found?.id;
 }
 
 export function ClientDemandDialog() {
+  const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [clientName, setClientName] = useState("");
   const [languageBlocks, setLanguageBlocks] = useState<LanguageBlock[]>([]);
-  const [priority, setPriority] = useState("standard");
+  const [priority, setPriority] = useState("STANDARD");
   const [dueDate, setDueDate] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactEmail, setContactEmail] = useState("");
   const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const recruiters = useRecruiters();
-  const clients = useClients();
-  const mappings = useRecruiterLanguageMappings();
+  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const recruiters = recruitersData?.users ?? [];
 
   const createInitialLanguageBlock = (): LanguageBlock => {
     const defaultLang = "Spanish (LatAm)";
-    const mappedRec = findMappedRecruiterId(defaultLang, mappings);
+    const mappedRec = findMappedRecruiterId(defaultLang, recruiters);
     return {
       id: uid(),
       language: defaultLang,
@@ -126,7 +120,8 @@ export function ClientDemandDialog() {
     if (languageBlocks.length === 0) {
       setLanguageBlocks([createInitialLanguageBlock()]);
     }
-  }, [mappings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recruiters.length]);
 
   useEffect(() => {
     const h = () => setOpen(true);
@@ -134,24 +129,25 @@ export function ClientDemandDialog() {
     return () => window.removeEventListener(EVENT, h);
   }, []);
 
-  // Auto-fill recruiter for unassigned blocks whenever mappings update or dialog opens
+  // Auto-fill recruiter for unassigned blocks whenever the recruiter list updates or dialog opens
   useEffect(() => {
     if (open) {
       setLanguageBlocks(prev =>
         prev.map(b => {
           if (b.assignedRecruiterId && b.assignedRecruiterId !== "unassigned") return b;
           const actualLang = (b.language === "Custom..." ? b.customLanguage : b.language) || "";
-          const autoRec = findMappedRecruiterId(actualLang, mappings);
+          const autoRec = findMappedRecruiterId(actualLang, recruiters);
           return autoRec ? { ...b, assignedRecruiterId: autoRec } : b;
         })
       );
     }
-  }, [open, mappings]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, recruiters.length]);
 
   const reset = () => {
     setClientName("");
     setLanguageBlocks([createInitialLanguageBlock()]);
-    setPriority("standard");
+    setPriority("STANDARD");
     setDueDate("");
     setContactName("");
     setContactEmail("");
@@ -160,7 +156,7 @@ export function ClientDemandDialog() {
 
   const addLanguageBlock = () => {
     const defaultLang = "Spanish (LatAm)";
-    const mappedRec = findMappedRecruiterId(defaultLang, mappings);
+    const mappedRec = findMappedRecruiterId(defaultLang, recruiters);
     setLanguageBlocks(prev => [
       ...prev,
       {
@@ -205,7 +201,7 @@ export function ClientDemandDialog() {
     }));
   };
 
-  const submit = () => {
+  const submit = async () => {
     if (!clientName.trim()) {
       toast.error("Client name is required.");
       return;
@@ -247,99 +243,81 @@ export function ClientDemandDialog() {
         toast.error(`Enter a headcount for "${badHeadcount.resolvedService}" in ${actualLang}.`);
         return;
       }
-    }
 
-    // 1. Resolve or create Client
-    const trimmedClient = clientName.trim();
-    let clientObj = clients.find((c) => c.name.toLowerCase() === trimmedClient.toLowerCase());
-    let clientId = clientObj?.id;
-    if (!clientId) {
-      clientId = `cl${Date.now()}`;
-      addClient({
-        name: trimmedClient,
-        contact_name: contactName.trim() || undefined,
-        contact_email: contactEmail.trim() || undefined,
-        notes: notes.trim() || undefined,
-      });
-    }
-
-    // 2. Process submission into individual Requirements per language-service pair
-    const allLanguages: string[] = [];
-    const allServices: string[] = [];
-    const fullServiceBreakdown: { language: string; service: string; needed: number; filled: number; gap: number }[] = [];
-    let totalHeadcount = 0;
-    let firstAssignedRecruiterId: string | undefined = undefined;
-
-    languageBlocks.forEach((block) => {
-      const actualLang = (block.language === "Custom..." ? block.customLanguage : block.language)!.trim();
-      if (!allLanguages.includes(actualLang)) {
-        allLanguages.push(actualLang);
-      }
-
-      // Resolve recruiter assigned to this specific language block
-      let langRecId = block.assignedRecruiterId;
-      if (langRecId === "custom" && block.customRecruiterName?.trim()) {
-        const newRec = addNewRecruiter(block.customRecruiterName.trim(), [actualLang]);
-        langRecId = newRec.id;
-      }
-      const assignedRecId = langRecId && langRecId !== "unassigned" ? langRecId : undefined;
-      if (assignedRecId && !firstAssignedRecruiterId) {
-        firstAssignedRecruiterId = assignedRecId;
-      }
-
-      block.services.forEach((r) => {
-        const sName = (r.service === "Custom..." ? r.customService : r.service)!.trim();
-        const seats = Number(r.headcount) || 1;
-        if (!allServices.includes(sName)) {
-          allServices.push(sName);
+      if (block.assignedRecruiterId === "custom") {
+        if (!block.customRecruiterName?.trim() || !block.customRecruiterEmail?.trim()) {
+          toast.error(`Enter a name and email for the custom recruiter in language block ${i + 1}.`);
+          return;
         }
-        totalHeadcount += seats;
+      }
+    }
 
-        // Add Requirement directly to _requirements so it updates the main tabular view!
-        addRequirement({
-          client_id: clientId!,
-          title: `${trimmedClient} — ${actualLang} ${sName}`,
+    const trimmedClient = clientName.trim();
+
+    setSubmitting(true);
+    try {
+      let totalRequirements = 0;
+      let totalAssignments = 0;
+
+      // The backend only accepts one language per createClientDemand call, so
+      // loop through blocks sequentially (each creates/updates the same client
+      // by name and adds its own ClientDemand + Requirement rows in one txn).
+      for (const block of languageBlocks) {
+        const actualLang = (block.language === "Custom..." ? block.customLanguage : block.language)!.trim();
+        const services = block.services
+          .map(r => ({
+            service: (r.service === "Custom..." ? r.customService : r.service)!.trim(),
+            needed: Number(r.headcount) || 1,
+          }));
+
+        // Resolve (or create) the recruiter assigned to this language block.
+        let recruiterId: string | undefined;
+        if (block.assignedRecruiterId === "custom") {
+          const { user } = await api.createUser({
+            name: block.customRecruiterName!.trim(),
+            email: block.customRecruiterEmail!.trim(),
+            role: "RECRUITER",
+            languages: [actualLang],
+          });
+          recruiterId = user.id;
+        } else if (block.assignedRecruiterId && block.assignedRecruiterId !== "unassigned") {
+          recruiterId = block.assignedRecruiterId;
+        }
+
+        const { requirements } = await api.createClientDemand({
+          clientName: trimmedClient,
           language: actualLang,
-          service: sName,
-          headcount_needed: seats,
-          filled: 0,
-          gap: seats,
-          priority: (priority as "standard" | "high" | "critical") || "standard",
-          status: assignedRecId ? "active" : "unassigned",
-          recruiter_id: assignedRecId,
+          services,
+          priority,
           deadline: dueDate || undefined,
+          contactName: contactName.trim() || undefined,
+          contactEmail: contactEmail.trim() || undefined,
+          notes: notes.trim() || undefined,
         });
 
-        fullServiceBreakdown.push({
-          language: actualLang,
-          service: sName,
-          needed: seats,
-          filled: 0,
-          gap: seats,
-        });
-      });
-    });
+        totalRequirements += requirements.length;
 
-    // 3. Add Client Demand high-level record
-    addClientDemand({
-      client: trimmedClient,
-      language: allLanguages.join(", "),
-      services: allServices,
-      headcount_needed: totalHeadcount,
-      filled: 0,
-      gap: totalHeadcount,
-      priority: (priority as "standard" | "high" | "critical") || "standard",
-      status: "active",
-      recruiter_id: firstAssignedRecruiterId || "r1",
-      deadline: dueDate || undefined,
-      service_breakdown: fullServiceBreakdown,
-    });
+        if (recruiterId) {
+          const recId = recruiterId;
+          await Promise.all(requirements.map(r => api.assignRequirement(r.id, recId)));
+          totalAssignments += 1;
+        }
+      }
 
-    const assignedCount = languageBlocks.filter(b => b.assignedRecruiterId && b.assignedRecruiterId !== "unassigned").length;
-    toast.success(`Client demand created for ${trimmedClient}! Added ${fullServiceBreakdown.length} requirements across ${allLanguages.length} language(s) with ${assignedCount} recruiter assignment(s).`);
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["requirements"] });
+      queryClient.invalidateQueries({ queryKey: ["client-demands"] });
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
 
-    reset();
-    setOpen(false);
+      toast.success(`Client demand created for ${trimmedClient}! Added ${totalRequirements} requirements across ${languageBlocks.length} language(s) with ${totalAssignments} recruiter assignment(s).`);
+
+      reset();
+      setOpen(false);
+    } catch (e: any) {
+      toast.error(e.message || "Failed to create client demand");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -380,13 +358,13 @@ export function ClientDemandDialog() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="critical">
+                    <SelectItem value="CRITICAL">
                       <span className="flex items-center gap-1.5 text-destructive font-semibold">Critical P1</span>
                     </SelectItem>
-                    <SelectItem value="urgent">
-                      <span className="flex items-center gap-1.5 text-warning font-semibold">Urgent P2</span>
+                    <SelectItem value="HIGH">
+                      <span className="flex items-center gap-1.5 text-warning font-semibold">High P2</span>
                     </SelectItem>
-                    <SelectItem value="standard">Standard P3</SelectItem>
+                    <SelectItem value="STANDARD">Standard P3</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -452,7 +430,7 @@ export function ClientDemandDialog() {
                           <Select
                             value={block.language}
                             onValueChange={(val) => {
-                              const autoRec = findMappedRecruiterId(val, mappings);
+                              const autoRec = findMappedRecruiterId(val, recruiters);
                               updateLanguageBlock(block.id, {
                                 language: val,
                                 ...(autoRec ? { assignedRecruiterId: autoRec } : {}),
@@ -473,7 +451,7 @@ export function ClientDemandDialog() {
                               value={block.customLanguage || ""}
                               onChange={e => {
                                 const customVal = e.target.value;
-                                const autoRec = findMappedRecruiterId(customVal, mappings);
+                                const autoRec = findMappedRecruiterId(customVal, recruiters);
                                 updateLanguageBlock(block.id, {
                                   customLanguage: customVal,
                                   ...(autoRec ? { assignedRecruiterId: autoRec } : {}),
@@ -512,11 +490,10 @@ export function ClientDemandDialog() {
                               <SelectItem value="unassigned">
                                 <span className="font-semibold text-warning">Unassigned</span>
                               </SelectItem>
-                              {recruiters.filter(r => r.role !== "contractor").map((r) => (
+                              {recruiters.map((r) => (
                                 <SelectItem key={r.id} value={r.id}>
                                   <span className="flex items-center justify-between gap-2 w-full font-medium text-foreground">
                                     <span className="font-semibold text-foreground">{r.name}</span>
-                                    <span className="text-[10px] text-muted-foreground font-normal">· {r.kpis.overall_score}%</span>
                                   </span>
                                 </SelectItem>
                               ))}
@@ -543,16 +520,23 @@ export function ClientDemandDialog() {
                         </div>
                       </div>
 
-                      {/* Custom Recruiter Input Field if selected */}
+                      {/* Custom Recruiter Input Fields if selected */}
                       {block.assignedRecruiterId === "custom" && (
-                        <div className="flex items-center gap-2 pt-1 pl-1">
+                        <div className="flex flex-wrap items-center gap-2 pt-1 pl-1">
                           <UserPlus className="h-3.5 w-3.5 text-primary shrink-0" />
                           <Input
-                            placeholder={`Enter recruiter name for ${currentLang || "Language"}…`}
+                            placeholder={`Recruiter name for ${currentLang || "Language"}…`}
                             value={block.customRecruiterName || ""}
                             onChange={e => updateLanguageBlock(block.id, { customRecruiterName: e.target.value })}
-                            className="h-7 text-xs bg-card flex-1 border-primary/40"
+                            className="h-7 text-xs bg-card flex-1 min-w-40 border-primary/40"
                             autoFocus
+                          />
+                          <Input
+                            type="email"
+                            placeholder="Recruiter email…"
+                            value={block.customRecruiterEmail || ""}
+                            onChange={e => updateLanguageBlock(block.id, { customRecruiterEmail: e.target.value })}
+                            className="h-7 text-xs bg-card flex-1 min-w-40 border-primary/40"
                           />
                         </div>
                       )}
@@ -636,11 +620,12 @@ export function ClientDemandDialog() {
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0 pt-2 border-t border-border">
-          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} className="h-9 text-xs">
+          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)} className="h-9 text-xs" disabled={submitting}>
             Cancel
           </Button>
-          <Button type="button" onClick={submit} className="h-9 text-xs bg-primary text-primary-foreground font-semibold shadow-xs">
-            Submit Client Demand
+          <Button type="button" onClick={submit} className="h-9 text-xs bg-primary text-primary-foreground font-semibold shadow-xs gap-1.5" disabled={submitting}>
+            {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {submitting ? "Submitting..." : "Submit Client Demand"}
           </Button>
         </DialogFooter>
       </DialogContent>

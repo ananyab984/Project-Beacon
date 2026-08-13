@@ -21,7 +21,7 @@ type Session = { userId: string; issuedAt: number; accessToken?: string };
 
 const USERS_KEY = "g3.users.v2";
 const SESSION_KEY = "g3.session.v2";
-const API_BASE_URL = "http://localhost:5001/api/auth";
+const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"}/api/auth`;
 
 const seedUsers: StoredUser[] = [
   {
@@ -116,6 +116,7 @@ type AuthCtx = {
   resetPassword: (token: string, newPassword: string) => Promise<void>;
   verifyEmail: (token: string) => Promise<AuthUser>;
   resendVerification: (email: string) => Promise<string>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -183,7 +184,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const users = loadUsers();
     const u = users.find((x) => x.email.toLowerCase() === email.trim().toLowerCase());
     if (!u || u.password !== password) throw new Error("Invalid email or password");
-    const s: Session = { userId: u.id, issuedAt: Date.now() };
+    const s: Session = { userId: u.id, issuedAt: Date.now(), accessToken: "demo_token_" + u.id };
     saveSession(s);
     const pub = toPublic(u);
     setUser(pub);
@@ -199,6 +200,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       const data = await res.json();
       if (res.ok && data.user) {
+        if (data.accessToken) {
+          saveSession({ userId: data.user.id, issuedAt: Date.now(), accessToken: data.accessToken });
+          setUser(data.user);
+        }
         return { user: data.user, verifyToken: data.verifyToken || token() };
       } else if (data && data.message) {
         throw new Error(data.message);
@@ -224,7 +229,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyToken,
     };
     saveUsers([...users, nu]);
-    return { user: toPublic(nu), verifyToken };
+    const pub = toPublic(nu);
+    saveSession({ userId: nu.id, issuedAt: Date.now(), accessToken: "demo_token_" + nu.id });
+    setUser(pub);
+    return { user: pub, verifyToken };
   }, []);
 
   const signOut = useCallback(() => {
@@ -243,6 +251,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const requestPasswordReset = useCallback(async (email: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/forgot-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        // Server never leaks whether the account exists, but does return the
+        // raw token for now (no email-sending infra yet) when it does.
+        if (data.resetToken) return data.resetToken;
+        throw new Error("If that email exists, a reset link has been sent");
+      } else if (data?.message) {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) throw err;
+    }
+
+    // Local mock fallback if server offline
     const users = loadUsers();
     const idx = users.findIndex((x) => x.email.toLowerCase() === email.trim().toLowerCase());
     if (idx === -1) throw new Error("No account found for that email");
@@ -253,6 +281,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resetPassword = useCallback(async (t: string, newPassword: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: t, newPassword }),
+      });
+      const data = await res.json();
+      if (res.ok) return;
+      if (data?.message) throw new Error(data.message);
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) throw err;
+    }
+
+    // Local mock fallback if server offline
     const users = loadUsers();
     const idx = users.findIndex((x) => x.resetToken === t);
     if (idx === -1) throw new Error("Invalid or expired reset link");
@@ -263,6 +305,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyEmail = useCallback(async (t: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/verify-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: t }),
+      });
+      const data = await res.json();
+      if (res.ok && data.user) {
+        setUser((cur) => (cur && cur.id === data.user.id ? data.user : cur));
+        return data.user as AuthUser;
+      } else if (data?.message) {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) throw err;
+    }
+
+    // Local mock fallback if server offline
     const users = loadUsers();
     const idx = users.findIndex((x) => x.verifyToken === t);
     if (idx === -1) throw new Error("Invalid verification link");
@@ -274,6 +334,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const resendVerification = useCallback(async (email: string) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.verifyToken) return data.verifyToken;
+        throw new Error("If that email exists, a verification link has been sent");
+      } else if (data?.message) {
+        throw new Error(data.message);
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes("fetch")) throw err;
+    }
+
+    // Local mock fallback if server offline
     const users = loadUsers();
     const idx = users.findIndex((x) => x.email.toLowerCase() === email.trim().toLowerCase());
     if (idx === -1) throw new Error("No account found for that email");
@@ -281,6 +359,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     users[idx] = { ...users[idx], verifyToken: t };
     saveUsers(users);
     return t;
+  }, []);
+
+  const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
+    const s = loadSession();
+    if (!s?.accessToken) throw new Error("You must be signed in to change your password");
+    const res = await fetch(`${API_BASE_URL}/change-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${s.accessToken}` },
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to change password");
   }, []);
 
   const value = useMemo<AuthCtx>(
@@ -294,8 +384,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       resetPassword,
       verifyEmail,
       resendVerification,
+      changePassword,
     }),
-    [user, isHydrating, signIn, signUp, signOut, requestPasswordReset, resetPassword, verifyEmail, resendVerification],
+    [user, isHydrating, signIn, signUp, signOut, requestPasswordReset, resetPassword, verifyEmail, resendVerification, changePassword],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

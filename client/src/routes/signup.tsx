@@ -6,7 +6,7 @@ import { AuthShell } from "@/components/features/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth, roleHome } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/auth";
 
 const schema = z.object({
@@ -44,18 +44,9 @@ function SignupPage() {
     }
     setLoading(true);
     try {
-      const result = await signUp(parsed.data as any);
-      toast.success("Account created — check your email to verify", {
-        description: "Demo mode: click Copy to grab the verification link.",
-        action: {
-          label: "Copy link",
-          onClick: () =>
-            navigator.clipboard.writeText(
-              `${window.location.origin}/verify-email?token=${result.verifyToken}`
-            ),
-        },
-      });
-      navigate({ to: "/verify-email", search: { token: result.verifyToken } });
+      await signUp(parsed.data as any);
+      toast.success("Account created successfully! Please sign in with your email and password.");
+      navigate({ to: "/login" });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign-up failed");
     } finally {
@@ -128,7 +119,7 @@ function SignupPage() {
           <Button
             type="submit"
             disabled={loading}
-            className="w-full bg-primary text-primary-foreground hover:bg-primary/90"
+            className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"
           >
             {loading ? "Creating account…" : "Create account"}
           </Button>

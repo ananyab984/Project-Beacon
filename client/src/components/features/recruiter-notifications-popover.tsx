@@ -1,43 +1,54 @@
 import { useState, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import { Bell, MessageSquare, RefreshCw, Wand2, ArrowRight, Check, AlertTriangle } from "lucide-react";
 import { Link } from "@tanstack/react-router";
-import { useClientDueDateAlerts } from "@/lib/g3-mock";
+import { api } from "@/lib/api";
 
 export interface RecruiterNotification {
   id: string;
-  type: "message_received" | "lead_update" | "draft_message" | "due_date_risk";
+  type: "message_received" | "lead_update" | "draft_message" | "escalation";
   title: string;
-  leadName: string;
-  language: string;
+  category: string;
   detail: string;
   timestamp: string;
   read: boolean;
+}
+
+function ageDays(createdAt: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
+}
+
+function ageLabel(days: number): string {
+  return days <= 0 ? "Today" : `${days}d ago`;
 }
 
 export function RecruiterNotificationsPopover() {
   const [open, setOpen] = useState(false);
   const [readState, setReadState] = useState<Record<string, boolean>>({});
 
-  const dueAlerts = useClientDueDateAlerts();
+  const { data } = useQuery({
+    queryKey: ["escalations"],
+    queryFn: api.getEscalations,
+  });
 
-  const autoDueNotifs: RecruiterNotification[] = useMemo(() => {
-    return dueAlerts.map((a) => ({
-      id: a.id,
-      type: "due_date_risk" as const,
-      title: "Client Due Date Risk Alert",
-      leadName: a.client_name,
-      language: a.language,
-      detail: a.risk_reason,
-      timestamp: a.days_remaining <= 0 ? "Today" : `${a.days_remaining}d left`,
-      read: !!readState[a.id],
+  const escalationNotifs: RecruiterNotification[] = useMemo(() => {
+    const list = data?.escalations ?? [];
+    return list.map((e) => ({
+      id: e.id,
+      type: "escalation" as const,
+      title: e.title,
+      category: e.category,
+      detail: e.detail,
+      timestamp: ageLabel(ageDays(e.createdAt)),
+      read: !!readState[e.id],
     }));
-  }, [dueAlerts, readState]);
+  }, [data, readState]);
 
   const allNotifications = useMemo(() => {
-    return autoDueNotifs;
-  }, [autoDueNotifs]);
+    return escalationNotifs;
+  }, [escalationNotifs]);
 
   const unreadCount = allNotifications.filter((n) => !n.read).length;
 
@@ -55,21 +66,27 @@ export function RecruiterNotificationsPopover() {
         return <RefreshCw className="h-3.5 w-3.5 text-primary" />;
       case "draft_message":
         return <Wand2 className="h-3.5 w-3.5 text-warning" />;
-      case "due_date_risk":
+      case "escalation":
         return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
     }
   };
 
-  const actionLink = (type: RecruiterNotification["type"]) => {
-    switch (type) {
+  const actionLink = (n: RecruiterNotification) => {
+    switch (n.type) {
       case "message_received":
         return { label: "Reply to message", to: "/recruiter/conversations" };
       case "lead_update":
         return { label: "View lead update", to: "/recruiter/leads" };
       case "draft_message":
         return { label: "Draft message", to: "/recruiter/email-queue" };
-      case "due_date_risk":
-        return { label: "Review client demand", to: "/recruiter/clients" };
+      case "escalation":
+        if (n.category === "Email Queue Threshold Alert") {
+          return { label: "Review email queue", to: "/recruiter/email-queue" };
+        }
+        if (n.category === "Recruiter Performance") {
+          return { label: "View performance", to: "/recruiter/performance" };
+        }
+        return { label: "Review lead", to: "/recruiter/leads" };
     }
   };
 
@@ -95,7 +112,7 @@ export function RecruiterNotificationsPopover() {
         <div className="flex items-center justify-between border-b border-border px-4 py-3 bg-muted/20">
           <div className="flex items-center gap-2">
             <Bell className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold text-foreground">Lead Notifications</h3>
+            <h3 className="text-sm font-semibold text-foreground">Escalated Items</h3>
           </div>
           {unreadCount > 0 && (
             <button
@@ -110,11 +127,11 @@ export function RecruiterNotificationsPopover() {
         <div className="max-h-80 overflow-y-auto divide-y divide-border/60">
           {allNotifications.length === 0 ? (
             <div className="p-6 text-center text-xs text-muted-foreground">
-              No new lead notifications.
+              No escalated items right now.
             </div>
           ) : (
             allNotifications.map((n) => {
-              const act = actionLink(n.type);
+              const act = actionLink(n);
               return (
                 <div
                   key={n.id}
@@ -130,7 +147,7 @@ export function RecruiterNotificationsPopover() {
                       <div>
                         <div className="text-xs font-bold text-foreground">{n.title}</div>
                         <div className="text-[11px] text-muted-foreground font-medium">
-                          {n.leadName} · <span className="text-accent">{n.language}</span>
+                          <span className="text-accent">{n.category}</span>
                         </div>
                       </div>
                     </div>

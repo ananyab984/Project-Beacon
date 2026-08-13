@@ -1,12 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  useClients,
-  useRequirements,
-  useRecruiters,
-  updateRequirementDeadline,
-  leads,
-  type Requirement,
-} from "@/lib/g3-mock";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiRequirement } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -34,11 +29,28 @@ export const Route = createFileRoute("/recruiter/clients")({
   component: RecruiterClientsPage,
 });
 
+/** Deterministic decorative avatar hue since ApiUser has no stored color. */
+function hueFromId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+  return h;
+}
+
+function titleCase(s: string): string {
+  return s.length ? s[0] + s.slice(1).toLowerCase() : s;
+}
+
 function RecruiterClientsPage() {
   const { user } = useAuth();
-  const allRequirements = useRequirements();
-  const clients = useClients();
-  const recruiters = useRecruiters();
+
+  const { data: clientsData } = useQuery({ queryKey: ["clients"], queryFn: () => api.getClients() });
+  const clients = clientsData?.clients ?? [];
+
+  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const recruiters = recruitersData?.users ?? [];
+
+  const { data: allReqData } = useQuery({ queryKey: ["requirements", "all"], queryFn: () => api.getRequirements() });
+  const allRequirements = allReqData?.requirements ?? [];
 
   const [viewTab, setViewTab] = useState<"assigned" | "global">("assigned");
   const [q, setQ] = useState("");
@@ -46,25 +58,15 @@ function RecruiterClientsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [drill, setDrill] = useState<string | null>(null);
 
-  // Find logged-in recruiter profile
-  const myRecruiter = recruiters.find(
-    (r) => r.name.toLowerCase() === (user?.name ?? "").toLowerCase(),
-  ) ?? recruiters[0];
-
   const myRequirements = useMemo(
-    () => allRequirements.filter((r) => r.recruiter_id === myRecruiter?.id),
-    [allRequirements, myRecruiter],
-  );
-
-  const clientMap = useMemo(
-    () => Object.fromEntries(clients.map((c) => [c.id, c])),
-    [clients],
+    () => allRequirements.filter((r) => r.recruiterId === user?.id),
+    [allRequirements, user],
   );
 
   const filteredRequirements = useMemo(() => {
     const base = viewTab === "assigned" ? myRequirements : allRequirements;
     return base.filter((r) => {
-      const clientName = clientMap[r.client_id]?.name ?? "";
+      const clientName = r.client?.name ?? "";
       const matchQ =
         q === "" ||
         r.title.toLowerCase().includes(q.toLowerCase()) ||
@@ -72,20 +74,23 @@ function RecruiterClientsPage() {
         r.service.toLowerCase().includes(q.toLowerCase()) ||
         clientName.toLowerCase().includes(q.toLowerCase());
 
-      const matchClient = selectedClientFilter === "all" || r.client_id === selectedClientFilter;
+      const matchClient = selectedClientFilter === "all" || r.clientId === selectedClientFilter;
       const matchStatus = statusFilter === "all" || r.status === statusFilter;
       return matchQ && matchClient && matchStatus;
-    }).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-  }, [viewTab, myRequirements, allRequirements, q, selectedClientFilter, statusFilter, clientMap]);
+    }).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [viewTab, myRequirements, allRequirements, q, selectedClientFilter, statusFilter]);
 
   const activeReq = allRequirements.find((r) => r.id === drill);
-  const activeClient = activeReq ? clientMap[activeReq.client_id] : null;
   const activeRecruiter = activeReq
-    ? recruiters.find((r) => r.id === activeReq.recruiter_id)
+    ? recruiters.find((r) => r.id === activeReq.recruiterId)
     : null;
-  const coveringLeads = activeReq
-    ? leads.filter((l) => l.language.toLowerCase().includes(activeReq.language.toLowerCase())).slice(0, 6)
-    : [];
+
+  const { data: coveringLeadsData } = useQuery({
+    queryKey: ["leads", "by-language", activeReq?.language],
+    queryFn: () => api.getLeads({ language: activeReq!.language, limit: 6 }),
+    enabled: !!activeReq,
+  });
+  const coveringLeads = coveringLeadsData?.leads ?? [];
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
@@ -154,9 +159,9 @@ function RecruiterClientsPage() {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All Statuses</SelectItem>
-            <SelectItem value="unassigned">Unassigned</SelectItem>
-            <SelectItem value="active">Active</SelectItem>
-            <SelectItem value="fulfilled">Fulfilled</SelectItem>
+            <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+            <SelectItem value="ACTIVE">Active</SelectItem>
+            <SelectItem value="FULFILLED">Fulfilled</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -179,13 +184,12 @@ function RecruiterClientsPage() {
           </thead>
           <tbody className="divide-y divide-border">
             {filteredRequirements.map((req) => {
-              const client = clientMap[req.client_id];
-              const assigned = recruiters.find((r) => r.id === req.recruiter_id);
-              const isMine = req.recruiter_id === myRecruiter?.id;
+              const assigned = recruiters.find((r) => r.id === req.recruiterId);
+              const isMine = req.recruiterId === user?.id;
 
               const pct =
-                req.headcount_needed > 0
-                  ? Math.min(100, (req.filled / req.headcount_needed) * 100)
+                req.headcountNeeded > 0
+                  ? Math.min(100, (req.filled / req.headcountNeeded) * 100)
                   : 0;
 
               return (
@@ -198,11 +202,11 @@ function RecruiterClientsPage() {
                 >
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <ClientLogo name={client?.name ?? "?"} size="md" />
+                      <ClientLogo name={req.client?.name ?? "?"} size="md" />
                       <div>
-                        <div className="font-semibold text-foreground">{client?.name ?? "Client"}</div>
+                        <div className="font-semibold text-foreground">{req.client?.name ?? "Client"}</div>
                         <div className="text-[11px] text-muted-foreground">
-                          {req.title} {req.project_name ? `· ${req.project_name}` : ""}
+                          {req.title} {req.projectName ? `· ${req.projectName}` : ""}
                         </div>
                       </div>
                     </div>
@@ -216,16 +220,16 @@ function RecruiterClientsPage() {
 
                   {/* Assigned Recruiter */}
                   <td className="px-5 py-3.5">
-                    {assigned ? (
+                    {assigned || req.recruiter?.name ? (
                       <div className="flex items-center gap-1.5">
                         <div
                           className="flex h-5 w-5 items-center justify-center rounded-full text-[9px] font-bold text-white shrink-0"
-                          style={{ background: `oklch(0.55 0.18 ${assigned.avatar_hue}deg)` }}
+                          style={{ background: `oklch(0.55 0.18 ${hueFromId(req.recruiterId ?? req.id)}deg)` }}
                         >
-                          {assigned.name[0]}
+                          {(assigned?.name ?? req.recruiter?.name ?? "?")[0]}
                         </div>
                         <span className="text-xs font-medium text-foreground">
-                          {assigned.name}
+                          {assigned?.name ?? req.recruiter?.name}
                           {isMine && <span className="ml-1 text-[10px] text-primary font-semibold">(You)</span>}
                         </span>
                       </div>
@@ -247,8 +251,8 @@ function RecruiterClientsPage() {
                       const isAtRisk = req.gap > 0 && daysLeft <= 14;
                       const confirmedStr = req.filled === 0
                         ? `0 ${req.language} resources confirmed`
-                        : `only ${req.filled} of ${req.headcount_needed} ${req.language} confirmed`;
-                      const riskReason = `${client?.name ?? "Client"} due in ${daysLeft} days, ${confirmedStr}`;
+                        : `only ${req.filled} of ${req.headcountNeeded} ${req.language} confirmed`;
+                      const riskReason = `${req.client?.name ?? "Client"} due in ${daysLeft} days, ${confirmedStr}`;
 
                       return (
                         <div className="space-y-1">
@@ -278,7 +282,7 @@ function RecruiterClientsPage() {
                       <span className="text-xs text-muted-foreground italic">No due date</span>
                     )}
                   </td>
-                  <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">{req.headcount_needed}</td>
+                  <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">{req.headcountNeeded}</td>
                   <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">{req.filled}</td>
                   <td
                     className={`px-5 py-3.5 text-right tabular-nums font-semibold ${
@@ -312,22 +316,22 @@ function RecruiterClientsPage() {
       {/* Requirement Detail Side Sheet */}
       <Sheet open={!!activeReq} onOpenChange={(o) => !o && setDrill(null)}>
         <SheetContent className="w-full sm:max-w-2xl overflow-auto">
-          {activeReq && activeClient && (
+          {activeReq && (
             <>
               <SheetHeader>
                 <div className="flex items-center gap-3">
-                  <ClientLogo name={activeClient.name} size="lg" />
+                  <ClientLogo name={activeReq.client?.name ?? "?"} size="lg" />
                   <div>
                     <SheetTitle className="text-left">{activeReq.title}</SheetTitle>
                     <p className="text-xs text-muted-foreground">
-                      {activeClient.name} · {activeReq.language} — {activeReq.service}
+                      {activeReq.client?.name ?? "Client"} · {activeReq.language} — {activeReq.service}
                     </p>
                   </div>
                 </div>
               </SheetHeader>
 
               <div className="mt-4 grid grid-cols-3 gap-3">
-                <Tile label="Needed" value={activeReq.headcount_needed} />
+                <Tile label="Needed" value={activeReq.headcountNeeded} />
                 <Tile label="Filled" value={activeReq.filled} tone="ok" />
                 <Tile
                   label="Gap"
@@ -339,16 +343,16 @@ function RecruiterClientsPage() {
               <dl className="mt-4 grid grid-cols-2 gap-y-2 rounded-xl border border-border bg-muted/20 p-3 text-[11px]">
                 <dt className="text-muted-foreground">Assigned Recruiter</dt>
                 <dd className="font-medium">
-                  {activeRecruiter ? (
+                  {activeRecruiter || activeReq.recruiter?.name ? (
                     <span className="flex items-center gap-1.5">
                       <span
                         className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white"
-                        style={{ background: `oklch(0.55 0.18 ${activeRecruiter.avatar_hue}deg)` }}
+                        style={{ background: `oklch(0.55 0.18 ${hueFromId(activeReq.recruiterId ?? activeReq.id)}deg)` }}
                       >
-                        {activeRecruiter.name[0]}
+                        {(activeRecruiter?.name ?? activeReq.recruiter?.name ?? "?")[0]}
                       </span>
-                      {activeRecruiter.name}
-                      {activeReq.recruiter_id === myRecruiter?.id && (
+                      {activeRecruiter?.name ?? activeReq.recruiter?.name}
+                      {activeReq.recruiterId === user?.id && (
                         <span className="text-[10px] text-primary font-semibold">(You)</span>
                       )}
                     </span>
@@ -377,7 +381,7 @@ function RecruiterClientsPage() {
               <h3 className="mt-6 text-sm font-semibold">Matching Candidate Pool</h3>
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {coveringLeads.map((l) => (
-                  <LeadCard key={l.id} lead={l} compact />
+                  <LeadCard key={l.id} lead={l} recruiters={recruiters} compact />
                 ))}
               </div>
             </>
@@ -398,32 +402,32 @@ function Tile({ label, value, tone }: { label: string; value: number; tone?: "ok
   );
 }
 
-function PriorityPill({ priority }: { priority: Requirement["priority"] }) {
-  const map = {
-    critical: "bg-destructive/15 text-destructive",
-    high: "bg-warning/15 text-warning",
-    standard: "bg-muted text-muted-foreground",
-  }[priority];
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${map}`}>{priority}</span>;
+function PriorityPill({ priority }: { priority: ApiRequirement["priority"] }) {
+  const map: Record<string, string> = {
+    CRITICAL: "bg-destructive/15 text-destructive",
+    HIGH: "bg-warning/15 text-warning",
+    STANDARD: "bg-muted text-muted-foreground",
+  };
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${map[priority]}`}>{titleCase(priority)}</span>;
 }
 
-function StatusBadge({ status }: { status: Requirement["status"] }) {
+function StatusBadge({ status }: { status: ApiRequirement["status"] }) {
   const map: Record<string, string> = {
-    unassigned: "bg-warning/15 text-warning",
-    active: "bg-accent/15 text-accent",
-    fulfilled: "bg-[oklch(0.62_0.14_155)]/15 text-[oklch(0.42_0.14_155)]",
-    paused: "bg-muted text-muted-foreground",
+    UNASSIGNED: "bg-warning/15 text-warning",
+    ACTIVE: "bg-accent/15 text-accent",
+    FULFILLED: "bg-[oklch(0.62_0.14_155)]/15 text-[oklch(0.42_0.14_155)]",
+    PAUSED: "bg-muted text-muted-foreground",
   };
   const icons: Record<string, typeof AlertCircle> = {
-    unassigned: AlertCircle,
-    active: Clock,
-    fulfilled: CheckCircle2,
-    paused: Clock,
+    UNASSIGNED: AlertCircle,
+    ACTIVE: Clock,
+    FULFILLED: CheckCircle2,
+    PAUSED: Clock,
   };
   const Icon = icons[status] ?? Clock;
   return (
     <span className={`flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${map[status]}`}>
-      <Icon className="h-3 w-3" /> {status}
+      <Icon className="h-3 w-3" /> {titleCase(status)}
     </span>
   );
 }

@@ -198,6 +198,7 @@ enum EmailQueueStatus {
   AI_DRAFTED
   FOLLOW_UP
   REVIEW_NEEDED
+  SENT
 }
 
 enum ClientDemandPriority {
@@ -244,6 +245,7 @@ model User {
   passwordHash        String     @map("password_hash")
   role                UserRole
   workStatus          WorkStatus @default(PERMANENT) @map("work_status")
+  languages           String[]   @default([])
   emailVerified       Boolean    @default(false) @map("email_verified")
   verifyToken         String?    @map("verify_token")
   resetToken          String?    @map("reset_token")
@@ -278,6 +280,11 @@ model User {
   clientDemands     ClientDemand[]           @relation("ClientDemandOwner")
   refreshTokens     RefreshToken[]
   connectedAccounts ConnectedAccount[]
+
+  // Client demand / requirement relationships
+  requirementsAssigned         Requirement[]            @relation("RequirementAssignee")
+  requirementAssignmentsAsRec  RequirementAssignment[]  @relation("RequirementAssignmentRecruiter")
+  requirementAssignmentsMade   RequirementAssignment[]  @relation("RequirementAssignedBy")
 
   @@map("users")
 }
@@ -669,16 +676,94 @@ model SystemConfig {
 }
 
 // ----------------------------------------------------------------------------
+// CLIENTS & REQUIREMENTS — the normalized client-intake model
+// (owner.clients.tsx). A Requirement is an independently assignable unit (own
+// status/recruiter/priority/deadline + an assignment audit trail), distinct
+// from ClientDemand below, which is a denormalized aggregate/summary view fed
+// by the same intake submission -- not two independently-writable counters.
+// ----------------------------------------------------------------------------
+
+model Client {
+  id           String   @id @default(uuid())
+  name         String   @unique
+  industry     String?
+  contactName  String?  @map("contact_name")
+  contactEmail String?  @map("contact_email")
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  demands      ClientDemand[]
+  requirements Requirement[]
+
+  @@map("clients")
+}
+
+model Requirement {
+  id              String               @id @default(uuid())
+  clientId        String               @map("client_id")
+  client          Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  title           String
+  language        String
+  service         String
+  region          String?
+  projectName     String?              @map("project_name")
+  headcountNeeded Int                  @map("headcount_needed")
+  filled          Int                  @default(0)
+  gap             Int                  @default(0)
+  priority        ClientDemandPriority @default(STANDARD)
+  status          RequirementStatus    @default(UNASSIGNED)
+  recruiterId     String?              @map("recruiter_id")
+  recruiter       User?                @relation("RequirementAssignee", fields: [recruiterId], references: [id])
+  deadline        DateTime?
+  notes           String?
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  assignmentHistory RequirementAssignment[]
+
+  @@index([clientId])
+  @@index([status])
+  @@map("requirements")
+}
+
+/// Audit trail for requirement assignment/unassignment (g3-mock.ts
+/// AssignmentHistoryEntry). recruiterId is nullable to record an unassign
+/// event; assignedById is always the acting user (never null).
+model RequirementAssignment {
+  id            String      @id @default(uuid())
+  requirementId String      @map("requirement_id")
+  requirement   Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+  recruiterId   String?     @map("recruiter_id")
+  recruiter     User?       @relation("RequirementAssignmentRecruiter", fields: [recruiterId], references: [id])
+  assignedAt    DateTime    @default(now()) @map("assigned_at")
+  assignedById  String      @map("assigned_by_id")
+  assignedBy    User        @relation("RequirementAssignedBy", fields: [assignedById], references: [id])
+  note          String?
+
+  @@index([requirementId])
+  @@map("requirement_assignments")
+}
+
+enum RequirementStatus {
+  UNASSIGNED
+  ACTIVE
+  PAUSED
+  FULFILLED
+}
+
+// ----------------------------------------------------------------------------
 // CLIENT DEMAND — Sundar/Ethan's client mapping flow.
 // V2: rewritten against g3-mock.ts ClientDemand/LanguageDemand/
 // ServiceRequirement, considerably richer than the V1 guess — supports
 // Google Sheet sync (upsert-by-sheet_row_id), per-service headcount
 // breakdown, and project/deadline/priority tracking.
+// Kept as a derived/aggregate summary once Requirement exists as the
+// canonical assignable unit -- see note above.
 // ----------------------------------------------------------------------------
 
 model ClientDemand {
   id              String               @id @default(uuid())
-  clientName      String               @map("client_name")
+  clientId        String               @map("client_id")
+  client          Client               @relation(fields: [clientId], references: [id], onDelete: Cascade)
   language        String
   recruiterId     String?              @map("recruiter_id") // owning recruiter for this demand line
   recruiter       User?                @relation("ClientDemandOwner", fields: [recruiterId], references: [id])
@@ -697,6 +782,7 @@ model ClientDemand {
 
   serviceBreakdown ClientDemandService[]
 
+  @@index([clientId])
   @@index([language])
   @@index([status])
   @@map("client_demand")
@@ -747,6 +833,8 @@ model EmailQueueItem {
   body          String
   aiGenerated   Boolean          @default(false) @map("ai_generated")
   receivedAt    DateTime         @default(now()) @map("received_at")
+  sentAt        DateTime?        @map("sent_at")
+  sentChannel   String?          @map("sent_channel")
 
   @@index([leadId])
   @@index([status])
@@ -835,6 +923,7 @@ model Escalation {
   impact            String?
   recruiterId       String?            @map("recruiter_id")
   leadId            String?            @map("lead_id")
+  clientId          String?            @map("client_id")
   createdAt         DateTime           @default(now()) @map("created_at")
 
   @@index([status])

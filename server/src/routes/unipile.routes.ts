@@ -13,7 +13,9 @@ unipileRouter.post("/connect", authenticateJwt, async (req: Request, res: Respon
     }
 
     const userId = req.user!.id;
-    const result = await UnipileService.mintHostedAuthLink(userId, provider, "create");
+    const clientUrl = (req.headers.origin as string) || (req.headers.referer ? new URL(req.headers.referer as string).origin : undefined);
+    const rolePath = req.user!.role === "owner" ? "/owner" : "/recruiter";
+    const result = await UnipileService.mintHostedAuthLink(userId, provider, "create", clientUrl, rolePath);
     return res.json({ success: true, url: result.url, nonce: result.nonce });
   } catch (err: any) {
     const status = err.statusCode || 500;

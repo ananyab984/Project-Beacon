@@ -29,4 +29,12 @@ export const config = {
   unipileWebhookSecret: requireEnv("UNIPILE_WEBHOOK_SECRET"),
   unipileWebhookPathToken: requireEnv("UNIPILE_WEBHOOK_PATH_TOKEN"),
   appBaseUrl: process.env.APP_BASE_URL || "http://localhost:5001",
+  // 127.0.0.1, not "localhost": both Python services bind IPv4-only, but
+  // "localhost" can resolve to the IPv6 loopback first depending on the
+  // process's DNS resolution order -- if anything else happens to be
+  // listening on the same port on ::1/[::] (e.g. the client dev server
+  // during local development), that ambiguity silently routes the request
+  // to the wrong service instead of a clean connection error.
+  draftingServiceUrl: process.env.DRAFTING_SERVICE_URL || "http://127.0.0.1:8001",
+  enrichmentServiceUrl: process.env.ENRICHMENT_SERVICE_URL || "http://127.0.0.1:8002",
 };

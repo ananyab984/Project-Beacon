@@ -1,16 +1,11 @@
 import React, { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  useRecruiters,
-  addNewRecruiter,
-  deleteRecruiter,
-  useRecruiterLanguageMappings,
-  updateRecruiterLanguages,
-} from "@/lib/g3-mock";
-import { Users, Plus, X, Check, Info, UserPlus, Trash2 } from "lucide-react";
+import { api } from "@/lib/api";
+import { Users, Plus, X, Check, UserPlus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 interface RecruiterLanguageMappingDialogProps {
@@ -25,9 +20,17 @@ const COMMON_LANGUAGES = [
   "Italian", "Polish", "Swedish", "Dutch", "Hindi", "Turkish", "English",
 ];
 
+/** ApiUser has no avatar_hue field — derive a stable per-user hue deterministically from the id. */
+function avatarHue(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) % 360;
+  return hash;
+}
+
 export function RecruiterLanguageMappingDialog({ open, onOpenChange }: RecruiterLanguageMappingDialogProps) {
-  const recruiters = useRecruiters();
-  const mappings = useRecruiterLanguageMappings();
+  const queryClient = useQueryClient();
+  const { data } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const recruiters = data?.users ?? [];
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newLangInput, setNewLangInput] = useState("");
@@ -35,35 +38,66 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
   // State for + Add Recruiter form
   const [showAddRecruiterForm, setShowAddRecruiterForm] = useState(false);
   const [newRecruiterName, setNewRecruiterName] = useState("");
+  const [newRecruiterEmail, setNewRecruiterEmail] = useState("");
   const [selectedInitialLangs, setSelectedInitialLangs] = useState<string[]>([]);
+
+  const createUserMutation = useMutation({
+    mutationFn: (input: { name: string; email: string; languages: string[] }) =>
+      api.createUser({ name: input.name, email: input.email, role: "RECRUITER", languages: input.languages }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      toast.success(
+        `Recruiter "${result.user.name}" added. Temporary password: ${result.tempPassword} — share this with them securely (no automated invite email yet).`,
+        { duration: 12000 },
+      );
+      setNewRecruiterName("");
+      setNewRecruiterEmail("");
+      setSelectedInitialLangs([]);
+      setShowAddRecruiterForm(false);
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to add recruiter"),
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id: string) => api.deactivateUser(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] }),
+    onError: (err: any) => toast.error(err?.message || "Failed to deactivate recruiter"),
+  });
+
+  const updateLanguagesMutation = useMutation({
+    mutationFn: ({ id, languages }: { id: string; languages: string[] }) => api.updateUserLanguages(id, languages),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] }),
+    onError: (err: any) => toast.error(err?.message || "Failed to update languages"),
+  });
 
   const handleCreateRecruiter = () => {
     if (!newRecruiterName.trim()) {
       toast.error("Please enter recruiter name");
       return;
     }
-    const created = addNewRecruiter(newRecruiterName.trim(), selectedInitialLangs);
-    toast.success(`Recruiter "${created.name}" added successfully! UI updated.`);
-    setNewRecruiterName("");
-    setSelectedInitialLangs([]);
-    setShowAddRecruiterForm(false);
+    if (!newRecruiterEmail.trim()) {
+      toast.error("Please enter recruiter email");
+      return;
+    }
+    createUserMutation.mutate({
+      name: newRecruiterName.trim(),
+      email: newRecruiterEmail.trim(),
+      languages: selectedInitialLangs,
+    });
   };
 
-  const handleAddLanguage = (recruiterId: string, langToAdd: string) => {
+  const handleAddLanguage = (recruiterId: string, langToAdd: string, current: string[]) => {
     const trimmed = langToAdd.trim();
     if (!trimmed) return;
-    const current = mappings.find((m) => m.recruiter_id === recruiterId)?.languages || [];
     if (!current.some((l) => l.toLowerCase() === trimmed.toLowerCase())) {
-      updateRecruiterLanguages(recruiterId, [...current, trimmed]);
+      updateLanguagesMutation.mutate({ id: recruiterId, languages: [...current, trimmed] });
       toast.success(`Added "${trimmed}" to recruiter profile`);
     }
     setNewLangInput("");
   };
 
-  const handleRemoveLanguage = (recruiterId: string, langToRemove: string) => {
-    const current = mappings.find((m) => m.recruiter_id === recruiterId)?.languages || [];
-    const updated = current.filter((l) => l !== langToRemove);
-    updateRecruiterLanguages(recruiterId, updated);
+  const handleRemoveLanguage = (recruiterId: string, langToRemove: string, current: string[]) => {
+    updateLanguagesMutation.mutate({ id: recruiterId, languages: current.filter((l) => l !== langToRemove) });
     toast.info(`Removed "${langToRemove}"`);
   };
 
@@ -121,6 +155,17 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
             </div>
 
             <div className="space-y-2">
+              <Label className="text-xs">Recruiter Email</Label>
+              <Input
+                type="email"
+                placeholder="name@global3.io"
+                value={newRecruiterEmail}
+                onChange={(e) => setNewRecruiterEmail(e.target.value)}
+                className="h-8 text-xs bg-card"
+              />
+            </div>
+
+            <div className="space-y-2">
               <Label className="text-xs">Select Initial Associated Languages (Optional)</Label>
               <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
                 {COMMON_LANGUAGES.map((lang) => {
@@ -151,8 +196,13 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
               <Button size="sm" variant="ghost" onClick={() => setShowAddRecruiterForm(false)} className="h-7 text-xs">
                 Cancel
               </Button>
-              <Button size="sm" onClick={handleCreateRecruiter} className="h-7 text-xs bg-primary text-primary-foreground">
-                <Check className="h-3.5 w-3.5 mr-1" /> Add to Team
+              <Button
+                size="sm"
+                onClick={handleCreateRecruiter}
+                disabled={createUserMutation.isPending}
+                className="h-7 text-xs bg-primary text-primary-foreground"
+              >
+                <Check className="h-3.5 w-3.5 mr-1" /> {createUserMutation.isPending ? "Adding…" : "Add to Team"}
               </Button>
             </div>
           </div>
@@ -160,9 +210,8 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
 
         {/* Recruiters List */}
         <div className="mt-4 space-y-4">
-          {recruiters.filter((r) => r.role !== "contractor").map((recruiter) => {
-            const currentMapping = mappings.find((m) => m.recruiter_id === recruiter.id);
-            const mappedLangs = currentMapping?.languages || [];
+          {recruiters.map((recruiter) => {
+            const mappedLangs = recruiter.languages ?? [];
 
             return (
               <div key={recruiter.id} className="rounded-xl border border-border bg-card p-4 space-y-3 shadow-2xs">
@@ -170,14 +219,14 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                   <div className="flex items-center gap-3">
                     <div
                       className="flex h-9 w-9 items-center justify-center rounded-full text-white font-bold text-sm"
-                      style={{ background: `oklch(0.55 0.18 ${recruiter.avatar_hue}deg)` }}
+                      style={{ background: `oklch(0.55 0.18 ${avatarHue(recruiter.id)}deg)` }}
                     >
                       {recruiter.name[0]}
                     </div>
                     <div>
                       <div className="text-sm font-semibold text-foreground">{recruiter.name}</div>
                       <div className="text-[11px] text-muted-foreground">
-                        {mappedLangs.length} language{mappedLangs.length !== 1 ? "s" : ""} associated · {recruiter.kpis.overall_score}% score
+                        {mappedLangs.length} language{mappedLangs.length !== 1 ? "s" : ""} associated
                       </div>
                     </div>
                   </div>
@@ -196,13 +245,13 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        if (confirm(`Are you sure you want to delete ${recruiter.name} from the recruiter roster?`)) {
-                          deleteRecruiter(recruiter.id);
-                          toast.success(`Removed recruiter ${recruiter.name}`);
+                        if (confirm(`Deactivate ${recruiter.name}? Their history is preserved — this is a soft deactivation, not a permanent delete.`)) {
+                          deactivateMutation.mutate(recruiter.id);
+                          toast.success(`Deactivated recruiter ${recruiter.name}`);
                         }
                       }}
                       className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                      title={`Delete ${recruiter.name}`}
+                      title={`Deactivate ${recruiter.name}`}
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </Button>
@@ -220,7 +269,7 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                         {lang}
                         <button
                           type="button"
-                          onClick={() => handleRemoveLanguage(recruiter.id, lang)}
+                          onClick={() => handleRemoveLanguage(recruiter.id, lang, mappedLangs)}
                           className="hover:text-destructive transition-colors"
                           title={`Remove ${lang}`}
                         >
@@ -245,7 +294,7 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                         <button
                           key={lang}
                           type="button"
-                          onClick={() => handleAddLanguage(recruiter.id, lang)}
+                          onClick={() => handleAddLanguage(recruiter.id, lang, mappedLangs)}
                           className="rounded-md border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary transition-colors flex items-center gap-1"
                         >
                           <Plus className="h-3 w-3" /> {lang}
@@ -261,7 +310,7 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                         onKeyDown={(e) => {
                           if (e.key === "Enter") {
                             e.preventDefault();
-                            handleAddLanguage(recruiter.id, newLangInput);
+                            handleAddLanguage(recruiter.id, newLangInput, mappedLangs);
                           }
                         }}
                         className="h-8 text-xs flex-1"
@@ -269,7 +318,7 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => handleAddLanguage(recruiter.id, newLangInput)}
+                        onClick={() => handleAddLanguage(recruiter.id, newLangInput, mappedLangs)}
                         className="h-8 text-xs gap-1"
                       >
                         <Check className="h-3.5 w-3.5" /> Add

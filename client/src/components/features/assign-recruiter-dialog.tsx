@@ -1,43 +1,55 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import {
-  recruiters,
-  useRecruiterLanguageMappings,
-  useRequirements,
-  assignRequirementRecruiter,
-  type Requirement,
-} from "@/lib/g3-mock";
-import { Search, UserCheck, X, Info, CheckCircle2, Clock } from "lucide-react";
+import { api } from "@/lib/api";
+import type { ApiRequirement } from "@/lib/api-types";
+import { Search, UserCheck, X, Info, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 interface AssignRecruiterDialogProps {
-  requirement: Requirement | null;
+  requirement: ApiRequirement | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+/** Deterministic decorative avatar hue since ApiUser has no stored color. */
+function hueFromId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+  return h;
+}
+
 export function AssignRecruiterDialog({ requirement, open, onOpenChange }: AssignRecruiterDialogProps) {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
-  const mappings = useRecruiterLanguageMappings();
-  const allRequirements = useRequirements();
+
+  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const recruiters = recruitersData?.users ?? [];
+
+  const { data: reqData } = useQuery({ queryKey: ["requirements", "all"], queryFn: () => api.getRequirements() });
+  const allRequirements = reqData?.requirements ?? [];
+
+  const assignMutation = useMutation({
+    mutationFn: ({ id, recruiterId }: { id: string; recruiterId: string | null }) => api.assignRequirement(id, recruiterId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["requirements"] }),
+    onError: (e: any) => toast.error(e.message || "Failed to update assignment"),
+  });
 
   const fullRecruiters = useMemo(() => {
-    return recruiters
-      .filter((r) => r.role !== "contractor")
-      .map((r) => {
-        const langs = mappings.find((m) => m.recruiter_id === r.id)?.languages ?? [];
-        const activeReqs = allRequirements.filter(
-          (req) => req.recruiter_id === r.id && req.status === "active",
-        ).length;
-        const matchesLang = langs.some((l) =>
-          requirement?.language?.toLowerCase().includes(l.toLowerCase()) ||
-          l.toLowerCase().includes(requirement?.language?.toLowerCase() ?? ""),
-        );
-        return { ...r, languages: langs, activeReqs, matchesLang };
-      });
-  }, [mappings, allRequirements, requirement]);
+    return recruiters.map((r) => {
+      const langs = r.languages ?? [];
+      const activeReqs = allRequirements.filter(
+        (req) => req.recruiterId === r.id && req.status === "ACTIVE",
+      ).length;
+      const matchesLang = langs.some((l) =>
+        requirement?.language?.toLowerCase().includes(l.toLowerCase()) ||
+        l.toLowerCase().includes(requirement?.language?.toLowerCase() ?? ""),
+      );
+      return { ...r, languages: langs, activeReqs, matchesLang };
+    });
+  }, [recruiters, allRequirements, requirement]);
 
   const filtered = useMemo(() => {
     if (!search.trim()) return fullRecruiters;
@@ -59,16 +71,20 @@ export function AssignRecruiterDialog({ requirement, open, onOpenChange }: Assig
   const handleSelect = (recruiterId: string) => {
     if (!requirement) return;
     const recruiter = recruiters.find((r) => r.id === recruiterId);
-    assignRequirementRecruiter(requirement.id, recruiterId);
-    toast.success(`${requirement.title} assigned to ${recruiter?.name}`);
+    assignMutation.mutate(
+      { id: requirement.id, recruiterId },
+      { onSuccess: () => toast.success(`${requirement.title} assigned to ${recruiter?.name}`) },
+    );
     onOpenChange(false);
     setSearch("");
   };
 
   const handleUnassign = () => {
     if (!requirement) return;
-    assignRequirementRecruiter(requirement.id, undefined);
-    toast.info(`${requirement.title} unassigned`);
+    assignMutation.mutate(
+      { id: requirement.id, recruiterId: null },
+      { onSuccess: () => toast.info(`${requirement.title} unassigned`) },
+    );
     onOpenChange(false);
     setSearch("");
   };
@@ -115,7 +131,7 @@ export function AssignRecruiterDialog({ requirement, open, onOpenChange }: Assig
             <p className="py-6 text-center text-sm text-muted-foreground">No recruiters match your search.</p>
           )}
           {filtered.map((r) => {
-            const isCurrentlyAssigned = requirement.recruiter_id === r.id;
+            const isCurrentlyAssigned = requirement.recruiterId === r.id;
             return (
               <div
                 key={r.id}
@@ -128,7 +144,7 @@ export function AssignRecruiterDialog({ requirement, open, onOpenChange }: Assig
                 {/* Avatar */}
                 <div
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white"
-                  style={{ background: `oklch(0.55 0.18 ${r.avatar_hue}deg)` }}
+                  style={{ background: `oklch(0.55 0.18 ${hueFromId(r.id)}deg)` }}
                 >
                   {r.name[0]}
                 </div>
@@ -171,9 +187,6 @@ export function AssignRecruiterDialog({ requirement, open, onOpenChange }: Assig
                   <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
                     <Clock className="h-3 w-3" />
                     <span>{r.activeReqs} active requirement{r.activeReqs !== 1 ? "s" : ""}</span>
-                    <span className="text-border">·</span>
-                    <CheckCircle2 className="h-3 w-3" />
-                    <span>{r.kpis.overall_score}% score</span>
                   </div>
                 </div>
 
@@ -194,7 +207,7 @@ export function AssignRecruiterDialog({ requirement, open, onOpenChange }: Assig
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-border pt-3">
-          {requirement.recruiter_id ? (
+          {requirement.recruiterId ? (
             <button
               onClick={handleUnassign}
               className="flex items-center gap-1.5 text-xs text-muted-foreground underline-offset-2 hover:text-destructive hover:underline"

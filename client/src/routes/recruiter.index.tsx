@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useRecruiterStore, myLeads, leadsOnboardedCount, leadsOffboardedCount } from "@/lib/recruiter-mock";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle, Clock } from "lucide-react";
-import { outreachBatch, useClientDemands, useClientDueDateAlerts } from "@/lib/g3-mock";
+import { outreachBatch } from "@/lib/g3-mock";
 import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
 import { useMemo } from "react";
 
@@ -11,17 +12,26 @@ export const Route = createFileRoute("/recruiter/")({
 });
 
 function DashboardPage() {
-  const store = useRecruiterStore();
-  const mine = myLeads();
-  const dueAlerts = useClientDueDateAlerts();
+  const { data: myLeadsData } = useQuery({ queryKey: ["leads", "mine"], queryFn: api.getMyLeads });
+  const { data: emailQueueData } = useQuery({ queryKey: ["email-queue"], queryFn: api.getEmailQueue });
+  // No backend "client due-date risk" endpoint exists -- escalations are the
+  // real, server-scoped analog (recruiters only ever see their own via RBAC).
+  const { data: escalationsData } = useQuery({ queryKey: ["escalations"], queryFn: api.getEscalations });
+  const mine = myLeadsData?.leads ?? [];
+  const emailQueueCount = emailQueueData?.items.length ?? 0;
+  const dueAlerts = escalationsData?.escalations ?? [];
   const { scale, label: rangeLabel } = useDateRange();
+
+  // leadsOnboardedCount() was a hardcoded mock constant (124) with no real
+  // backing -- compute the real count from the recruiter's own leads instead.
+  const onboardedCount = mine.filter((l) => l.stage === "ONBOARDED").length;
 
   const activities = mine.slice(0, 6).map((l) => ({
     id: l.id,
-    icon: l.enrichment_status === "pending" ? UserPlus : CheckCircle2,
-    title: l.enrichment_status === "pending" ? "New lead added" : `Lead enriched · ${l.full_name}`,
-    detail: `${l.full_name}${l.services?.length ? " · " + l.services.join(", ") : ""}`,
-    ago: relative(l.created_at),
+    icon: l.enrichmentStatus === "PENDING" ? UserPlus : CheckCircle2,
+    title: l.enrichmentStatus === "PENDING" ? "New lead added" : `Lead enriched · ${l.fullName ?? l.displayName ?? l.maskedLabel}`,
+    detail: `${l.fullName ?? l.displayName ?? l.maskedLabel}${l.services?.length ? " · " + l.services.join(", ") : ""}`,
+    ago: relative(l.createdAt),
   }));
 
   return (
@@ -47,7 +57,7 @@ function DashboardPage() {
         </div>
       </section>
 
-      {/* Compact Client Due Date Alerts Summary (Full list in Notifications Tab) */}
+      {/* Compact Escalations Summary (Full list in Notifications Tab) */}
       {dueAlerts.length > 0 && (
         <section className="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3 shadow-xs">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -56,11 +66,16 @@ function DashboardPage() {
                 <AlertTriangle className="h-4 w-4" />
               </div>
               <div className="flex items-center gap-2 flex-wrap text-xs">
-                <span className="font-bold text-destructive uppercase tracking-wider text-[10px]">Client Due Date Risk:</span>
-                <span className="font-semibold text-foreground">{dueAlerts[0].risk_reason}</span>
-                <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive flex items-center gap-1">
-                  <Clock className="h-3 w-3" /> Due in {dueAlerts[0].days_remaining}d
-                </span>
+                <span className="font-bold text-destructive uppercase tracking-wider text-[10px]">{dueAlerts[0].priority}:</span>
+                <span className="font-semibold text-foreground">{dueAlerts[0].title}</span>
+                {dueAlerts[0].slaHoursRemaining != null && (
+                  <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[10px] font-bold text-destructive flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {dueAlerts[0].slaHoursRemaining < 0
+                      ? `${Math.abs(dueAlerts[0].slaHoursRemaining)}h overdue`
+                      : `${dueAlerts[0].slaHoursRemaining}h remaining`}
+                  </span>
+                )}
                 {dueAlerts.length > 1 && (
                   <span className="text-muted-foreground text-[11px]">
                     (+{dueAlerts.length - 1} more in Notifications)
@@ -110,19 +125,17 @@ function DashboardPage() {
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <MetricCard label="Leads Onboarded" value={leadsOnboardedCount()} delta="+12%" tone="positive" />
-        <MetricCard label="Leads Offboarded" value={leadsOffboardedCount()} delta="−4%" tone="negative" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <MetricCard label="Leads Onboarded" value={onboardedCount} delta="" tone="positive" />
         <div className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="rounded-lg bg-accent/15 p-2 text-accent"><Mail className="h-4 w-4" /></div>
               <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Email Queue</div>
             </div>
-            <span className="text-[11px] text-primary">+4 today</span>
           </div>
           <div className="mt-4 flex items-baseline gap-2">
-            <div className="text-3xl font-semibold tracking-tight">{store.emailQueue.length}</div>
+            <div className="text-3xl font-semibold tracking-tight">{emailQueueCount}</div>
             <div className="text-xs text-muted-foreground">pending manual review</div>
           </div>
           <Link to="/recruiter/email-queue" className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-border py-2 text-xs font-medium hover:bg-muted">
@@ -162,10 +175,11 @@ function DashboardPage() {
 }
 
 function RecruiterMarketRequirementsSection() {
-  const demands = useClientDemands();
+  const { data } = useQuery({ queryKey: ["client-demands"], queryFn: api.getClientDemands });
+  const demands = data?.clientDemands ?? [];
 
   const summary = useMemo(() => {
-    const totalNeeded = demands.reduce((s, d) => s + d.headcount_needed, 0);
+    const totalNeeded = demands.reduce((s, d) => s + d.headcountNeeded, 0);
     const totalFilled = demands.reduce((s, d) => s + d.filled, 0);
     const totalRemaining = Math.max(0, totalNeeded - totalFilled);
     return { totalNeeded, totalFilled, totalRemaining };
@@ -175,9 +189,9 @@ function RecruiterMarketRequirementsSection() {
     const map = new Map<string, { needed: number; filled: number; services: Set<string> }>();
     for (const d of demands) {
       const cur = map.get(d.language) ?? { needed: 0, filled: 0, services: new Set() };
-      d.services.forEach(s => cur.services.add(s));
+      d.serviceBreakdown.forEach(s => cur.services.add(s.service));
       map.set(d.language, {
-        needed: cur.needed + d.headcount_needed,
+        needed: cur.needed + d.headcountNeeded,
         filled: cur.filled + d.filled,
         services: cur.services,
       });

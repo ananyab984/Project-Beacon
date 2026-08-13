@@ -7,6 +7,8 @@ import json
 import sys
 from typing import Any, Dict, List, Optional
 
+from pydantic import BaseModel
+
 from config import ConfigError, load_config
 from core.leads import check_channel_eligibility, load_leads
 from logger import configure_logging, get_logger
@@ -105,11 +107,32 @@ def _print_report(res: dict) -> None:
     print(f"   VERDICT: {verdict}  [flags={res['flags'] or 'none'}]")
 
 
+class DraftRequest(BaseModel):
+    lead: Dict[str, Any]
+    channel: Optional[str] = "email"
+    rate_card: Optional[List[Dict[str, Any]]] = None
+    manual_override: Optional[bool] = False
+
+
+class EditLogRequest(BaseModel):
+    draft_id: str
+    original_body: str
+    edited_body: str
+
+
 def run_server(host: str, port: int, config) -> None:
-    """Run pipeline as a FastAPI HTTP server (ready for Node.js backend integration)."""
+    """Run pipeline as a FastAPI HTTP server (ready for Node.js backend integration).
+
+    The two Pydantic models above are deliberately module-level: with
+    `from __future__ import annotations` active in this file, FastAPI/Pydantic
+    resolve route annotations as lazily-evaluated strings against the
+    module's globals, and a class nested inside this function is invisible to
+    that resolution (`PydanticUndefinedAnnotation: name 'DraftRequest' is not
+    defined`) -- see enrichment_pipeline/main.py's identical fix for the same
+    bug, which meant `--serve` could never actually start.
+    """
     import uvicorn
     from fastapi import FastAPI, HTTPException
-    from pydantic import BaseModel, Field
 
     app = FastAPI(
         title="Project Beacon — AI Message Drafting Service",
@@ -118,17 +141,6 @@ def run_server(host: str, port: int, config) -> None:
     )
 
     orchestrator = DraftingOrchestrator(config)
-
-    class DraftRequest(BaseModel):
-        lead: Dict[str, Any]
-        channel: Optional[str] = "email"
-        rate_card: Optional[List[Dict[str, Any]]] = None
-        manual_override: Optional[bool] = False
-
-    class EditLogRequest(BaseModel):
-        draft_id: str
-        original_body: str
-        edited_body: str
 
     @app.get("/health")
     def health_check():

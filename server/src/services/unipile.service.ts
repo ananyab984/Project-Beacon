@@ -39,6 +39,23 @@ function mapAccountStatus(raw: string): AccountStatus {
   return mapped;
 }
 
+// LinkedIn connection-request notes are capped at 300 characters on paid
+// accounts and 200 on free accounts -- Unipile passes that limit straight
+// through as a "too_many_characters" 400. Since we don't know the connected
+// account's plan tier here, truncate to the conservative 200-char limit so
+// invites don't fail regardless of tier, cutting on a word boundary rather
+// than mid-word.
+const INVITE_NOTE_MAX_CHARS = 200;
+
+function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS): string {
+  if (text.length <= max) return text;
+  const ellipsis = "…";
+  const sliced = text.slice(0, max - ellipsis.length);
+  const lastSpace = sliced.lastIndexOf(" ");
+  const cut = lastSpace > max * 0.6 ? sliced.slice(0, lastSpace) : sliced;
+  return `${cut.trimEnd()}${ellipsis}`;
+}
+
 export class UnipileService {
   private static getUnipileBaseUrl(): string {
     let dsn = (config.unipileDsn || "api25.unipile.com:15598").trim();
@@ -78,7 +95,9 @@ export class UnipileService {
   static async mintHostedAuthLink(
     userId: string,
     provider: string,
-    mode: "create" | "reconnect" = "create"
+    mode: "create" | "reconnect" = "create",
+    clientUrl?: string,
+    rolePath: string = "/recruiter"
   ): Promise<{ url: string; nonce: string }> {
     const pUpper = (provider || "").toUpperCase();
     const validProviders = Object.values(UnipileProvider);
@@ -109,10 +128,9 @@ export class UnipileService {
 
     const unipileBaseUrl = this.getUnipileBaseUrl();
     const unipileHostUrl = this.getUnipileHostUrl();
-    // The nonce is embedded in `name` specifically so the notify_url callback
-    // can be matched back to *this* attempt (and therefore this user) --
-    // see handleWebhookEvent's use of `resolveAuthAttemptFromName`.
     const webhookNotifyUrl = `${config.appBaseUrl}/api/unipile/webhook/${config.unipileWebhookPathToken}`;
+
+    const baseClient = (clientUrl || config.clientUrl).replace(/\/+$/, "");
 
     const payload = {
       type: mode,
@@ -121,8 +139,8 @@ export class UnipileService {
       expiresOn: expiresAt.toISOString(),
       name: `g3_${userId}_${nonce}`,
       notify_url: webhookNotifyUrl,
-      success_redirect_url: `${config.clientUrl}/dashboard?status=connected&provider=${providerEnum}`,
-      failure_redirect_url: `${config.clientUrl}/dashboard?status=failed&provider=${providerEnum}`,
+      success_redirect_url: `${baseClient}${rolePath}?status=connected&provider=${providerEnum}`,
+      failure_redirect_url: `${baseClient}${rolePath}?status=failed&provider=${providerEnum}`,
       bypass_success_screen: bypassSuccess,
       single_use: true,
     };
@@ -136,9 +154,51 @@ export class UnipileService {
   }
 
   /**
-   * Get connected accounts for a specific user
+   * Get connected accounts for a specific user, syncing with Unipile API
    */
   static async getUserConnectedAccounts(userId: string) {
+    try {
+      const unipileBaseUrl = this.getUnipileBaseUrl();
+      const response = await axios.get(`${unipileBaseUrl}/accounts`, {
+        headers: this.getUnipileHeaders(),
+        timeout: 4000,
+      });
+      const items = response.data?.items || response.data || [];
+      if (Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          const rawProvider = (item.provider || item.type || "").toUpperCase();
+          let provider: UnipileProvider = UnipileProvider.EMAIL;
+          if (rawProvider.includes("LINKEDIN")) provider = UnipileProvider.LINKEDIN;
+          else if (rawProvider.includes("GOOGLE")) provider = UnipileProvider.GOOGLE;
+          else if (rawProvider.includes("OUTLOOK")) provider = UnipileProvider.OUTLOOK;
+          else if (rawProvider.includes("MAIL")) provider = UnipileProvider.MAIL;
+
+          const rawStatus = (item.status || "OK").toUpperCase();
+          const mappedStatus = rawStatus === "OK" || rawStatus === "CONNECTED" ? AccountStatus.OK : AccountStatus.RECONNECTION_NEEDED;
+
+          await prisma.connectedAccount.upsert({
+            where: { unipileAccountId: item.id },
+            create: {
+              userId,
+              provider,
+              unipileAccountId: item.id,
+              accountName: item.name || item.username || `${provider} Account`,
+              status: mappedStatus,
+              statusMessage: rawStatus,
+            },
+            update: {
+              userId,
+              status: mappedStatus,
+              statusMessage: rawStatus,
+              accountName: item.name || item.username || undefined,
+            },
+          }).catch(() => null);
+        }
+      }
+    } catch (err: any) {
+      console.warn("Could not sync live Unipile accounts:", err.message);
+    }
+
     return prisma.connectedAccount.findMany({
       where: { userId },
       orderBy: { createdAt: "desc" },
@@ -182,12 +242,21 @@ export class UnipileService {
     userId: string,
     leadId: string,
     profileUrlOrId: string,
-    text: string
+    text: string,
+    preferredAccountId?: string
   ) {
     // 1. Find user's active LinkedIn account
-    const connectedAcc = await prisma.connectedAccount.findFirst({
-      where: { userId, provider: UnipileProvider.LINKEDIN, status: AccountStatus.OK },
-    });
+    let connectedAcc: any = null;
+    if (preferredAccountId) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: { userId, unipileAccountId: preferredAccountId, status: AccountStatus.OK },
+      });
+    }
+    if (!connectedAcc) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: { userId, provider: UnipileProvider.LINKEDIN, status: AccountStatus.OK },
+      });
+    }
 
     if (!connectedAcc) {
       throw {
@@ -234,7 +303,7 @@ export class UnipileService {
           {
             account_id,
             provider_id: providerId,
-            message: text.substring(0, 300),
+            message: truncateForInviteNote(text),
           },
           { headers: { ...headers, "Content-Type": "application/json" } }
         );
@@ -271,7 +340,7 @@ export class UnipileService {
             {
               account_id,
               provider_id: providerId,
-              message: text.substring(0, 300),
+              message: truncateForInviteNote(text),
             },
             { headers: { ...headers, "Content-Type": "application/json" } }
           );
@@ -319,16 +388,25 @@ export class UnipileService {
     leadId: string,
     toEmail: string,
     subject: string,
-    body: string
+    body: string,
+    preferredAccountId?: string
   ) {
     // Find active Email account
-    const connectedAcc = await prisma.connectedAccount.findFirst({
-      where: {
-        userId,
-        provider: { in: [UnipileProvider.GOOGLE, UnipileProvider.MAIL, UnipileProvider.OUTLOOK, UnipileProvider.EMAIL] },
-        status: AccountStatus.OK,
-      },
-    });
+    let connectedAcc: any = null;
+    if (preferredAccountId) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: { userId, unipileAccountId: preferredAccountId, status: AccountStatus.OK },
+      });
+    }
+    if (!connectedAcc) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: {
+          userId,
+          provider: { in: [UnipileProvider.GOOGLE, UnipileProvider.MAIL, UnipileProvider.OUTLOOK, UnipileProvider.EMAIL] },
+          status: AccountStatus.OK,
+        },
+      });
+    }
 
     if (!connectedAcc) {
       throw {

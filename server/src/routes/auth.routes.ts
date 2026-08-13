@@ -1,4 +1,6 @@
 import { Router, Request, Response } from "express";
+import crypto from "crypto";
+import { prisma } from "../prisma";
 import { AuthService } from "../services/auth.service";
 import { authenticateJwt, UserPayload } from "../middleware/auth";
 import { normalizeEmail, normalizeName, validateEmailFormat, validateNameLength } from "../lib/normalize";
@@ -193,8 +195,158 @@ authRouter.post("/verify-email", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "INVALID_TOKEN", message: "Verification token is invalid or already used" });
     }
 
-    return res.json({ message: "Email verified successfully" });
+    return res.json({
+      message: "Email verified successfully",
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, emailVerified: user.emailVerified },
+    });
   } catch (err) {
     return res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong during verification" });
+  }
+});
+
+// PATCH /api/auth/me
+authRouter.patch("/me", authenticateJwt, async (req: Request, res: Response) => {
+  try {
+    const { name } = req.body || {};
+    if (!name) {
+      return res.status(400).json({ error: "MISSING_FIELDS", message: "Name is required" });
+    }
+
+    const normalizedName = normalizeName(name);
+    if (!validateNameLength(normalizedName)) {
+      return res.status(400).json({ error: "INVALID_NAME", message: "Name must be between 1 and 80 characters" });
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.user!.id },
+      data: { name: normalizedName },
+    });
+
+    return res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        emailVerified: user.emailVerified,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong updating your profile" });
+  }
+});
+
+// POST /api/auth/change-password
+authRouter.post("/change-password", authenticateJwt, async (req: Request, res: Response) => {
+  try {
+    const { currentPassword, newPassword } = req.body || {};
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: "MISSING_FIELDS", message: "Current and new password are required" });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "INVALID_PASSWORD", message: "New password must be at least 8 characters" });
+    }
+
+    const user = await AuthService.findUserById(req.user!.id);
+    if (!user) {
+      return res.status(404).json({ error: "USER_NOT_FOUND", message: "User not found" });
+    }
+
+    if (!AuthService.verifyPassword(currentPassword, user.passwordHash)) {
+      return res.status(401).json({ error: "INVALID_CURRENT_PASSWORD", message: "Current password is incorrect" });
+    }
+
+    const passwordHash = AuthService.hashPassword(newPassword);
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
+
+    return res.json({ message: "Password changed successfully" });
+  } catch (err) {
+    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong changing your password" });
+  }
+});
+
+// POST /api/auth/forgot-password
+authRouter.post("/forgot-password", async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ error: "MISSING_FIELDS", message: "Email is required" });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await AuthService.findUserByEmail(normalizedEmail);
+
+    if (!user) {
+      // Don't leak account existence.
+      return res.json({ message: "If that email exists, a reset link has been sent" });
+    }
+
+    const resetToken = crypto.randomBytes(16).toString("hex");
+    const resetTokenExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { resetToken, resetTokenExpiresAt },
+    });
+
+    return res.json({ message: "If that email exists, a reset link has been sent", resetToken });
+  } catch (err) {
+    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong during password reset request" });
+  }
+});
+
+// POST /api/auth/reset-password
+authRouter.post("/reset-password", async (req: Request, res: Response) => {
+  try {
+    const { token, newPassword } = req.body || {};
+    if (!token || !newPassword) {
+      return res.status(400).json({ error: "MISSING_FIELDS", message: "Token and new password are required" });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: "INVALID_PASSWORD", message: "New password must be at least 8 characters" });
+    }
+
+    const user = await prisma.user.findFirst({ where: { resetToken: token } });
+    if (!user || !user.resetTokenExpiresAt || user.resetTokenExpiresAt <= new Date()) {
+      return res.status(400).json({ error: "INVALID_OR_EXPIRED_TOKEN", message: "Reset token is invalid or expired" });
+    }
+
+    const passwordHash = AuthService.hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash, resetToken: null, resetTokenExpiresAt: null },
+    });
+
+    return res.json({ message: "Password reset successfully" });
+  } catch (err) {
+    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong during password reset" });
+  }
+});
+
+// POST /api/auth/resend-verification
+authRouter.post("/resend-verification", async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body || {};
+    if (!email) {
+      return res.status(400).json({ error: "MISSING_FIELDS", message: "Email is required" });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const user = await AuthService.findUserByEmail(normalizedEmail);
+    if (!user) {
+      // Don't leak account existence.
+      return res.json({ message: "If that email exists, a verification link has been sent" });
+    }
+    if (user.emailVerified) {
+      return res.json({ message: "This account is already verified" });
+    }
+
+    const verifyToken = crypto.randomBytes(16).toString("hex");
+    await prisma.user.update({ where: { id: user.id }, data: { verifyToken } });
+
+    return res.json({ message: "If that email exists, a verification link has been sent", verifyToken });
+  } catch (err) {
+    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Something went wrong resending verification" });
   }
 });

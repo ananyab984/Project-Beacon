@@ -1,0 +1,52 @@
+{
+  "lead": {
+    "First_Name": "Ananya",
+    "Full_Name": "Ananya",
+    "Profile_Link": "https://www.linkedin.com/in/anaaaya-undefined-896559429/",
+    "Source": "LinkedIn",
+    "Source_Language": "English",
+    "Target_Language": "German",
+    "Services": "Dubbing",
+    "Country_of_Residence": "Kasauli Tehsil",
+    "Years_of_Exp": 10
+  },
+  "enrichment_status": "enrichment_partial",
+  "enrichment_percentage": 69,
+  "field_sources": {
+    "First_Name": "existing",
+    "Full_Name": "existing",
+    "Profile_Link": "existing",
+    "Source": "existing",
+    "Source_Language": "existing",
+    "Target_Language": "existing",
+    "Services": "existing",
+    "Country_of_Residence": "brightdata",
+    "Years_of_Exp": "brightdata"
+  },
+  "audit": {
+    "total_fields": 13,
+    "populated_count": 9,
+    "enrichment_percentage": 69,
+    "missing_fields": [
+      "Contact_Number",
+      "Email_Address",
+      "Secondary_Languages",
+      "Vendor_Experience"
+    ],
+    "missing_critical_fields": [
+      "Email_Address",
+      "Contact_Number"
+    ],
+    "is_complete": false
+  },
+  "execution_time_ms": 11557,
+  "logs": [
+    "Stage 1 Complete: Initial Enrichment Score = 54% (7/13 fields)",
+    "Stage 2 Router: Source='LinkedIn' -> Provider='brightdata', Parser='linkedin'",
+    "Stage 3 Parsed: Country_of_Residence = 'Kasauli Tehsil' (from brightdata)",
+    "Stage 3 Parsed: Years_of_Exp = 10 (from brightdata)",
+    "Stage 3 Complete: Score = 69%",
+    "Stage 4 Audit: Missing critical fields ['Email_Address', 'Contact_Number'] -> Triggering Targeted LLM Fallback",
+    "Stage 7 Finalize: Status=enrichment_partial, Final Enrichment Score=69% (Elapsed: 11557ms)"
+  ]
+}

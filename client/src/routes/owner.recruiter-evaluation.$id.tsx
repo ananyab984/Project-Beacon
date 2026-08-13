@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { recruiters } from "@/lib/g3-mock";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { EvaluationDashboard } from "@/components/features/evaluation-dashboard";
 
 export const Route = createFileRoute("/owner/recruiter-evaluation/$id")({
@@ -15,7 +16,9 @@ export const Route = createFileRoute("/owner/recruiter-evaluation/$id")({
 
 function RecruiterEvaluationPage() {
   const { id } = Route.useParams();
-  const r = recruiters.find((x) => x.id === id);
+  const { data: recruiterData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const { data: contractorData } = useQuery({ queryKey: ["users", "CONTRACTOR"], queryFn: () => api.getUsers("CONTRACTOR") });
+  const r = [...(recruiterData?.users ?? []), ...(contractorData?.users ?? [])].find((x) => x.id === id);
 
   return (
     <div className="mx-auto max-w-6xl space-y-5">
@@ -30,12 +33,12 @@ function RecruiterEvaluationPage() {
         <EvaluationDashboard
           subjectId={r.id}
           subjectName={r.name}
-          roleLabel={r.role === "contractor" ? "Contractor" : "Recruiter"}
+          roleLabel={r.role === "CONTRACTOR" ? "Contractor" : "Recruiter"}
         />
       ) : (
         <div className="rounded-2xl border border-border bg-card p-8 text-center">
           <h1 className="text-lg font-semibold">Recruiter not found</h1>
-          <p className="mt-1 text-sm text-muted-foreground">No recruiter exists with the id “{id}”.</p>
+          <p className="mt-1 text-sm text-muted-foreground">No recruiter exists with the id "{id}".</p>
         </div>
       )}
     </div>

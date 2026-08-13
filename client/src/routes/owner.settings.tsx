@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
+import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
+import { Linkedin, Mail, Trash2, Plus, ShieldCheck } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/owner/settings")({
   head: () => ({
@@ -13,11 +19,10 @@ export const Route = createFileRoute("/owner/settings")({
   component: SettingsPage,
 });
 
-import { useRecruiters } from "@/lib/g3-mock";
-
 function SettingsPage() {
   const [showAI, setShowAI] = useState(false);
-  const recruiters = useRecruiters();
+  const { data } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const recruiters = data?.users ?? [];
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -54,20 +59,68 @@ function SettingsPage() {
         </Section>
       )}
 
-      <Section title="Roles & permissions">
+      <ConnectedAccountsSection />
+
+      <Section title="Recruiters & Connected Outreach Accounts Mapping" desc="Live mapping of recruiters and their connected LinkedIn & Email Unipile accounts.">
         <div className="divide-y divide-border">
           {recruiters.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">
               No team members onboarded yet.
             </div>
           ) : (
-            recruiters.map((u) => (
-              <div key={u.id} className="grid grid-cols-3 items-center gap-4 py-3 text-sm">
-                <div className="font-medium">{u.name}</div>
-                <div className="text-muted-foreground">{u.role === "contractor" ? "Contractor Partner" : "Full-Access Recruiter"}</div>
-                <div className="text-right text-xs text-foreground/80">{u.status === "healthy" ? "Active" : "Attention Required"}</div>
-              </div>
-            ))
+            recruiters.map((u: any) => {
+              const activeAccs = (u.connectedAccounts || []).filter((a: any) => a.status !== "DISCONNECTED");
+              const linkedInAcc = activeAccs.find((a: any) => (a.provider || "").toUpperCase().includes("LINKEDIN"));
+              const emailAcc = activeAccs.find((a: any) => ["EMAIL", "GOOGLE", "MAIL", "OUTLOOK"].some((p) => (a.provider || "").toUpperCase().includes(p)));
+
+              return (
+                <div key={u.id} className="py-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-semibold text-sm text-foreground">{u.name}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">({u.email})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">
+                        {u.workStatus === "CONTRACTOR" ? "Contractor Recruiter" : "Full-Access Recruiter"}
+                      </Badge>
+                      <Badge variant={u.isActive ? "default" : "secondary"} className="text-[10px]">
+                        {u.isActive ? "Active" : "Deactivated"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Connected Accounts Mapping for this recruiter */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Linkedin className="h-4 w-4 text-blue-500 shrink-0" />
+                        <span className="font-medium text-foreground">LinkedIn:</span>
+                        <span className="text-muted-foreground truncate max-w-[160px]">
+                          {linkedInAcc ? (linkedInAcc.accountName || linkedInAcc.unipileAccountId) : "Not Connected"}
+                        </span>
+                      </div>
+                      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${linkedInAcc ? "border-emerald-500/40 text-emerald-500" : "text-muted-foreground"}`}>
+                        {linkedInAcc ? "CONNECTED" : "UNLINKED"}
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-amber-500 shrink-0" />
+                        <span className="font-medium text-foreground">Email:</span>
+                        <span className="text-muted-foreground truncate max-w-[160px]">
+                          {emailAcc ? (emailAcc.accountName || emailAcc.unipileAccountId) : "Not Connected"}
+                        </span>
+                      </div>
+                      <Badge variant="outline" className={`text-[9px] px-1.5 py-0 ${emailAcc ? "border-emerald-500/40 text-emerald-500" : "text-muted-foreground"}`}>
+                        {emailAcc ? "CONNECTED" : "UNLINKED"}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       </Section>
@@ -130,5 +183,88 @@ function DeferredCard({ title }: { title: string }) {
       </div>
       <p className="mt-2 text-xs text-muted-foreground">Widget disabled until validation.</p>
     </div>
+  );
+}
+
+function ConnectedAccountsSection() {
+  const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["connected-accounts"],
+    queryFn: () => api.getConnectedAccounts(),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: (unipileAccountId: string) => api.disconnectAccount(unipileAccountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connected-accounts"] });
+      toast.success("Account disconnected");
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to disconnect account"),
+  });
+
+  const active = accounts.filter((a: any) => a.status !== "DISCONNECTED");
+
+  return (
+    <Section title="Connected Outreach Accounts" desc="Manage active LinkedIn and Email accounts linked via Unipile.">
+      <div className="space-y-4">
+        {active.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No outreach accounts connected yet. Link LinkedIn or Email to enable messaging.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {active.map((acc: any) => (
+              <div key={acc.id || acc.unipileAccountId} className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-xs">
+                <div className="flex items-center gap-3">
+                  {acc.provider === "LINKEDIN" ? (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                      <Linkedin className="h-4 w-4" />
+                    </div>
+                  ) : (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                      <Mail className="h-4 w-4" />
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs font-semibold text-foreground">
+                      {acc.accountName || acc.unipileAccountId}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <Badge variant="outline" className="text-[9px] px-1 py-0 border-emerald-500/40 text-emerald-500">
+                        {acc.status || "CONNECTED"}
+                      </Badge>
+                      <span>• {acc.provider}</span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={disconnectMutation.isPending}
+                  onClick={() => disconnectMutation.mutate(acc.unipileAccountId)}
+                  className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive gap-1"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <ConnectAccountDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            trigger={
+              <Button size="sm" variant="outline" className="text-xs gap-1.5">
+                <Plus className="h-3.5 w-3.5 text-primary" /> Connect New Account
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    </Section>
   );
 }

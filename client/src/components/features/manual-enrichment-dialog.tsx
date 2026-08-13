@@ -40,16 +40,21 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
   const [yearsExp, setYearsExp] = useState<string>("5");
   const [notes, setNotes] = useState("");
 
+  // Pre-fill ONLY from the lead's real data. Empty fields stay empty rather
+  // than defaulting to a plausible-looking placeholder value (a fake email,
+  // a fake phone number, fabricated employer names) that a recruiter could
+  // miss and save as if it were real -- that was a genuine data-fabrication
+  // bug, not a convenience default.
   useEffect(() => {
     if (lead) {
       setName(lead.name || "");
-      setEmail(lead.email || "candidate@example.com");
-      setPhone(lead.phone || "+1 (555) 234-5678");
-      setSourceLang(lead.source_language || "English");
-      setTargetLang(lead.target_language || lead.language || "Spanish (LatAm)");
-      setServices(lead.services?.length ? lead.services : ["Subtitling"]);
-      setYearsExp(String(lead.years_experience ?? 5));
-      setNotes(lead.vendor_experience || "Netflix & Prime Video accredited translator.");
+      setEmail(lead.email || "");
+      setPhone(lead.phone || "");
+      setSourceLang(lead.source_language || "");
+      setTargetLang(lead.target_language || lead.language || "");
+      setServices(lead.services?.length ? lead.services : []);
+      setYearsExp(lead.years_experience != null ? String(lead.years_experience) : "");
+      setNotes(lead.vendor_experience || "");
     }
   }, [lead]);
 
@@ -65,6 +70,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
   };
 
   const handleMarkEnriched = () => {
+    const parsedYears = yearsExp.trim() === "" ? undefined : Number(yearsExp);
     onMarkEnriched(lead.id, {
       name,
       email,
@@ -72,8 +78,8 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
       source_language: sourceLang,
       target_language: targetLang,
       services,
-      years_experience: Number(yearsExp) || 5,
-      vendor_experience: notes,
+      years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : undefined,
+      vendor_experience: notes || undefined,
       enrichment_status: "enriched",
     });
     toast.success(`Lead marked as Enriched! ${name} has been moved to Global Leads.`);

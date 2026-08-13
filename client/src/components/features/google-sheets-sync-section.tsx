@@ -1,54 +1,64 @@
 import { useRef, useState } from "react";
-import { Upload, RefreshCw, LinkIcon, CheckCircle2, Loader2 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Upload, RefreshCw, LinkIcon, CheckCircle2, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  syncFromGoogleSheet,
-  getSheetSyncState,
-  setSheetUrl,
-  addClientDemand,
-  addRequirement,
-  parseCsvClientDemands,
-  type ClientDemand,
-} from "@/lib/g3-mock";
+import { api } from "@/lib/api";
+import { parseCsvClientDemands, type ClientDemand } from "@/lib/g3-mock";
 
 /**
  * Client-intake import panel: sync demands from a configured Google Sheet, or
- * upload a CSV/Excel file. Both paths write into the shared client-demand mock
- * store. Rendered inside {@link ClientDemandDialog}.
+ * upload a CSV/Excel file. Rendered inside {@link ClientDemandDialog}.
+ *
+ * Google Sheets sync is backed by the real API. `triggerSheetSync` is an
+ * honest stub server-side today — it always returns `{ synced: false, reason }`
+ * — so we surface that reason to the user instead of pretending it succeeded.
  */
 export function GoogleSheetsSyncSection() {
-  const [syncing, setSyncing] = useState(false);
-  const [state, setState] = useState(getSheetSyncState());
-  const [inputUrl, setInputUrl] = useState(state.sheetUrl);
+  const queryClient = useQueryClient();
+  const { data: syncConfig } = useQuery({ queryKey: ["sheet-sync"], queryFn: () => api.getSheetSync() });
+
+  const [inputUrl, setInputUrl] = useState("");
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [lastSyncMessage, setLastSyncMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSync = async () => {
-    setSyncing(true);
-    try {
-      const res = await syncFromGoogleSheet();
-      toast.success(`Sheet sync complete! Loaded ${res.added + res.updated} demands.`);
-      setState(getSheetSyncState());
-    } catch (e: any) {
-      toast.error(e.message || "Failed to sync Google Sheet");
-    } finally {
-      setSyncing(false);
-    }
-  };
+  const saveUrlMutation = useMutation({
+    mutationFn: (url: string) => api.setSheetSyncUrl(url),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["sheet-sync"] });
+      setEditing(false);
+      toast.success("Google Sheet URL saved.");
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to save Google Sheet URL"),
+  });
+
+  const syncMutation = useMutation({
+    mutationFn: () => api.triggerSheetSync(),
+    onSuccess: (res) => {
+      queryClient.invalidateQueries({ queryKey: ["sheet-sync"] });
+      if (res.synced) {
+        toast.success("Sheet sync complete.");
+        setLastSyncMessage(null);
+      } else {
+        // Honest stub — don't claim a sync happened.
+        const reason = res.reason || "Google Sheets sync is not configured yet";
+        setLastSyncMessage(reason);
+        toast.info(reason);
+      }
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to sync Google Sheet"),
+  });
 
   const handleSaveUrl = () => {
     if (!inputUrl.trim()) {
       toast.error("Please enter a valid Google Sheets URL");
       return;
     }
-    setSheetUrl(inputUrl.trim());
-    setState(getSheetSyncState());
-    setEditing(false);
-    toast.success("Google Sheet URL saved.");
+    saveUrlMutation.mutate(inputUrl.trim());
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -57,22 +67,54 @@ export function GoogleSheetsSyncSection() {
 
     setUploading(true);
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvClientDemands(text);
-      if (parsed.length > 0) {
-        parsed.forEach((d: Omit<ClientDemand, "id">) => {
-          addClientDemand(d);
-        });
-        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} client demand records.`);
-      } else {
+      if (parsed.length === 0) {
         toast.info(`Uploaded ${file.name}. Please ensure file contains Client, Language, Service, and Headcount headers.`);
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        return;
       }
+
+      let created = 0;
+      let failed = 0;
+      for (const d of parsed as Omit<ClientDemand, "id">[]) {
+        try {
+          await api.createClientDemand({
+            clientName: d.client,
+            language: d.language,
+            services: d.service_breakdown.map((s) => ({ service: s.service, needed: s.needed })),
+            priority: d.priority.toUpperCase(),
+            deadline: d.deadline || undefined,
+            contactName: d.contact_name || undefined,
+            contactEmail: d.contact_email || undefined,
+            notes: d.notes || undefined,
+          });
+          created += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      queryClient.invalidateQueries({ queryKey: ["requirements"] });
+      queryClient.invalidateQueries({ queryKey: ["client-demands"] });
+
+      if (created > 0) {
+        toast.success(`Uploaded ${file.name}! Imported ${created} client demand record(s)${failed ? `, ${failed} failed` : ""}.`);
+      } else {
+        toast.error(`Uploaded ${file.name}, but no records could be imported.`);
+      }
+
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     };
     reader.readAsText(file);
   };
+
+  const sheetUrl = syncConfig?.sheetUrl ?? null;
+  const lastSyncedAt = syncConfig?.lastSyncedAt ?? null;
 
   return (
     <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
@@ -106,13 +148,13 @@ export function GoogleSheetsSyncSection() {
             </div>
             <Button
               type="button"
-              onClick={handleSync}
-              disabled={syncing}
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
               size="sm"
               className="h-7 px-2.5 gap-1.5 text-[11px] font-semibold bg-primary text-primary-foreground"
             >
-              {syncing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-              {syncing ? "Syncing..." : "Sync Sheet"}
+              {syncMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+              {syncMutation.isPending ? "Syncing..." : "Sync Sheet"}
             </Button>
           </div>
 
@@ -127,13 +169,13 @@ export function GoogleSheetsSyncSection() {
               />
             ) : (
               <span className="text-muted-foreground truncate font-mono text-[10px] flex-1">
-                {state.sheetUrl}
+                {sheetUrl || "No sheet URL configured"}
               </span>
             )}
 
             {editing ? (
               <div className="flex items-center gap-1 shrink-0">
-                <Button type="button" size="sm" onClick={handleSaveUrl} className="h-6 px-2 text-[10px]">Save</Button>
+                <Button type="button" size="sm" onClick={handleSaveUrl} disabled={saveUrlMutation.isPending} className="h-6 px-2 text-[10px]">Save</Button>
                 <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} className="h-6 px-1 text-[10px]">Cancel</Button>
               </div>
             ) : (
@@ -141,7 +183,7 @@ export function GoogleSheetsSyncSection() {
                 type="button"
                 variant="link"
                 size="sm"
-                onClick={() => setEditing(true)}
+                onClick={() => { setInputUrl(sheetUrl ?? ""); setEditing(true); }}
                 className="h-auto p-0 text-[10px] font-medium text-accent hover:underline shrink-0"
               >
                 Change URL
@@ -181,10 +223,16 @@ export function GoogleSheetsSyncSection() {
         </div>
       </div>
 
-      {state.lastSynced && (
+      {lastSyncMessage && (
+        <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground pt-0.5 px-1">
+          <Info className="h-3 w-3 shrink-0" /> {lastSyncMessage}
+        </div>
+      )}
+
+      {!lastSyncMessage && lastSyncedAt && (
         <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-0.5 px-1">
           <span className="flex items-center gap-1 text-accent font-medium">
-            <CheckCircle2 className="h-3 w-3" /> Last synced {new Date(state.lastSynced).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            <CheckCircle2 className="h-3 w-3" /> Last synced {new Date(lastSyncedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
           </span>
         </div>
       )}

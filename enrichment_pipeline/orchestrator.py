@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any, Dict, Optional, TypedDict
 
@@ -87,10 +88,15 @@ class EnrichmentOrchestrator:
             try:
                 if provider_type == "brightdata" and self.brightdata:
                     raw_scraped_data = self.brightdata.scrape_profile(profile_link)
-                    raw_source_text = str(raw_scraped_data)
+                    # json.dumps (not Python's str()) so the LLM fallback sees
+                    # standard double-quoted JSON -- str() renders None/True
+                    # as Python literals and adds repr noise that wastes the
+                    # 8000-char budget extract_critical_fields truncates to,
+                    # for no benefit to a model asked to find verbatim quotes.
+                    raw_source_text = json.dumps(raw_scraped_data, ensure_ascii=False, default=str)
                 elif provider_type == "tavily_search" and self.tavily:
                     raw_scraped_data = self.tavily.search_snippets(f"site:proz.com {lead.get('Full_Name', '')}".strip(), include_domains=["proz.com"])
-                    raw_source_text = str(raw_scraped_data)
+                    raw_source_text = json.dumps(raw_scraped_data, ensure_ascii=False, default=str)
                 elif provider_type == "tavily_extract" and self.tavily:
                     raw_scraped_data = self.tavily.extract_url(profile_link)
                     raw_source_text = raw_scraped_data.get("raw_content", "")

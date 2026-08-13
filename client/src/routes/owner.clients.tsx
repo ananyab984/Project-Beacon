@@ -1,28 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  useClients,
-  useRequirements,
-  useRecruiterLanguageMappings,
-  useRecruiters,
-  assignRequirementRecruiter,
-  updateRequirementDeadline,
-  leads,
-  type Requirement,
-} from "@/lib/g3-mock";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiRequirement, ApiUser } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus,
   Search,
-  Users,
   AlertCircle,
   Clock,
   CheckCircle2,
   ChevronRight,
   History,
-  UserCheck,
-  AlertTriangle,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -42,55 +32,89 @@ export const Route = createFileRoute("/owner/clients")({
   component: ClientsPage,
 });
 
+/** Deterministic decorative avatar hue since ApiUser has no stored color. */
+function hueFromId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) % 360;
+  return h;
+}
+
+function titleCase(s: string): string {
+  return s.length ? s[0] + s.slice(1).toLowerCase() : s;
+}
+
 function ClientsPage() {
-  const clients = useClients();
-  const allRequirements = useRequirements();
-  const recruiters = useRecruiters();
+  const queryClient = useQueryClient();
 
   const [q, setQ] = useState("");
   const [selectedClient, setSelectedClient] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
-  
+
   const [drill, setDrill] = useState<string | null>(null);
   const [showMappingModal, setShowMappingModal] = useState(false);
 
-  const clientMap = useMemo(
-    () => Object.fromEntries(clients.map((c) => [c.id, c])),
-    [clients],
+  const { data: clientsData } = useQuery({ queryKey: ["clients"], queryFn: () => api.getClients() });
+  const clients = clientsData?.clients ?? [];
+
+  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const recruiters = recruitersData?.users ?? [];
+
+  // Unfiltered set — used for the summary metric tiles.
+  const { data: allReqData } = useQuery({ queryKey: ["requirements", "all"], queryFn: () => api.getRequirements() });
+  const allRequirements = allReqData?.requirements ?? [];
+
+  const filters = useMemo(
+    () => ({
+      clientId: selectedClient !== "all" ? selectedClient : undefined,
+      status: statusFilter !== "all" ? statusFilter : undefined,
+      priority: priorityFilter !== "all" ? priorityFilter : undefined,
+      q: q || undefined,
+    }),
+    [selectedClient, statusFilter, priorityFilter, q],
   );
 
-  // Filter requirements
+  const {
+    data: filteredReqData,
+    isLoading: reqLoading,
+    error: reqError,
+  } = useQuery({ queryKey: ["requirements", filters], queryFn: () => api.getRequirements(filters) });
+
   const filteredRequirements = useMemo(() => {
-    return allRequirements.filter((r) => {
-      const clientName = clientMap[r.client_id]?.name ?? "";
-      const matchQ =
-        q === "" ||
-        r.title.toLowerCase().includes(q.toLowerCase()) ||
-        r.language.toLowerCase().includes(q.toLowerCase()) ||
-        r.service.toLowerCase().includes(q.toLowerCase()) ||
-        clientName.toLowerCase().includes(q.toLowerCase()) ||
-        (r.project_name ?? "").toLowerCase().includes(q.toLowerCase());
+    const list = filteredReqData?.requirements ?? [];
+    return [...list].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [filteredReqData]);
 
-      const matchClient = selectedClient === "all" || r.client_id === selectedClient;
-      const matchStatus = statusFilter === "all" || r.status === statusFilter;
-      const matchPriority = priorityFilter === "all" || r.priority === priorityFilter;
+  const assignMutation = useMutation({
+    mutationFn: ({ id, recruiterId }: { id: string; recruiterId: string | null }) => api.assignRequirement(id, recruiterId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["requirements"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to update recruiter assignment"),
+  });
 
-      return matchQ && matchClient && matchStatus && matchPriority;
-    }).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-  }, [allRequirements, clientMap, q, selectedClient, statusFilter, priorityFilter]);
+  const updateDeadlineMutation = useMutation({
+    mutationFn: ({ id, deadline }: { id: string; deadline: string }) => api.updateRequirement(id, { deadline }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["requirements"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to update deadline"),
+  });
 
   // Overall metrics
   const totalReqs = allRequirements.length;
-  const unassignedReqs = allRequirements.filter((r) => !r.recruiter_id).length;
-  const activeReqs = allRequirements.filter((r) => r.status === "active").length;
-  const fulfilledReqs = allRequirements.filter((r) => r.status === "fulfilled").length;
+  const unassignedReqs = allRequirements.filter((r) => !r.recruiterId).length;
+  const activeReqs = allRequirements.filter((r) => r.status === "ACTIVE").length;
+  const fulfilledReqs = allRequirements.filter((r) => r.status === "FULFILLED").length;
 
-  const activeReq = allRequirements.find((r) => r.id === drill);
-  const activeClient = activeReq ? clientMap[activeReq.client_id] : null;
-  const activeLeads = activeReq
-    ? leads.filter((l) => l.language.toLowerCase().includes(activeReq.language.toLowerCase())).slice(0, 6)
-    : [];
+  const activeReq = allRequirements.find((r) => r.id === drill) ?? filteredRequirements.find((r) => r.id === drill);
+
+  const { data: activeLeadsData } = useQuery({
+    queryKey: ["leads", "by-language", activeReq?.language],
+    queryFn: () => api.getLeads({ language: activeReq!.language, limit: 6 }),
+    enabled: !!activeReq,
+  });
+  const activeLeads = activeLeadsData?.leads ?? [];
 
   return (
     <div className="mx-auto max-w-7xl space-y-5">
@@ -140,10 +164,10 @@ function ClientsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="fulfilled">Fulfilled</SelectItem>
-              <SelectItem value="paused">Paused</SelectItem>
+              <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+              <SelectItem value="ACTIVE">Active</SelectItem>
+              <SelectItem value="FULFILLED">Fulfilled</SelectItem>
+              <SelectItem value="PAUSED">Paused</SelectItem>
             </SelectContent>
           </Select>
 
@@ -153,9 +177,9 @@ function ClientsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Priorities</SelectItem>
-              <SelectItem value="critical">Critical</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="standard">Standard</SelectItem>
+              <SelectItem value="CRITICAL">Critical</SelectItem>
+              <SelectItem value="HIGH">High</SelectItem>
+              <SelectItem value="STANDARD">Standard</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -190,12 +214,11 @@ function ClientsPage() {
           </thead>
           <tbody className="divide-y divide-border">
             {filteredRequirements.map((req) => {
-              const client = clientMap[req.client_id];
-              const assignedRecruiter = recruiters.find((r) => r.id === req.recruiter_id);
+              const assignedRecruiter = recruiters.find((r) => r.id === req.recruiterId);
 
               const fillPct =
-                req.headcount_needed > 0
-                  ? Math.min(100, (req.filled / req.headcount_needed) * 100)
+                req.headcountNeeded > 0
+                  ? Math.min(100, (req.filled / req.headcountNeeded) * 100)
                   : 0;
 
               return (
@@ -207,11 +230,11 @@ function ClientsPage() {
                   {/* Client & Project */}
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
-                      <ClientLogo name={client?.name ?? "?"} size="md" />
+                      <ClientLogo name={req.client?.name ?? "?"} size="md" />
                       <div>
-                        <div className="font-semibold text-foreground">{client?.name ?? "Client"}</div>
+                        <div className="font-semibold text-foreground">{req.client?.name ?? "Client"}</div>
                         <div className="text-[11px] text-muted-foreground">
-                          {req.title} {req.project_name ? `· ${req.project_name}` : ""}
+                          {req.title} {req.projectName ? `· ${req.projectName}` : ""}
                         </div>
                       </div>
                     </div>
@@ -227,16 +250,22 @@ function ClientsPage() {
                   {/* Assigned Recruiter Column */}
                   <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
                     <Select
-                      value={req.recruiter_id || "unassigned"}
+                      value={req.recruiterId || "unassigned"}
                       onValueChange={(val) => {
-                        const nextId = val === "unassigned" ? undefined : val;
-                        assignRequirementRecruiter(req.id, nextId);
+                        const nextId = val === "unassigned" ? null : val;
                         const recName = recruiters.find((r) => r.id === val)?.name;
-                        if (nextId) {
-                          toast.success(`Assigned ${req.title} to ${recName}`);
-                        } else {
-                          toast.info(`Unassigned ${req.title}`);
-                        }
+                        assignMutation.mutate(
+                          { id: req.id, recruiterId: nextId },
+                          {
+                            onSuccess: () => {
+                              if (nextId) {
+                                toast.success(`Assigned ${req.title} to ${recName}`);
+                              } else {
+                                toast.info(`Unassigned ${req.title}`);
+                              }
+                            },
+                          },
+                        );
                       }}
                     >
                       <SelectTrigger className="h-8 w-44 text-xs bg-card">
@@ -245,12 +274,14 @@ function ClientsPage() {
                             <span className="flex items-center gap-1.5 font-medium">
                               <span
                                 className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white shrink-0"
-                                style={{ background: `oklch(0.55 0.18 ${assignedRecruiter.avatar_hue}deg)` }}
+                                style={{ background: `oklch(0.55 0.18 ${hueFromId(assignedRecruiter.id)}deg)` }}
                               >
                                 {assignedRecruiter.name[0]}
                               </span>
                               <span className="truncate">{assignedRecruiter.name}</span>
                             </span>
+                          ) : req.recruiter?.name ? (
+                            <span className="truncate font-medium">{req.recruiter.name}</span>
                           ) : (
                             <span className="flex items-center gap-1 text-warning font-medium">
                               <AlertCircle className="h-3 w-3" /> Unassigned
@@ -262,17 +293,16 @@ function ClientsPage() {
                         <SelectItem value="unassigned">
                           <span className="font-semibold text-warning">Unassigned</span>
                         </SelectItem>
-                        {recruiters.filter(r => r.role !== "contractor").map((r) => (
+                        {recruiters.map((r) => (
                           <SelectItem key={r.id} value={r.id}>
                             <div className="flex items-center gap-2">
                               <span
                                 className="flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold text-white shrink-0"
-                                style={{ background: `oklch(0.55 0.18 ${r.avatar_hue}deg)` }}
+                                style={{ background: `oklch(0.55 0.18 ${hueFromId(r.id)}deg)` }}
                               >
                                 {r.name[0]}
                               </span>
                               <span className="font-medium">{r.name}</span>
-                              <span className="text-[10px] text-muted-foreground ml-auto">· {r.kpis.overall_score}%</span>
                             </div>
                           </SelectItem>
                         ))}
@@ -294,18 +324,20 @@ function ClientsPage() {
                       const isAtRisk = req.gap > 0 && daysLeft <= 14;
                       const confirmedStr = req.filled === 0
                         ? `0 ${req.language} resources confirmed`
-                        : `only ${req.filled} of ${req.headcount_needed} ${req.language} confirmed`;
-                      const riskReason = `${client?.name ?? "Client"} due in ${daysLeft} days, ${confirmedStr}`;
+                        : `only ${req.filled} of ${req.headcountNeeded} ${req.language} confirmed`;
+                      const riskReason = `${req.client?.name ?? "Client"} due in ${daysLeft} days, ${confirmedStr}`;
 
                       return (
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5">
                             <Input
                               type="date"
-                              value={req.deadline}
+                              value={req.deadline.slice(0, 10)}
                               onChange={(e) => {
-                                updateRequirementDeadline(req.id, e.target.value);
-                                toast.success(`Updated target due date for ${req.title}`);
+                                updateDeadlineMutation.mutate(
+                                  { id: req.id, deadline: e.target.value },
+                                  { onSuccess: () => toast.success(`Updated target due date for ${req.title}`) },
+                                );
                               }}
                               className="h-7 w-32 text-[11px] bg-card border-border/80 px-1.5"
                             />
@@ -332,8 +364,10 @@ function ClientsPage() {
                         type="date"
                         onChange={(e) => {
                           if (e.target.value) {
-                            updateRequirementDeadline(req.id, e.target.value);
-                            toast.success(`Set target due date for ${req.title}`);
+                            updateDeadlineMutation.mutate(
+                              { id: req.id, deadline: e.target.value },
+                              { onSuccess: () => toast.success(`Set target due date for ${req.title}`) },
+                            );
                           }
                         }}
                         className="h-7 w-32 text-[11px] bg-card border-border/80 px-1.5 text-muted-foreground"
@@ -343,7 +377,7 @@ function ClientsPage() {
 
                   {/* Headcount metrics */}
                   <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">
-                    {req.headcount_needed}
+                    {req.headcountNeeded}
                   </td>
                   <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">
                     {req.filled}
@@ -378,7 +412,20 @@ function ClientsPage() {
           </tbody>
         </table>
 
-        {filteredRequirements.length === 0 && (
+        {reqLoading && (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <p className="text-sm">Loading requirements…</p>
+          </div>
+        )}
+
+        {!reqLoading && reqError && (
+          <div className="flex flex-col items-center justify-center py-16 text-destructive">
+            <AlertCircle className="h-8 w-8 mb-2 opacity-50" />
+            <p className="text-sm">{(reqError as any)?.message || "Failed to load requirements"}</p>
+          </div>
+        )}
+
+        {!reqLoading && !reqError && filteredRequirements.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
             <AlertCircle className="h-8 w-8 mb-2 opacity-30" />
             <p className="text-sm">No requirements match the current filters</p>
@@ -389,15 +436,15 @@ function ClientsPage() {
       {/* Requirement Detail Side Sheet */}
       <Sheet open={!!activeReq} onOpenChange={(o) => !o && setDrill(null)}>
         <SheetContent className="w-full sm:max-w-2xl overflow-auto">
-          {activeReq && activeClient && (
+          {activeReq && (
             <>
               <SheetHeader>
                 <div className="flex items-center gap-3">
-                  <ClientLogo name={activeClient.name} size="lg" />
+                  <ClientLogo name={activeReq.client?.name ?? "?"} size="lg" />
                   <div>
                     <SheetTitle className="text-left">{activeReq.title}</SheetTitle>
                     <p className="text-xs text-muted-foreground">
-                      {activeClient.name} · {activeReq.language} — {activeReq.service}
+                      {activeReq.client?.name ?? "Client"} · {activeReq.language} — {activeReq.service}
                     </p>
                   </div>
                 </div>
@@ -405,7 +452,7 @@ function ClientsPage() {
 
               {/* Headcount tiles */}
               <div className="mt-4 grid grid-cols-3 gap-3">
-                <Tile label="Needed" value={activeReq.headcount_needed} />
+                <Tile label="Needed" value={activeReq.headcountNeeded} />
                 <Tile label="Filled" value={activeReq.filled} tone="ok" />
                 <Tile
                   label="Gap"
@@ -420,7 +467,7 @@ function ClientsPage() {
                 <dd className="font-semibold text-accent">{activeReq.language} — {activeReq.service}</dd>
                 <dt className="text-muted-foreground">Assigned Recruiter</dt>
                 <dd className="font-medium">
-                  {recruiters.find(r => r.id === activeReq.recruiter_id)?.name ?? <span className="text-warning">Unassigned</span>}
+                  {activeReq.recruiter?.name ?? <span className="text-warning">Unassigned</span>}
                 </dd>
                 <dt className="text-muted-foreground">Priority</dt>
                 <dd><PriorityPill priority={activeReq.priority} /></dd>
@@ -447,34 +494,30 @@ function ClientsPage() {
               </p>
               <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 {activeLeads.map((l) => (
-                  <LeadCard key={l.id} lead={l} compact />
+                  <LeadCard key={l.id} lead={l} recruiters={recruiters} compact />
                 ))}
               </div>
 
-              {/* Assignment Audit History */}
-              {activeReq.assignment_history.length > 0 && (
+              {/* Current Assignment — no full history endpoint exists yet server-side,
+                  so we surface only the current assignment rather than fabricate a log. */}
+              {activeReq.recruiterId && (
                 <div className="mt-6">
                   <h3 className="text-sm font-semibold flex items-center gap-1.5">
-                    <History className="h-4 w-4 text-muted-foreground" /> Assignment History
+                    <History className="h-4 w-4 text-muted-foreground" /> Current Assignment
                   </h3>
-                  <div className="mt-2 rounded-xl border border-border bg-muted/20 p-3 space-y-2 text-xs">
-                    {[...activeReq.assignment_history].reverse().map((h, i) => {
-                      const recName = recruiters.find((r) => r.id === h.recruiter_id)?.name ?? "Unknown";
-                      return (
-                        <div key={i} className="flex justify-between items-center text-[11px]">
-                          <span>
-                            <strong className="text-foreground">{recName}</strong> assigned by {h.assigned_by}
-                          </span>
-                          <span className="text-muted-foreground tabular-nums">
-                            {new Date(h.assigned_at).toLocaleDateString("en-GB", {
-                              day: "2-digit",
-                              month: "short",
-                              year: "numeric",
-                            })}
-                          </span>
-                        </div>
-                      );
-                    })}
+                  <div className="mt-2 rounded-xl border border-border bg-muted/20 p-3 text-xs">
+                    <div className="flex justify-between items-center text-[11px]">
+                      <span>
+                        <strong className="text-foreground">{activeReq.recruiter?.name ?? "Recruiter"}</strong> currently assigned
+                      </span>
+                      <span className="text-muted-foreground tabular-nums">
+                        {new Date(activeReq.createdAt).toLocaleDateString("en-GB", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -533,32 +576,32 @@ function Tile({ label, value, tone }: { label: string; value: number; tone?: "ok
   );
 }
 
-function PriorityPill({ priority }: { priority: Requirement["priority"] }) {
-  const map = {
-    critical: "bg-destructive/15 text-destructive",
-    high: "bg-warning/15 text-warning",
-    standard: "bg-muted text-muted-foreground",
-  }[priority];
-  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${map}`}>{priority}</span>;
+function PriorityPill({ priority }: { priority: ApiRequirement["priority"] }) {
+  const map: Record<string, string> = {
+    CRITICAL: "bg-destructive/15 text-destructive",
+    HIGH: "bg-warning/15 text-warning",
+    STANDARD: "bg-muted text-muted-foreground",
+  };
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${map[priority]}`}>{titleCase(priority)}</span>;
 }
 
-function StatusBadge({ status }: { status: Requirement["status"] }) {
+function StatusBadge({ status }: { status: ApiRequirement["status"] }) {
   const map: Record<string, string> = {
-    unassigned: "bg-warning/15 text-warning",
-    active: "bg-accent/15 text-accent",
-    fulfilled: "bg-[oklch(0.62_0.14_155)]/15 text-[oklch(0.42_0.14_155)]",
-    paused: "bg-muted text-muted-foreground",
+    UNASSIGNED: "bg-warning/15 text-warning",
+    ACTIVE: "bg-accent/15 text-accent",
+    FULFILLED: "bg-[oklch(0.62_0.14_155)]/15 text-[oklch(0.42_0.14_155)]",
+    PAUSED: "bg-muted text-muted-foreground",
   };
   const icons: Record<string, typeof AlertCircle> = {
-    unassigned: AlertCircle,
-    active: Clock,
-    fulfilled: CheckCircle2,
-    paused: Clock,
+    UNASSIGNED: AlertCircle,
+    ACTIVE: Clock,
+    FULFILLED: CheckCircle2,
+    PAUSED: Clock,
   };
   const Icon = icons[status] ?? Clock;
   return (
     <span className={`flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${map[status]}`}>
-      <Icon className="h-3 w-3" /> {status}
+      <Icon className="h-3 w-3" /> {titleCase(status)}
     </span>
   );
 }

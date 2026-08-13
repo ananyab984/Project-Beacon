@@ -27,6 +27,7 @@ function VerifyPage() {
         setStatus("success");
         setMessage(`Email verified for ${u.email}`);
         toast.success("Email verified");
+        navigate({ to: roleHome(u.role) });
       })
       .catch((err) => {
         setStatus("error");

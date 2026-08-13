@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useClientDemands } from "@/lib/g3-mock";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
 import { useMemo, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Search } from "lucide-react";
@@ -15,16 +16,17 @@ export const Route = createFileRoute("/contractor/requirements")({
 });
 
 function RequirementsPage() {
-  const clientDemands = useClientDemands();
+  const { data, isLoading, error } = useQuery({ queryKey: ["client-demands"], queryFn: () => api.getClientDemands() });
+  const clientDemands = data?.clientDemands ?? [];
   const [q, setQ] = useState("");
 
   // Aggregate by language (sum across clients — contractors don't need per-client breakdown)
   const byLanguage = useMemo(() => {
     const map = new Map<string, { needed: number; filled: number; gap: number }>();
-    for (const d of clientDemands.filter(d => d.status !== "paused")) {
+    for (const d of clientDemands.filter(d => d.status !== "PAUSED")) {
       const cur = map.get(d.language) ?? { needed: 0, filled: 0, gap: 0 };
       map.set(d.language, {
-        needed: cur.needed + d.headcount_needed,
+        needed: cur.needed + d.headcountNeeded,
         filled: cur.filled + d.filled,
         gap: cur.gap + d.gap,
       });
@@ -110,7 +112,19 @@ function RequirementsPage() {
           </tbody>
         </table>
 
-        {filtered.length === 0 && (
+        {isLoading && (
+          <div className="px-5 py-10 text-center text-sm text-muted-foreground">
+            Loading requirements…
+          </div>
+        )}
+
+        {!isLoading && error && (
+          <div className="px-5 py-10 text-center text-sm text-destructive">
+            {(error as any)?.message || "Failed to load requirements"}
+          </div>
+        )}
+
+        {!isLoading && !error && filtered.length === 0 && (
           <div className="px-5 py-10 text-center text-sm text-muted-foreground">
             No requirements match your filter.
           </div>

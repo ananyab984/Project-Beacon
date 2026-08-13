@@ -1,14 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import {
-  recruiters,
-  useClientDemands,
   outreachBatch,
   profileCompleteness,
-  getCombinedEscalations,
-  useRequirements,
-  recruiterById,
   teamKpis,
 } from "@/lib/g3-mock";
+import { api } from "@/lib/api";
 import { FEATURES } from "@/lib/feature-flags";
 import {
   Radio,
@@ -20,11 +17,9 @@ import {
   AlertOctagon,
   ShieldOff,
   Gauge,
-  AlertTriangle,
 } from "lucide-react";
 import { KpiTile, ScoreRing } from "@/components/features/kpi";
 import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
-import { useMemo } from "react";
 
 export const Route = createFileRoute("/owner/")({
   head: () => ({
@@ -40,10 +35,16 @@ export const Route = createFileRoute("/owner/")({
 });
 
 function Overview() {
+  // teamKpis()/outreachBatch/profileCompleteness have no real backend aggregate
+  // endpoint yet (no team-wide KPI rollup was built) -- left on mock data for
+  // now rather than fabricating a fake real-looking number.
   const team = teamKpis();
-  const clientDemands = useClientDemands();
-  const reqs = useRequirements();
-  const escalationsList = useMemo(() => getCombinedEscalations(), [reqs]);
+  const { data: demandsData } = useQuery({ queryKey: ["client-demands"], queryFn: api.getClientDemands });
+  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const { data: escalationsData } = useQuery({ queryKey: ["escalations"], queryFn: api.getEscalations });
+  const clientDemands = demandsData?.clientDemands ?? [];
+  const recruiterCount = recruitersData?.users.length ?? 0;
+  const escalationsList = escalationsData?.escalations ?? [];
   const { scale, label: rangeLabel } = useDateRange();
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -53,7 +54,7 @@ function Overview() {
           <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Owner overview</div>
           <h2 className="mt-1 text-2xl font-semibold tracking-tight">Overview Dashboard</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            {escalationsList.length} items need your attention across {recruiters.length} recruiters and{" "}
+            {escalationsList.length} items need your attention across {recruiterCount} recruiters and{" "}
             {clientDemands.length} active language demands.
           </p>
         </div>
@@ -175,7 +176,7 @@ function Overview() {
             <span className="grid h-6 w-6 place-items-center rounded-md bg-warning/15 text-warning">
               <AlertOctagon className="h-3.5 w-3.5" />
             </span>
-            <div className="text-sm font-semibold">Escalated Items & Client Due Date Risks</div>
+            <div className="text-sm font-semibold">Escalated Items</div>
             <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[10px] font-medium text-warning">
               {escalationsList.length}
             </span>
@@ -184,8 +185,6 @@ function Overview() {
         </div>
         <ul className="divide-y divide-border/60">
           {escalationsList.slice(0, 2).map((e) => {
-            const rec = e.recruiter_id ? recruiterById(e.recruiter_id) : undefined;
-            const isClientRisk = e.category === "Client Risk";
             const priorityStyle =
               e.priority === "P1"
                 ? "border-destructive/50 bg-destructive/10 text-destructive"
@@ -200,15 +199,10 @@ function Overview() {
                     <span className={`rounded border px-1.5 py-0.5 text-[9px] font-bold ${priorityStyle}`}>
                       {e.priority}
                     </span>
-                    {isClientRisk && (
-                      <span className="rounded bg-destructive/15 px-1.5 py-0.5 text-[9px] font-bold text-destructive flex items-center gap-1 shrink-0">
-                        <AlertTriangle className="h-3 w-3" /> Client Due Date Alert
-                      </span>
-                    )}
                     <span className="text-xs font-semibold text-foreground truncate">{e.title}</span>
                   </div>
                   <span className="text-[11px] text-muted-foreground shrink-0">
-                    Owner: <span className="text-foreground font-medium">{e.owner}</span>
+                    {e.ownerUserId ? "Assigned" : "Unassigned"}
                   </span>
                 </div>
               </li>

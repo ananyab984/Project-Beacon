@@ -6,7 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Upload, Download, FileSpreadsheet, Plus } from "lucide-react";
 import { toast } from "sonner";
-import { addLead, parseCsvLeads, Lead } from "@/lib/g3-mock";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiLead, LeadSource } from "@/lib/api-types";
+import { parseCsvLeads } from "@/lib/g3-mock";
 
 const SOURCES = [
   "LinkedIn",
@@ -20,6 +23,16 @@ const SOURCES = [
   "Referral",
   "Import",
 ];
+
+const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+
+/** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
+function mapToLeadSource(raw: string | undefined | null): LeadSource {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
+  return hit ?? "LINKEDIN";
+}
 
 const LANGUAGES = [
   // Region 1 — East and South Asia
@@ -65,6 +78,7 @@ export function AddLeadDialog({
   setOpen?: (open: boolean) => void;
   trigger?: ReactNode;
 }) {
+  const queryClient = useQueryClient();
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledSetOpen ?? setInternalOpen;
@@ -85,6 +99,31 @@ export function AddLeadDialog({
   const [customService, setCustomService] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  function invalidateLeads() {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (lead: Partial<ApiLead> & { fullName: string; source: string }) => api.createLead(lead),
+    onSuccess: (_res, lead) => {
+      toast.success(`Lead ${lead.fullName} added to My Leads!`);
+      invalidateLeads();
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to add lead"),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      invalidateLeads();
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
   function set(k: string, v: string) {
     setValues((prev) => ({ ...prev, [k]: v }));
     setErrors((prev) => ({ ...prev, [k]: "" }));
@@ -104,45 +143,45 @@ export function AddLeadDialog({
     return Object.keys(next).length === 0;
   }
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
 
     const trimmed = values.full_name.trim();
-    const id = `lead_${Date.now()}`;
-    const name = values.first_name ? `${values.first_name} (${trimmed})` : trimmed;
     const resolvedService = values.services === "Custom" ? customService.trim() : values.services;
     const services = resolvedService
       ? resolvedService.split(",").map((s) => s.trim()).filter(Boolean)
       : ["Subtitling"];
 
-    const newLead: Partial<Lead> & { id: string } = {
-      id,
-      display_name: name,
-      masked_label: name,
-      language: values.target_language || "German",
-      source_language: values.source_language || "English",
-      target_language: values.target_language || "German",
-      secondary_languages: values.secondary_languages
+    try {
+      const dup = await api.checkDuplicateLead({
+        email: values.email_address || undefined,
+        contactNumber: values.contact_number || undefined,
+        fullName: trimmed,
+      });
+      if (dup.isDuplicate) {
+        toast.warning("A similar lead may already exist — submitting anyway.");
+      }
+    } catch {
+      // Non-blocking hint only — proceed even if the duplicate check itself fails.
+    }
+
+    createMutation.mutate({
+      fullName: trimmed,
+      firstName: values.first_name || undefined,
+      source: mapToLeadSource(values.source),
+      profileLink: values.profile_link || undefined,
+      email: values.email_address || undefined,
+      contactNumber: values.contact_number || undefined,
+      reachoutDate: values.reachout_date || undefined,
+      sourceLanguage: values.source_language || undefined,
+      targetLanguage: values.target_language || undefined,
+      secondaryLanguages: values.secondary_languages
         ? values.secondary_languages.split(",").map((l) => l.trim()).filter(Boolean)
         : [],
       services,
-      stage: "Contacted",
-      source: (values.source as any) || "LinkedIn",
-      country: values.country_of_residence || "Germany",
-      verified_email: true,
-      confirmed_language_pair: true,
-      years_experience: 5,
-      recruiter_id: "r1",
-      last_activity: "Just now",
-      identity_resolved: true,
-      flags: [],
-      availability: "Available Now",
-    };
-
-    addLead(newLead as Lead);
-    toast.success(`Lead ${trimmed} added to My Leads!`);
-    setOpen(false);
+      country: values.country_of_residence || undefined,
+    });
   }
 
   const handleCsvDownload = () => {
@@ -170,14 +209,14 @@ export function AddLeadDialog({
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
       if (parsed.length > 0) {
-        parsed.forEach((l) => {
-          addLead({
-            ...l,
-            id: `l_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
-          });
-        });
-        toast.success(`Uploaded ${file.name}! Imported ${parsed.length} candidate leads.`);
-        setOpen(false);
+        const rows = parsed.map((l) => ({
+          fullName: l.display_name ?? l.masked_label,
+          source: mapToLeadSource(l.source),
+          services: l.services,
+          targetLanguage: l.language,
+        }));
+        bulkCreateMutation.mutate(rows);
+        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
       } else {
         toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Services columns.`);
       }
@@ -371,7 +410,9 @@ export function AddLeadDialog({
 
           <DialogFooter className="md:col-span-2 pt-2 border-t border-border">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">Add Lead</Button>
+            <Button type="submit" disabled={createMutation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
+              {createMutation.isPending ? "Adding…" : "Add Lead"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

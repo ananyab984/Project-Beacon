@@ -1,12 +1,14 @@
-import { getCombinedEscalations, recruiterById, useRequirements } from "@/lib/g3-mock";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiEscalation, EscalationPriority, EscalationStatus } from "@/lib/api-types";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Bell, Clock } from "lucide-react";
+import { Bell } from "lucide-react";
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
-function priorityStyle(p: "P1" | "P2" | "P3") {
+function priorityStyle(p: EscalationPriority) {
   return p === "P1"
     ? "border-destructive/40 bg-destructive/10 text-destructive"
     : p === "P2"
@@ -14,12 +16,61 @@ function priorityStyle(p: "P1" | "P2" | "P3") {
     : "border-accent/40 bg-accent/10 text-accent";
 }
 
+function statusLabel(s: EscalationStatus) {
+  switch (s) {
+    case "OPEN":
+      return "Open";
+    case "ACKNOWLEDGED":
+      return "Acknowledged";
+    case "IN_PROGRESS":
+      return "In Progress";
+    default:
+      return s;
+  }
+}
+
+function ageDays(createdAt: string): number {
+  return Math.max(0, Math.floor((Date.now() - new Date(createdAt).getTime()) / 86400000));
+}
+
+const priorityRank: Record<EscalationPriority, number> = { P1: 0, P2: 1, P3: 2 };
+
 export function EscalationsBell() {
   const [openId, setOpenId] = useState<string | null>(null);
-  const reqs = useRequirements();
-  const sortedEscalations = useMemo(() => getCombinedEscalations(), [reqs]);
-  const active = sortedEscalations.find((e) => e.id === openId) ?? null;
+  const queryClient = useQueryClient();
+
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["escalations"],
+    queryFn: api.getEscalations,
+  });
+
+  const sortedEscalations = useMemo(() => {
+    const list = data?.escalations ?? [];
+    return [...list].sort(
+      (a, b) => priorityRank[a.priority] - priorityRank[b.priority] || ageDays(a.createdAt) - ageDays(b.createdAt)
+    );
+  }, [data]);
+
+  const active: ApiEscalation | null = sortedEscalations.find((e) => e.id === openId) ?? null;
   const p1Count = sortedEscalations.filter((e) => e.priority === "P1").length;
+
+  const closeDialog = () => setOpenId(null);
+
+  const assignToMeMutation = useMutation({
+    mutationFn: (id: string) => api.updateEscalation(id, { assignToMe: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["escalations"] });
+      closeDialog();
+    },
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: (id: string) => api.updateEscalation(id, { status: "ACKNOWLEDGED" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["escalations"] });
+      closeDialog();
+    },
+  });
 
   return (
     <>
@@ -43,47 +94,49 @@ export function EscalationsBell() {
             </div>
           </div>
           <div className="max-h-[26rem] divide-y divide-border overflow-auto">
-            {sortedEscalations.length === 0 && (
+            {isPending && (
+              <div className="p-6 text-center text-xs text-muted-foreground">Loading escalations…</div>
+            )}
+            {isError && (
+              <div className="p-6 text-center text-xs text-destructive">Couldn't load escalations.</div>
+            )}
+            {!isPending && !isError && sortedEscalations.length === 0 && (
               <div className="p-6 text-center text-xs text-muted-foreground">
-                No open escalations or due date risks.
+                No escalations right now.
               </div>
             )}
-            {sortedEscalations.map((e) => {
-              const rec = e.recruiter_id ? recruiterById(e.recruiter_id) : undefined;
-              return (
-                <button
-                  key={e.id}
-                  onClick={() => setOpenId(e.id)}
-                  className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/60"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-bold ${priorityStyle(e.priority)}`}>
-                          {e.priority}
-                        </span>
-                        <div className="truncate text-sm font-medium text-foreground">{e.title}</div>
-                      </div>
-                      <div className="mt-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">{e.category}</div>
+            {sortedEscalations.map((e) => (
+              <button
+                key={e.id}
+                onClick={() => setOpenId(e.id)}
+                className="w-full px-4 py-3 text-left transition-colors hover:bg-muted/60"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[9px] font-bold ${priorityStyle(e.priority)}`}>
+                        {e.priority}
+                      </span>
+                      <div className="truncate text-sm font-medium text-foreground">{e.title}</div>
                     </div>
-                    <span className="shrink-0 text-[11px] text-muted-foreground">{e.age_days}d</span>
+                    <div className="mt-0.5 text-[10px] uppercase tracking-widest text-muted-foreground">{e.category}</div>
                   </div>
-                  <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{e.detail}</div>
-                  <div className="mt-1 flex items-center justify-between text-[11px]">
-                    <span className="text-muted-foreground">
-                      Owner: <span className="text-foreground">{e.owner}</span>
-                      {rec ? ` · ${rec.name}` : ""}
-                    </span>
-                    <span className="text-muted-foreground">{e.status}</span>
-                  </div>
-                </button>
-              );
-            })}
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{ageDays(e.createdAt)}d</span>
+                </div>
+                <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{e.detail}</div>
+                <div className="mt-1 flex items-center justify-between text-[11px]">
+                  <span className="text-muted-foreground">
+                    Owner: <span className="text-foreground">{e.ownerUserId ? "Assigned" : "Unassigned"}</span>
+                  </span>
+                  <span className="text-muted-foreground">{statusLabel(e.status)}</span>
+                </div>
+              </button>
+            ))}
           </div>
         </PopoverContent>
       </Popover>
 
-      <Dialog open={!!active} onOpenChange={(o) => !o && setOpenId(null)}>
+      <Dialog open={!!active} onOpenChange={(o) => !o && closeDialog()}>
         <DialogContent className="max-w-xl">
           {active && (
             <>
@@ -93,7 +146,7 @@ export function EscalationsBell() {
                     {active.priority}
                   </span>
                   {active.title}
-                  <Badge variant="outline" className="text-[10px]">{active.status}</Badge>
+                  <Badge variant="outline" className="text-[10px]">{statusLabel(active.status)}</Badge>
                 </DialogTitle>
                 <DialogDescription>{active.detail}</DialogDescription>
               </DialogHeader>
@@ -104,32 +157,32 @@ export function EscalationsBell() {
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">Owner</div>
-                  <div className="font-medium">{active.owner}</div>
+                  <div className="font-medium">{active.ownerUserId ? "Assigned" : "Unassigned"}</div>
                 </div>
                 <div>
                   <div className="text-xs text-muted-foreground">Age</div>
-                  <div className="font-medium">{active.age_days} days</div>
+                  <div className="font-medium">{ageDays(active.createdAt)} days</div>
                 </div>
-                {active.sla_hours_remaining !== undefined && (
+                {active.slaHoursRemaining !== null && (
                   <div>
                     <div className="text-xs text-muted-foreground">SLA</div>
-                    <div className={`font-medium ${active.sla_hours_remaining < 0 ? "text-destructive" : "text-foreground"}`}>
-                      {active.sla_hours_remaining < 0
-                        ? `${Math.abs(active.sla_hours_remaining)}h breached`
-                        : `${active.sla_hours_remaining}h remaining`}
+                    <div className={`font-medium ${active.slaHoursRemaining < 0 ? "text-destructive" : "text-foreground"}`}>
+                      {active.slaHoursRemaining < 0
+                        ? `${Math.abs(active.slaHoursRemaining)}h breached`
+                        : `${active.slaHoursRemaining}h remaining`}
                     </div>
                   </div>
                 )}
-                {active.recruiter_id && (
+                {active.recruiterId && (
                   <div>
                     <div className="text-xs text-muted-foreground">Recruiter</div>
-                    <div className="font-medium">{recruiterById(active.recruiter_id)?.name}</div>
+                    <div className="font-medium">{active.recruiterId}</div>
                   </div>
                 )}
-                {active.lead_id && (
+                {active.leadId && (
                   <div>
                     <div className="text-xs text-muted-foreground">Lead</div>
-                    <div className="font-medium">{active.lead_id.toUpperCase()}</div>
+                    <div className="font-medium">{active.leadId}</div>
                   </div>
                 )}
                 {active.impact && (
@@ -140,12 +193,20 @@ export function EscalationsBell() {
                 )}
                 <div className="col-span-2">
                   <div className="text-xs text-muted-foreground">Recommended action</div>
-                  <div className="font-medium">{active.recommended_action}</div>
+                  <div className="font-medium">{active.recommendedAction}</div>
                 </div>
               </div>
               <div className="flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setOpenId(null)}>Dismiss</Button>
-                <Button className="bg-accent text-accent-foreground hover:bg-accent/90">Assign to me</Button>
+                <Button variant="ghost" onClick={() => dismissMutation.mutate(active.id)} disabled={dismissMutation.isPending}>
+                  Dismiss
+                </Button>
+                <Button
+                  className="bg-accent text-accent-foreground hover:bg-accent/90"
+                  onClick={() => assignToMeMutation.mutate(active.id)}
+                  disabled={assignToMeMutation.isPending}
+                >
+                  Assign to me
+                </Button>
               </div>
             </>
           )}
