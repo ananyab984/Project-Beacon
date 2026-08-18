@@ -279,6 +279,42 @@ export interface ApiSheetSyncConfig {
   lastSyncedAt: string | null;
 }
 
+export interface ApiReportsAnalytics {
+  range: string;
+  since: string;
+  summary: {
+    outreachVolume: number;
+    activeRecruitersCount: number;
+    teamAvgScore: number;
+    totalDemand: number;
+    totalFilled: number;
+    fillRate: number;
+    aiDraftsCount: number;
+    savedHours: number;
+  };
+  languageBreakdown: Array<{
+    language: string;
+    needed: number;
+    filled: number;
+    gap: number;
+  }>;
+  recruiterThroughput: Array<{
+    id: string;
+    name: string;
+    leadsOnboarded: number;
+    score: number;
+  }>;
+}
+
+export interface ApiRecentReport {
+  id: string;
+  name: string;
+  type: "pdf" | "csv" | "log";
+  range: string;
+  generated: string;
+  description?: string;
+}
+
 /** Shape of every thrown error from the `request()` helper in api.ts. */
 export interface ApiRequestError extends Error {
   code?: string;
