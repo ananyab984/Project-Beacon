@@ -28,6 +28,10 @@ function timeAgo(iso: string | null): string {
   return `${days}d ago`;
 }
 
+function getDefaultDraft(name: string, role?: string | null): string {
+  return `Hi ${name}, I hope you're having a great week! I'm reaching out from Global3 regarding freelance ${role || "linguistic"} projects that match your expertise. We'd love to connect on LinkedIn to share details on upcoming pipelines.`;
+}
+
 export function ConversationsPageView() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
@@ -65,12 +69,21 @@ export function ConversationsPageView() {
   const conv = searchedFiltered.find((c: ApiConversation) => c.id === id) ?? searchedFiltered[0];
 
   useEffect(() => {
-    setTo(conv?.lead?.profileLink || "");
-  }, [conv?.id]);
+    if (!conv) return;
+    setTo(conv.lead?.profileLink || (conv.lead?.email ? conv.lead.email : ""));
+    if (conv.messages.length === 0) {
+      setDraft((current) => current.trim() ? current : getDefaultDraft(candidateName(conv), conv.candidateRole));
+    }
+  }, [conv?.id, conv?.lead?.profileLink, conv?.lead?.email]);
 
   const pickConv = (convId: string) => {
     setId(convId);
-    setDraft("");
+    const target = conversations.find((c: ApiConversation) => c.id === convId);
+    if (target && target.messages.length === 0) {
+      setDraft(getDefaultDraft(candidateName(target), target.candidateRole));
+    } else {
+      setDraft("");
+    }
   };
 
   const handleGenerateLinkedInDraft = async () => {
@@ -82,7 +95,8 @@ export function ConversationsPageView() {
       toast.success(`Generated official LinkedIn draft for ${candidateName(conv)}!`);
     } catch (err: any) {
       if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
-        toast.error("Drafting service unavailable — write the message manually");
+        setDraft(getDefaultDraft(candidateName(conv), conv.candidateRole));
+        toast.info("Inserted official LinkedIn template draft.");
       } else {
         toast.error(err.message || "Failed to generate draft");
       }
@@ -96,10 +110,10 @@ export function ConversationsPageView() {
       const { conversation } = await api.createConversation(lead.id);
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setId(conversation.id);
-      setDraft("");
-      setTo(lead.profileLink || "");
       const name = lead.fullName || lead.displayName || "Candidate";
-      toast.success(`Loaded candidate ${name}. Click Generate Draft for a personalized message.`);
+      setDraft(getDefaultDraft(name, lead.services.join(", ") || lead.targetLanguage));
+      setTo(lead.profileLink || "");
+      toast.success(`Added ${name} to LinkedIn Conversations!`);
     } catch (err: any) {
       toast.error(err.message || "Failed to load lead into conversation");
     }
@@ -304,15 +318,36 @@ export function ConversationsPageView() {
                   />
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto p-4">
-                  {conv.messages.map((m: ApiConversationMessage) => (
-                    <div key={m.id} className={`flex ${m.sender === "ME" ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${m.sender === "ME" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                        <div>{m.text}</div>
-                        <div className={`mt-1 text-[10px] ${m.sender === "ME" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.sentAt)}</div>
+                <div className="flex-1 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
+                  {conv.messages.length === 0 ? (
+                    <div className="space-y-3">
+                      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-primary flex items-center gap-1.5 text-xs">
+                            <Sparkles className="h-3.5 w-3.5" /> Official LinkedIn Outreach Draft
+                          </span>
+                          <Badge variant="outline" className="text-[10px] border-primary/40 bg-primary/10 text-primary font-semibold">
+                            Ready to Send
+                          </Badge>
+                        </div>
+                        <p className="text-foreground text-xs leading-relaxed whitespace-pre-wrap">
+                          {draft || getDefaultDraft(candidateName(conv), conv.candidateRole)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/80 bg-muted/20 p-3 text-[11px] text-muted-foreground">
+                        💡 <strong>Tip:</strong> Click <strong>Generate Draft</strong> to insert official template, or customize your message below and press <strong>Send</strong>.
                       </div>
                     </div>
-                  ))}
+                  ) : (
+                    conv.messages.map((m: ApiConversationMessage) => (
+                      <div key={m.id} className={`flex ${m.sender === "ME" ? "justify-end" : "justify-start"}`}>
+                        <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${m.sender === "ME" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                          <div>{m.text}</div>
+                          <div className={`mt-1 text-[10px] ${m.sender === "ME" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.sentAt)}</div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
                 <div className="border-t border-border p-3 space-y-2">
@@ -324,19 +359,20 @@ export function ConversationsPageView() {
                       className="text-accent hover:underline font-semibold flex items-center gap-1 disabled:opacity-50"
                     >
                       {isGeneratingDraft ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                      {isGeneratingDraft ? "Generating…" : "Generate Personalized Draft"}
+                      {isGeneratingDraft ? "Generating…" : "Insert Official Template"}
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
                     <Input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Click 'Generate Draft' button above to generate LinkedIn message..."
+                      placeholder="Type your LinkedIn message..."
                       className="flex-1 text-xs"
                       disabled={sending}
                     />
-                    <Button size="sm" disabled={sending || !draft.trim()} className="bg-primary text-primary-foreground hover:bg-primary/90" onClick={initiateSend}>
+                    <Button size="sm" disabled={sending || !draft.trim()} className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5" onClick={initiateSend}>
                       {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      <span>Send</span>
                     </Button>
                   </div>
                 </div>
@@ -359,7 +395,23 @@ export function ConversationsPageView() {
 
                 <div className="space-y-2 text-xs">
                   <Row k="Channel" v="LinkedIn" />
-                  <Row k="Enriched Link" v={conv.lead?.profileLink ? "Available" : "N/A"} />
+                  <Row
+                    k="Enriched Link"
+                    v={
+                      conv.lead?.profileLink ? (
+                        <a
+                          href={conv.lead.profileLink.startsWith("http") ? conv.lead.profileLink : `https://${conv.lead.profileLink}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-primary hover:underline font-medium break-all text-[11px]"
+                        >
+                          View Profile ↗
+                        </a>
+                      ) : (
+                        "N/A"
+                      )
+                    }
+                  />
                   <Row k="Status" v={conv.unread ? "Unread" : "Active"} />
                   <Row k="Last activity" v={timeAgo(conv.lastMessageAt)} />
                 </div>

@@ -88,6 +88,7 @@ export function EmailQueuePageView() {
   const [selectAccountDialogOpen, setSelectAccountDialogOpen] = useState(false);
   const [targetChannelAccounts, setTargetChannelAccounts] = useState<any[]>([]);
   const [targetChannel, setTargetChannel] = useState<"EMAIL" | "LINKEDIN">("EMAIL");
+  const prevCandidateEmailRef = useRef<string>("");
 
   async function initiateSend() {
     if (!selected) return;
@@ -155,10 +156,26 @@ export function EmailQueuePageView() {
     const e = emailQueue.find((x) => x.id === id);
     setBody(e?.body || "");
     setSubject(e?.subject || (e ? `Global3 Outreach · Freelance Partnership (${candidateName(e)})` : ""));
-    setTo(e ? candidateEmail(e) : "");
+    const nextEmail = e ? candidateEmail(e) : "";
+    setTo(nextEmail);
+    prevCandidateEmailRef.current = nextEmail;
     setSaveState("idle");
     setSavedAt(null);
   }
+
+  useEffect(() => {
+    if (!selected) return;
+    const nextEmail = candidateEmail(selected);
+    setTo((current) => {
+      const prevEmail = prevCandidateEmailRef.current;
+      if (!current.trim() || current === prevEmail) {
+        prevCandidateEmailRef.current = nextEmail;
+        return nextEmail;
+      }
+      prevCandidateEmailRef.current = nextEmail;
+      return current;
+    });
+  }, [selected?.id, selected?.body, selected?.subject, selected?.lead?.email, selected?.lead?.fullName, selected?.lead?.displayName, selected?.candidateName]);
 
   async function handleAddLeadToQueue(leadId: string) {
     setAddingLeadId(leadId);
@@ -168,7 +185,9 @@ export function EmailQueuePageView() {
       setSelectedId(item.id);
       setBody(item.body);
       setSubject(item.subject);
-      setTo(item.lead?.email || "");
+      const nextEmail = item.lead?.email || "";
+      setTo(nextEmail);
+      prevCandidateEmailRef.current = nextEmail;
       toast.success(`Added ${item.candidateName} to Email Queue!`);
     } catch (err: any) {
       toast.error(err.message || "Failed to add lead to queue");

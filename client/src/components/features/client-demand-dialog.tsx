@@ -54,6 +54,18 @@ export const STANDARD_SERVICES = [
   "Custom..."
 ];
 
+export const CONTENT_TYPES = [
+  "Feature Film",
+  "Episodic / Series",
+  "Documentary",
+  "Animation / Kids",
+  "Corporate / Marketing",
+  "Gaming / Interactive",
+  "Audiobook / Podcast",
+  "E-Learning",
+  "Other..."
+];
+
 export const REGION_LANGUAGE_MAPPINGS: Record<string, { recruiter?: string; contractor?: string; region: string }> = {
   // Region 1 — East and South Asia
   "Bengali": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
