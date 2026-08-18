@@ -97,8 +97,9 @@ function toPublic(u: StoredUser): AuthUser {
   return pub;
 }
 
-export function roleHome(role: Role): string {
-  return role === "owner" ? "/owner" : role === "recruiter" ? "/recruiter" : "/contractor";
+export function roleHome(role: Role | string): string {
+  const r = String(role || "").toLowerCase();
+  return r === "owner" ? "/owner" : r === "recruiter" ? "/recruiter" : "/contractor";
 }
 
 type AuthCtx = {

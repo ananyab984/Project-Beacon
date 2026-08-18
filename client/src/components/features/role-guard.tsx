@@ -14,6 +14,6 @@ export function RoleGuard({ role, children }: { role: Role; children: ReactNode 
     );
   }
   if (!user) return <Navigate to="/login" search={{ redirect: pathname }} replace />;
-  if (user.role !== role) return <Navigate to="/unauthorized" replace />;
+  if (String(user.role).toLowerCase() !== String(role).toLowerCase()) return <Navigate to="/unauthorized" replace />;
   return <>{children}</>;
 }

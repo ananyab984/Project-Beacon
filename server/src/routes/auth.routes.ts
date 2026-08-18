@@ -47,7 +47,7 @@ authRouter.post("/login", async (req: Request, res: Response) => {
         id: user!.id,
         email: user!.email,
         name: user!.name,
-        role: user!.role,
+        role: user!.role.toLowerCase() as "owner" | "recruiter" | "contractor",
         emailVerified: user!.emailVerified,
       },
       accessToken,
@@ -93,15 +93,21 @@ authRouter.post("/signup", async (req: Request, res: Response) => {
       role: String(role).toLowerCase() as "owner" | "recruiter" | "contractor",
     });
 
+    const payload: UserPayload = { id: user.id, email: user.email, name: user.name, role: user.role };
+    const accessToken = AuthService.generateAccessToken(payload);
+    const { token: refreshToken } = await AuthService.generateRefreshToken(user.id);
+    res.cookie("refreshToken", refreshToken, REFRESH_COOKIE_OPTS);
+
     return res.status(201).json({
       message: "User registered successfully",
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: user.role.toLowerCase() as "owner" | "recruiter" | "contractor",
         emailVerified: user.emailVerified,
       },
+      accessToken,
       verifyToken: user.verifyToken,
     });
   } catch (err: any) {
@@ -126,7 +132,7 @@ authRouter.get("/me", authenticateJwt, async (req: Request, res: Response) => {
         id: user.id,
         email: user.email,
         name: user.name,
-        role: user.role,
+        role: user.role.toLowerCase() as "owner" | "recruiter" | "contractor",
         emailVerified: user.emailVerified,
       },
     });
