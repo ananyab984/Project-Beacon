@@ -29,8 +29,15 @@ function timeAgo(iso: string | null): string {
   return `${days}d ago`;
 }
 
+function formatMessageTime(iso: string | null): string {
+  if (!iso) return "10:30 AM";
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "10:30 AM";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
 function getDefaultDraft(name: string, role?: string | null): string {
-  return `Hi ${name}, I hope you're having a great week! I'm reaching out from Global3 regarding freelance ${role || "linguistic"} projects that match your expertise. We'd love to connect on LinkedIn to share details on upcoming pipelines.`;
+  return `Hi ${name}, noticed your work in ${role || "Dubbing & Subtitling"} -- we'd love to have you at Global3. Apply here: https://app.global3.io/apply`;
 }
 
 export function ConversationsPageView() {
@@ -320,39 +327,69 @@ export function ConversationsPageView() {
                 </div>
 
                 <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
+                  <div className="flex justify-center my-1">
+                    <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+                      Today
+                    </span>
+                  </div>
+
                   {conv.messages.length === 0 ? (
                     <div className="space-y-3">
-                      <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-xs space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-semibold text-primary flex items-center gap-1.5 text-xs">
-                            <Sparkles className="h-3.5 w-3.5" /> Official LinkedIn Outreach Draft
-                          </span>
-                          <Badge variant="outline" className="text-[10px] border-primary/40 bg-primary/10 text-primary font-semibold">
-                            Ready to Send
-                          </Badge>
+                      <div className="flex justify-end">
+                        <div className="max-w-[82%] rounded-2xl border border-border/80 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground/80 font-medium">
+                            <span>Me • 10:30 AM</span>
+                            <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold">
+                              Draft
+                            </Badge>
+                          </div>
+                          <p className="text-foreground text-xs leading-relaxed whitespace-pre-wrap">
+                            {draft || getDefaultDraft(candidateName(conv), conv.candidateRole)}
+                          </p>
+                          <div className="text-[10px] text-muted-foreground/80 flex justify-end items-center gap-1 pt-0.5">
+                            <span>Ready to send</span>
+                          </div>
                         </div>
-                        <p className="text-foreground text-xs leading-relaxed whitespace-pre-wrap">
-                          {draft || getDefaultDraft(candidateName(conv), conv.candidateRole)}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-border/80 bg-muted/20 p-3 text-[11px] text-muted-foreground">
-                        💡 <strong>Tip:</strong> Edit your message in the composer below and click <strong>Send via LinkedIn</strong>.
                       </div>
                     </div>
                   ) : (
-                    conv.messages.map((m: ApiConversationMessage) => (
-                      <div key={m.id} className={`flex ${m.sender === "ME" ? "justify-end" : "justify-start"}`}>
-                        <div className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-sm ${m.sender === "ME" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
-                          <div>{m.text}</div>
-                          <div className={`mt-1 text-[10px] ${m.sender === "ME" ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{timeAgo(m.sentAt)}</div>
+                    conv.messages.map((m: ApiConversationMessage) =>
+                      m.sender === "ME" ? (
+                        <div key={m.id} className="flex justify-end">
+                          <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
+                            <div className="text-xs text-muted-foreground/80 font-medium">
+                              Me • {formatMessageTime(m.sentAt)}
+                            </div>
+                            <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+                              {m.text}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground/80 flex justify-end items-center gap-1 pt-0.5">
+                              <span>Sent</span>
+                              <span className="text-emerald-400 font-bold">✓✓</span>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                    ))
+                      ) : (
+                        <div key={m.id} className="flex justify-start gap-2.5 items-start">
+                          <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 text-primary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
+                            {candidateName(conv).slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
+                            <div className="text-xs text-muted-foreground/80 font-medium">
+                              {candidateName(conv)} • {formatMessageTime(m.sentAt)}
+                            </div>
+                            <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+                              {m.text}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    )
                   )}
                 </div>
 
                 <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card/95 backdrop-blur">
-                  <div className="rounded-xl border border-border/80 bg-background/60 p-2.5 focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all">
+                  <div className="rounded-xl border border-border/80 bg-background/60 p-2.5 focus-within:ring-1 focus-within:ring-amber-500 focus-within:border-amber-500 transition-all">
                     <Textarea
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
@@ -363,7 +400,7 @@ export function ConversationsPageView() {
                         }
                       }}
                       placeholder={`Type a message to ${candidateName(conv)}... (Press Enter to send)`}
-                      className="min-h-[64px] max-h-[140px] resize-none border-0 bg-transparent p-1 text-xs focus-visible:ring-0 shadow-none leading-relaxed"
+                      className="min-h-[64px] max-h-[140px] resize-none border-0 bg-transparent p-1 text-xs focus-visible:ring-0 shadow-none leading-relaxed text-foreground"
                       disabled={sending}
                     />
                     <div className="flex items-center justify-between pt-1.5 border-t border-border/40 text-[11px]">
@@ -375,7 +412,7 @@ export function ConversationsPageView() {
                         <button
                           onClick={handleGenerateLinkedInDraft}
                           disabled={isGeneratingDraft}
-                          className="text-primary hover:underline font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                          className="text-amber-400 hover:underline font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                         >
                           {isGeneratingDraft ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
                           {isGeneratingDraft ? "Generating…" : "Insert Official Template"}
@@ -384,11 +421,11 @@ export function ConversationsPageView() {
                       <Button
                         size="sm"
                         disabled={sending || !draft.trim()}
-                        className="h-7 px-3 bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 font-semibold text-xs cursor-pointer shadow-xs"
+                        className="h-8 px-4 bg-[#f59e0b] hover:bg-[#d97706] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md transition-transform active:scale-95"
                         onClick={initiateSend}
                       >
-                        {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                        <span>Send via LinkedIn</span>
+                        {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black" />}
+                        <span>Send</span>
                       </Button>
                     </div>
                   </div>
