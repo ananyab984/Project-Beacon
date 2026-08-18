@@ -23,13 +23,15 @@ export function ConnectAccountDialog({ trigger, open: controlledOpen, onOpenChan
   const { data: accounts = [], refetch, isRefetching } = useQuery({
     queryKey: ["connected-accounts"],
     queryFn: () => api.getConnectedAccounts(),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: isOpen ? 3_000 : false,
   });
 
   const disconnectMutation = useMutation({
     mutationFn: (unipileAccountId: string) => api.disconnectAccount(unipileAccountId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connected-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
       toast.success("Account disconnected successfully");
     },
     onError: (err: any) => toast.error(err?.message || "Failed to disconnect account"),

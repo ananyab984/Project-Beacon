@@ -21,7 +21,12 @@ export const Route = createFileRoute("/owner/settings")({
 
 function SettingsPage() {
   const [showAI, setShowAI] = useState(false);
-  const { data } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const { data } = useQuery({
+    queryKey: ["users", "RECRUITER"],
+    queryFn: () => api.getUsers("RECRUITER"),
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+  });
   const recruiters = data?.users ?? [];
 
   return (
@@ -193,13 +198,15 @@ function ConnectedAccountsSection() {
   const { data: accounts = [] } = useQuery({
     queryKey: ["connected-accounts"],
     queryFn: () => api.getConnectedAccounts(),
-    staleTime: 30_000,
+    staleTime: 5_000,
+    refetchInterval: 8_000,
   });
 
   const disconnectMutation = useMutation({
     mutationFn: (unipileAccountId: string) => api.disconnectAccount(unipileAccountId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["connected-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
       toast.success("Account disconnected");
     },
     onError: (err: any) => toast.error(err?.message || "Failed to disconnect account"),
