@@ -11,7 +11,6 @@ import {
   Loader2,
   Search,
   Plus,
-  Sparkles,
   Smile,
   Image as ImageIcon,
   Paperclip,
@@ -340,75 +339,89 @@ export function ConversationsPageView() {
                 </div>
 
                 {/* Center Conversation Content */}
-                {conv.messages.length === 0 ? (
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3 min-h-0">
-                    <div className="h-16 w-16 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
-                      <MessageCircle className="h-8 w-8 stroke-[1.5]" />
+                <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
+                  {conv.messages.length === 0 && !draft.trim() ? (
+                    <div className="flex h-full flex-col items-center justify-center p-8 text-center space-y-3 min-h-0">
+                      <div className="h-16 w-16 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
+                        <MessageCircle className="h-8 w-8 stroke-[1.5]" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="text-base font-semibold text-foreground">No messages yet.</div>
+                        <div className="text-xs text-muted-foreground">Generate a draft below to start the conversation.</div>
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <div className="text-base font-semibold text-foreground">No messages yet.</div>
-                      <div className="text-xs text-muted-foreground">Compose a message below to start the conversation.</div>
+                  ) : null}
+                  {(conv.messages.length > 0 || draft.trim()) && (
+                    <>
+                      <div className="flex justify-center my-1">
+                        <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+                          Today
+                        </span>
+                      </div>
+                      {conv.messages.map((m: ApiConversationMessage) =>
+                        m.sender === "ME" ? (
+                          <div key={m.id} className="flex justify-end">
+                            <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
+                              <div className="text-xs text-muted-foreground/80 font-medium">
+                                Me • {formatMessageTime(m.sentAt)}
+                              </div>
+                              <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+                                {m.text}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground/80 flex justify-end items-center gap-1 pt-0.5">
+                                <span>Sent</span>
+                                <span className="text-emerald-400 font-bold">✓✓</span>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div key={m.id} className="flex justify-start gap-2.5 items-start">
+                            <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 text-primary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
+                              {candidateName(conv).slice(0, 2).toUpperCase()}
+                            </div>
+                            <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
+                              <div className="text-xs text-muted-foreground/80 font-medium">
+                                {candidateName(conv)} • {formatMessageTime(m.sentAt)}
+                              </div>
+                              <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
+                                {m.text}
+                              </div>
+                            </div>
+                          </div>
+                        )
+                      )}
+                    </>
+                  )}
+
+                  <div className="flex justify-end">
+                    <div className="max-w-[82%] rounded-2xl border border-[#f97316]/45 bg-[#221a13] p-3.5 shadow-sm space-y-2">
+                      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/80 font-medium">
+                        <span>You • Draft</span>
+                        <span className="rounded-full border border-[#f97316]/35 bg-[#f97316]/10 px-2 py-0.5 text-[10px] font-semibold text-[#f59e0b]">
+                          Editable
+                        </span>
+                      </div>
+                      <Textarea
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        placeholder="Generate a draft or start typing..."
+                        className="min-h-[120px] resize-none border-0 bg-transparent p-0 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none"
+                        disabled={sending}
+                      />
+                      <div className="flex items-center justify-between gap-2 pt-0.5 text-[10px] text-muted-foreground/70">
+                        <span>Ready to send via LinkedIn</span>
+                        <span className={draft.length > 3000 ? "text-destructive font-semibold" : ""}>
+                          {draft.length}/3000
+                        </span>
+                      </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
-                    <div className="flex justify-center my-1">
-                      <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        Today
-                      </span>
-                    </div>
-                    {conv.messages.map((m: ApiConversationMessage) =>
-                      m.sender === "ME" ? (
-                        <div key={m.id} className="flex justify-end">
-                          <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
-                            <div className="text-xs text-muted-foreground/80 font-medium">
-                              Me • {formatMessageTime(m.sentAt)}
-                            </div>
-                            <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
-                              {m.text}
-                            </div>
-                            <div className="text-[10px] text-muted-foreground/80 flex justify-end items-center gap-1 pt-0.5">
-                              <span>Sent</span>
-                              <span className="text-emerald-400 font-bold">✓✓</span>
-                            </div>
-                          </div>
-                        </div>
-                      ) : (
-                        <div key={m.id} className="flex justify-start gap-2.5 items-start">
-                          <div className="h-8 w-8 rounded-full bg-primary/20 border border-primary/30 text-primary flex items-center justify-center text-xs font-semibold shrink-0 mt-0.5">
-                            {candidateName(conv).slice(0, 2).toUpperCase()}
-                          </div>
-                          <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
-                            <div className="text-xs text-muted-foreground/80 font-medium">
-                              {candidateName(conv)} • {formatMessageTime(m.sentAt)}
-                            </div>
-                            <div className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">
-                              {m.text}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    )}
-                  </div>
-                )}
+                </div>
 
                 {/* Bottom Chat Composer Box */}
                 <div className="shrink-0 p-3 pt-1 space-y-1.5 bg-card">
                   <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3 shadow-lg focus-within:border-amber-500 transition-all space-y-2">
-                    <Textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey && draft.trim() && !sending) {
-                          e.preventDefault();
-                          initiateSend();
-                        }
-                      }}
-                      placeholder="Type your message..."
-                      className="min-h-[55px] max-h-[120px] resize-none border-0 bg-transparent p-0 text-sm focus-visible:ring-0 shadow-none leading-relaxed text-foreground placeholder:text-muted-foreground/70"
-                      disabled={sending}
-                    />
-                    <div className="flex items-center justify-between pt-1 text-xs">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Add emoji">
                           <Smile className="h-4 w-4" />
@@ -426,23 +439,18 @@ export function ConversationsPageView() {
                           className="text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1.5 disabled:opacity-50 cursor-pointer ml-1 text-xs"
                         >
                           {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          <span>{isGeneratingDraft ? "Generating…" : "Use Draft"}</span>
+                          <span>{isGeneratingDraft ? "Generating…" : "Generate Draft"}</span>
                         </button>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className={`text-xs ${draft.length > 3000 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
-                          {draft.length}/3000
-                        </span>
-                        <Button
-                          type="button"
-                          disabled={sending || !draft.trim()}
-                          className="h-8 px-4 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
-                          onClick={initiateSend}
-                        >
-                          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black fill-black" />}
-                          <span>Send</span>
-                        </Button>
-                      </div>
+                      <Button
+                        type="button"
+                        disabled={sending || !draft.trim()}
+                        className="h-8 px-4 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
+                        onClick={initiateSend}
+                      >
+                        {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black fill-black" />}
+                        <span>Send</span>
+                      </Button>
                     </div>
                   </div>
                   <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70 pb-0.5">
