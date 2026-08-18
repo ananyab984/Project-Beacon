@@ -431,6 +431,8 @@ function CleanRecruiterCard({
   const { data: scoreData } = useQuery({
     queryKey: ["recruiter-score", r.id],
     queryFn: () => api.getRecruiterScore(r.id),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
   });
   const snapshot = scoreData?.snapshot ?? null;
   const metricSnapshots: ApiRecruiterMetricSnapshot[] = scoreData?.metricSnapshots ?? [];

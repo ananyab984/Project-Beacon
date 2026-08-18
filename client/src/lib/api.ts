@@ -31,10 +31,50 @@ function getAccessToken(): string | null {
   return "demo_token_user";
 }
 
+let isRefreshing = false;
+let refreshPromise: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (isRefreshing && refreshPromise) return refreshPromise;
+
+  isRefreshing = true;
+  refreshPromise = (async () => {
+    try {
+      const raw = localStorage.getItem("g3.session.v2");
+      if (!raw) return null;
+      const session = JSON.parse(raw);
+      const refreshToken = session.refreshToken;
+      if (!refreshToken) return null;
+
+      const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refreshToken }),
+      });
+
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (data.accessToken) {
+        session.accessToken = data.accessToken;
+        localStorage.setItem("g3.session.v2", JSON.stringify(session));
+        return data.accessToken;
+      }
+    } catch {
+      return null;
+    } finally {
+      isRefreshing = false;
+      refreshPromise = null;
+    }
+    return null;
+  })();
+
+  return refreshPromise;
+}
+
 /** Shared fetch wrapper: attaches the bearer token, builds the full URL from
- *  VITE_API_BASE_URL, and normalizes errors into ApiRequestError so callers
- *  can read `.code`/`.status` instead of re-parsing the response body. */
-async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+ *  VITE_API_BASE_URL, auto-refreshes expired tokens silently, and normalizes
+ *  errors into ApiRequestError. */
+async function request<T = any>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const token = getAccessToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
@@ -44,6 +84,14 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
       ...options.headers,
     },
   });
+
+  // If token expired (401) and not already a retry, attempt a silent token refresh and retry once
+  if (res.status === 401 && !isRetry && !path.includes("/api/auth/login") && !path.includes("/api/auth/refresh")) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      return request<T>(path, options, true);
+    }
+  }
 
   const isJson = res.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await res.json().catch(() => ({})) : await res.text();
@@ -163,12 +211,32 @@ export const api = {
     return request("/api/clients");
   },
 
+  async getClient(id: string): Promise<{ client: ApiClient }> {
+    return request(`/api/clients/${id}`);
+  },
+
   async createClient(input: { name: string; industry?: string; contactName?: string; contactEmail?: string; notes?: string }) {
     return request<{ client: ApiClient }>("/api/clients", { method: "POST", body: JSON.stringify(input) });
   },
 
+  async updateClient(id: string, patch: Partial<{ name: string; industry: string; contactName: string; contactEmail: string; notes: string }>) {
+    return request<{ client: ApiClient }>(`/api/clients/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  },
+
+  async deleteClient(id: string) {
+    return request<{ success: boolean; message: string }>(`/api/clients/${id}`, { method: "DELETE" });
+  },
+
   async getRequirements(filters: { clientId?: string; status?: string; priority?: string; q?: string } = {}) {
     return request<{ requirements: ApiRequirement[] }>(`/api/requirements${qs(filters)}`);
+  },
+
+  async getRequirement(id: string): Promise<{ requirement: ApiRequirement }> {
+    return request(`/api/requirements/${id}`);
+  },
+
+  async getRequirementHistory(id: string): Promise<{ assignments: any[] }> {
+    return request(`/api/requirements/${id}/history`);
   },
 
   async createRequirements(clientId: string, items: Array<{
@@ -178,8 +246,15 @@ export const api = {
     return request<{ requirements: ApiRequirement[] }>("/api/requirements", { method: "POST", body: JSON.stringify({ clientId, items }) });
   },
 
-  async updateRequirement(id: string, patch: { deadline?: string; notes?: string }) {
+  async updateRequirement(id: string, patch: {
+    title?: string; language?: string; service?: string; region?: string; projectName?: string;
+    headcountNeeded?: number; priority?: string; status?: string; deadline?: string; notes?: string;
+  }) {
     return request<{ requirement: ApiRequirement }>(`/api/requirements/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  },
+
+  async deleteRequirement(id: string) {
+    return request<{ success: boolean; message: string }>(`/api/requirements/${id}`, { method: "DELETE" });
   },
 
   async assignRequirement(id: string, recruiterId: string | null, note?: string) {
@@ -195,6 +270,10 @@ export const api = {
     return request("/api/client-demands");
   },
 
+  async getClientDemand(id: string): Promise<{ clientDemand: ApiClientDemand }> {
+    return request(`/api/client-demands/${id}`);
+  },
+
   async createClientDemand(input: {
     clientName: string; language: string; services: Array<{ service: string; needed: number }>;
     priority: string; deadline?: string; contactName?: string; contactEmail?: string; notes?: string;
@@ -203,6 +282,17 @@ export const api = {
       "/api/client-demands",
       { method: "POST", body: JSON.stringify(input) }
     );
+  },
+
+  async updateClientDemand(id: string, patch: {
+    priority?: string; deadline?: string | null; contactName?: string | null;
+    contactEmail?: string | null; notes?: string | null; headcountNeeded?: number;
+  }) {
+    return request<{ clientDemand: ApiClientDemand }>(`/api/client-demands/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  },
+
+  async deleteClientDemand(id: string) {
+    return request<{ success: boolean; message: string }>(`/api/client-demands/${id}`, { method: "DELETE" });
   },
 
   // -------------------- sheet sync --------------------
@@ -296,6 +386,13 @@ export const api = {
     );
   },
 
+  async recomputeRecruiterScore(recruiterId: string) {
+    return request<{ success: boolean; snapshot: ApiRecruiterScoreSnapshot }>(
+      `/api/recruiters/${recruiterId}/recompute-score`,
+      { method: "POST" }
+    );
+  },
+
   async getRecruiterKpiSummary(recruiterId: string) {
     return request<{ summary: ApiRecruiterKpiSummary | null }>(`/api/recruiters/${recruiterId}/kpi-summary`);
   },
@@ -333,5 +430,19 @@ export const api = {
     emailQueueId?: string;
   }) {
     return request("/api/outreach/send", { method: "POST", body: JSON.stringify(payload) });
+  },
+
+  // -------------------- Reports & Analytics --------------------
+
+  async getReportsAnalytics(range: string = "30d"): Promise<ApiReportsAnalytics> {
+    return request<ApiReportsAnalytics>(`/api/reports/analytics?range=${range}`);
+  },
+
+  async getRecentReports(): Promise<{ reports: ApiRecentReport[] }> {
+    return request<{ reports: ApiRecentReport[] }>("/api/reports/recent");
+  },
+
+  getReportExportUrl(type: string): string {
+    return `/api/reports/export/${type}`;
   },
 };

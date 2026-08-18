@@ -1,11 +1,8 @@
-// Full recruiter evaluation dashboard — Project Beacon rubric.
-// Styled strictly to match the Project Beacon Rubric layout specification in clean tabular form with fixed column alignments.
-// Data now comes from the real, cron-computed backend (RecruiterScoreSnapshot / RecruiterMetricSnapshot /
-// RecruiterKpiSummary) instead of the static mock in lib/evaluation.ts. Snapshots are computed monthly, so a
-// freshly-onboarded subject may have none yet — every section below handles that null case explicitly.
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Info, ChevronDown, ChevronRight } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Info, ChevronDown, ChevronRight, RefreshCw, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { ApiKpiConfig, ApiRecruiterMetricSnapshot } from "@/lib/api-types";
 import { ScoreRing } from "@/components/features/kpi";
@@ -17,13 +14,15 @@ const GROUP_BLURB: Record<string, string> = {
   "Outcome Metrics": "Watched, not weighted — candidate conversions and business outputs.",
 };
 
-function formatMetricValue(unit: string | null | undefined, val: number | null | undefined): string {
-  if (val === null || val === undefined) return "—";
+function formatMetricValue(unit: string | null | undefined, val: any): string {
+  if (val === null || val === undefined || val === "") return "—";
+  const num = typeof val === "number" ? val : parseFloat(String(val));
+  if (isNaN(num)) return String(val);
   const u = (unit ?? "").toLowerCase();
-  if (u.includes("pct") || u === "%") return `${val}%`;
-  if (u.includes("day")) return `${val}d`;
-  if (u.includes("attempt")) return `${val}x`;
-  return Number.isInteger(val) ? `${val}` : val.toFixed(1);
+  if (u.includes("pct") || u === "%") return `${Math.round(num)}%`;
+  if (u.includes("day")) return Number.isInteger(num) ? `${num}d` : `${num.toFixed(1)}d`;
+  if (u.includes("attempt")) return `${num}x`;
+  return Number.isInteger(num) ? `${num}` : `${num.toFixed(1)}`;
 }
 
 function statusChip(status: string | null | undefined) {
@@ -36,9 +35,9 @@ function statusChip(status: string | null | undefined) {
   } else if (s.includes("watch")) {
     cls = "bg-warning/15 text-warning border border-warning/30";
     label = "Watch";
-  } else if (s.includes("on_track") || s.includes("ontrack") || s === "good") {
+  } else if (s.includes("on_track") || s.includes("ontrack") || s === "good" || s === "strong" || s === "solid") {
     cls = "bg-accent/15 text-accent border border-accent/30";
-    label = "On track";
+    label = s === "strong" ? "Strong" : "On track";
   }
   return <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${cls}`}>{label}</span>;
 }
@@ -46,7 +45,7 @@ function statusChip(status: string | null | undefined) {
 function toneForScore(score: number) {
   if (score >= 85) return { cls: "bg-accent/15 text-accent border-accent/30", meaning: "Minimal oversight needed" };
   if (score >= 70) return { cls: "bg-primary/15 text-primary border-primary/30", meaning: "Meeting expectations" };
-  if (score >= 55) return { cls: "bg-warning/15 text-warning border-warning/30", meaning: "Needs a coaching conversation, with a named area" };
+  if (score >= 50) return { cls: "bg-warning/15 text-warning border-warning/30", meaning: "Needs a coaching conversation, with a named area" };
   if (score > 0) return { cls: "bg-destructive/15 text-destructive border-destructive/30", meaning: "Requires review this week, not next cycle" };
   return { cls: "bg-muted text-muted-foreground border-border", meaning: "No activity recorded yet" };
 }
@@ -62,17 +61,36 @@ export function EvaluationDashboard({
   roleLabel?: string;
   isExpandable?: boolean;
 }) {
-  const { data: scoreData, isLoading: scoreLoading, isError: scoreError } = useQuery({
+  const queryClient = useQueryClient();
+
+  const { data: scoreData, isLoading: scoreLoading, isError: scoreError, isRefetching } = useQuery({
     queryKey: ["recruiter-score", subjectId],
     queryFn: () => api.getRecruiterScore(subjectId),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
   });
+
   const { data: summaryData } = useQuery({
     queryKey: ["recruiter-kpi-summary", subjectId],
     queryFn: () => api.getRecruiterKpiSummary(subjectId),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
   });
+
   const { data: kpiConfigData } = useQuery({
     queryKey: ["kpi-config"],
     queryFn: () => api.getKpiConfig(),
+    staleTime: 60_000,
+  });
+
+  const recomputeMutation = useMutation({
+    mutationFn: () => api.recomputeRecruiterScore(subjectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["recruiter-score", subjectId] });
+      queryClient.invalidateQueries({ queryKey: ["recruiter-kpi-summary", subjectId] });
+      toast.success("Recruiter score recomputed from live pipeline data");
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to recompute score"),
   });
 
   if (scoreLoading) {
@@ -129,6 +147,19 @@ export function EvaluationDashboard({
               </div>
             </div>
           </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => recomputeMutation.mutate()}
+              disabled={recomputeMutation.isPending || isRefetching}
+              className="text-xs gap-1.5 h-8 border-border bg-background hover:bg-muted/40 font-medium"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 text-primary ${recomputeMutation.isPending || isRefetching ? "animate-spin" : ""}`} />
+              {recomputeMutation.isPending ? "Calculating…" : "Recalculate Score"}
+            </Button>
+          </div>
         </div>
       </section>
 
@@ -182,11 +213,12 @@ export function EvaluationDashboard({
   );
 }
 
-function SummaryTile({ label, value, unit }: { label: string; value: number; unit: "pct" | "count" | "days" }) {
+function SummaryTile({ label, value, unit }: { label: string; value: any; unit: "pct" | "count" | "days" }) {
+  const num = typeof value === "number" ? value : parseFloat(String(value)) || 0;
   const display =
-    unit === "pct" ? `${Math.round(value)}%` :
-    unit === "days" ? `${value.toFixed(1)}d` :
-    `${value}`;
+    unit === "pct" ? `${Math.round(num)}%` :
+    unit === "days" ? (Number.isInteger(num) ? `${num}d` : `${num.toFixed(1)}d`) :
+    `${num}`;
   return (
     <div className="rounded-xl border border-border bg-card p-3.5">
       <div className="text-[10px] font-medium uppercase tracking-widest text-muted-foreground">{label}</div>
