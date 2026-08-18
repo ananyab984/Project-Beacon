@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Send, Linkedin, Wand2, Loader2, Search, Plus, Sparkles } from "lucide-react";
@@ -350,20 +351,9 @@ export function ConversationsPageView() {
                   )}
                 </div>
 
-                <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card">
-                  <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>Direct Message ({draft.length}/300 chars)</span>
-                    <button
-                      onClick={handleGenerateLinkedInDraft}
-                      disabled={isGeneratingDraft}
-                      className="text-accent hover:underline font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                    >
-                      {isGeneratingDraft ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                      {isGeneratingDraft ? "Generating…" : "Insert Official Template"}
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Input
+                <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card/95 backdrop-blur">
+                  <div className="rounded-xl border border-border/80 bg-background/60 p-2.5 focus-within:ring-1 focus-within:ring-primary focus-within:border-primary transition-all">
+                    <Textarea
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -372,19 +362,35 @@ export function ConversationsPageView() {
                           initiateSend();
                         }
                       }}
-                      placeholder="Type your LinkedIn message..."
-                      className="flex-1 text-xs"
+                      placeholder={`Type a message to ${candidateName(conv)}... (Press Enter to send)`}
+                      className="min-h-[64px] max-h-[140px] resize-none border-0 bg-transparent p-1 text-xs focus-visible:ring-0 shadow-none leading-relaxed"
                       disabled={sending}
                     />
-                    <Button
-                      size="sm"
-                      disabled={sending || !draft.trim()}
-                      className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 font-medium px-4 cursor-pointer"
-                      onClick={initiateSend}
-                    >
-                      {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                      <span>Send</span>
-                    </Button>
+                    <div className="flex items-center justify-between pt-1.5 border-t border-border/40 text-[11px]">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <span className={draft.length > 300 ? "text-destructive font-semibold" : ""}>
+                          {draft.length}/300 chars
+                        </span>
+                        <span>•</span>
+                        <button
+                          onClick={handleGenerateLinkedInDraft}
+                          disabled={isGeneratingDraft}
+                          className="text-primary hover:underline font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                        >
+                          {isGeneratingDraft ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
+                          {isGeneratingDraft ? "Generating…" : "Insert Official Template"}
+                        </button>
+                      </div>
+                      <Button
+                        size="sm"
+                        disabled={sending || !draft.trim()}
+                        className="h-7 px-3 bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 font-semibold text-xs cursor-pointer shadow-xs"
+                        onClick={initiateSend}
+                      >
+                        {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                        <span>Send via LinkedIn</span>
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </div>
