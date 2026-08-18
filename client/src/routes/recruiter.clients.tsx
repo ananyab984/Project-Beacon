@@ -49,7 +49,12 @@ function RecruiterClientsPage() {
   const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
   const recruiters = recruitersData?.users ?? [];
 
-  const { data: allReqData } = useQuery({ queryKey: ["requirements", "all"], queryFn: () => api.getRequirements() });
+  const { data: allReqData } = useQuery({
+    queryKey: ["requirements", "all"],
+    queryFn: () => api.getRequirements(),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
   const allRequirements = allReqData?.requirements ?? [];
 
   const [viewTab, setViewTab] = useState<"assigned" | "global">("assigned");

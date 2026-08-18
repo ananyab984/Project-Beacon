@@ -57,8 +57,11 @@ leadRouter.get(
       since,
     });
 
-    // Recruiters see the global (identity-resolved, complete) pool + their own assigned/created leads.
-    if (role === "recruiter") {
+    // Contractors are walled off: they only see their own submitted leads.
+    if (role === "contractor") {
+      where.createdByContractorId = req.user!.id;
+    } else if (role === "recruiter") {
+      // Recruiters see the global (identity-resolved, complete) pool + their own assigned/created leads.
       const scopeConditions = [
         { identityResolved: true, enrichmentStatus: "COMPLETE" as const },
         { assignedRecruiterId: req.user!.id },
@@ -316,9 +319,13 @@ leadRouter.patch(
     });
     const patch = schema.parse(req.body);
 
-    if (patch.identityResolved || patch.enrichmentStatus === "COMPLETE") {
+    const shouldStayComplete =
+      existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE";
+    if (shouldStayComplete) {
       patch.identityResolved = true;
       patch.enrichmentStatus = "COMPLETE";
+      const nextFlags = Array.from(new Set([...(patch.flags ?? existing.flags)].filter((f) => f !== "ON_HOLD")));
+      patch.flags = nextFlags;
     }
 
     if (patch.stage && patch.stage !== existing.stage) {
@@ -340,6 +347,89 @@ leadRouter.patch(
       where: { id: existing.id },
       data: { ...patch, lastActivityAt: new Date() },
     });
+
+    // Automated Demand / Requirement headcount synchronization on stage change
+    if (patch.stage && patch.stage !== existing.stage) {
+      const language = updated.targetLanguage || updated.sourceLanguage;
+      if (language) {
+        if (patch.stage === "ONBOARDED") {
+          const matchingReq = await prisma.requirement.findFirst({
+            where: {
+              language: { contains: language, mode: "insensitive" },
+              status: { in: ["ACTIVE", "UNASSIGNED"] },
+              gap: { gt: 0 },
+            },
+            orderBy: { priority: "desc" },
+          });
+
+          if (matchingReq) {
+            const newFilled = matchingReq.filled + 1;
+            const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
+            await prisma.requirement.update({
+              where: { id: matchingReq.id },
+              data: {
+                filled: newFilled,
+                gap: newGap,
+                status: newGap === 0 ? "FULFILLED" : matchingReq.status,
+              },
+            });
+
+            const matchingDemand = await prisma.clientDemand.findFirst({
+              where: {
+                clientId: matchingReq.clientId,
+                language: { contains: language, mode: "insensitive" },
+                gap: { gt: 0 },
+              },
+            });
+            if (matchingDemand) {
+              const dFilled = matchingDemand.filled + 1;
+              const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
+              await prisma.clientDemand.update({
+                where: { id: matchingDemand.id },
+                data: { filled: dFilled, gap: dGap },
+              });
+            }
+          }
+        } else if (existing.stage === "ONBOARDED") {
+          const matchingReq = await prisma.requirement.findFirst({
+            where: {
+              language: { contains: language, mode: "insensitive" },
+              filled: { gt: 0 },
+            },
+            orderBy: { createdAt: "desc" },
+          });
+
+          if (matchingReq) {
+            const newFilled = Math.max(0, matchingReq.filled - 1);
+            const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
+            await prisma.requirement.update({
+              where: { id: matchingReq.id },
+              data: {
+                filled: newFilled,
+                gap: newGap,
+                status: matchingReq.status === "FULFILLED" ? "ACTIVE" : matchingReq.status,
+              },
+            });
+
+            const matchingDemand = await prisma.clientDemand.findFirst({
+              where: {
+                clientId: matchingReq.clientId,
+                language: { contains: language, mode: "insensitive" },
+                filled: { gt: 0 },
+              },
+            });
+            if (matchingDemand) {
+              const dFilled = Math.max(0, matchingDemand.filled - 1);
+              const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
+              await prisma.clientDemand.update({
+                where: { id: matchingDemand.id },
+                data: { filled: dFilled, gap: dGap },
+              });
+            }
+          }
+        }
+      }
+    }
 
     // Auto-update Email Queue items for this lead with corrected email & enriched portfolio details
     if (patch.identityResolved || patch.email || patch.yearsOfExperience || patch.vendorExperience || patch.targetLanguage) {

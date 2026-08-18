@@ -22,7 +22,7 @@ export function LeadCard({
   compact?: boolean;
 }) {
   const rec = recruiters.find((r) => r.id === lead.assignedRecruiterId);
-  const label = lead.identityResolved ? lead.displayName ?? lead.maskedLabel : lead.maskedLabel;
+  const label = lead.displayName ?? lead.fullName ?? lead.maskedLabel ?? "—";
   const language = lead.targetLanguage ?? lead.sourceLanguage ?? "—";
   return (
     <div className="group rounded-xl border border-border bg-card p-4 transition-colors hover:border-accent/40 hover:shadow-[0_1px_0_0_theme(colors.accent/10),0_8px_24px_-12px_theme(colors.accent/20)]">

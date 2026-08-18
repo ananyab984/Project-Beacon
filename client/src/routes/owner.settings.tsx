@@ -193,6 +193,7 @@ function ConnectedAccountsSection() {
   const { data: accounts = [] } = useQuery({
     queryKey: ["connected-accounts"],
     queryFn: () => api.getConnectedAccounts(),
+    staleTime: 30_000,
   });
 
   const disconnectMutation = useMutation({

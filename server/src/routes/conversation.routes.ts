@@ -26,12 +26,15 @@ function toApiError(err: any): ApiError {
   return new ApiError(status, code, message);
 }
 
-// GET /api/conversations — full visibility: any recruiter/owner sees every
-// conversation, not just their own (per the access model, no recruiterId filter here).
+// GET /api/conversations — recruiter sees only their own; owner sees all.
 conversationRouter.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
+    const role = req.user!.role.toLowerCase();
+    const where = role === "owner" ? {} : { recruiterId: req.user!.id };
+
     const conversations = await prisma.conversation.findMany({
+      where,
       include: {
         lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
         messages: { orderBy: { sentAt: "asc" } },
@@ -42,7 +45,7 @@ conversationRouter.get(
   })
 );
 
-// GET /api/conversations/:id — single thread, messages ascending
+// GET /api/conversations/:id — single thread, recruiter-scoped
 conversationRouter.get(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
@@ -54,6 +57,12 @@ conversationRouter.get(
       },
     });
     if (!conversation) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+
+    const role = req.user!.role.toLowerCase();
+    if (role !== "owner" && conversation.recruiterId !== req.user!.id) {
+      throw new ApiError(403, "FORBIDDEN", "You do not have permission to view this conversation");
+    }
+
     return res.json({ conversation });
   })
 );
@@ -178,6 +187,11 @@ conversationRouter.post(
       include: { lead: true },
     });
     if (!conversation) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+
+    const role = req.user!.role.toLowerCase();
+    if (role !== "owner" && conversation.recruiterId !== req.user!.id) {
+      throw new ApiError(403, "FORBIDDEN", "You do not have permission to send messages in this conversation");
+    }
 
     if (conversation.channel !== ConversationChannel.LINKEDIN) {
       throw new ApiError(

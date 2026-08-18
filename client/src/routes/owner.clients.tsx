@@ -60,8 +60,13 @@ function ClientsPage() {
   const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
   const recruiters = recruitersData?.users ?? [];
 
-  // Unfiltered set — used for the summary metric tiles.
-  const { data: allReqData } = useQuery({ queryKey: ["requirements", "all"], queryFn: () => api.getRequirements() });
+  // Unfiltered set — used for the summary metric tiles with auto-sync.
+  const { data: allReqData } = useQuery({
+    queryKey: ["requirements", "all"],
+    queryFn: () => api.getRequirements(),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
   const allRequirements = allReqData?.requirements ?? [];
 
   const filters = useMemo(
@@ -78,7 +83,12 @@ function ClientsPage() {
     data: filteredReqData,
     isLoading: reqLoading,
     error: reqError,
-  } = useQuery({ queryKey: ["requirements", filters], queryFn: () => api.getRequirements(filters) });
+  } = useQuery({
+    queryKey: ["requirements", filters],
+    queryFn: () => api.getRequirements(filters),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
 
   const filteredRequirements = useMemo(() => {
     const list = filteredReqData?.requirements ?? [];

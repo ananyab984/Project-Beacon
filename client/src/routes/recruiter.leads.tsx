@@ -114,7 +114,7 @@ function LeadsPage() {
   const scoped = scope === "mine" ? mineLeads : globalLeads;
   const mineCount = mineLeads.length;
   const onHoldCount = useMemo(
-    () => mineLeads.filter((l) => !l.identityResolved || l.flags.includes("ON_HOLD")).length,
+    () => mineLeads.filter((l) => l.enrichmentStatus !== "COMPLETE" && (!l.identityResolved || l.flags.includes("ON_HOLD"))).length,
     [mineLeads],
   );
 
@@ -262,11 +262,11 @@ function LeadsPage() {
               <span className="text-amber-200/90">Please review missing candidate details to promote {onHoldCount > 1 ? "them" : "it"} to Global Leads.</span>
             </span>
           </div>
-          <Button
+            <Button
             size="sm"
             className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
             onClick={() => {
-              const firstOnHold = scoped.find((l) => !l.identityResolved || l.flags.includes("ON_HOLD"));
+              const firstOnHold = scoped.find((l) => l.enrichmentStatus !== "COMPLETE" && (!l.identityResolved || l.flags.includes("ON_HOLD")));
               if (firstOnHold) setEnrichRaw(firstOnHold);
             }}
           >
@@ -381,11 +381,11 @@ function LeadsPage() {
               )}
               {view.map((l) => {
                 const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
-                const label = l.identityResolved ? l.displayName ?? l.maskedLabel ?? "—" : l.maskedLabel ?? "—";
+                const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
-                const isEnriched = l.identityResolved && l.enrichmentStatus === "COMPLETE";
+                const isEnriched = l.enrichmentStatus === "COMPLETE";
                 const isPending = l.enrichmentStatus === "IN_PROGRESS";
-                const isOnHold = !l.identityResolved || l.flags.includes("ON_HOLD");
+                const isOnHold = !isEnriched && (!l.identityResolved || l.flags.includes("ON_HOLD"));
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -586,7 +586,7 @@ function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: s
     queryFn: () => api.getLead(lead.id),
     enabled: open,
   });
-  const label = lead.identityResolved ? lead.displayName ?? lead.maskedLabel ?? "—" : lead.maskedLabel ?? "—";
+  const label = lead.displayName ?? lead.fullName ?? lead.maskedLabel ?? "—";
   const timeline = [...(detailQuery.data?.timeline ?? [])].reverse();
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -641,7 +641,7 @@ function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: s
 
 function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.displayName ?? l.maskedLabel ?? "";
+    case "lead": return l.displayName ?? l.fullName ?? l.maskedLabel ?? "";
     case "language": return l.targetLanguage ?? "";
     case "country": return l.country ?? "";
     case "stage": return STAGE_OPTIONS.indexOf(l.stage);

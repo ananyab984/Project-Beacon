@@ -6,6 +6,7 @@ import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import type { KpiConfig } from "@prisma/client";
+import { computeRecruiterScoreSnapshot } from "../jobs/scoring.job";
 
 // Mounted at bare /api in index.ts (`app.use("/api", evaluationRouter)`),
 // so every path below spells out its own full segment.
@@ -99,17 +100,29 @@ evaluationRouter.patch(
 );
 
 // GET /api/recruiters/:id/score — latest RecruiterScoreSnapshot + its
-// RecruiterMetricSnapshot rows. No snapshot yet is a normal state (freshly
-// onboarded recruiter), so return 200 with nulls rather than 404.
+// RecruiterMetricSnapshot rows. Auto-computes if not yet generated.
 evaluationRouter.get(
   "/recruiters/:id/score",
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
-    const latest = await prisma.recruiterScoreSnapshot.findFirst({
+    let latest = await prisma.recruiterScoreSnapshot.findFirst({
       where: { recruiterId: req.params.id },
       orderBy: { period: "desc" },
       include: { metricSnapshots: true },
     });
+
+    if (!latest) {
+      try {
+        await computeRecruiterScoreSnapshot(req.params.id, new Date());
+        latest = await prisma.recruiterScoreSnapshot.findFirst({
+          where: { recruiterId: req.params.id },
+          orderBy: { period: "desc" },
+          include: { metricSnapshots: true },
+        });
+      } catch (err) {
+        console.warn("[evaluation] on-demand score computation failed:", err);
+      }
+    }
 
     if (!latest) {
       return res.json({ snapshot: null, metricSnapshots: [] });
@@ -117,6 +130,21 @@ evaluationRouter.get(
 
     const { metricSnapshots, ...snapshot } = latest;
     return res.json({ snapshot, metricSnapshots });
+  })
+);
+
+// POST /api/recruiters/:id/recompute-score — triggers an immediate real-time
+// recalculation of the recruiter's score snapshot and KPI summary.
+evaluationRouter.post(
+  "/recruiters/:id/recompute-score",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const snapshot = await computeRecruiterScoreSnapshot(req.params.id, new Date());
+    const full = await prisma.recruiterScoreSnapshot.findUnique({
+      where: { id: snapshot.id },
+      include: { metricSnapshots: true },
+    });
+    return res.json({ success: true, snapshot: full });
   })
 );
 

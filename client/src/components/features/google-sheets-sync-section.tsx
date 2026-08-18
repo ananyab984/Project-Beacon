@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Upload, RefreshCw, LinkIcon, CheckCircle2, Loader2, Info } from "lucide-react";
 import { toast } from "sonner";
@@ -116,6 +116,13 @@ export function GoogleSheetsSyncSection() {
   const sheetUrl = syncConfig?.sheetUrl ?? null;
   const lastSyncedAt = syncConfig?.lastSyncedAt ?? null;
 
+  // Initialize inputUrl from database config
+  useEffect(() => {
+    if (sheetUrl && !inputUrl) {
+      setInputUrl(sheetUrl);
+    }
+  }, [sheetUrl]);
+
   return (
     <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 space-y-4">
       {/* Import Header */}
@@ -140,7 +147,7 @@ export function GoogleSheetsSyncSection() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {/* Google Sheets Sync Card */}
-        <div className="rounded-lg border border-border/80 bg-card p-3 space-y-2">
+        <div className="rounded-lg border border-border/80 bg-card p-3 space-y-2.5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
               <LinkIcon className="h-3.5 w-3.5 text-primary" />
@@ -148,46 +155,49 @@ export function GoogleSheetsSyncSection() {
             </div>
             <Button
               type="button"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
+              onClick={() => {
+                if (inputUrl.trim() && inputUrl.trim() !== sheetUrl) {
+                  saveUrlMutation.mutate(inputUrl.trim(), {
+                    onSuccess: () => syncMutation.mutate(),
+                  });
+                } else {
+                  syncMutation.mutate();
+                }
+              }}
+              disabled={syncMutation.isPending || saveUrlMutation.isPending}
               size="sm"
               className="h-7 px-2.5 gap-1.5 text-[11px] font-semibold bg-primary text-primary-foreground"
             >
-              {syncMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-              {syncMutation.isPending ? "Syncing..." : "Sync Sheet"}
+              {syncMutation.isPending || saveUrlMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <RefreshCw className="h-3 w-3" />
+              )}
+              {syncMutation.isPending ? "Syncing..." : saveUrlMutation.isPending ? "Saving..." : "Sync Sheet"}
             </Button>
           </div>
 
-          <div className="flex items-center justify-between gap-1 text-[11px] bg-muted/20 p-1.5 rounded border border-border/50">
-            {editing ? (
-              <Input
-                value={inputUrl}
-                onChange={(e) => setInputUrl(e.target.value)}
-                placeholder="https://docs.google.com/spreadsheets/d/..."
-                className="h-6 text-[11px] bg-background flex-1"
-                autoFocus
-              />
-            ) : (
-              <span className="text-muted-foreground truncate font-mono text-[10px] flex-1">
-                {sheetUrl || "No sheet URL configured"}
-              </span>
-            )}
-
-            {editing ? (
-              <div className="flex items-center gap-1 shrink-0">
-                <Button type="button" size="sm" onClick={handleSaveUrl} disabled={saveUrlMutation.isPending} className="h-6 px-2 text-[10px]">Save</Button>
-                <Button type="button" variant="ghost" size="sm" onClick={() => setEditing(false)} className="h-6 px-1 text-[10px]">Cancel</Button>
+          <div className="space-y-1.5">
+            <Input
+              value={inputUrl}
+              onChange={(e) => setInputUrl(e.target.value)}
+              placeholder="Paste Google Sheet URL: https://docs.google.com/spreadsheets/d/..."
+              className="h-8 text-xs bg-background border-border font-mono text-[11px]"
+            />
+            {inputUrl.trim() !== (sheetUrl || "") && inputUrl.trim() && (
+              <div className="flex items-center justify-between text-[10px]">
+                <span className="text-amber-500 font-medium">Unsaved URL</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSaveUrl}
+                  disabled={saveUrlMutation.isPending}
+                  className="h-5 px-2 text-[10px]"
+                >
+                  Save URL
+                </Button>
               </div>
-            ) : (
-              <Button
-                type="button"
-                variant="link"
-                size="sm"
-                onClick={() => { setInputUrl(sheetUrl ?? ""); setEditing(true); }}
-                className="h-auto p-0 text-[10px] font-medium text-accent hover:underline shrink-0"
-              >
-                Change URL
-              </Button>
             )}
           </div>
         </div>

@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { LayoutGrid, ContactRound, Building2, Mail, MessagesSquare, LineChart, Plus, Users, Link2, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
@@ -30,6 +31,7 @@ const nav: NavItem[] = [
 ];
 
 function RecruiterLayout() {
+  const queryClient = useQueryClient();
   const [connectOpen, setConnectOpen] = useState(false);
 
   useEffect(() => {
@@ -41,6 +43,7 @@ function RecruiterLayout() {
     if (status === "connected") {
       const pName = provider === "EMAIL" ? "Email" : provider === "LINKEDIN" ? "LinkedIn" : "Outreach account";
       toast.success(`${pName} connected successfully!`);
+      queryClient.invalidateQueries({ queryKey: ["connected-accounts"] });
 
       // If running inside a popup window, notify parent window and close popup
       if (window.opener) {
@@ -55,26 +58,17 @@ function RecruiterLayout() {
       setConnectOpen(false);
     }
 
-    // 2. Check if user has connected accounts; if none, auto-open setup popup on dashboard land
-    api.getConnectedAccounts().then((accs) => {
-      const active = accs.filter((a: any) => a.status !== "DISCONNECTED");
-      if (active.length === 0 && !status) {
-        setConnectOpen(true);
-      } else {
-        setConnectOpen(false);
-      }
-    }).catch(() => {});
-
-    // 3. Listen for postMessage from popup window if connected in child popup
+    // 2. Listen for postMessage from popup window if connected in child popup
     const messageHandler = (event: MessageEvent) => {
       if (event.data?.type === "UNIPILE_CONNECTED") {
         toast.success("Account connected successfully!");
+        queryClient.invalidateQueries({ queryKey: ["connected-accounts"] });
         setConnectOpen(false);
       }
     };
     window.addEventListener("message", messageHandler);
     return () => window.removeEventListener("message", messageHandler);
-  }, []);
+  }, [queryClient]);
 
   return (
     <AppShell

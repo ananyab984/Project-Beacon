@@ -725,33 +725,32 @@ export class UnipileService {
       }
     }
 
-    // 3. Inbound Messaging webhook
-    if (eventType === "message_received" && body.sender_name && body.message && accountId) {
+    // 3. Messaging webhook (inbound and external outbound) per Unipile Metrics Guide
+    if (eventType === "message_received" && (body.message || body.text) && accountId) {
       const connAcc = await prisma.connectedAccount.findUnique({
         where: { unipileAccountId: accountId },
       });
 
       if (connAcc) {
-        // Echo filter: ignore if message came from ourselves
-        if (body.sender_id && body.sender_id === accountId) {
-          return { status: "ignored_echo" };
-        }
+        const providerUserId = body.account_info?.user_id;
+        const senderProviderId = body.sender?.attendee_provider_id || body.sender_id;
+        const isOutbound = (providerUserId && senderProviderId && providerUserId === senderProviderId) || body.is_sender === true;
 
-        // Match by the actual chat/thread id first -- only fall back to
-        // "recruiter's most recent conversation" (logged clearly as a
-        // best-effort guess) if the webhook payload doesn't carry one or we
-        // haven't recorded it yet, so a busy recruiter with multiple active
-        // candidate threads doesn't get replies misfiled by default.
+        // Provider timestamp (acknowledged send time per Unipile guide, with safe NaN fallback)
+        let eventTimestamp = new Date();
+        if (body.timestamp) {
+          const parsed = new Date(body.timestamp);
+          if (!isNaN(parsed.getTime())) eventTimestamp = parsed;
+        }
+        const messageText = body.message || body.text || "";
+        const externalMsgId = body.message_id || body.id || null;
+
         const chatId = body.chat_id || body.thread_id || null;
         let conversation = chatId
           ? await prisma.conversation.findUnique({ where: { unipileChatId: chatId } })
           : null;
 
         if (!conversation) {
-          console.warn(
-            `Inbound message for account ${accountId} has no matching chat id (chat_id=${chatId}) -- ` +
-              `falling back to most-recently-active conversation for this recruiter as a best effort.`
-          );
           conversation = await prisma.conversation.findFirst({
             where: { recruiterId: connAcc.userId },
             orderBy: { lastMessageAt: "desc" },
@@ -759,31 +758,43 @@ export class UnipileService {
         }
 
         if (conversation) {
-          await prisma.conversationMessage.create({
-            data: {
-              conversationId: conversation.id,
-              sender: MessageSender.THEM,
-              text: body.message,
-              externalMessageId: body.message_id || null,
-            },
-          });
+          // Idempotency: prevent double-inserting if externalMessageId already exists
+          const existingMsg = externalMsgId
+            ? await prisma.conversationMessage.findFirst({ where: { externalMessageId: externalMsgId } })
+            : null;
 
-          await prisma.interactionEvent.create({
-            data: {
-              leadId: conversation.leadId,
-              direction: InteractionDirection.INBOUND,
-              channel: InteractionChannel.LINKEDIN_DM,
-              occurredAt: new Date(),
-              sentText: body.message,
-              deliveryStatus: "received",
-              externalMessageId: body.message_id || null,
-            },
-          });
+          if (!existingMsg) {
+            await prisma.conversationMessage.create({
+              data: {
+                conversationId: conversation.id,
+                sender: isOutbound ? MessageSender.ME : MessageSender.THEM,
+                text: messageText,
+                externalMessageId: externalMsgId,
+                sentAt: eventTimestamp,
+              },
+            });
 
-          await prisma.conversation.update({
-            where: { id: conversation.id },
-            data: { unread: true, lastMessageAt: new Date() },
-          });
+            await prisma.interactionEvent.create({
+              data: {
+                leadId: conversation.leadId,
+                recruiterId: connAcc.userId,
+                direction: isOutbound ? InteractionDirection.OUTBOUND : InteractionDirection.INBOUND,
+                channel: connAcc.provider === "LINKEDIN" ? InteractionChannel.LINKEDIN_DM : InteractionChannel.EMAIL,
+                occurredAt: eventTimestamp,
+                sentText: messageText,
+                deliveryStatus: isOutbound ? "sent" : "received",
+                externalMessageId: externalMsgId,
+              },
+            });
+
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                unread: !isOutbound,
+                lastMessageAt: eventTimestamp,
+              },
+            });
+          }
         }
       }
     }
