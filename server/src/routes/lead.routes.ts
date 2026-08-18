@@ -288,6 +288,10 @@ leadRouter.post(
       profileLink: parsed.profileLink,
     });
 
+    if (dup.isDuplicate) {
+      throw new ApiError(409, "DUPLICATE_LEAD", `Duplicate lead detected: already exists via ${dup.matchedField?.replace("_", " ") || "record"} (${dup.matchedName})`);
+    }
+
     const hasContact = !!(parsed.email || parsed.contactNumber || parsed.profileLink);
 
     const lead = await prisma.lead.create({
@@ -303,8 +307,8 @@ leadRouter.post(
         isSelfSourced: role !== "contractor",
         assignedRecruiterId: parsed.assignedRecruiterId ?? (role === "recruiter" ? req.user!.id : undefined),
         assignedAt: parsed.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
-        dupFlagged: dup.isDuplicate,
-        dupFlaggedField: dup.matchedField ?? undefined,
+        dupFlagged: false,
+        dupFlaggedField: undefined,
       },
     });
 
@@ -357,10 +361,35 @@ leadRouter.post(
     const skipDuplicates = req.body?.skipDuplicates === true;
     const role = req.user!.role.toLowerCase() as Role;
     const results: Array<{ index: number; status: "accepted" | "duplicate" | "skipped" | "error"; leadId?: string; message?: string }> = [];
+    const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
+        // 1. Intra-batch duplicate check
+        const emailKey = row.email ? `email:${row.email.toLowerCase().trim()}` : null;
+        const profileKey = row.profileLink
+          ? `link:${row.profileLink.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").toLowerCase()}`
+          : null;
+        const phoneKey = row.contactNumber ? `phone:${row.contactNumber.replace(/\D/g, "")}` : null;
+        const nameKey = row.fullName ? `name:${row.fullName.toLowerCase().trim()}` : null;
+
+        const isIntraDup =
+          (emailKey && seenInBatch.has(emailKey)) ||
+          (profileKey && seenInBatch.has(profileKey)) ||
+          (phoneKey && phoneKey.length >= 7 && seenInBatch.has(phoneKey));
+
+        if (emailKey) seenInBatch.add(emailKey);
+        if (profileKey) seenInBatch.add(profileKey);
+        if (phoneKey && phoneKey.length >= 7) seenInBatch.add(phoneKey);
+        if (nameKey) seenInBatch.add(nameKey);
+
+        if (isIntraDup) {
+          results.push({ index: i, status: "duplicate", message: "Duplicate record within uploaded file" });
+          continue;
+        }
+
+        // 2. Database duplicate check
         const dup = await findDuplicateLead({
           email: row.email,
           contactNumber: row.contactNumber,
@@ -368,9 +397,13 @@ leadRouter.post(
           profileLink: row.profileLink,
         });
 
-        if (dup.isDuplicate && skipDuplicates) {
-          results.push({ index: i, status: "skipped", message: `Skipped duplicate (${dup.matchedField})` });
-          continue;
+        if (dup.isDuplicate) {
+          results.push({
+            index: i,
+            status: "duplicate",
+            message: `Duplicate lead matching ${dup.matchedField} (${dup.matchedName})`,
+          });
+          continue; // Strictly omit duplicate leads from database insertion
         }
 
         const hasContact = !!(row.email || row.contactNumber || row.profileLink);
@@ -388,8 +421,8 @@ leadRouter.post(
             isSelfSourced: role !== "contractor",
             assignedRecruiterId: row.assignedRecruiterId ?? (role === "recruiter" ? req.user!.id : undefined),
             assignedAt: row.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
-            dupFlagged: dup.isDuplicate,
-            dupFlaggedField: dup.matchedField ?? undefined,
+            dupFlagged: false,
+            dupFlaggedField: undefined,
           },
         });
 

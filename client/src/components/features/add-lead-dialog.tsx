@@ -117,7 +117,12 @@ export function AddLeadDialog({
     mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
-      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
+      if (duplicates > 0) {
+        toast.info(`Imported ${succeeded} unique leads. ${duplicates} duplicate(s) were excluded.`);
+      } else {
+        toast.success(`Imported ${succeeded} unique leads.`);
+      }
       invalidateLeads();
       setOpen(false);
     },
