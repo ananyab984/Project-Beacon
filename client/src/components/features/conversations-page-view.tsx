@@ -193,7 +193,7 @@ export function ConversationsPageView() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-8.5rem)] max-h-[calc(100vh-8.5rem)] max-w-7xl flex-col gap-2 overflow-hidden">
+    <div className="mx-auto flex h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)] max-w-7xl flex-col gap-2 overflow-hidden">
       {/* Header bar */}
       <div className="shrink-0 flex items-center justify-between rounded-xl border border-border bg-card px-4 py-2 shadow-xs">
         <div className="flex items-center gap-2.5">
@@ -302,7 +302,7 @@ export function ConversationsPageView() {
             {/* Main Thread Content */}
             {conv && (
               <div className="flex h-full min-h-0 flex-col overflow-hidden">
-                <div className="shrink-0 flex items-center justify-between border-b border-border p-4">
+                <div className="shrink-0 flex items-center justify-between border-b border-border p-3.5">
                   <div>
                     <div className="text-sm font-semibold flex items-center gap-2">
                       {candidateName(conv)}
@@ -319,7 +319,7 @@ export function ConversationsPageView() {
                       onClick={handleGenerateLinkedInDraft}
                       disabled={isGeneratingDraft}
                       size="sm"
-                      className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
+                      className="h-7 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
                     >
                       {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
                       {isGeneratingDraft ? "Generating…" : "Generate Draft"}
@@ -328,26 +328,26 @@ export function ConversationsPageView() {
                   </div>
                 </div>
 
-                <div className="shrink-0 border-b border-border px-4 py-2.5">
+                <div className="shrink-0 border-b border-border px-4 py-2">
                   <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
                   <Input
                     value={to}
                     onChange={(e) => setTo(e.target.value)}
                     placeholder="https://www.linkedin.com/in/…"
-                    className="mt-1 h-8 text-xs"
+                    className="mt-0.5 h-7 text-xs"
                   />
                 </div>
 
                 {/* Center Conversation Content */}
                 <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
                   {conv.messages.length === 0 && !draft.trim() ? (
-                    <div className="flex h-full flex-col items-center justify-center p-8 text-center space-y-3 min-h-0">
-                      <div className="h-16 w-16 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
-                        <MessageCircle className="h-8 w-8 stroke-[1.5]" />
+                    <div className="flex h-full flex-col items-center justify-center p-4 text-center space-y-2 min-h-0">
+                      <div className="h-12 w-12 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
+                        <MessageCircle className="h-6 w-6 stroke-[1.5]" />
                       </div>
-                      <div className="space-y-1">
-                        <div className="text-base font-semibold text-foreground">No messages yet.</div>
-                        <div className="text-xs text-muted-foreground">Generate a draft below to start the conversation.</div>
+                      <div className="space-y-0.5">
+                        <div className="text-sm font-semibold text-foreground">No messages yet.</div>
+                        <div className="text-xs text-muted-foreground">Compose a message below to start the conversation.</div>
                       </div>
                     </div>
                   ) : null}
@@ -395,7 +395,7 @@ export function ConversationsPageView() {
                 </div>
 
                 {/* Bottom Chat Composer Box */}
-                <div className="shrink-0 p-3 pt-1 space-y-1.5 bg-card">
+                <div className="shrink-0 p-3 pt-1 space-y-1 bg-card">
                   <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3 shadow-lg focus-within:border-amber-500 transition-all space-y-2">
                     <Textarea
                       value={draft}
@@ -407,10 +407,10 @@ export function ConversationsPageView() {
                         }
                       }}
                       placeholder="Type your message..."
-                      className="min-h-[140px] max-h-[220px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none"
+                      className="min-h-[65px] max-h-[120px] resize-none border-0 bg-transparent p-0 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none"
                       disabled={sending}
                     />
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center justify-between gap-3 pt-1 border-t border-border/30">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Add emoji">
                           <Smile className="h-4 w-4" />
@@ -428,18 +428,23 @@ export function ConversationsPageView() {
                           className="text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1.5 disabled:opacity-50 cursor-pointer ml-1 text-xs"
                         >
                           {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                          <span>{isGeneratingDraft ? "Generating…" : "Generate Draft"}</span>
+                          <span>{isGeneratingDraft ? "Generating…" : "Use Draft"}</span>
                         </button>
                       </div>
-                      <Button
-                        type="button"
-                        disabled={sending || !draft.trim()}
-                        className="h-8 px-4 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
-                        onClick={initiateSend}
-                      >
-                        {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black fill-black" />}
-                        <span>Send</span>
-                      </Button>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-[11px] ${draft.length > 3000 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                          {draft.length}/3000
+                        </span>
+                        <Button
+                          type="button"
+                          disabled={sending || !draft.trim()}
+                          className="h-8 px-4 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
+                          onClick={initiateSend}
+                        >
+                          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black fill-black" />}
+                          <span>Send</span>
+                        </Button>
+                      </div>
                     </div>
                   </div>
                   <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70 pb-0.5">
