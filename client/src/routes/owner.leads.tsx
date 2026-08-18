@@ -135,10 +135,7 @@ function LeadsPage() {
     },
   });
 
-  const baseSet = useMemo(
-    () => allLeads.filter((l) => l.identityResolved && !l.flags.includes("ON_HOLD")),
-    [allLeads],
-  );
+  const baseSet = useMemo(() => allLeads, [allLeads]);
 
   const filtered = useMemo(() => {
     const rows = [...baseSet];
@@ -359,9 +356,10 @@ function LeadsPage() {
               )}
               {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
                 const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
-                const label = l.identityResolved ? l.displayName ?? l.maskedLabel ?? "—" : l.maskedLabel ?? "—";
+                const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
-                const isOnHold = !l.identityResolved || l.flags.includes("ON_HOLD");
+                const isEnriched = l.enrichmentStatus === "COMPLETE";
+                const isOnHold = !isEnriched && (!l.identityResolved || l.flags.includes("ON_HOLD"));
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -540,7 +538,7 @@ function SortableTh({
 
 function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.displayName ?? l.maskedLabel ?? "";
+    case "lead": return l.displayName ?? l.fullName ?? l.maskedLabel ?? "";
     case "language": return l.targetLanguage ?? "";
     case "country": return l.country ?? "";
     case "stage": return STAGE_OPTIONS.indexOf(l.stage);

@@ -23,7 +23,7 @@ export function ConnectAccountDialog({ trigger, open: controlledOpen, onOpenChan
   const { data: accounts = [], refetch, isRefetching } = useQuery({
     queryKey: ["connected-accounts"],
     queryFn: () => api.getConnectedAccounts(),
-    enabled: isOpen,
+    staleTime: 30_000,
   });
 
   const disconnectMutation = useMutation({
