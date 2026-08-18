@@ -194,11 +194,11 @@ export function ConversationsPageView() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-8rem)] max-w-7xl flex-col gap-3">
+    <div className="mx-auto flex h-[calc(100vh-8.5rem)] max-h-[calc(100vh-8.5rem)] max-w-7xl flex-col gap-2 overflow-hidden">
       {/* Header bar */}
-      <div className="flex items-center justify-between rounded-xl border border-border bg-card px-4 py-2.5 shadow-xs">
+      <div className="shrink-0 flex items-center justify-between rounded-xl border border-border bg-card px-4 py-2 shadow-xs">
         <div className="flex items-center gap-2.5">
-          <div className="rounded-lg bg-[#0A66C2]/15 p-2 text-[#0A66C2]">
+          <div className="rounded-lg bg-[#0A66C2]/15 p-1.5 text-[#0A66C2]">
             <Linkedin className="h-4 w-4" />
           </div>
           <div>
@@ -208,7 +208,7 @@ export function ConversationsPageView() {
                 Official Channel
               </Badge>
             </div>
-            <p className="text-[11px] text-muted-foreground">Direct messaging, candidate replies, and outreach follow-ups via LinkedIn.</p>
+            <p className="text-[10px] text-muted-foreground">Direct messaging, candidate replies, and outreach follow-ups via LinkedIn.</p>
           </div>
         </div>
 
@@ -219,12 +219,12 @@ export function ConversationsPageView() {
             title="Search & Add Lead to Conversations"
             description="Select a lead from the database. Enriched profile details & LinkedIn outreach draft will be auto-prefilled."
             trigger={
-              <Button size="sm" variant="outline" className="h-8 text-xs font-semibold gap-1.5 border-border">
-                <Search className="h-3.5 w-3.5 text-primary" /> Search Lead
+              <Button size="sm" variant="outline" className="h-7 text-xs font-semibold gap-1.5 border-border">
+                <Search className="h-3 w-3 text-primary" /> Search Lead
               </Button>
             }
           />
-          <Badge variant="outline" className="text-xs font-semibold px-2.5 py-1 gap-1.5">
+          <Badge variant="outline" className="text-xs font-semibold px-2 py-0.5 gap-1.5">
             <span className="h-2 w-2 rounded-full bg-accent animate-pulse" />
             {filtered.length} Active Threads
           </Badge>
@@ -252,7 +252,7 @@ export function ConversationsPageView() {
           />
         </div>
       ) : (
-        <div className="flex-1 overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-border bg-card">
           <div className="grid h-full grid-cols-1 md:grid-cols-[280px_1fr_280px]">
             {/* Threads Sidebar */}
             <div className="border-r border-border flex flex-col h-full">
@@ -393,8 +393,8 @@ export function ConversationsPageView() {
                 )}
 
                 {/* Bottom Chat Composer Box */}
-                <div className="shrink-0 p-4 pt-2 space-y-2 bg-card">
-                  <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3.5 shadow-lg focus-within:border-amber-500 transition-all space-y-3">
+                <div className="shrink-0 p-3 pt-1 space-y-1.5 bg-card">
+                  <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3 shadow-lg focus-within:border-amber-500 transition-all space-y-2">
                     <Textarea
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
@@ -405,7 +405,7 @@ export function ConversationsPageView() {
                         }
                       }}
                       placeholder="Type your message..."
-                      className="min-h-[70px] max-h-[160px] resize-none border-0 bg-transparent p-0 text-sm focus-visible:ring-0 shadow-none leading-relaxed text-foreground placeholder:text-muted-foreground/70"
+                      className="min-h-[55px] max-h-[120px] resize-none border-0 bg-transparent p-0 text-sm focus-visible:ring-0 shadow-none leading-relaxed text-foreground placeholder:text-muted-foreground/70"
                       disabled={sending}
                     />
                     <div className="flex items-center justify-between pt-1 text-xs">
@@ -436,16 +436,16 @@ export function ConversationsPageView() {
                         <Button
                           type="button"
                           disabled={sending || !draft.trim()}
-                          className="h-9 px-5 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
+                          className="h-8 px-4 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
                           onClick={initiateSend}
                         >
-                          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-black fill-black" />}
+                          {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black fill-black" />}
                           <span>Send</span>
                         </Button>
                       </div>
                     </div>
                   </div>
-                  <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/70 pb-1">
+                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted-foreground/70 pb-0.5">
                     <Lock className="h-3 w-3" />
                     <span>Messages will be sent via LinkedIn.</span>
                   </div>
