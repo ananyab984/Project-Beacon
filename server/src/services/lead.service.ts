@@ -2,27 +2,110 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { ApiError } from "../lib/apiError";
 
-/** Simple exact-match duplicate check (email / contact number / full name).
- *  Fuzzy/identity-resolution matching ("Danny M" rule) is a separate, async
- *  concern owned by the enrichment pipeline, not this endpoint. */
-export async function findDuplicateLead(input: { email?: string; contactNumber?: string; fullName?: string }) {
+/**
+ * Robust duplicate detection: checks Email, LinkedIn/Profile Link, Normalized Contact Number, and Full Name.
+ */
+export async function findDuplicateLead(input: {
+  email?: string;
+  contactNumber?: string;
+  fullName?: string;
+  profileLink?: string;
+}) {
   const email = input.email?.trim().toLowerCase();
   const contactNumber = input.contactNumber?.trim();
   const fullName = input.fullName?.trim();
+  const rawProfileLink = input.profileLink?.trim();
 
-  if (email) {
-    const match = await prisma.lead.findFirst({ where: { email: { equals: email, mode: "insensitive" } } });
-    if (match) return { isDuplicate: true, matchedField: "email_address" as const, leadId: match.id };
+  // 1. Email check (exact case-insensitive)
+  if (email && email.includes("@")) {
+    const match = await prisma.lead.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      select: { id: true, fullName: true, displayName: true, email: true },
+    });
+    if (match) {
+      return {
+        isDuplicate: true,
+        matchedField: "email_address" as const,
+        leadId: match.id,
+        matchedName: match.displayName || match.fullName || "Existing Lead",
+      };
+    }
   }
+
+  // 2. Profile Link / LinkedIn URL check (normalized without protocols/trailing slashes)
+  if (rawProfileLink) {
+    const normalizedLink = rawProfileLink
+      .replace(/^https?:\/\//i, "")
+      .replace(/^www\./i, "")
+      .replace(/\/+$/, "")
+      .toLowerCase();
+
+    if (normalizedLink.length > 5) {
+      const match = await prisma.lead.findFirst({
+        where: {
+          OR: [
+            { profileLink: { equals: rawProfileLink, mode: "insensitive" } },
+            { profileLink: { contains: normalizedLink, mode: "insensitive" } },
+          ],
+        },
+        select: { id: true, fullName: true, displayName: true, profileLink: true },
+      });
+      if (match) {
+        return {
+          isDuplicate: true,
+          matchedField: "profile_link" as const,
+          leadId: match.id,
+          matchedName: match.displayName || match.fullName || "Existing Lead",
+        };
+      }
+    }
+  }
+
+  // 3. Contact Number check (normalized digits)
   if (contactNumber) {
-    const match = await prisma.lead.findFirst({ where: { contactNumber } });
-    if (match) return { isDuplicate: true, matchedField: "contact_number" as const, leadId: match.id };
+    const digitsOnly = contactNumber.replace(/\D/g, "");
+    if (digitsOnly.length >= 7) {
+      const allLeadsWithContact = await prisma.lead.findMany({
+        where: { contactNumber: { not: null } },
+        select: { id: true, fullName: true, displayName: true, contactNumber: true },
+      });
+      const match = allLeadsWithContact.find((l) => {
+        const leadDigits = (l.contactNumber || "").replace(/\D/g, "");
+        return leadDigits.length >= 7 && (leadDigits.endsWith(digitsOnly) || digitsOnly.endsWith(leadDigits));
+      });
+      if (match) {
+        return {
+          isDuplicate: true,
+          matchedField: "contact_number" as const,
+          leadId: match.id,
+          matchedName: match.displayName || match.fullName || "Existing Lead",
+        };
+      }
+    }
   }
-  if (fullName) {
-    const match = await prisma.lead.findFirst({ where: { fullName: { equals: fullName, mode: "insensitive" } } });
-    if (match) return { isDuplicate: true, matchedField: "full_name" as const, leadId: match.id };
+
+  // 4. Full Name / Display Name check (exact case-insensitive)
+  if (fullName && fullName.length >= 3) {
+    const match = await prisma.lead.findFirst({
+      where: {
+        OR: [
+          { fullName: { equals: fullName, mode: "insensitive" } },
+          { displayName: { equals: fullName, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true, fullName: true, displayName: true },
+    });
+    if (match) {
+      return {
+        isDuplicate: true,
+        matchedField: "full_name" as const,
+        leadId: match.id,
+        matchedName: match.displayName || match.fullName || "Existing Lead",
+      };
+    }
   }
-  return { isDuplicate: false, matchedField: null, leadId: null };
+
+  return { isDuplicate: false, matchedField: null, leadId: null, matchedName: null };
 }
 
 /** Builds the merged, time-sorted activity timeline for a single lead. */

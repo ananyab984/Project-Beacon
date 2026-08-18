@@ -143,7 +143,7 @@ export const api = {
     );
   },
 
-  async checkBulkDuplicateLeads(leads: Array<{ fullName?: string; email?: string; contactNumber?: string }>) {
+  async checkBulkDuplicateLeads(leads: Array<{ fullName?: string; email?: string; contactNumber?: string; profileLink?: string }>) {
     return request<{
       hasDuplicates: boolean;
       duplicateCount: number;
@@ -180,7 +180,7 @@ export const api = {
     return request(`/api/leads/${id}/claim`, { method: "POST" });
   },
 
-  async checkDuplicateLead(input: { email?: string; contactNumber?: string; fullName?: string }) {
+  async checkDuplicateLead(input: { email?: string; contactNumber?: string; fullName?: string; profileLink?: string }) {
     return request<{ isDuplicate: boolean; matchedField: string | null; leadId: string | null }>(
       "/api/leads/check-duplicate",
       { method: "POST", body: JSON.stringify(input) }

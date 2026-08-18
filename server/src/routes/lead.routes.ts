@@ -160,7 +160,12 @@ leadRouter.post(
   "/check-bulk-duplicates",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const leads = (req.body?.leads || []) as Array<{ fullName?: string; email?: string; contactNumber?: string }>;
+    const leads = (req.body?.leads || []) as Array<{
+      fullName?: string;
+      email?: string;
+      contactNumber?: string;
+      profileLink?: string;
+    }>;
     const duplicates: Array<{
       index: number;
       fullName: string;
@@ -171,22 +176,57 @@ leadRouter.post(
     }> = [];
     const duplicateNamesSet = new Set<string>();
 
+    const seenInBatch = new Set<string>();
+
     for (let i = 0; i < leads.length; i++) {
       const item = leads[i];
-      if (!item.fullName && !item.email && !item.contactNumber) continue;
+      if (!item.fullName && !item.email && !item.contactNumber && !item.profileLink) continue;
+
+      // Intra-batch duplicate check
+      const emailKey = item.email ? `email:${item.email.toLowerCase().trim()}` : null;
+      const profileKey = item.profileLink
+        ? `link:${item.profileLink.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").toLowerCase()}`
+        : null;
+      const phoneKey = item.contactNumber ? `phone:${item.contactNumber.replace(/\D/g, "")}` : null;
+      const nameKey = item.fullName ? `name:${item.fullName.toLowerCase().trim()}` : null;
+
+      const isIntraDup =
+        (emailKey && seenInBatch.has(emailKey)) ||
+        (profileKey && seenInBatch.has(profileKey)) ||
+        (phoneKey && phoneKey.length >= 7 && seenInBatch.has(phoneKey));
+
+      if (emailKey) seenInBatch.add(emailKey);
+      if (profileKey) seenInBatch.add(profileKey);
+      if (phoneKey && phoneKey.length >= 7) seenInBatch.add(phoneKey);
+      if (nameKey) seenInBatch.add(nameKey);
+
+      if (isIntraDup) {
+        const leadName = item.fullName || `Row #${i + 1}`;
+        duplicateNamesSet.add(leadName);
+        duplicates.push({
+          index: i,
+          fullName: leadName,
+          email: item.email,
+          matchedField: "csv_duplicate",
+          existingLeadId: "intra_batch",
+          existingLeadName: leadName,
+        });
+        continue;
+      }
 
       const dup = await findDuplicateLead({
         email: item.email,
         contactNumber: item.contactNumber,
         fullName: item.fullName,
+        profileLink: item.profileLink,
       });
 
       if (dup.isDuplicate && dup.leadId) {
         const existing = await prisma.lead.findUnique({
           where: { id: dup.leadId },
-          select: { fullName: true },
+          select: { fullName: true, displayName: true },
         });
-        const leadName = item.fullName || existing?.fullName || `Row #${i + 1}`;
+        const leadName = item.fullName || existing?.displayName || existing?.fullName || `Row #${i + 1}`;
         duplicateNamesSet.add(leadName);
         duplicates.push({
           index: i,
@@ -194,7 +234,7 @@ leadRouter.post(
           email: item.email,
           matchedField: dup.matchedField ?? "full_name",
           existingLeadId: dup.leadId,
-          existingLeadName: existing?.fullName || undefined,
+          existingLeadName: existing?.displayName || existing?.fullName || undefined,
         });
       }
     }
@@ -241,7 +281,12 @@ leadRouter.post(
     const parsed = createLeadSchema.parse(req.body);
     const role = req.user!.role.toLowerCase() as Role;
 
-    const dup = await findDuplicateLead({ email: parsed.email, contactNumber: parsed.contactNumber, fullName: parsed.fullName });
+    const dup = await findDuplicateLead({
+      email: parsed.email,
+      contactNumber: parsed.contactNumber,
+      fullName: parsed.fullName,
+      profileLink: parsed.profileLink,
+    });
 
     const hasContact = !!(parsed.email || parsed.contactNumber || parsed.profileLink);
     const hasCompleteData = !!(parsed.email && (parsed.contactNumber || parsed.profileLink || (parsed.services && parsed.services.length > 0)));
@@ -317,7 +362,12 @@ leadRouter.post(
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
-        const dup = await findDuplicateLead({ email: row.email, contactNumber: row.contactNumber, fullName: row.fullName });
+        const dup = await findDuplicateLead({
+          email: row.email,
+          contactNumber: row.contactNumber,
+          fullName: row.fullName,
+          profileLink: row.profileLink,
+        });
 
         if (dup.isDuplicate && skipDuplicates) {
           results.push({ index: i, status: "skipped", message: `Skipped duplicate (${dup.matchedField})` });

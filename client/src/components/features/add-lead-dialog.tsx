@@ -158,6 +158,7 @@ export function AddLeadDialog({
         email: values.email_address || undefined,
         contactNumber: values.contact_number || undefined,
         fullName: trimmed,
+        profileLink: values.profile_link || undefined,
       });
       if (dup.isDuplicate) {
         toast.warning("A similar lead may already exist — submitting anyway.");
@@ -236,7 +237,12 @@ export function AddLeadDialog({
         setCheckingDuplicates(true);
         try {
           const dupRes = await api.checkBulkDuplicateLeads(
-            rows.map((r) => ({ fullName: r.fullName, email: r.email, contactNumber: r.contactNumber }))
+            rows.map((r) => ({
+              fullName: r.fullName,
+              email: r.email,
+              contactNumber: r.contactNumber,
+              profileLink: r.profileLink,
+            }))
           );
 
           if (dupRes.hasDuplicates) {
