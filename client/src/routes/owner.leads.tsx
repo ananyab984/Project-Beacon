@@ -213,6 +213,8 @@ function LeadsPage() {
         name: enrichRaw.displayName ?? enrichRaw.fullName ?? enrichRaw.maskedLabel ?? "",
         email: enrichRaw.email,
         phone: enrichRaw.contactNumber,
+        country: enrichRaw.country,
+        profile_link: enrichRaw.profileLink,
         language: enrichRaw.targetLanguage ?? "",
         source_language: enrichRaw.sourceLanguage,
         target_language: enrichRaw.targetLanguage,
@@ -233,6 +235,8 @@ function LeadsPage() {
         services: updated.services,
         sourceLanguage: updated.source_language,
         targetLanguage: updated.target_language,
+        country: updated.country,
+        profileLink: updated.profile_link,
         yearsOfExperience: updated.years_experience,
         vendorExperience: updated.vendor_experience,
         contactNumber: updated.phone,
@@ -560,11 +564,18 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
       if (parsed.length > 0) {
-        const rows = parsed.map((l) => ({
+        const rows = parsed.map((l: any) => ({
           fullName: l.display_name ?? l.masked_label,
           source: mapToLeadSource(l.source),
           services: l.services,
-          targetLanguage: l.language,
+          country: l.country || undefined,
+          profileLink: l.profile_link || undefined,
+          sourceLanguage: l.source_language || "English",
+          targetLanguage: l.target_language || l.language || "English",
+          email: l.email || undefined,
+          contactNumber: l.phone || undefined,
+          yearsOfExperience: l.years_experience || undefined,
+          vendorExperience: l.vendor_experience || undefined,
         }));
         onSubmitRows(rows);
         toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);

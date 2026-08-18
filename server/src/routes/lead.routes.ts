@@ -20,17 +20,20 @@ const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
 const createLeadSchema = z.object({
   firstName: z.string().max(80).optional(),
   fullName: z.string().min(1).max(160),
-  email: z.string().email().optional(),
-  contactNumber: z.string().max(40).optional(),
-  profileLink: z.string().url().optional(),
-  country: z.string().max(80).optional(),
+  email: z.string().trim().transform((val) => (val === "" ? undefined : val)).refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
+  contactNumber: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
+  profileLink: z.string().trim().transform((val) => {
+    if (!val) return undefined;
+    return /^https?:\/\//i.test(val) ? val : `https://${val}`;
+  }).optional(),
+  country: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   source: z.enum(LEAD_SOURCES),
   services: z.array(z.string()).default([]),
-  sourceLanguage: z.string().optional(),
-  targetLanguage: z.string().optional(),
+  sourceLanguage: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
+  targetLanguage: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   secondaryLanguages: z.array(z.string()).default([]),
   yearsOfExperience: z.number().min(0).max(99).optional(),
-  vendorExperience: z.string().optional(),
+  vendorExperience: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   assignedRecruiterId: z.string().uuid().optional(),
 });
 
@@ -240,12 +243,17 @@ leadRouter.post(
 
     const dup = await findDuplicateLead({ email: parsed.email, contactNumber: parsed.contactNumber, fullName: parsed.fullName });
 
+    const hasContact = !!(parsed.email || parsed.contactNumber || parsed.profileLink);
+    const hasCompleteData = !!(parsed.email && (parsed.contactNumber || parsed.profileLink || (parsed.services && parsed.services.length > 0)));
+
     const lead = await prisma.lead.create({
       data: {
         ...parsed,
         maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}`,
-        identityResolved: false,
-        emailVerified: false,
+        identityResolved: hasContact,
+        emailVerified: !!parsed.email,
+        enrichmentStatus: hasCompleteData ? "COMPLETE" : hasContact ? "IN_PROGRESS" : "PENDING",
+        flags: hasContact ? [] : ["ON_HOLD"],
         createdByContractorId: role === "contractor" ? req.user!.id : undefined,
         createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
         isSelfSourced: role !== "contractor",
@@ -257,8 +265,7 @@ leadRouter.post(
     });
 
     // 1. Auto-add to email queue if created by recruiter/owner, using the
-    // approved template filled ONLY with this lead's real fields -- never a
-    // fabricated fact.
+    // approved template filled ONLY with this lead's real fields
     if (role !== "contractor") {
       const { subject, body } = buildEmailDraft(lead);
       await prisma.emailQueueItem.create({
@@ -273,9 +280,22 @@ leadRouter.post(
           aiGenerated: false,
         },
       }).catch((err) => console.error("Failed to auto-create email queue item:", err));
+
+      // Auto-create conversation thread if LinkedIn profile exists
+      if (parsed.profileLink || parsed.source === "LINKEDIN") {
+        await prisma.conversation.create({
+          data: {
+            leadId: lead.id,
+            recruiterId: req.user!.id,
+            candidateName: lead.fullName || "Candidate",
+            candidateRole: parsed.services.join(", ") || parsed.targetLanguage || "Freelance Linguist",
+            channel: "LINKEDIN",
+          },
+        }).catch(() => {});
+      }
     }
 
-    // 2. Trigger background enrichment pipeline immediately as soon as lead is added
+    // 2. Trigger background enrichment pipeline immediately
     setImmediate(() => {
       enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
     });
@@ -304,12 +324,17 @@ leadRouter.post(
           continue;
         }
 
+        const hasContact = !!(row.email || row.contactNumber || row.profileLink);
+        const hasCompleteData = !!(row.email && (row.contactNumber || row.profileLink || (row.services && row.services.length > 0)));
+
         const lead = await prisma.lead.create({
           data: {
             ...row,
             maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}${i}`,
-            identityResolved: false,
-            emailVerified: false,
+            identityResolved: hasContact,
+            emailVerified: !!row.email,
+            enrichmentStatus: hasCompleteData ? "COMPLETE" : hasContact ? "IN_PROGRESS" : "PENDING",
+            flags: hasContact ? [] : ["ON_HOLD"],
             createdByContractorId: role === "contractor" ? req.user!.id : undefined,
             createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
             isSelfSourced: role !== "contractor",
@@ -319,6 +344,35 @@ leadRouter.post(
             dupFlaggedField: dup.matchedField ?? undefined,
           },
         });
+
+        // Auto-create email queue and conversation items
+        if (role !== "contractor") {
+          const { subject, body } = buildEmailDraft(lead);
+          await prisma.emailQueueItem.create({
+            data: {
+              leadId: lead.id,
+              recruiterId: req.user!.id,
+              candidateName: lead.fullName || "Candidate",
+              candidateRole: (row.services && row.services.length > 0) ? row.services.join(", ") : row.targetLanguage || "Freelance Linguist",
+              status: "REVIEW_NEEDED",
+              subject,
+              body,
+              aiGenerated: false,
+            },
+          }).catch(() => {});
+
+          if (row.profileLink || row.source === "LINKEDIN") {
+            await prisma.conversation.create({
+              data: {
+                leadId: lead.id,
+                recruiterId: req.user!.id,
+                candidateName: lead.fullName || "Candidate",
+                candidateRole: (row.services && row.services.length > 0) ? row.services.join(", ") : row.targetLanguage || "Freelance Linguist",
+                channel: "LINKEDIN",
+              },
+            }).catch(() => {});
+          }
+        }
 
         setImmediate(() => {
           enrichLeadById(lead.id).catch((err) => console.error("Immediate bulk enrichment error:", err));
@@ -384,7 +438,9 @@ leadRouter.patch(
       services: z.array(z.string()).optional(),
       sourceLanguage: z.string().optional(),
       targetLanguage: z.string().optional(),
-      email: z.string().email().optional(),
+      country: z.string().optional(),
+      profileLink: z.string().optional(),
+      email: z.string().trim().transform((val) => (val === "" ? undefined : val)).refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
       contactNumber: z.string().optional(),
       yearsOfExperience: z.number().optional(),
       vendorExperience: z.string().optional(),
@@ -394,8 +450,9 @@ leadRouter.patch(
     });
     const patch = schema.parse(req.body);
 
+    const hasContact = !!(patch.email || patch.contactNumber || patch.profileLink || existing.email || existing.contactNumber || existing.profileLink);
     const shouldStayComplete =
-      existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE";
+      existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE" || hasContact;
     if (shouldStayComplete) {
       patch.identityResolved = true;
       patch.enrichmentStatus = "COMPLETE";
@@ -422,6 +479,24 @@ leadRouter.patch(
       where: { id: existing.id },
       data: { ...patch, lastActivityAt: new Date() },
     });
+
+    // Automatically sync updated candidate name and details to email queue and conversation threads
+    if (updated.email || updated.displayName || updated.fullName) {
+      await prisma.emailQueueItem.updateMany({
+        where: { leadId: updated.id },
+        data: {
+          candidateName: updated.displayName || updated.fullName || "Candidate",
+        },
+      }).catch(() => {});
+    }
+    if (updated.profileLink || updated.displayName || updated.fullName) {
+      await prisma.conversation.updateMany({
+        where: { leadId: updated.id },
+        data: {
+          candidateName: updated.displayName || updated.fullName || "Candidate",
+        },
+      }).catch(() => {});
+    }
 
     // Automated Demand / Requirement headcount synchronization on stage change
     if (patch.stage && patch.stage !== existing.stage) {

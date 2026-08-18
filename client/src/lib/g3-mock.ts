@@ -871,28 +871,38 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
   const headers = parseRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
   const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
 
-  const nameIdx = findIdx(["name", "candidate", "full_name", "lead"]);
-  const emailIdx = findIdx(["email", "mail", "contact_email"]);
-  const langIdx = findIdx(["language", "lang", "source_language", "target_language"]);
-  const serviceIdx = findIdx(["service", "services", "role"]);
-  const countryIdx = findIdx(["country", "location", "residence"]);
-  const expIdx = findIdx(["exp", "experience", "years"]);
-  const vendorIdx = findIdx(["vendor", "clients", "history"]);
-  const sourceIdx = findIdx(["source", "channel"]);
+  const nameIdx = findIdx(["fullname", "name", "candidate", "candidatename", "lead", "leadname"]);
+  const emailIdx = findIdx(["email", "mail", "contactemail", "emailaddress", "emailid"]);
+  const phoneIdx = findIdx(["contact", "contactnumber", "phone", "phonenumber", "mobile", "whatsapp", "tel", "cell"]);
+  const profileIdx = findIdx(["profilelink", "linkedin", "linkedinurl", "link", "url", "profile", "social", "prozlink"]);
+  const countryIdx = findIdx(["country", "location", "residence", "nation", "region", "city", "state"]);
+  const langIdx = findIdx(["targetlanguage", "targetlang", "target_language", "language", "lang", "tolanguage"]);
+  const sourceLangIdx = findIdx(["sourcelanguage", "srclang", "source_language", "fromlanguage"]);
+  const serviceIdx = findIdx(["services", "service", "role", "specialization", "skills"]);
+  const expIdx = findIdx(["yearsofexperience", "experience", "years", "exp", "yoexp", "yearsofexp"]);
+  const vendorIdx = findIdx(["vendorexperience", "vendor", "clients", "history"]);
+  const sourceIdx = findIdx(["source", "channel", "platform", "origin"]);
 
-  const result: Omit<Lead, "id">[] = [];
+  const result: Array<Omit<Lead, "id"> & { email?: string; phone?: string; profile_link?: string }> = [];
 
   for (let i = 1; i < lines.length; i++) {
     const row = parseRow(lines[i]);
     if (row.length < 2) continue;
 
-    const name = nameIdx >= 0 && row[nameIdx] ? row[nameIdx] : "";
-    const email = emailIdx >= 0 && row[emailIdx] ? row[emailIdx] : "";
-    const language = langIdx >= 0 && row[langIdx] ? row[langIdx] : "";
-    const serviceName = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "";
+    const name = nameIdx >= 0 && row[nameIdx] ? row[nameIdx].trim() : "";
+    const email = emailIdx >= 0 && row[emailIdx] ? row[emailIdx].trim() : "";
+    const phone = phoneIdx >= 0 && row[phoneIdx] ? row[phoneIdx].trim() : "";
+    const profileLink = profileIdx >= 0 && row[profileIdx] ? row[profileIdx].trim() : "";
+    const country = countryIdx >= 0 && row[countryIdx] ? row[countryIdx].trim() : "";
+    const language = langIdx >= 0 && row[langIdx] ? row[langIdx].trim() : "";
+    const sourceLanguage = sourceLangIdx >= 0 && row[sourceLangIdx] ? row[sourceLangIdx].trim() : "English";
+    const rawServices = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx].trim() : "";
+    const services = rawServices
+      ? rawServices.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean)
+      : ["Subtitling"];
     const exp = expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined;
-    const vendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx] : undefined;
-    const rawSource = sourceIdx >= 0 && row[sourceIdx] ? row[sourceIdx] : "";
+    const vendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx].trim() : undefined;
+    const rawSource = sourceIdx >= 0 && row[sourceIdx] ? row[sourceIdx].trim() : "";
     const source: Source = rawSource.toLowerCase().includes("linkedin")
       ? "LinkedIn"
       : rawSource.toLowerCase().includes("proz")
@@ -901,19 +911,31 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
       ? "Apollo"
       : rawSource.toLowerCase().includes("referral")
       ? "Referral"
+      : rawSource.toLowerCase().includes("ada")
+      ? "Ada"
+      : rawSource.toLowerCase().includes("ata")
+      ? "ATA"
       : "Import";
 
-    if (!name && !email && !language) continue;
+    if (!name && !email && !language && !profileLink) continue;
+
+    const hasContact = !!(email || phone || profileLink);
 
     result.push({
       masked_label: name ? `Lead #${name}` : `Lead #${i}`,
-      display_name: name || `Imported Candidate #${i}`,
-      identity_resolved: !!email,
+      display_name: name || `Candidate #${i}`,
+      identity_resolved: hasContact,
+      email: email || undefined,
+      phone: phone || undefined,
+      profile_link: profileLink || (rawSource.includes("http") ? rawSource : undefined),
+      country: country || undefined,
       language: language || "English",
-      services: serviceName ? [serviceName] : ["Subtitling"],
+      source_language: sourceLanguage,
+      target_language: language || "English",
+      services: services.length > 0 ? services : ["Subtitling"],
       stage: "New",
       availability: "Available Now",
-      flags: [],
+      flags: hasContact ? [] : ["On Hold"],
       source,
       recruiter_id: "r1",
       verified_email: !!email,

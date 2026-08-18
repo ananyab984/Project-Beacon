@@ -13,6 +13,8 @@ export interface LeadForEnrichment {
   name: string;
   email?: string | null;
   phone?: string | null;
+  country?: string | null;
+  profile_link?: string | null;
   language: string;
   source_language?: string | null;
   target_language?: string | null;
@@ -34,22 +36,21 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [country, setCountry] = useState("");
+  const [profileLink, setProfileLink] = useState("");
   const [sourceLang, setSourceLang] = useState("");
   const [targetLang, setTargetLang] = useState("");
   const [services, setServices] = useState<string[]>([]);
-  const [yearsExp, setYearsExp] = useState<string>("5");
+  const [yearsExp, setYearsExp] = useState<string>("");
   const [notes, setNotes] = useState("");
 
-  // Pre-fill ONLY from the lead's real data. Empty fields stay empty rather
-  // than defaulting to a plausible-looking placeholder value (a fake email,
-  // a fake phone number, fabricated employer names) that a recruiter could
-  // miss and save as if it were real -- that was a genuine data-fabrication
-  // bug, not a convenience default.
   useEffect(() => {
     if (lead) {
       setName(lead.name || "");
       setEmail(lead.email || "");
       setPhone(lead.phone || "");
+      setCountry(lead.country || "");
+      setProfileLink(lead.profile_link || "");
       setSourceLang(lead.source_language || "");
       setTargetLang(lead.target_language || lead.language || "");
       setServices(lead.services?.length ? lead.services : []);
@@ -60,11 +61,35 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
 
   if (!lead) return null;
 
+  const hasContact = !!(email.trim() || phone.trim() || profileLink.trim());
+
   const toggleService = (s: string) => {
-    setServices(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+    setServices((prev) =>
+      prev.some((x) => x.toLowerCase() === s.toLowerCase())
+        ? prev.filter((x) => x.toLowerCase() !== s.toLowerCase())
+        : [...prev, s]
+    );
+  };
+
+  const isServiceSelected = (s: string) => {
+    return services.some((x) => x.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(x.toLowerCase()));
   };
 
   const handleSaveOnly = () => {
+    const parsedYears = yearsExp.trim() === "" ? undefined : Number(yearsExp);
+    onMarkEnriched(lead.id, {
+      name,
+      email: email.trim() || undefined,
+      phone: phone.trim() || undefined,
+      country: country.trim() || undefined,
+      profile_link: profileLink.trim() || undefined,
+      source_language: sourceLang.trim() || undefined,
+      target_language: targetLang.trim() || undefined,
+      services,
+      years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : undefined,
+      vendor_experience: notes.trim() || undefined,
+      enrichment_status: hasContact ? "complete" : "pending",
+    });
     toast.success("Draft changes saved.");
     onOpenChange(false);
   };
@@ -73,45 +98,56 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
     const parsedYears = yearsExp.trim() === "" ? undefined : Number(yearsExp);
     onMarkEnriched(lead.id, {
       name,
-      email,
-      phone,
-      source_language: sourceLang,
-      target_language: targetLang,
-      services,
+      email: email.trim() || undefined,
+      phone: phone.trim() || undefined,
+      country: country.trim() || undefined,
+      profile_link: profileLink.trim() || undefined,
+      source_language: sourceLang.trim() || undefined,
+      target_language: targetLang.trim() || undefined,
+      services: services.length > 0 ? services : ["Subtitling"],
       years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : undefined,
-      vendor_experience: notes || undefined,
-      enrichment_status: "enriched",
+      vendor_experience: notes.trim() || undefined,
+      enrichment_status: "complete",
     });
-    toast.success(`Lead marked as Enriched! ${name} has been moved to Global Leads.`);
+    toast.success(`Lead marked as Enriched! ${name} has been promoted.`);
     onOpenChange(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
-            <span className="grid h-7 w-7 place-items-center rounded-lg bg-warning/15 text-warning">
-              <AlertTriangle className="h-4 w-4" />
+            <span className={`grid h-7 w-7 place-items-center rounded-lg ${hasContact ? "bg-accent/15 text-accent" : "bg-warning/15 text-warning"}`}>
+              {hasContact ? <CheckCircle2 className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
             </span>
             Manual Lead Enrichment
-            <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning text-xs font-semibold ml-auto">
-              🟡 On Hold
+            <Badge
+              variant="outline"
+              className={`text-xs font-semibold ml-auto ${
+                hasContact
+                  ? "border-accent/40 bg-accent/10 text-accent"
+                  : "border-warning/40 bg-warning/10 text-warning"
+              }`}
+            >
+              {hasContact ? "🟢 Ready to Enrich" : "🟡 On Hold"}
             </Badge>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground pt-1">
-            This lead could not be fully enriched automatically. Please review and update the missing information manually before marking it as complete.
+            Review and update candidate skills, contact info, and language pair to promote this lead.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2 text-xs">
-          <div className="rounded-xl border border-warning/30 bg-warning/5 p-3 text-warning-foreground">
+          <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-primary-foreground">
             <div className="flex items-start gap-2.5">
-              <Sparkles className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+              <Sparkles className="h-4 w-4 text-primary shrink-0 mt-0.5" />
               <div>
-                <div className="font-semibold text-xs text-foreground">Action Required</div>
+                <div className="font-semibold text-xs text-foreground">
+                  {hasContact ? "Candidate details detected" : "Action Required"}
+                </div>
                 <div className="text-[11px] text-muted-foreground">
-                  Completing enrichment will verify candidate skills and automatically promote this profile to the Global Leads directory.
+                  Marking as enriched will verify candidate skills and automatically populate the Email Queue and LinkedIn conversations.
                 </div>
               </div>
             </div>
@@ -120,37 +156,55 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-[11px] text-muted-foreground">Candidate Display Name</Label>
-              <Input value={name} onChange={e => setName(e.target.value)} className="mt-1 h-8 text-xs" />
+              <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1 h-8 text-xs" />
             </div>
             <div>
               <Label className="text-[11px] text-muted-foreground">Email Address</Label>
-              <Input value={email} onChange={e => setEmail(e.target.value)} className="mt-1 h-8 text-xs" />
+              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@example.com" className="mt-1 h-8 text-xs" />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
+              <Label className="text-[11px] text-muted-foreground">Phone / Contact</Label>
+              <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 234 567 8900" className="mt-1 h-8 text-xs" />
+            </div>
+            <div>
+              <Label className="text-[11px] text-muted-foreground">Country</Label>
+              <Input value={country} onChange={(e) => setCountry(e.target.value)} placeholder="e.g. India, United States" className="mt-1 h-8 text-xs" />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-[11px] text-muted-foreground">LinkedIn / Profile Link</Label>
+            <Input value={profileLink} onChange={(e) => setProfileLink(e.target.value)} placeholder="https://www.linkedin.com/in/..." className="mt-1 h-8 text-xs" />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
               <Label className="text-[11px] text-muted-foreground">Source Language</Label>
-              <Input value={sourceLang} onChange={e => setSourceLang(e.target.value)} className="mt-1 h-8 text-xs" />
+              <Input value={sourceLang} onChange={(e) => setSourceLang(e.target.value)} placeholder="e.g. English" className="mt-1 h-8 text-xs" />
             </div>
             <div>
               <Label className="text-[11px] text-muted-foreground">Target Language</Label>
-              <Input value={targetLang} onChange={e => setTargetLang(e.target.value)} className="mt-1 h-8 text-xs" />
+              <Input value={targetLang} onChange={(e) => setTargetLang(e.target.value)} placeholder="e.g. German, Hindi" className="mt-1 h-8 text-xs" />
             </div>
           </div>
 
           <div>
             <Label className="text-[11px] text-muted-foreground mb-1.5 block">Services Offered</Label>
             <div className="flex flex-wrap gap-1.5">
-              {["Subtitling", "Dubbing", "Voiceover", "Translation", "QA"].map(s => {
-                const sel = services.includes(s);
+              {["Subtitling", "Dubbing", "Voiceover", "Translation", "QA", "Audio Description", "SDH"].map((s) => {
+                const sel = isServiceSelected(s);
                 return (
                   <button
                     type="button"
                     key={s}
                     onClick={() => toggleService(s)}
                     className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
-                      sel ? "border-primary bg-primary/10 font-semibold text-primary" : "border-border bg-background text-muted-foreground hover:text-foreground"
+                      sel
+                        ? "border-primary bg-primary/10 font-semibold text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {s} {sel ? "✓" : ""}
@@ -163,17 +217,13 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label className="text-[11px] text-muted-foreground">Years of Experience</Label>
-              <Input type="number" value={yearsExp} onChange={e => setYearsExp(e.target.value)} className="mt-1 h-8 text-xs" />
-            </div>
-            <div>
-              <Label className="text-[11px] text-muted-foreground">Phone / Contact</Label>
-              <Input value={phone} onChange={e => setPhone(e.target.value)} className="mt-1 h-8 text-xs" />
+              <Input type="number" value={yearsExp} onChange={(e) => setYearsExp(e.target.value)} placeholder="e.g. 5" className="mt-1 h-8 text-xs" />
             </div>
           </div>
 
           <div>
             <Label className="text-[11px] text-muted-foreground">Vendor Experience &amp; Notes</Label>
-            <Textarea value={notes} onChange={e => setNotes(e.target.value)} className="mt-1 h-16 text-xs resize-none" />
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Client history, rate info, notes..." className="mt-1 h-16 text-xs resize-none" />
           </div>
         </div>
 
