@@ -359,6 +359,7 @@ function LeadsPage() {
                 <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
               )}
               {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
+                const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
                 const isEnriched = l.enrichmentStatus === "COMPLETE";
