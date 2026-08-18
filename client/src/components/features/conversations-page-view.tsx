@@ -91,19 +91,11 @@ export function ConversationsPageView() {
   useEffect(() => {
     if (!conv) return;
     setTo(conv.lead?.profileLink || (conv.lead?.email ? conv.lead.email : ""));
-    if (conv.messages.length === 0) {
-      setDraft((current) => current.trim() ? current : getDefaultDraft(candidateName(conv), conv.candidateRole));
-    }
   }, [conv?.id, conv?.lead?.profileLink, conv?.lead?.email]);
 
   const pickConv = (convId: string) => {
     setId(convId);
-    const target = conversations.find((c: ApiConversation) => c.id === convId);
-    if (target && target.messages.length === 0) {
-      setDraft(getDefaultDraft(candidateName(target), target.candidateRole));
-    } else {
-      setDraft("");
-    }
+    setDraft("");
   };
 
   const handleGenerateLinkedInDraft = async () => {
@@ -114,12 +106,8 @@ export function ConversationsPageView() {
       setDraft(generated.body);
       toast.success(`Generated official LinkedIn draft for ${candidateName(conv)}!`);
     } catch (err: any) {
-      if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
-        setDraft(getDefaultDraft(candidateName(conv), conv.candidateRole));
-        toast.info("Inserted official LinkedIn template draft.");
-      } else {
-        toast.error(err.message || "Failed to generate draft");
-      }
+      setDraft(getDefaultDraft(candidateName(conv), conv.candidateRole));
+      toast.info("Loaded official LinkedIn template draft.");
     } finally {
       setIsGeneratingDraft(false);
     }
@@ -340,7 +328,7 @@ export function ConversationsPageView() {
 
                 {/* Center Conversation Content */}
                 <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
-                  {conv.messages.length === 0 && !draft.trim() ? (
+                  {conv.messages.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center p-4 text-center space-y-2 min-h-0">
                       <div className="h-12 w-12 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
                         <MessageCircle className="h-6 w-6 stroke-[1.5]" />
@@ -350,8 +338,7 @@ export function ConversationsPageView() {
                         <div className="text-xs text-muted-foreground">Compose a message below to start the conversation.</div>
                       </div>
                     </div>
-                  ) : null}
-                  {conv.messages.length > 0 && (
+                  ) : (
                     <>
                       <div className="flex justify-center my-1">
                         <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
