@@ -281,8 +281,8 @@ export function ConversationsPageView() {
 
             {/* Main Thread Content */}
             {conv && (
-              <div className="flex h-full flex-col">
-                <div className="flex items-center justify-between border-b border-border p-4">
+              <div className="flex h-full min-h-0 flex-col overflow-hidden">
+                <div className="shrink-0 flex items-center justify-between border-b border-border p-4">
                   <div>
                     <div className="text-sm font-semibold flex items-center gap-2">
                       {candidateName(conv)}
@@ -308,7 +308,7 @@ export function ConversationsPageView() {
                   </div>
                 </div>
 
-                <div className="border-b border-border px-4 py-2.5">
+                <div className="shrink-0 border-b border-border px-4 py-2.5">
                   <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
                   <Input
                     value={to}
@@ -318,7 +318,7 @@ export function ConversationsPageView() {
                   />
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
+                <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
                   {conv.messages.length === 0 ? (
                     <div className="space-y-3">
                       <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-xs space-y-2.5">
@@ -335,7 +335,7 @@ export function ConversationsPageView() {
                         </p>
                       </div>
                       <div className="rounded-xl border border-border/80 bg-muted/20 p-3 text-[11px] text-muted-foreground">
-                        💡 <strong>Tip:</strong> Click <strong>Generate Draft</strong> to insert official template, or customize your message below and press <strong>Send</strong>.
+                        💡 <strong>Tip:</strong> Edit your message in the composer below and click <strong>Send via LinkedIn</strong>.
                       </div>
                     </div>
                   ) : (
@@ -350,13 +350,13 @@ export function ConversationsPageView() {
                   )}
                 </div>
 
-                <div className="border-t border-border p-3 space-y-2">
+                <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card">
                   <div className="flex items-center justify-between text-[11px] text-muted-foreground">
-                    <span>Direct Message (300-char max)</span>
+                    <span>Direct Message ({draft.length}/300 chars)</span>
                     <button
                       onClick={handleGenerateLinkedInDraft}
                       disabled={isGeneratingDraft}
-                      className="text-accent hover:underline font-semibold flex items-center gap-1 disabled:opacity-50"
+                      className="text-accent hover:underline font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                     >
                       {isGeneratingDraft ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
                       {isGeneratingDraft ? "Generating…" : "Insert Official Template"}
@@ -366,11 +366,22 @@ export function ConversationsPageView() {
                     <Input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && draft.trim() && !sending) {
+                          e.preventDefault();
+                          initiateSend();
+                        }
+                      }}
                       placeholder="Type your LinkedIn message..."
                       className="flex-1 text-xs"
                       disabled={sending}
                     />
-                    <Button size="sm" disabled={sending || !draft.trim()} className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5" onClick={initiateSend}>
+                    <Button
+                      size="sm"
+                      disabled={sending || !draft.trim()}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 gap-1.5 font-medium px-4 cursor-pointer"
+                      onClick={initiateSend}
+                    >
                       {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                       <span>Send</span>
                     </Button>
