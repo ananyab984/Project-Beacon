@@ -4,7 +4,20 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Send, Linkedin, Wand2, Loader2, Search, Plus, Sparkles } from "lucide-react";
+import {
+  Send,
+  Linkedin,
+  Wand2,
+  Loader2,
+  Search,
+  Plus,
+  Sparkles,
+  Smile,
+  Image as ImageIcon,
+  Paperclip,
+  Lock,
+  MessageCircle,
+} from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { ApiConversation, ApiConversationMessage, ApiLead } from "@/lib/api-types";
@@ -326,34 +339,25 @@ export function ConversationsPageView() {
                   />
                 </div>
 
-                <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
-                  <div className="flex justify-center my-1">
-                    <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
-                      Today
-                    </span>
-                  </div>
-
-                  {conv.messages.length === 0 ? (
-                    <div className="space-y-3">
-                      <div className="flex justify-end">
-                        <div className="max-w-[82%] rounded-2xl border border-border/80 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
-                          <div className="flex items-center justify-between text-xs text-muted-foreground/80 font-medium">
-                            <span>Me • 10:30 AM</span>
-                            <Badge variant="outline" className="text-[10px] border-amber-500/40 bg-amber-500/10 text-amber-400 font-semibold">
-                              Draft
-                            </Badge>
-                          </div>
-                          <p className="text-foreground text-xs leading-relaxed whitespace-pre-wrap">
-                            {draft || getDefaultDraft(candidateName(conv), conv.candidateRole)}
-                          </p>
-                          <div className="text-[10px] text-muted-foreground/80 flex justify-end items-center gap-1 pt-0.5">
-                            <span>Ready to send</span>
-                          </div>
-                        </div>
-                      </div>
+                {/* Center Conversation Content */}
+                {conv.messages.length === 0 ? (
+                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3 min-h-0">
+                    <div className="h-16 w-16 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
+                      <MessageCircle className="h-8 w-8 stroke-[1.5]" />
                     </div>
-                  ) : (
-                    conv.messages.map((m: ApiConversationMessage) =>
+                    <div className="space-y-1">
+                      <div className="text-base font-semibold text-foreground">No messages yet.</div>
+                      <div className="text-xs text-muted-foreground">Compose a message below to start the conversation.</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
+                    <div className="flex justify-center my-1">
+                      <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
+                        Today
+                      </span>
+                    </div>
+                    {conv.messages.map((m: ApiConversationMessage) =>
                       m.sender === "ME" ? (
                         <div key={m.id} className="flex justify-end">
                           <div className="max-w-[82%] rounded-2xl border border-border/60 bg-[#24211e] p-3.5 shadow-sm space-y-1.5">
@@ -384,12 +388,13 @@ export function ConversationsPageView() {
                           </div>
                         </div>
                       )
-                    )
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
 
-                <div className="shrink-0 border-t border-border p-3 space-y-2 bg-card/95 backdrop-blur">
-                  <div className="rounded-xl border border-border/80 bg-background/60 p-2.5 focus-within:ring-1 focus-within:ring-amber-500 focus-within:border-amber-500 transition-all">
+                {/* Bottom Chat Composer Box */}
+                <div className="shrink-0 p-4 pt-2 space-y-2 bg-card">
+                  <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3.5 shadow-lg focus-within:border-amber-500 transition-all space-y-3">
                     <Textarea
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
@@ -399,35 +404,50 @@ export function ConversationsPageView() {
                           initiateSend();
                         }
                       }}
-                      placeholder={`Type a message to ${candidateName(conv)}... (Press Enter to send)`}
-                      className="min-h-[64px] max-h-[140px] resize-none border-0 bg-transparent p-1 text-xs focus-visible:ring-0 shadow-none leading-relaxed text-foreground"
+                      placeholder="Type your message..."
+                      className="min-h-[70px] max-h-[160px] resize-none border-0 bg-transparent p-0 text-sm focus-visible:ring-0 shadow-none leading-relaxed text-foreground placeholder:text-muted-foreground/70"
                       disabled={sending}
                     />
-                    <div className="flex items-center justify-between pt-1.5 border-t border-border/40 text-[11px]">
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <span className={draft.length > 300 ? "text-destructive font-semibold" : ""}>
-                          {draft.length}/300 chars
-                        </span>
-                        <span>•</span>
+                    <div className="flex items-center justify-between pt-1 text-xs">
+                      <div className="flex items-center gap-3 text-muted-foreground">
+                        <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Add emoji">
+                          <Smile className="h-4 w-4" />
+                        </button>
+                        <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Attach image">
+                          <ImageIcon className="h-4 w-4" />
+                        </button>
+                        <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Attach file">
+                          <Paperclip className="h-4 w-4" />
+                        </button>
                         <button
+                          type="button"
                           onClick={handleGenerateLinkedInDraft}
                           disabled={isGeneratingDraft}
-                          className="text-amber-400 hover:underline font-semibold flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                          className="text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1.5 disabled:opacity-50 cursor-pointer ml-1 text-xs"
                         >
-                          {isGeneratingDraft ? <Loader2 className="h-3 w-3 animate-spin" /> : <Wand2 className="h-3 w-3" />}
-                          {isGeneratingDraft ? "Generating…" : "Insert Official Template"}
+                          {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                          <span>{isGeneratingDraft ? "Generating…" : "Use Draft"}</span>
                         </button>
                       </div>
-                      <Button
-                        size="sm"
-                        disabled={sending || !draft.trim()}
-                        className="h-8 px-4 bg-[#f59e0b] hover:bg-[#d97706] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md transition-transform active:scale-95"
-                        onClick={initiateSend}
-                      >
-                        {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5 text-black" />}
-                        <span>Send</span>
-                      </Button>
+                      <div className="flex items-center gap-3">
+                        <span className={`text-xs ${draft.length > 3000 ? "text-destructive font-semibold" : "text-muted-foreground"}`}>
+                          {draft.length}/3000
+                        </span>
+                        <Button
+                          type="button"
+                          disabled={sending || !draft.trim()}
+                          className="h-9 px-5 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
+                          onClick={initiateSend}
+                        >
+                          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 text-black fill-black" />}
+                          <span>Send</span>
+                        </Button>
+                      </div>
                     </div>
+                  </div>
+                  <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground/70 pb-1">
+                    <Lock className="h-3 w-3" />
+                    <span>Messages will be sent via LinkedIn.</span>
                   </div>
                 </div>
               </div>
