@@ -791,15 +791,16 @@ export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">
     return res;
   };
 
-  const headers = parseRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
-  const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+  const rawHeaders = parseRow(lines[0]);
+  const normHeaders = rawHeaders.map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const findIdx = (keywords: string[]) => normHeaders.findIndex((h) => keywords.some((k) => h.includes(k)));
 
-  const clientIdx = findIdx(["client", "company", "customer"]);
-  const langIdx = findIdx(["language", "lang", "target", "source"]);
-  const serviceIdx = findIdx(["service", "role", "job"]);
-  const headcountIdx = findIdx(["headcount", "needed", "required", "seats", "count"]);
-  const priorityIdx = findIdx(["priority", "urgency"]);
-  const projectIdx = findIdx(["project", "campaign"]);
+  const clientIdx = findIdx(["clientname", "client", "company", "customer"]);
+  const projectIdx = findIdx(["projectname", "project", "campaign"]);
+  const lang1Idx = findIdx(["targetlanguage", "targetlang", "language", "lang"]);
+  const service1Idx = findIdx(["servicetype", "service", "services"]);
+  const headcount1Idx = findIdx(["numberofresourcesneeded", "resourcesneeded", "headcount", "needed", "qty", "seats"]);
+  const priorityIdx = findIdx(["prioritylevel", "priority", "urgency"]);
 
   const result: Omit<ClientDemand, "id">[] = [];
 
@@ -807,30 +808,37 @@ export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">
     const row = parseRow(lines[i]);
     if (row.length < 2) continue;
 
-    const client = clientIdx >= 0 && row[clientIdx] ? row[clientIdx] : "";
-    const language = langIdx >= 0 && row[langIdx] ? row[langIdx] : "";
-    const serviceName = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "";
-    const needed = headcountIdx >= 0 && !isNaN(Number(row[headcountIdx])) ? Math.max(1, Number(row[headcountIdx])) : 1;
+    const client = (clientIdx >= 0 && row[clientIdx] ? row[clientIdx] : "") || "Sample Client";
+    const rawLang = lang1Idx >= 0 && row[lang1Idx] ? row[lang1Idx] : "";
+    const rawService = service1Idx >= 0 && row[service1Idx] ? row[service1Idx] : "Subtitling";
+    const needed = headcount1Idx >= 0 && !isNaN(Number(row[headcount1Idx])) ? Math.max(1, Number(row[headcount1Idx])) : 1;
     const priorityVal = priorityIdx >= 0 && row[priorityIdx] ? row[priorityIdx].toLowerCase() : "standard";
-    const priority = priorityVal.includes("crit") ? "critical" : priorityVal.includes("high") ? "high" : "standard";
+    const priority = priorityVal.includes("urgent") || priorityVal.includes("<15") || priorityVal.includes("crit") ? "critical" : priorityVal.includes("high") ? "high" : "standard";
     const project_name = projectIdx >= 0 && row[projectIdx] ? row[projectIdx] : undefined;
 
-    if (!client && !language && !serviceName) continue;
+    if (!client && !rawLang && !rawService) continue;
 
-    result.push({
-      client: client || "Imported Client Demand",
-      language: language || "English",
-      services: serviceName ? [serviceName] : ["Subtitling"],
-      headcount_needed: needed,
-      filled: 0,
-      gap: needed,
-      recruiter_id: "r1",
-      service_breakdown: [{ service: serviceName || "Subtitling", needed, filled: 0, gap: needed }],
-      priority,
-      status: "active",
-      project_name,
-      sheet_row_id: `sheet_row_${i}_${(client || "demand").replace(/\s+/g, "_")}`,
-    });
+    const targetLanguages = rawLang.split(/[,;/]+/).map(l => l.trim()).filter(Boolean);
+    const serviceTypes = rawService.split(/[,;/]+/).map(s => s.trim()).filter(Boolean);
+
+    for (const singleLang of targetLanguages.length > 0 ? targetLanguages : [rawLang || "English"]) {
+      for (const singleService of serviceTypes.length > 0 ? serviceTypes : [rawService || "Subtitling"]) {
+        result.push({
+          client,
+          language: singleLang,
+          services: [singleService],
+          headcount_needed: needed,
+          filled: 0,
+          gap: needed,
+          recruiter_id: "r1",
+          service_breakdown: [{ service: singleService, needed, filled: 0, gap: needed }],
+          priority,
+          status: "active",
+          project_name,
+          sheet_row_id: `sheet_row_${i}_${client.replace(/\s+/g, "_")}_${singleLang.replace(/\s+/g, "_")}_${singleService.replace(/\s+/g, "_")}`,
+        });
+      }
+    }
   }
 
   return result;
