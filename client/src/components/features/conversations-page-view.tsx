@@ -351,7 +351,7 @@ export function ConversationsPageView() {
                       </div>
                     </div>
                   ) : null}
-                  {(conv.messages.length > 0 || draft.trim()) && (
+                  {conv.messages.length > 0 && (
                     <>
                       <div className="flex justify-center my-1">
                         <span className="rounded-full bg-muted/70 px-3 py-0.5 text-[11px] font-medium text-muted-foreground">
@@ -392,35 +392,24 @@ export function ConversationsPageView() {
                       )}
                     </>
                   )}
-
-                  <div className="flex justify-end">
-                    <div className="max-w-[82%] rounded-2xl border border-[#f97316]/45 bg-[#221a13] p-3.5 shadow-sm space-y-2">
-                      <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/80 font-medium">
-                        <span>You • Draft</span>
-                        <span className="rounded-full border border-[#f97316]/35 bg-[#f97316]/10 px-2 py-0.5 text-[10px] font-semibold text-[#f59e0b]">
-                          Editable
-                        </span>
-                      </div>
-                      <Textarea
-                        value={draft}
-                        onChange={(e) => setDraft(e.target.value)}
-                        placeholder="Generate a draft or start typing..."
-                        className="min-h-[120px] resize-none border-0 bg-transparent p-0 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none"
-                        disabled={sending}
-                      />
-                      <div className="flex items-center justify-between gap-2 pt-0.5 text-[10px] text-muted-foreground/70">
-                        <span>Ready to send via LinkedIn</span>
-                        <span className={draft.length > 3000 ? "text-destructive font-semibold" : ""}>
-                          {draft.length}/3000
-                        </span>
-                      </div>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Bottom Chat Composer Box */}
                 <div className="shrink-0 p-3 pt-1 space-y-1.5 bg-card">
                   <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3 shadow-lg focus-within:border-amber-500 transition-all space-y-2">
+                    <Textarea
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && draft.trim() && !sending) {
+                          e.preventDefault();
+                          initiateSend();
+                        }
+                      }}
+                      placeholder="Type your message..."
+                      className="min-h-[140px] max-h-[220px] resize-none border-0 bg-transparent p-0 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none"
+                      disabled={sending}
+                    />
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-3 text-muted-foreground">
                         <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Add emoji">
