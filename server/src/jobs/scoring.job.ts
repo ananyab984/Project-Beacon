@@ -280,7 +280,7 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
         { id: { in: Array.from(firstTouchByLead.keys()) } },
       ],
     },
-    select: { id: true, assignedAt: true, claimedAt: true, createdAt: true, stage: true },
+    select: { id: true, assignedAt: true, claimedAt: true, createdAt: true, stage: true, targetLanguage: true, services: true },
   });
 
   const touchDelaysDays: number[] = [];
@@ -437,10 +437,53 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
     manual_conversion: manualConversions,
   };
 
+  // Calculate real database-backed rates
+  const totalOutbound = outreachVolume;
+  const repliedInteractions = await prisma.interactionEvent.count({
+    where: {
+      recruiterId,
+      direction: "INBOUND",
+      occurredAt: { gte: periodStart, lt: periodEnd },
+    },
+  });
+
+  // Outreach Effectiveness: % of outbound outreach that yielded a response or pipeline progression
+  const outreachEffectiveness = totalOutbound > 0
+    ? Math.min(100, Math.round(((repliedInteractions + advancedLeads.length) / totalOutbound) * 100))
+    : 0;
+
+  // Response Rate: % of outbound outreach that received an inbound reply
+  const responseRate = totalOutbound > 0
+    ? Math.min(100, Math.round((repliedInteractions / totalOutbound) * 100))
+    : 0;
+
+  // SLA Adherence: % of assigned leads contacted within 1 business day
+  const withinSlaCount = touchDelaysDays.filter((d) => d <= 1.0).length;
+  const slaAdherence = touchDelaysDays.length > 0
+    ? Math.min(100, Math.round((withinSlaCount / touchDelaysDays.length) * 100))
+    : 0;
+
+  // DNC Rate
+  const dncPct = assignedLeads.length > 0
+    ? Math.min(100, Math.round((dncFlags.length / assignedLeads.length) * 100))
+    : 0;
+
+  // Pipeline Health: % of leads actively in progress (not COLD / DNC)
+  const activeLeadsCount = assignedLeads.filter((l) => l.stage !== "COLD" && l.stage !== "NEW").length;
+  const pipelineHealth = assignedLeads.length > 0
+    ? Math.min(100, Math.round((activeLeadsCount / assignedLeads.length) * 100))
+    : 0;
+
+  // Profile Quality: % of assigned leads with complete data
+  const completeLeadsCount = assignedLeads.filter((l) => l.targetLanguage && l.services && l.services.length > 0).length;
+  const profileQuality = assignedLeads.length > 0
+    ? Math.min(100, Math.round((completeLeadsCount / assignedLeads.length) * 100))
+    : 0;
+
   // Calculate composite Overall Score (0-100) using dynamic rubric targets
-  // If the recruiter has 0 outreach, 0 sourcing, and 0 touches, overall score is strictly 0.
-  const hasActivity = outreachVolume > 0 || proactiveSourcing > 0 || touchDelaysDays.length > 0;
-  const overallScoreRaw = hasActivity
+  // Only score when actual candidate outreach or sourcing activity has been executed
+  const hasOutreachActivity = outreachVolume > 0 || touchDelaysDays.length > 0;
+  const overallScoreRaw = hasOutreachActivity
     ? dynamicRubric.reduce(
         (sum, def) =>
           sum +
@@ -456,7 +499,7 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
     : 0;
 
   const overallScore = Math.round(overallScoreRaw * 10) / 10;
-  const bandLabel = hasActivity ? getBandLabel(overallScore) : "New";
+  const bandLabel = hasOutreachActivity ? getBandLabel(overallScore) : "New";
 
   const previousSnapshot = await prisma.recruiterScoreSnapshot.findFirst({
     where: { recruiterId },
@@ -506,30 +549,35 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
     })
   );
 
-  // Update cached summary for roster view
+  // Update cached summary for roster view strictly from live database activity
   await prisma.recruiterKpiSummary.upsert({
     where: { recruiterId },
     create: {
       recruiterId,
-      outreachEffectiveness: hasActivity ? overallScore : 0,
-      responseRate: 0,
-      slaAdherence: 0,
+      outreachEffectiveness,
+      responseRate,
+      slaAdherence,
       overallScore,
       outreachVolume,
-      dncPct: 0,
+      dncPct,
       interviewToOffer: 0,
       offerAcceptance: 0,
-      profileQuality: 0,
+      profileQuality,
       clientSatisfaction: 0,
       aiAdoption: 0,
-      pipelineHealth: 0,
+      pipelineHealth,
       emailOpenRate: 0,
       avgTurnaroundDays: currentByKey.time_to_first_touch,
     },
     update: {
-      outreachEffectiveness: hasActivity ? overallScore : 0,
+      outreachEffectiveness,
+      responseRate,
+      slaAdherence,
       overallScore,
       outreachVolume,
+      dncPct,
+      profileQuality,
+      pipelineHealth,
       avgTurnaroundDays: currentByKey.time_to_first_touch,
       computedAt: new Date(),
     },

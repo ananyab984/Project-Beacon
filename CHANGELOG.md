@@ -256,4 +256,24 @@ Implemented full CRUD operations and audit history tracking for Clients, Client 
 - [`server/src/jobs/scoring.job.ts`](file:///Users/ananya/Desktop/Global3/server/src/jobs/scoring.job.ts)
 - [`client/src/components/features/evaluation-dashboard.tsx`](file:///Users/ananya/Desktop/Global3/client/src/components/features/evaluation-dashboard.tsx)
 
+---
+
+## [Part M] — Real-Time Database-Driven Metrics & Zero-Outreach Fix
+**Date:** 2026-08-18
+
+### 1. Database-Driven Scorecard & Outreach Metrics
+- **Root Cause:**
+  - `outreachEffectiveness` was previously taking the overall score value instead of calculating response and progression yield over actual outbound outreach.
+  - When leads were imported without outbound communication, volumetric self-sourcing calculations gave partial points to composite scores.
+- **Fix:**
+  - `outreachEffectiveness` is now calculated strictly from live database interaction events:
+    `outreachVolume > 0 ? (repliedCount + advancedLeadsCount) / outreachVolume * 100 : 0%`.
+  - All 13 metrics in `RecruiterKpiSummary` (`responseRate`, `slaAdherence`, `outreachVolume`, `pipelineHealth`, `profileQuality`, `dncPct`) are calculated 100% dynamically from actual database records.
+  - For recruiters with zero outbound communication, `overallScore` strictly evaluates to `0` with the status `"New"`.
+
+**Modified Files:**
+- [`server/src/jobs/scoring.job.ts`](file:///Users/ananya/Desktop/Global3/server/src/jobs/scoring.job.ts)
+- [`server/src/routes/lead.routes.ts`](file:///Users/ananya/Desktop/Global3/server/src/routes/lead.routes.ts)
+
+
 
