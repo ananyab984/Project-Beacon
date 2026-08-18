@@ -124,24 +124,105 @@ requirementRouter.post(
   })
 );
 
-// PATCH /api/requirements/:id — deadline/notes edits only
+// GET /api/requirements/:id — single requirement detail with assignments and client
+requirementRouter.get(
+  "/:id",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const requirement = await prisma.requirement.findUnique({
+      where: { id: req.params.id },
+      include: {
+        client: true,
+        recruiter: { select: { id: true, name: true, email: true } },
+        assignmentHistory: {
+          include: {
+            recruiter: { select: { name: true } },
+            assignedBy: { select: { name: true } },
+          },
+          orderBy: { assignedAt: "desc" },
+        },
+      },
+    });
+    if (!requirement) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
+    return res.json({ requirement });
+  })
+);
+
+// GET /api/requirements/:id/history — assignment history audit trail
+requirementRouter.get(
+  "/:id/history",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const assignments = await prisma.requirementAssignment.findMany({
+      where: { requirementId: req.params.id },
+      include: {
+        recruiter: { select: { id: true, name: true, email: true } },
+        assignedBy: { select: { id: true, name: true, email: true } },
+      },
+      orderBy: { assignedAt: "desc" },
+    });
+    return res.json({ assignments });
+  })
+);
+
+// PATCH /api/requirements/:id — full requirement fields edit
 requirementRouter.patch(
   "/:id",
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
-    const patch = patchRequirementSchema.parse(req.body);
+    const schema = z.object({
+      title: z.string().optional(),
+      language: z.string().optional(),
+      service: z.string().optional(),
+      region: z.string().optional().nullable(),
+      projectName: z.string().optional().nullable(),
+      headcountNeeded: z.number().int().min(0).optional(),
+      priority: z.enum(PRIORITIES).optional(),
+      status: z.enum(["UNASSIGNED", "ACTIVE", "PAUSED", "FULFILLED", "CANCELLED"]).optional(),
+      deadline: z.string().datetime().optional().nullable(),
+      notes: z.string().optional().nullable(),
+    });
+    const patch = schema.parse(req.body);
 
     const existing = await prisma.requirement.findUnique({ where: { id: req.params.id } });
     if (!existing) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
 
+    const updatedHeadcount = patch.headcountNeeded !== undefined ? patch.headcountNeeded : existing.headcountNeeded;
+    const updatedGap = Math.max(0, updatedHeadcount - existing.filled);
+
     const updated = await prisma.requirement.update({
       where: { id: existing.id },
       data: {
-        ...(patch.deadline !== undefined ? { deadline: new Date(patch.deadline) } : {}),
+        ...(patch.title ? { title: patch.title } : {}),
+        ...(patch.language ? { language: patch.language } : {}),
+        ...(patch.service ? { service: patch.service } : {}),
+        ...(patch.region !== undefined ? { region: patch.region } : {}),
+        ...(patch.projectName !== undefined ? { projectName: patch.projectName } : {}),
+        ...(patch.headcountNeeded !== undefined ? { headcountNeeded: updatedHeadcount, gap: updatedGap } : {}),
+        ...(patch.priority ? { priority: patch.priority } : {}),
+        ...(patch.status ? { status: patch.status as any } : {}),
+        ...(patch.deadline !== undefined ? { deadline: patch.deadline ? new Date(patch.deadline) : null } : {}),
         ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      },
+      include: {
+        client: { select: { name: true } },
+        recruiter: { select: { name: true } },
       },
     });
     return res.json({ requirement: updated });
+  })
+);
+
+// DELETE /api/requirements/:id — delete requirement (owner only)
+requirementRouter.delete(
+  "/:id",
+  requireRole("owner"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const existing = await prisma.requirement.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
+
+    await prisma.requirement.delete({ where: { id: req.params.id } });
+    return res.json({ success: true, message: "Requirement deleted successfully" });
   })
 );
 

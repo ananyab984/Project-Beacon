@@ -117,3 +117,77 @@ clientDemandRouter.post(
     return res.status(201).json(result);
   })
 );
+
+// GET /api/client-demands/:id — single demand detail
+clientDemandRouter.get(
+  "/:id",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const demand = await prisma.clientDemand.findUnique({
+      where: { id: req.params.id },
+      include: {
+        client: true,
+        serviceBreakdown: true,
+      },
+    });
+    if (!demand) {
+      return res.status(404).json({ error: "DEMAND_NOT_FOUND", message: "Client demand not found" });
+    }
+    return res.json({ clientDemand: demand });
+  })
+);
+
+// PATCH /api/client-demands/:id — update priority, deadline, notes, contact, headcount
+clientDemandRouter.patch(
+  "/:id",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const patchSchema = z.object({
+      priority: z.enum(PRIORITIES).optional(),
+      deadline: z.string().datetime().optional().nullable(),
+      contactName: z.string().optional().nullable(),
+      contactEmail: z.string().email().optional().nullable(),
+      notes: z.string().optional().nullable(),
+      headcountNeeded: z.number().int().min(0).optional(),
+    });
+    const patch = patchSchema.parse(req.body);
+
+    const existing = await prisma.clientDemand.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: "DEMAND_NOT_FOUND", message: "Client demand not found" });
+    }
+
+    const updatedHeadcount = patch.headcountNeeded !== undefined ? patch.headcountNeeded : existing.headcountNeeded;
+    const updatedGap = Math.max(0, updatedHeadcount - existing.filled);
+
+    const updated = await prisma.clientDemand.update({
+      where: { id: req.params.id },
+      data: {
+        ...(patch.priority ? { priority: patch.priority } : {}),
+        ...(patch.deadline !== undefined ? { deadline: patch.deadline ? new Date(patch.deadline) : null } : {}),
+        ...(patch.contactName !== undefined ? { contactName: patch.contactName } : {}),
+        ...(patch.contactEmail !== undefined ? { contactEmail: patch.contactEmail } : {}),
+        ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+        ...(patch.headcountNeeded !== undefined ? { headcountNeeded: updatedHeadcount, gap: updatedGap } : {}),
+      },
+      include: { serviceBreakdown: true, client: true },
+    });
+
+    return res.json({ clientDemand: updated });
+  })
+);
+
+// DELETE /api/client-demands/:id — delete demand and cascade service breakdown
+clientDemandRouter.delete(
+  "/:id",
+  requireRole("owner"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const existing = await prisma.clientDemand.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      return res.status(404).json({ error: "DEMAND_NOT_FOUND", message: "Client demand not found" });
+    }
+
+    await prisma.clientDemand.delete({ where: { id: req.params.id } });
+    return res.json({ success: true, message: "Client demand deleted successfully" });
+  })
+);
