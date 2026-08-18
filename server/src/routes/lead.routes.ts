@@ -86,7 +86,7 @@ leadRouter.get(
   })
 );
 
-// GET /api/leads/mine — contractor's own submissions, or recruiter's assigned+claimed
+// GET /api/leads/mine — contractor's own submissions, or recruiter's assigned+claimed+created leads
 leadRouter.get(
   "/mine",
   requireRole("owner", "recruiter", "contractor"),
@@ -97,7 +97,13 @@ leadRouter.get(
     const where =
       role === "contractor"
         ? { createdByContractorId: userId }
-        : { OR: [{ assignedRecruiterId: userId }, { claimedByRecruiterId: userId }] };
+        : {
+            OR: [
+              { assignedRecruiterId: userId },
+              { claimedByRecruiterId: userId },
+              { createdByRecruiterId: userId },
+            ],
+          };
 
     const leads = await prisma.lead.findMany({ where, orderBy: { createdAt: "desc" } });
     return res.json({ leads });
@@ -307,6 +313,8 @@ leadRouter.post(
             createdByContractorId: role === "contractor" ? req.user!.id : undefined,
             createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
             isSelfSourced: role !== "contractor",
+            assignedRecruiterId: row.assignedRecruiterId ?? (role === "recruiter" ? req.user!.id : undefined),
+            assignedAt: row.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
             dupFlagged: dup.isDuplicate,
             dupFlaggedField: dup.matchedField ?? undefined,
           },
