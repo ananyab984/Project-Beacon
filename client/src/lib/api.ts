@@ -133,11 +133,35 @@ export const api = {
     return request("/api/leads", { method: "POST", body: JSON.stringify(lead) });
   },
 
-  async bulkCreateLeads(leads: Array<Partial<ApiLead> & { fullName: string; source: string }>) {
+  async bulkCreateLeads(
+    leads: Array<Partial<ApiLead> & { fullName: string; source: string }>,
+    options: { skipDuplicates?: boolean } = {}
+  ) {
     return request<{ results: Array<{ index: number; status: string; leadId?: string; message?: string }> }>(
       "/api/leads/bulk",
-      { method: "POST", body: JSON.stringify({ leads }) }
+      { method: "POST", body: JSON.stringify({ leads, skipDuplicates: options.skipDuplicates }) }
     );
+  },
+
+  async checkBulkDuplicateLeads(leads: Array<{ fullName?: string; email?: string; contactNumber?: string }>) {
+    return request<{
+      hasDuplicates: boolean;
+      duplicateCount: number;
+      duplicateNames: string[];
+      duplicates: Array<{
+        index: number;
+        fullName: string;
+        email?: string;
+        matchedField: string;
+        existingLeadId: string;
+        existingLeadName?: string;
+      }>;
+      totalCount: number;
+      newCount: number;
+    }>("/api/leads/check-bulk-duplicates", {
+      method: "POST",
+      body: JSON.stringify({ leads }),
+    });
   },
 
   async updateLead(id: string, patch: Partial<ApiLead>): Promise<{ lead: ApiLead }> {
