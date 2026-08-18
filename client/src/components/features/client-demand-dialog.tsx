@@ -35,22 +35,94 @@ const STANDARD_LANGUAGES = [
   "Custom..."
 ];
 
-const STANDARD_SERVICES = [
-  "Subtitling",
+export const STANDARD_SERVICES = [
   "Dubbing",
+  "Subtitling",
+  "Audio Description",
+  "SDH",
+  "CC",
+  "Conform",
+  "Prelude",
+  "Scripting",
   "Translation",
   "Voice Over",
-  "SDH (Subtitles for Deaf & Hard of Hearing)",
-  "Audio Description (AD)",
   "Localization QA",
   "AI Post-editing",
-  "Transcreation",
   "Quality Control",
   "Interpretation",
   "Transcription",
-  "Closed Captioning",
   "Custom..."
 ];
+
+export const REGION_LANGUAGE_MAPPINGS: Record<string, { recruiter?: string; contractor?: string; region: string }> = {
+  // Region 1 — East and South Asia
+  "Bengali": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Cantonese": { recruiter: "Divya", contractor: "Sharmistha", region: "Region 1 – East and South Asia" },
+  "Chinese (Simplified)": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Chinese (Traditional)": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Gujarati": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Hindi": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Indonesian": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Japanese": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Kannada": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Korean": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Malay": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Malayalam": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Marathi": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Odia": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Punjabi": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Tamil": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Telugu": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Thai": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+  "Urdu": { recruiter: "Mathu", region: "Region 1 – East and South Asia" },
+  "Vietnamese": { recruiter: "Divya", region: "Region 1 – East and South Asia" },
+
+  // Region 2 — Finno-Ugric, Slavic & Turkic
+  "Bulgarian": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Croatian": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Czech": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Finnish": { contractor: "Sharmistha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Hungarian": { contractor: "Sharmistha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Kazakh": { contractor: "Sharmistha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Polish": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Russian": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Slovak": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Slovenian": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Turkish": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+  "Ukrainian": { contractor: "Varsha", region: "Region 2 – Finno-Ugric, Slavic & Turkic" },
+
+  // Region 3 — Germanic Languages
+  "Danish": { contractor: "Sunaina", region: "Region 3 – Germanic Languages" },
+  "Dutch": { contractor: "Sunaina", region: "Region 3 – Germanic Languages" },
+  "German": { contractor: "Sunaina", region: "Region 3 – Germanic Languages" },
+  "Icelandic": { contractor: "Sharmistha", region: "Region 3 – Germanic Languages" },
+  "Norwegian": { contractor: "Sharmistha", region: "Region 3 – Germanic Languages" },
+  "Swedish": { contractor: "Sunaina", region: "Region 3 – Germanic Languages" },
+
+  // Region 4 — Hellenic & Semitic
+  "Arabic": { contractor: "Sunaina", region: "Region 4 – Hellenic & Semitic" },
+  "Greek": { contractor: "Sunaina", region: "Region 4 – Hellenic & Semitic" },
+  "Hebrew": { contractor: "Sharmistha", region: "Region 4 – Hellenic & Semitic" },
+
+  // Region 5 — Romance Languages
+  "Castilian Spanish": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "Catalan": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "French (Canadian)": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "French (Parisian)": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "French": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "Italian": { recruiter: "Divya", region: "Region 5 – Romance Languages" },
+  "Portuguese (Brazilian)": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "Portuguese (Portugal)": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "Romanian": { contractor: "Sunaina", region: "Region 5 – Romance Languages" },
+  "Spanish (Latin America)": { contractor: "Sharmistha", region: "Region 5 – Romance Languages" },
+  "Spanish (LatAm)": { contractor: "Sharmistha", region: "Region 5 – Romance Languages" },
+
+  // Region 6 — Other / English
+  "English": { recruiter: "Divya", region: "Region 6 – Other / English" },
+  "English (AUS)": { recruiter: "Divya", region: "Region 6 – Other / English" },
+  "English (Canada)": { recruiter: "Mathu", region: "Region 6 – Other / English" },
+  "English (UK)": { recruiter: "Mathu", region: "Region 6 – Other / English" },
+};
 
 type ServiceRow = {
   id: string;
@@ -73,18 +145,31 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 const createEmptyServiceRow = (): ServiceRow => ({
   id: uid(),
-  service: "Subtitling",
+  service: "Dubbing",
   headcount: "1",
 });
 
-/** Auto-suggest a recruiter for a language based on their `languages` list. */
-function findMappedRecruiterId(lang: string, recruiters: ApiUser[]): string | undefined {
+/** Auto-suggest a recruiter/contractor for a language based on regional mapping or user language tags. */
+function findMappedRecruiterId(lang: string, allUsers: ApiUser[]): string | undefined {
   if (!lang || lang === "Custom...") return undefined;
-  const clean = lang.trim().toLowerCase();
-  const found = recruiters.find((u) =>
+  const clean = lang.trim();
+
+  // 1. Direct regional mapping lookup
+  const mapping = REGION_LANGUAGE_MAPPINGS[clean];
+  if (mapping) {
+    const targetName = (mapping.recruiter || mapping.contractor || "").toLowerCase();
+    if (targetName) {
+      const match = allUsers.find((u) => u.name.toLowerCase().includes(targetName));
+      if (match) return match.id;
+    }
+  }
+
+  // 2. Fallback to user language profiles
+  const cleanLower = clean.toLowerCase();
+  const found = allUsers.find((u) =>
     (u.languages ?? []).some((l) => {
       const target = l.trim().toLowerCase();
-      return target === clean || clean.includes(target) || target.includes(clean);
+      return target === cleanLower || cleanLower.includes(target) || target.includes(cleanLower);
     })
   );
   return found?.id;
@@ -102,12 +187,13 @@ export function ClientDemandDialog() {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
-  const recruiters = recruitersData?.users ?? [];
+  const { data: usersData } = useQuery({ queryKey: ["users", "all"], queryFn: () => api.getUsers() });
+  const allUsers = usersData?.users ?? [];
+  const recruiters = allUsers.filter((u) => u.role === "RECRUITER" || u.role === "CONTRACTOR");
 
   const createInitialLanguageBlock = (): LanguageBlock => {
-    const defaultLang = "Spanish (LatAm)";
-    const mappedRec = findMappedRecruiterId(defaultLang, recruiters);
+    const defaultLang = "Hindi";
+    const mappedRec = findMappedRecruiterId(defaultLang, allUsers);
     return {
       id: uid(),
       language: defaultLang,
@@ -121,7 +207,7 @@ export function ClientDemandDialog() {
       setLanguageBlocks([createInitialLanguageBlock()]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recruiters.length]);
+  }, [allUsers.length]);
 
   useEffect(() => {
     const h = () => setOpen(true);
@@ -129,20 +215,20 @@ export function ClientDemandDialog() {
     return () => window.removeEventListener(EVENT, h);
   }, []);
 
-  // Auto-fill recruiter for unassigned blocks whenever the recruiter list updates or dialog opens
+  // Auto-fill recruiter for unassigned blocks whenever the user list updates or dialog opens
   useEffect(() => {
     if (open) {
       setLanguageBlocks(prev =>
         prev.map(b => {
           if (b.assignedRecruiterId && b.assignedRecruiterId !== "unassigned") return b;
           const actualLang = (b.language === "Custom..." ? b.customLanguage : b.language) || "";
-          const autoRec = findMappedRecruiterId(actualLang, recruiters);
+          const autoRec = findMappedRecruiterId(actualLang, allUsers);
           return autoRec ? { ...b, assignedRecruiterId: autoRec } : b;
         })
       );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, recruiters.length]);
+  }, [open, allUsers.length]);
 
   const reset = () => {
     setClientName("");
