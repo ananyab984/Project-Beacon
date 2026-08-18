@@ -17,6 +17,7 @@ import { emailQueueRouter } from "./routes/email-queue.routes";
 import { conversationRouter } from "./routes/conversation.routes";
 import { escalationRouter } from "./routes/escalation.routes";
 import { evaluationRouter } from "./routes/evaluation.routes";
+import { reportsRouter } from "./routes/reports.routes";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { startBackgroundJobs } from "./jobs";
 
@@ -92,6 +93,7 @@ app.use("/api/sheet-sync", sheetSyncRouter);
 app.use("/api/email-queue", emailQueueRouter);
 app.use("/api/conversations", conversationRouter);
 app.use("/api/escalations", escalationRouter);
+app.use("/api/reports", reportsRouter);
 app.use("/api", evaluationRouter);
 
 app.use(notFoundHandler);
