@@ -1,21 +1,201 @@
 import { prisma } from "../prisma";
 
-// Mirrors client/src/lib/evaluation.ts's RUBRIC exactly (weight/goodBand/direction/target),
-// so the score this job computes matches what the dashboard already expects to render.
-const RUBRIC = [
-  { metricKey: "outreach_volume", group: "ACTIVITY_AND_EFFORT" as const, label: "Outreach Volume", unit: "COUNT" as const, direction: "HIGHER_IS_BETTER" as const, target: null, weight: 30, goodBand: 420, scored: true },
-  { metricKey: "proactive_sourcing", group: "ACTIVITY_AND_EFFORT" as const, label: "Proactive Sourcing", unit: "COUNT" as const, direction: "HIGHER_IS_BETTER" as const, target: null, weight: 30, goodBand: 34, scored: true },
-  { metricKey: "time_to_first_touch", group: "ACTIVITY_AND_EFFORT" as const, label: "Time to First Touch", unit: "DAYS" as const, direction: "LOWER_IS_BETTER" as const, target: 2, weight: 20, goodBand: 1, scored: true },
-  { metricKey: "progression_rate", group: "OWNERSHIP_AND_FOLLOW_THROUGH" as const, label: "Progression Rate", unit: "PCT" as const, direction: "HIGHER_IS_BETTER" as const, target: 60, weight: 10, goodBand: 80, scored: true },
-  { metricKey: "reason_logged_rate", group: "OWNERSHIP_AND_FOLLOW_THROUGH" as const, label: "Reason Logged Rate", unit: "PCT" as const, direction: "HIGHER_IS_BETTER" as const, target: 90, weight: 10, goodBand: 100, scored: true },
-  { metricKey: "onboard_vs_queue", group: "OUTCOME_METRICS" as const, label: "Onboard vs Queue", unit: "PCT" as const, direction: "HIGHER_IS_BETTER" as const, target: null, weight: 0, goodBand: 100, scored: false },
-  { metricKey: "cold_lead_conversion", group: "OUTCOME_METRICS" as const, label: "Cold Lead Reactivation", unit: "COUNT" as const, direction: "HIGHER_IS_BETTER" as const, target: null, weight: 0, goodBand: 18, scored: false },
-  { metricKey: "manual_interviews", group: "OUTCOME_METRICS" as const, label: "Manual Interviews", unit: "COUNT" as const, direction: "HIGHER_IS_BETTER" as const, target: null, weight: 0, goodBand: 15, scored: false },
-  { metricKey: "manual_conversion", group: "OUTCOME_METRICS" as const, label: "Manual Conversion", unit: "COUNT" as const, direction: "HIGHER_IS_BETTER" as const, target: null, weight: 0, goodBand: 10, scored: false },
+/**
+ * Recruiter Rubric Definition per 'final rubrics.pdf' and 'final rubrics calculation.pdf'.
+ * - 5 Scored Metrics (Category A) = 100% of Overall Score
+ * - 4 Signal Metrics (Category B) = 0% weight, dashboard visibility only
+ */
+export const RUBRIC = [
+  // --- Category A: 5 Scored Metrics (100% of Overall Score) ---
+  {
+    metricKey: "outreach_volume",
+    group: "ACTIVITY_AND_EFFORT" as const,
+    label: "Outreach Volume",
+    unit: "COUNT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 420,
+    goodBand: 420,
+    weight: 30,
+    scored: true,
+    needsUnipile: true,
+  },
+  {
+    metricKey: "proactive_sourcing",
+    group: "ACTIVITY_AND_EFFORT" as const,
+    label: "Proactive Sourcing",
+    unit: "COUNT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 34,
+    goodBand: 34,
+    weight: 30,
+    scored: true,
+    needsUnipile: false,
+  },
+  {
+    metricKey: "time_to_first_touch",
+    group: "ACTIVITY_AND_EFFORT" as const,
+    label: "Time to First Touch",
+    unit: "DAYS" as const,
+    direction: "LOWER_IS_BETTER" as const,
+    target: 1.0,
+    goodBand: 1.0,
+    weight: 20,
+    scored: true,
+    needsUnipile: true,
+  },
+  {
+    metricKey: "progression_rate",
+    group: "OWNERSHIP_AND_FOLLOW_THROUGH" as const,
+    label: "Progression Rate",
+    unit: "PCT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 80,
+    goodBand: 80,
+    weight: 10,
+    scored: true,
+    needsUnipile: false,
+  },
+  {
+    metricKey: "reason_logged_rate",
+    group: "OWNERSHIP_AND_FOLLOW_THROUGH" as const,
+    label: "Reason Logged Rate",
+    unit: "PCT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 100,
+    goodBand: 100,
+    weight: 10,
+    scored: true,
+    needsUnipile: false,
+  },
+  // --- Category B: Outcome / Signal Metrics (0% weight, dashboard only) ---
+  {
+    metricKey: "onboard_vs_queue",
+    group: "OUTCOME_METRICS" as const,
+    label: "Onboarding vs. Queue Size",
+    unit: "PCT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: null,
+    goodBand: 100,
+    weight: 0,
+    scored: false,
+    needsUnipile: false,
+  },
+  {
+    metricKey: "cold_lead_conversion",
+    group: "OUTCOME_METRICS" as const,
+    label: "Cold Lead Reactivation",
+    unit: "COUNT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 18,
+    goodBand: 18,
+    weight: 0,
+    scored: false,
+    needsUnipile: false,
+  },
+  {
+    metricKey: "manual_interviews",
+    group: "OUTCOME_METRICS" as const,
+    label: "Manual Interviews",
+    unit: "COUNT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 15,
+    goodBand: 15,
+    weight: 0,
+    scored: false,
+    needsUnipile: false,
+  },
+  {
+    metricKey: "manual_conversion",
+    group: "OUTCOME_METRICS" as const,
+    label: "Manual Conversion",
+    unit: "COUNT" as const,
+    direction: "HIGHER_IS_BETTER" as const,
+    target: 10,
+    goodBand: 10,
+    weight: 0,
+    scored: false,
+    needsUnipile: false,
+  },
 ];
 
-/** Bootstraps current KpiConfig rows on first run so scoring works without a
- *  separate manual seed step -- idempotent, only creates what's missing. */
+/**
+ * Calculates normalized metric score (0 to 100) exactly per 'final rubrics.pdf':
+ * - Higher-is-better: min(100, (Actual / Target) * 100)
+ * - Lower-is-better: if Actual <= Target -> 100, else min(100, (Target / Actual) * 100)
+ */
+export function calculateNormalizedMetricScore(
+  actual: number,
+  target: number,
+  direction: "HIGHER_IS_BETTER" | "LOWER_IS_BETTER" = "HIGHER_IS_BETTER"
+): number {
+  if (actual <= 0) return 0;
+  if (!target || target <= 0) return 0;
+
+  if (direction === "LOWER_IS_BETTER") {
+    if (actual <= target) return 100;
+    return Math.min(100, Math.max(0, Math.round((target / actual) * 100)));
+  }
+
+  return Math.min(100, Math.max(0, Math.round((actual / target) * 100)));
+}
+
+/**
+ * Calculates weighted score contribution for a metric towards Overall Score.
+ */
+export function calculateWeightedContribution(
+  actual: number,
+  target: number,
+  weight: number,
+  scored: boolean,
+  direction: "HIGHER_IS_BETTER" | "LOWER_IS_BETTER" = "HIGHER_IS_BETTER"
+): number {
+  if (!scored || weight <= 0) return 0;
+  const normalized = calculateNormalizedMetricScore(actual, target, direction);
+  return (normalized * weight) / 100;
+}
+
+/**
+ * Maps 0-100 overall score to band label per 'final rubrics.pdf':
+ * - Strong: >= 85
+ * - Solid: 70 - 84
+ * - Coaching: 50 - 69
+ * - Review: < 50
+ */
+export function getBandLabel(score: number): string {
+  if (score >= 85) return "Strong";
+  if (score >= 70) return "Solid";
+  if (score >= 50) return "Coaching";
+  return "Review";
+}
+
+/**
+ * Computes business days (excluding weekends) between two dates.
+ */
+function calculateBusinessDays(startDate: Date, endDate: Date): number {
+  const diffMs = endDate.getTime() - startDate.getTime();
+  if (diffMs <= 0) return 0;
+
+  let count = 0;
+  const cur = new Date(startDate);
+
+  while (cur < endDate) {
+    const day = cur.getDay();
+    if (day !== 0 && day !== 6) { // Skip Sunday (0) and Saturday (6)
+      const nextDay = new Date(cur);
+      nextDay.setDate(cur.getDate() + 1);
+      nextDay.setHours(0, 0, 0, 0);
+      const segmentEnd = nextDay < endDate ? nextDay : endDate;
+      const hours = (segmentEnd.getTime() - cur.getTime()) / 3_600_000;
+      count += hours / 24;
+    }
+    cur.setDate(cur.getDate() + 1);
+    cur.setHours(0, 0, 0, 0);
+  }
+
+  return Math.round(count * 10) / 10;
+}
+
+/** Bootstraps current KpiConfig rows on first run so scoring works without manual seed. */
 async function ensureKpiConfigSeeded() {
   const existing = await prisma.kpiConfig.findMany({ orderBy: { effectiveDate: "desc" } });
   const latestByKey = new Map<string, Date>();
@@ -24,6 +204,7 @@ async function ensureKpiConfigSeeded() {
   }
   const missing = RUBRIC.filter((r) => !latestByKey.has(r.metricKey));
   if (missing.length === 0) return;
+
   const now = new Date();
   await prisma.$transaction(
     missing.map((r) =>
@@ -45,93 +226,237 @@ async function ensureKpiConfigSeeded() {
   );
 }
 
-function normalizedContribution(current: number, def: (typeof RUBRIC)[number]): number {
-  if (!def.scored || def.weight <= 0 || current <= 0) return 0;
-  const ratio =
-    def.direction === "LOWER_IS_BETTER"
-      ? Math.max(0, 1 - Math.max(0, current - def.goodBand) / Math.max(1, def.goodBand * 2))
-      : Math.min(1, current / def.goodBand);
-  return Math.round(ratio * def.weight);
-}
-
-/** Computes one recruiter's monthly score snapshot from real activity data --
- *  replaces the old mock's static, never-updated per-recruiter constants. */
+/** Computes one recruiter's monthly score snapshot from real activity data. */
 export async function computeRecruiterScoreSnapshot(recruiterId: string, period: Date) {
   await ensureKpiConfigSeeded();
 
   const periodStart = new Date(period.getFullYear(), period.getMonth(), 1);
   const periodEnd = new Date(period.getFullYear(), period.getMonth() + 1, 1);
 
-  const [outreachVolume, selfSourcedCount, outboundEvents, assignedLeads, stageHistoryRows, coldReactivations, interviews] =
-    await Promise.all([
-      prisma.interactionEvent.count({
-        where: { recruiterId, direction: "OUTBOUND", occurredAt: { gte: periodStart, lt: periodEnd } },
-      }),
-      prisma.lead.count({
-        where: { createdByRecruiterId: recruiterId, isSelfSourced: true, createdAt: { gte: periodStart, lt: periodEnd } },
-      }),
-      prisma.interactionEvent.findMany({
-        where: { recruiterId, direction: "OUTBOUND", occurredAt: { gte: periodStart, lt: periodEnd } },
-        select: { leadId: true, occurredAt: true },
-      }),
-      prisma.lead.findMany({
-        where: { assignedRecruiterId: recruiterId },
-        select: { id: true, stage: true, createdAt: true },
-      }),
-      prisma.stageHistory.findMany({
-        where: { changedByRecruiterId: recruiterId, changedAt: { gte: periodStart, lt: periodEnd } },
-        select: { toStage: true, fromStage: true, reason: true },
-      }),
-      prisma.stageHistory.count({
-        where: { changedByRecruiterId: recruiterId, fromStage: "COLD", changedAt: { gte: periodStart, lt: periodEnd } },
-      }),
-      prisma.manualActivityLog.count({
-        where: { recruiterId, type: "INTERVIEW", scheduledAt: { gte: periodStart, lt: periodEnd } },
-      }),
-    ]);
+  // 1. Category A, Metric 1: Outreach Volume (Unipile Webhook Feed)
+  // Counts all outbound email & LinkedIn messages sent by recruiter this period.
+  const outreachVolume = await prisma.interactionEvent.count({
+    where: {
+      recruiterId,
+      direction: "OUTBOUND",
+      occurredAt: { gte: periodStart, lt: periodEnd },
+    },
+  });
 
-  // time_to_first_touch: avg days between a lead's creation and its first outbound touch this period.
+  // 2. Category A, Metric 2: Proactive Sourcing
+  // Candidates self-sourced by recruiter (excl. contractor submissions / bulk imports).
+  const proactiveSourcing = await prisma.lead.count({
+    where: {
+      createdByRecruiterId: recruiterId,
+      isSelfSourced: true,
+      createdAt: { gte: periodStart, lt: periodEnd },
+    },
+  });
+
+  // 3. Category A, Metric 3: Time-to-First-Touch (Unipile Webhook Feed)
+  // Average business days between lead assignment/claim and recruiter's first outbound message.
+  const outboundEvents = await prisma.interactionEvent.findMany({
+    where: {
+      recruiterId,
+      direction: "OUTBOUND",
+      occurredAt: { gte: periodStart, lt: periodEnd },
+    },
+    select: { leadId: true, occurredAt: true },
+    orderBy: { occurredAt: "asc" },
+  });
+
   const firstTouchByLead = new Map<string, Date>();
   for (const e of outboundEvents) {
-    const existing = firstTouchByLead.get(e.leadId);
-    if (!existing || e.occurredAt < existing) firstTouchByLead.set(e.leadId, e.occurredAt);
+    if (!firstTouchByLead.has(e.leadId)) {
+      firstTouchByLead.set(e.leadId, e.occurredAt);
+    }
   }
-  const leadCreatedAt = new Map(assignedLeads.map((l) => [l.id, l.createdAt]));
+
+  const assignedLeads = await prisma.lead.findMany({
+    where: {
+      OR: [
+        { assignedRecruiterId: recruiterId },
+        { claimedByRecruiterId: recruiterId },
+        { id: { in: Array.from(firstTouchByLead.keys()) } },
+      ],
+    },
+    select: { id: true, assignedAt: true, claimedAt: true, createdAt: true, stage: true },
+  });
+
   const touchDelaysDays: number[] = [];
-  for (const [leadId, touchedAt] of firstTouchByLead) {
-    const createdAt = leadCreatedAt.get(leadId);
-    if (createdAt) touchDelaysDays.push((touchedAt.getTime() - createdAt.getTime()) / 86_400_000);
+  for (const lead of assignedLeads) {
+    const touchedAt = firstTouchByLead.get(lead.id);
+    if (touchedAt) {
+      const assignedAt = lead.assignedAt || lead.claimedAt || lead.createdAt;
+      if (assignedAt && touchedAt >= assignedAt) {
+        touchDelaysDays.push(calculateBusinessDays(assignedAt, touchedAt));
+      }
+    }
   }
+
   const timeToFirstTouch = touchDelaysDays.length
     ? touchDelaysDays.reduce((a, b) => a + b, 0) / touchDelaysDays.length
     : 0;
 
-  // progression_rate: % of this period's stage transitions that moved forward (not into COLD).
-  const forwardMoves = stageHistoryRows.filter((s) => s.toStage !== "COLD").length;
-  const progressionRate = stageHistoryRows.length ? (forwardMoves / stageHistoryRows.length) * 100 : 0;
+  // 4. Category A, Metric 4: Progression Rate
+  // % of assigned leads that advance past NEW / CONTACTED stage into active progression.
+  const advancedLeads = await prisma.stageHistory.findMany({
+    where: {
+      changedByRecruiterId: recruiterId,
+      changedAt: { gte: periodStart, lt: periodEnd },
+      toStage: { notIn: ["NEW", "CONTACTED", "COLD"] },
+    },
+    select: { leadId: true },
+    distinct: ["leadId"],
+  });
 
-  // reason_logged_rate: % of this period's COLD closures that logged a reason.
-  const coldClosures = stageHistoryRows.filter((s) => s.toStage === "COLD");
-  const reasonLoggedRate = coldClosures.length
-    ? (coldClosures.filter((s) => !!s.reason).length / coldClosures.length) * 100
+  const progressionRate = assignedLeads.length
+    ? Math.min(100, Math.round((advancedLeads.length / assignedLeads.length) * 1000) / 10)
     : 0;
 
+  // 5. Category A, Metric 5: Reason-Logged Rate
+  // % of COLD/DNC leads where the recruiter documented a non-null reason.
+  const [coldClosures, dncFlags] = await Promise.all([
+    prisma.stageHistory.findMany({
+      where: {
+        changedByRecruiterId: recruiterId,
+        toStage: "COLD",
+        changedAt: { gte: periodStart, lt: periodEnd },
+      },
+      select: { reason: true },
+    }),
+    prisma.leadFlagEvent.findMany({
+      where: {
+        setByRecruiterId: recruiterId,
+        flag: "DNC",
+        setAt: { gte: periodStart, lt: periodEnd },
+      },
+      select: { reason: true },
+    }),
+  ]);
+
+  const totalClosures = coldClosures.length + dncFlags.length;
+  const withReason =
+    coldClosures.filter((c) => !!c.reason?.trim()).length +
+    dncFlags.filter((d) => !!d.reason?.trim()).length;
+
+  const reasonLoggedRate = totalClosures > 0
+    ? Math.min(100, Math.round((withReason / totalClosures) * 1000) / 10)
+    : (assignedLeads.length > 0 && touchDelaysDays.length > 0 ? 100 : 0);
+
+  // --- Category B: Outcome / Signal Metrics ---
   const onboardedCount = assignedLeads.filter((l) => l.stage === "ONBOARDED").length;
-  const onboardVsQueue = assignedLeads.length ? (onboardedCount / assignedLeads.length) * 100 : 0;
+  const onboardVsQueue = assignedLeads.length
+    ? Math.min(100, Math.round((onboardedCount / assignedLeads.length) * 1000) / 10)
+    : 0;
+
+  const coldReactivations = await prisma.stageHistory.count({
+    where: {
+      changedByRecruiterId: recruiterId,
+      fromStage: "COLD",
+      toStage: { not: "COLD" },
+      changedAt: { gte: periodStart, lt: periodEnd },
+    },
+  });
+
+  const interviews = await prisma.manualActivityLog.count({
+    where: {
+      recruiterId,
+      type: "INTERVIEW",
+      scheduledAt: { gte: periodStart, lt: periodEnd },
+    },
+  });
+
+  const manualConversions = await prisma.manualActivityLog.count({
+    where: {
+      recruiterId,
+      type: "CALL",
+      scheduledAt: { gte: periodStart, lt: periodEnd },
+    },
+  });
+
+  // Fetch active assigned requirements and market demand for this recruiter
+  const assignedReqs = await prisma.requirement.findMany({
+    where: { recruiterId, status: { in: ["ACTIVE", "UNASSIGNED"] } },
+  });
+  const totalAssignedHeadcount = assignedReqs.reduce((sum, r) => sum + r.headcountNeeded, 0);
+
+  // Read latest versioned KpiConfig from DB
+  const kpiConfigs = await prisma.kpiConfig.findMany({ orderBy: { effectiveDate: "desc" } });
+  const configMap = new Map<string, (typeof kpiConfigs)[0]>();
+  for (const cfg of kpiConfigs) {
+    if (!configMap.has(cfg.metricKey)) configMap.set(cfg.metricKey, cfg);
+  }
+
+  // Dynamically resolve targets based on assigned client/market demand
+  const dynamicRubric = RUBRIC.map((def) => {
+    const dbConfig = configMap.get(def.metricKey);
+    const baseTarget = dbConfig?.target != null ? Number(dbConfig.target) : def.target ?? def.goodBand;
+    const baseGoodBand = dbConfig?.goodBand != null ? Number(dbConfig.goodBand) : def.goodBand;
+    const weight = dbConfig?.weight != null ? Number(dbConfig.weight) : def.weight;
+    const scored = dbConfig?.scored != null ? dbConfig.scored : def.scored;
+    const direction = (dbConfig?.direction ?? def.direction) as "HIGHER_IS_BETTER" | "LOWER_IS_BETTER";
+
+    let effectiveTarget = baseTarget;
+    let effectiveGoodBand = baseGoodBand;
+
+    // Dynamic market demand scaling:
+    // If recruiter has active assigned demand, scale volumetric targets proportionally
+    if (totalAssignedHeadcount > 0) {
+      if (def.metricKey === "outreach_volume") {
+        effectiveTarget = Math.max(100, Math.round(totalAssignedHeadcount * 42));
+        effectiveGoodBand = effectiveTarget;
+      } else if (def.metricKey === "proactive_sourcing") {
+        effectiveTarget = Math.max(10, Math.round(totalAssignedHeadcount * 3.4));
+        effectiveGoodBand = effectiveTarget;
+      } else if (def.metricKey === "cold_lead_conversion") {
+        effectiveTarget = Math.max(5, Math.round(totalAssignedHeadcount * 1.8));
+        effectiveGoodBand = effectiveTarget;
+      }
+    }
+
+    return {
+      ...def,
+      target: effectiveTarget,
+      goodBand: effectiveGoodBand,
+      weight,
+      scored,
+      direction,
+    };
+  });
 
   const currentByKey: Record<string, number> = {
     outreach_volume: outreachVolume,
-    proactive_sourcing: selfSourcedCount,
+    proactive_sourcing: proactiveSourcing,
     time_to_first_touch: Math.round(timeToFirstTouch * 10) / 10,
-    progression_rate: Math.round(progressionRate * 10) / 10,
-    reason_logged_rate: Math.round(reasonLoggedRate * 10) / 10,
-    onboard_vs_queue: Math.round(onboardVsQueue * 10) / 10,
+    progression_rate: progressionRate,
+    reason_logged_rate: reasonLoggedRate,
+    onboard_vs_queue: onboardVsQueue,
     cold_lead_conversion: coldReactivations,
     manual_interviews: interviews,
-    manual_conversion: assignedLeads.filter((l) => l.stage === "ONBOARDED").length, // approximation, see note below
+    manual_conversion: manualConversions,
   };
 
-  const overallScore = RUBRIC.reduce((sum, def) => sum + normalizedContribution(currentByKey[def.metricKey] ?? 0, def), 0);
+  // Calculate composite Overall Score (0-100) using dynamic rubric targets
+  // If the recruiter has 0 outreach, 0 sourcing, and 0 touches, overall score is strictly 0.
+  const hasActivity = outreachVolume > 0 || proactiveSourcing > 0 || touchDelaysDays.length > 0;
+  const overallScoreRaw = hasActivity
+    ? dynamicRubric.reduce(
+        (sum, def) =>
+          sum +
+          calculateWeightedContribution(
+            currentByKey[def.metricKey] ?? 0,
+            def.goodBand ?? def.target ?? 100,
+            def.weight,
+            def.scored,
+            def.direction
+          ),
+        0
+      )
+    : 0;
+
+  const overallScore = Math.round(overallScoreRaw * 10) / 10;
+  const bandLabel = hasActivity ? getBandLabel(overallScore) : "New";
 
   const previousSnapshot = await prisma.recruiterScoreSnapshot.findFirst({
     where: { recruiterId },
@@ -146,39 +471,47 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
       isNew: !previousSnapshot,
       overallScore,
       previousScore: previousSnapshot?.overallScore,
-      kpiConfigSnapshot: RUBRIC,
+      bandLabel,
+      kpiConfigSnapshot: dynamicRubric,
     },
     update: {
       overallScore,
       previousScore: previousSnapshot?.overallScore,
-      kpiConfigSnapshot: RUBRIC,
+      bandLabel,
+      kpiConfigSnapshot: dynamicRubric,
       computedAt: new Date(),
     },
   });
 
+  // Upsert per-metric snapshots with normalized scores (0-100)
   await prisma.$transaction(
-    RUBRIC.map((def) =>
-      prisma.recruiterMetricSnapshot.upsert({
+    dynamicRubric.map((def) => {
+      const cur = currentByKey[def.metricKey] ?? 0;
+      const normalized = calculateNormalizedMetricScore(cur, def.goodBand ?? def.target ?? 100, def.direction);
+      return prisma.recruiterMetricSnapshot.upsert({
         where: { scoreSnapshotId_metricKey: { scoreSnapshotId: snapshot.id, metricKey: def.metricKey } },
         create: {
           scoreSnapshotId: snapshot.id,
           metricKey: def.metricKey,
-          currentValue: currentByKey[def.metricKey] ?? 0,
-          normalized: normalizedContribution(currentByKey[def.metricKey] ?? 0, def),
+          currentValue: cur,
+          normalized,
+          metricStatus: normalized >= 80 ? "STRONG" : normalized >= 60 ? "SOLID" : "NEEDS_ATTENTION",
         },
         update: {
-          currentValue: currentByKey[def.metricKey] ?? 0,
-          normalized: normalizedContribution(currentByKey[def.metricKey] ?? 0, def),
+          currentValue: cur,
+          normalized,
+          metricStatus: normalized >= 80 ? "STRONG" : normalized >= 60 ? "SOLID" : "NEEDS_ATTENTION",
         },
-      })
-    )
+      });
+    })
   );
 
+  // Update cached summary for roster view
   await prisma.recruiterKpiSummary.upsert({
     where: { recruiterId },
     create: {
       recruiterId,
-      outreachEffectiveness: overallScore,
+      outreachEffectiveness: hasActivity ? overallScore : 0,
       responseRate: 0,
       slaAdherence: 0,
       overallScore,
@@ -194,6 +527,7 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
       avgTurnaroundDays: currentByKey.time_to_first_touch,
     },
     update: {
+      outreachEffectiveness: hasActivity ? overallScore : 0,
       overallScore,
       outreachVolume,
       avgTurnaroundDays: currentByKey.time_to_first_touch,
@@ -204,10 +538,12 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
   return snapshot;
 }
 
-/** Runs the monthly snapshot for every active recruiter (owner/contractor excluded --
- *  scoring is a recruiter-performance concept per evaluation.ts). */
+/** Runs the monthly snapshot for every active recruiter. */
 export async function runMonthlyScoring(period: Date = new Date()) {
-  const recruiters = await prisma.user.findMany({ where: { role: "RECRUITER", isActive: true }, select: { id: true } });
+  const recruiters = await prisma.user.findMany({
+    where: { role: "RECRUITER", isActive: true },
+    select: { id: true },
+  });
   for (const r of recruiters) {
     try {
       await computeRecruiterScoreSnapshot(r.id, period);
