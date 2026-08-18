@@ -184,6 +184,16 @@ export function AddLeadDialog({
     });
   }
 
+  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
+    fileName: string;
+    duplicateCount: number;
+    duplicateNames: string[];
+    totalCount: number;
+    newCount: number;
+    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+  } | null>(null);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+
   const handleCsvDownload = () => {
     const csvContent =
       "data:text/csv;charset=utf-8,Full Name,Country,Source,Profile Link,Email,Contact,Reachout Date,Source Language,Target Language,Secondary Languages,Services\nAlex Chen,Germany,LinkedIn,https://linkedin.com/in/alexchen,alex@example.com,+49 1234567,2026-08-01,English,German,French,Dubbing; Subtitling\n";
@@ -201,11 +211,11 @@ export function AddLeadDialog({
     toast.success("Downloaded Excel (.xlsx) lead import template!");
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
       if (parsed.length > 0) {
@@ -214,14 +224,59 @@ export function AddLeadDialog({
           source: mapToLeadSource(l.source),
           services: l.services,
           targetLanguage: l.language,
+          email: l.email || undefined,
+          contactNumber: l.phone || undefined,
         }));
-        bulkCreateMutation.mutate(rows);
-        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
+
+        setCheckingDuplicates(true);
+        try {
+          const dupRes = await api.checkBulkDuplicateLeads(
+            rows.map((r) => ({ fullName: r.fullName, email: r.email, contactNumber: r.contactNumber }))
+          );
+
+          if (dupRes.hasDuplicates) {
+            const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "..." : "");
+            toast.error(
+              `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or skip duplicates.`,
+              { duration: 6000 }
+            );
+            setDuplicateCheckResult({
+              fileName: file.name,
+              duplicateCount: dupRes.duplicateCount,
+              duplicateNames: dupRes.duplicateNames,
+              totalCount: dupRes.totalCount,
+              newCount: dupRes.newCount,
+              rows,
+            });
+          } else {
+            bulkCreateMutation.mutate(rows);
+            toast.success(`Uploaded ${file.name}. Importing ${parsed.length} verified candidate leads…`);
+            setDuplicateCheckResult(null);
+          }
+        } catch (err: any) {
+          // Fallback to standard bulk import if duplicate pre-check encounters network glitch
+          bulkCreateMutation.mutate(rows);
+        } finally {
+          setCheckingDuplicates(false);
+          // Clear file input value so user can re-select the same or another file
+          e.target.value = "";
+        }
       } else {
         toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Services columns.`);
+        e.target.value = "";
       }
     };
     reader.readAsText(file);
+  };
+
+  const handleImportSkippingDuplicates = () => {
+    if (!duplicateCheckResult) return;
+    bulkCreateMutation.mutate(duplicateCheckResult.rows, {
+      onSuccess: () => {
+        toast.success(`Imported ${duplicateCheckResult.newCount} new leads (skipped ${duplicateCheckResult.duplicateCount} existing duplicates).`);
+        setDuplicateCheckResult(null);
+      },
+    });
   };
 
   return (
@@ -235,6 +290,57 @@ export function AddLeadDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/* Duplicate Leads Detected Alert Box */}
+        {duplicateCheckResult && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
+                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
+                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
+            </div>
+
+            <p className="text-xs text-foreground leading-relaxed">
+              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this sheet already exist:
+              <span className="font-semibold text-destructive ml-1">
+                {duplicateCheckResult.duplicateNames.join(", ")}
+              </span>
+              . You can upload another file or import only the <strong>{duplicateCheckResult.newCount}</strong> new leads.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              <label className="cursor-pointer">
+                <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+                <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors border border-border">
+                  <Upload className="h-3.5 w-3.5" /> Upload Another File
+                </div>
+              </label>
+
+              {duplicateCheckResult.newCount > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleImportSkippingDuplicates}
+                  className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5"
+                >
+                  Import {duplicateCheckResult.newCount} New Leads Only
+                </Button>
+              )}
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDuplicateCheckResult(null)}
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         {/* Bulk Upload CSV/Excel Template Box */}
         <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -242,6 +348,7 @@ export function AddLeadDialog({
               <Upload className="h-4 w-4 text-primary" />
               <span>Have many? Bulk import via CSV or Excel.</span>
             </div>
+            {checkingDuplicates && <span className="text-[11px] font-medium text-accent animate-pulse">Checking for database duplicates…</span>}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -263,7 +370,7 @@ export function AddLeadDialog({
               <FileSpreadsheet className="h-3.5 w-3.5 text-accent" /> Excel template
             </Button>
             <label className="cursor-pointer">
-              <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+              <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" disabled={checkingDuplicates} />
               <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
                 <Upload className="h-3.5 w-3.5" /> Upload file
               </div>

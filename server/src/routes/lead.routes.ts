@@ -146,6 +146,66 @@ leadRouter.post(
   })
 );
 
+// POST /api/leads/check-bulk-duplicates — pre-validate uploaded CSV/Excel file for duplicate leads
+leadRouter.post(
+  "/check-bulk-duplicates",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const leads = (req.body?.leads || []) as Array<{ fullName?: string; email?: string; contactNumber?: string }>;
+    const duplicates: Array<{
+      index: number;
+      fullName: string;
+      email?: string;
+      matchedField: string;
+      existingLeadId: string;
+      existingLeadName?: string;
+    }> = [];
+    const duplicateNamesSet = new Set<string>();
+
+    for (let i = 0; i < leads.length; i++) {
+      const item = leads[i];
+      if (!item.fullName && !item.email && !item.contactNumber) continue;
+
+      const dup = await findDuplicateLead({
+        email: item.email,
+        contactNumber: item.contactNumber,
+        fullName: item.fullName,
+      });
+
+      if (dup.isDuplicate && dup.leadId) {
+        const existing = await prisma.lead.findUnique({
+          where: { id: dup.leadId },
+          select: { fullName: true },
+        });
+        const leadName = item.fullName || existing?.fullName || `Row #${i + 1}`;
+        duplicateNamesSet.add(leadName);
+        duplicates.push({
+          index: i,
+          fullName: leadName,
+          email: item.email,
+          matchedField: dup.matchedField ?? "full_name",
+          existingLeadId: dup.leadId,
+          existingLeadName: existing?.fullName || undefined,
+        });
+      }
+    }
+
+    const duplicateNames = Array.from(duplicateNamesSet);
+    const duplicateCount = duplicates.length;
+    const totalCount = leads.length;
+    const newCount = Math.max(0, totalCount - duplicateCount);
+
+    return res.json({
+      hasDuplicates: duplicateCount > 0,
+      duplicateCount,
+      duplicateNames,
+      duplicates,
+      totalCount,
+      newCount,
+    });
+  })
+);
+
 // GET /api/leads/:id — single lead + merged activity timeline
 leadRouter.get(
   "/:id",
@@ -224,13 +284,20 @@ leadRouter.post(
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const rows = z.array(createLeadSchema).max(2000).parse(req.body?.leads ?? []);
+    const skipDuplicates = req.body?.skipDuplicates === true;
     const role = req.user!.role.toLowerCase() as Role;
-    const results: Array<{ index: number; status: "accepted" | "duplicate" | "error"; leadId?: string; message?: string }> = [];
+    const results: Array<{ index: number; status: "accepted" | "duplicate" | "skipped" | "error"; leadId?: string; message?: string }> = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
       try {
         const dup = await findDuplicateLead({ email: row.email, contactNumber: row.contactNumber, fullName: row.fullName });
+
+        if (dup.isDuplicate && skipDuplicates) {
+          results.push({ index: i, status: "skipped", message: `Skipped duplicate (${dup.matchedField})` });
+          continue;
+        }
+
         const lead = await prisma.lead.create({
           data: {
             ...row,
