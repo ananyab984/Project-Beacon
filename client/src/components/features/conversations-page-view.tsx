@@ -181,7 +181,7 @@ export function ConversationsPageView() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-6.5rem)] max-h-[calc(100vh-6.5rem)] max-w-7xl flex-col gap-2 overflow-hidden">
+    <div className="mx-auto flex h-[calc(100vh-8.5rem)] max-w-7xl flex-col gap-2 overflow-hidden">
       {/* Header bar */}
       <div className="shrink-0 flex items-center justify-between rounded-xl border border-border bg-card px-4 py-2 shadow-xs">
         <div className="flex items-center gap-2.5">
@@ -240,10 +240,10 @@ export function ConversationsPageView() {
         </div>
       ) : (
         <div className="flex-1 min-h-0 overflow-hidden rounded-2xl border border-border bg-card">
-          <div className="grid h-full grid-cols-1 md:grid-cols-[280px_1fr_280px]">
+          <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[280px_1fr_280px]">
             {/* Threads Sidebar */}
-            <div className="border-r border-border flex flex-col h-full">
-              <div className="border-b border-border p-3 space-y-2">
+            <div className="border-r border-border flex flex-col h-full min-h-0 overflow-hidden">
+              <div className="shrink-0 border-b border-border p-3 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">LinkedIn Conversations</div>
                   <SearchLeadDialog
@@ -265,7 +265,7 @@ export function ConversationsPageView() {
                   />
                 </div>
               </div>
-              <div className="divide-y divide-border overflow-y-auto flex-1">
+              <div className="divide-y divide-border overflow-y-auto flex-1 min-h-0">
                 {searchedFiltered.map((c: ApiConversation) => {
                   const lastMessage = c.messages[c.messages.length - 1];
                   return (
@@ -444,7 +444,7 @@ export function ConversationsPageView() {
 
             {/* Candidate Context Sidebar */}
             {conv && (
-              <div className="border-l border-border p-4 overflow-y-auto space-y-4">
+              <div className="border-l border-border p-4 overflow-y-auto min-h-0 h-full space-y-4">
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Candidate</div>
                   <div className="mt-2 flex items-center gap-3">
