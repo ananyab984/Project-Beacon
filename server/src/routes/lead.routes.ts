@@ -289,15 +289,14 @@ leadRouter.post(
     });
 
     const hasContact = !!(parsed.email || parsed.contactNumber || parsed.profileLink);
-    const hasCompleteData = !!(parsed.email && (parsed.contactNumber || parsed.profileLink || (parsed.services && parsed.services.length > 0)));
 
     const lead = await prisma.lead.create({
       data: {
         ...parsed,
         maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}`,
-        identityResolved: hasContact,
+        identityResolved: false,
         emailVerified: !!parsed.email,
-        enrichmentStatus: hasCompleteData ? "COMPLETE" : hasContact ? "IN_PROGRESS" : "PENDING",
+        enrichmentStatus: hasContact ? "IN_PROGRESS" : "PENDING",
         flags: hasContact ? [] : ["ON_HOLD"],
         createdByContractorId: role === "contractor" ? req.user!.id : undefined,
         createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
@@ -375,15 +374,14 @@ leadRouter.post(
         }
 
         const hasContact = !!(row.email || row.contactNumber || row.profileLink);
-        const hasCompleteData = !!(row.email && (row.contactNumber || row.profileLink || (row.services && row.services.length > 0)));
 
         const lead = await prisma.lead.create({
           data: {
             ...row,
             maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}${i}`,
-            identityResolved: hasContact,
+            identityResolved: false,
             emailVerified: !!row.email,
-            enrichmentStatus: hasCompleteData ? "COMPLETE" : hasContact ? "IN_PROGRESS" : "PENDING",
+            enrichmentStatus: hasContact ? "IN_PROGRESS" : "PENDING",
             flags: hasContact ? [] : ["ON_HOLD"],
             createdByContractorId: role === "contractor" ? req.user!.id : undefined,
             createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,

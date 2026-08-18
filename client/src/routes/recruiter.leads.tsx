@@ -114,7 +114,7 @@ function LeadsPage() {
   const scoped = scope === "mine" ? mineLeads : globalLeads;
   const mineCount = mineLeads.length;
   const onHoldCount = useMemo(
-    () => mineLeads.filter((l) => l.enrichmentStatus !== "COMPLETE" && (!l.identityResolved || l.flags.includes("ON_HOLD"))).length,
+    () => mineLeads.filter((l) => l.enrichmentStatus !== "COMPLETE" && l.enrichmentStatus !== "IN_PROGRESS").length,
     [mineLeads],
   );
 
@@ -384,12 +384,11 @@ function LeadsPage() {
                 <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
               )}
               {view.map((l) => {
-                const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
                 const isEnriched = l.enrichmentStatus === "COMPLETE";
                 const isPending = l.enrichmentStatus === "IN_PROGRESS";
-                const isOnHold = !isEnriched && (!l.identityResolved || l.flags.includes("ON_HOLD"));
+                const isOnHold = !isEnriched && !isPending;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">

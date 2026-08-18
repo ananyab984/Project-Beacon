@@ -359,11 +359,11 @@ function LeadsPage() {
                 <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
               )}
               {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
-                const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
                 const isEnriched = l.enrichmentStatus === "COMPLETE";
-                const isOnHold = !isEnriched && (!l.identityResolved || l.flags.includes("ON_HOLD"));
+                const isPending = l.enrichmentStatus === "IN_PROGRESS";
+                const isOnHold = !isEnriched && !isPending;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -375,17 +375,21 @@ function LeadsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {isOnHold ? (
+                      {isEnriched ? (
+                        <span className="font-semibold text-xs text-emerald-400">
+                          Enriched
+                        </span>
+                      ) : isPending ? (
+                        <span className="font-semibold text-xs text-amber-400">
+                          Enriching…
+                        </span>
+                      ) : (
                         <button
                           onClick={() => setEnrichRaw(l)}
                           className="font-semibold text-xs text-warning hover:underline cursor-pointer"
                         >
                           On Hold
                         </button>
-                      ) : (
-                        <span className="font-semibold text-xs text-emerald-400">
-                          Enriched
-                        </span>
                       )}
                     </td>
                     <td className="px-4 py-3">

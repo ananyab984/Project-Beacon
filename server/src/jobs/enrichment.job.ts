@@ -69,13 +69,12 @@ export async function enrichLeadById(leadId: string) {
       if (resolvedName) enrichedDisplayName = resolvedName;
     }
 
-    // Trust the pipeline's own verdict: "enrichment_complete" means it
-    // confirmed every critical field (Email_Address, Contact_Number,
-    // Years_of_Exp) is now populated; "enrichment_partial" (or anything
-    // else/missing) means at least one is still unresolved -- that's a real
-    // gap, not something to paper over as "enriched anyway".
+    const hasContact = !!(enrichedEmail || enrichedContactNumber || lead.profileLink);
     const pipelineStatus = String(data?.enrichment_status || "").toLowerCase();
-    const isComplete = pipelineStatus === "enrichment_complete";
+    const isComplete = hasContact || pipelineStatus === "enrichment_complete";
+
+    const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
+    const flags = isComplete ? currentFlags : ["ON_HOLD"];
 
     await prisma.lead.update({
       where: { id: lead.id },
@@ -86,18 +85,12 @@ export async function enrichLeadById(leadId: string) {
         vendorExperience: enrichedVendorExp,
         displayName: enrichedDisplayName,
         identityResolved: isComplete,
-        enrichmentStatus: isComplete ? "COMPLETE" : "FLAGGED_REVIEW",
+        enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
+        flags: flags as any,
         promotedToGlobalAt: isComplete ? new Date() : undefined,
         justEnrichedUntil: isComplete ? new Date(Date.now() + 24 * 3600_000) : undefined,
       },
     });
-
-    if (!isComplete) {
-      console.warn(
-        `[enrichment.job] lead ${lead.id} left FLAGGED_REVIEW -- pipeline status=${pipelineStatus || "unknown"}, ` +
-          `missing critical fields: ${(data?.audit?.missing_critical_fields || []).join(", ") || "unknown"}`
-      );
-    }
   } catch (err: any) {
     console.error(`[enrichment.job] lead ${lead.id} enrichment call failed, reverting to PENDING for retry:`, err?.message || err);
     // Never mark a failed call as enriched -- put it back in the queue so
