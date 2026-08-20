@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { authClient, getNeonToken } from "./neon-auth";
+import { authClient, getNeonToken, getNeonTokenResult } from "./neon-auth";
 
 export type Role = "owner" | "recruiter" | "contractor";
 
@@ -193,8 +193,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeProfile = useCallback(async (role: Role) => {
-    const token = await getNeonToken();
-    if (!token) throw toError("Couldn't verify your session with Neon Auth -- check the browser console for details, or try signing in again.");
+    const { token, errorDetail } = await getNeonTokenResult();
+    if (!token) throw toError(`Couldn't get a session token from Neon Auth: ${errorDetail || "unknown reason"}`);
     const profile = await postProfile(token, { role });
     setNeedsRoleSetup(false);
     setUser(profile);
