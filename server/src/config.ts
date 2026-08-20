@@ -54,4 +54,11 @@ export const config = {
   keepaliveEnabled: (process.env.KEEPALIVE_ENABLED || (isProduction ? "true" : "false")).trim().toLowerCase() !== "false",
   keepaliveUrl: resolveEnv("KEEPALIVE_URL", resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction), isProduction),
   keepaliveIntervalMs: parseInt(process.env.KEEPALIVE_INTERVAL_MS || "600000", 10),
+
+  // Credentials, sessions, and email verification all live in Neon Auth now
+  // (see middleware/auth.ts) -- this server only verifies the JWTs it issues.
+  // Same value as the client's VITE_NEON_AUTH_URL; kept as a separate env var
+  // because Vite only exposes VITE_-prefixed vars to the browser bundle, and
+  // this one needs to be readable from plain Node.
+  neonAuthUrl: requireEnv("NEON_AUTH_URL"),
 };

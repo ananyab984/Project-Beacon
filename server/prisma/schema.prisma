@@ -235,24 +235,23 @@ enum UnipileProvider {
 
 /// Replaces the bare `recruiters` table with role-aware access control,
 /// covering Owner (Sundar/Ethan), in-house Recruiters, and Contractors.
-/// Auth fields below are taken directly from the live repo's src/lib/auth.tsx
-/// (currently a localStorage mock — passwordHash etc. are the real-backend
-/// equivalents of what that file will need once auth moves server-side).
+/// Credentials, sessions, and email verification all live in Neon Auth's own
+/// `neon_auth` schema now (see server/src/middleware/auth.ts) -- this table is
+/// purely the app-profile side: role and every business relationship below,
+/// linked to the Neon Auth identity by neonAuthUserId (backfilled by email on
+/// first authenticated request from a given Neon Auth account).
 model User {
-  id                  String    @id @default(uuid())
-  name                String
-  email               String    @unique
-  passwordHash        String     @map("password_hash")
-  role                UserRole
-  workStatus          WorkStatus @default(PERMANENT) @map("work_status")
-  languages           String[]   @default([])
-  emailVerified       Boolean    @default(false) @map("email_verified")
-  verifyToken         String?    @map("verify_token")
-  resetToken          String?    @map("reset_token")
-  resetTokenExpiresAt DateTime?  @map("reset_token_expires_at")
-  startDate           DateTime   @default(now()) @map("start_date") // determines 3-month trend baseline eligibility
-  isActive            Boolean    @default(true) @map("is_active")
-  createdAt           DateTime   @default(now()) @map("created_at")
+  id                String     @id @default(uuid())
+  neonAuthUserId    String?    @unique @map("neon_auth_user_id")
+  name              String
+  email             String     @unique
+  role              UserRole
+  workStatus        WorkStatus @default(PERMANENT) @map("work_status")
+  languages         String[]   @default([])
+  emailVerified     Boolean    @default(false) @map("email_verified")
+  startDate         DateTime   @default(now()) @map("start_date") // determines 3-month trend baseline eligibility
+  isActive          Boolean    @default(true) @map("is_active")
+  createdAt         DateTime   @default(now()) @map("created_at")
 
   // Lead relationships
   leadsCreated             Lead[] @relation("CreatedBy")
@@ -278,7 +277,6 @@ model User {
   scoreSnapshots RecruiterScoreSnapshot[]
   kpiSummary     RecruiterKpiSummary?
   clientDemands     ClientDemand[]           @relation("ClientDemandOwner")
-  refreshTokens     RefreshToken[]
   connectedAccounts ConnectedAccount[]
 
   // Client demand / requirement relationships
@@ -306,19 +304,6 @@ model VisibilityRule {
 }
 
 /// Refresh tokens table for secure session rotation & revocation
-model RefreshToken {
-  id        String   @id @default(uuid())
-  tokenHash String   @unique @map("token_hash")
-  userId    String   @map("user_id")
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  revoked   Boolean  @default(false)
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([userId])
-  @@map("refresh_tokens")
-}
-
 // ----------------------------------------------------------------------------
 // LEADS — core record, merged with enrichment + sourcing fields
 // ----------------------------------------------------------------------------

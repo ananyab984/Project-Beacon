@@ -17,6 +17,13 @@ export default defineConfig({
   ],
   server: {
     port: 8002,
+    // Neon Auth's trusted-origins check cares which exact origin (including
+    // port) a request comes from -- silently moving to 8003 when 8002 is
+    // taken makes the app run from an origin Neon Auth doesn't recognize,
+    // which fails in confusing, hard-to-trace ways (some calls work, others
+    // don't). Fail loudly instead so a port conflict gets noticed and fixed,
+    // not run against silently.
+    strictPort: true,
     host: true,
   },
 });

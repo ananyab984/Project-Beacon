@@ -1,12 +1,10 @@
 import { Router, Request, Response } from "express";
-import crypto from "crypto";
 import { z } from "zod";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
-import { AuthService } from "../services/auth.service";
 import { normalizeEmail, normalizeName, validateEmailFormat, validateNameLength } from "../lib/normalize";
 
 export const userRouter = Router();
@@ -94,7 +92,11 @@ userRouter.get(
   })
 );
 
-// POST /api/users — owner-only, creates a recruiter or contractor with a temp password
+// POST /api/users — owner-only, reserves a recruiter or contractor role for an
+// email address. Credentials live in Neon Auth, not here: this just pre-seeds
+// the app profile so that whenever this person actually signs up/signs in
+// through Neon Auth, POST /api/auth/profile links to this row by email
+// instead of asking them to pick a role themselves.
 userRouter.post(
   "/",
   requireRole("owner"),
@@ -116,14 +118,10 @@ userRouter.post(
       throw new ApiError(409, "USER_EXISTS", "An account with that email already exists");
     }
 
-    const tempPassword = crypto.randomBytes(9).toString("base64url");
-    const passwordHash = AuthService.hashPassword(tempPassword);
-
     const user = await prisma.user.create({
       data: {
         name: normalizedName,
         email: normalizedEmail,
-        passwordHash,
         role: parsed.role,
         workStatus: parsed.workStatus ?? "PERMANENT",
         languages: parsed.languages ?? [],
@@ -133,7 +131,7 @@ userRouter.post(
       select: SAFE_USER_SELECT,
     });
 
-    return res.status(201).json({ user, tempPassword });
+    return res.status(201).json({ user });
   })
 );
 

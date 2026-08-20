@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Download, FileText, Clock, TrendingUp, Users, Radio, Eye, History, ChevronDown, ChevronRight, CheckCircle2, ShieldCheck, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { getNeonToken } from "@/lib/neon-auth";
 import type { ApiReportsAnalytics, ApiRecentReport, ApiRequirement, ApiClient } from "@/lib/api-types";
 import { RUBRIC, METRIC_GROUPS, formatValue, bandFor } from "@/lib/evaluation";
 
@@ -95,8 +96,9 @@ function ReportsPage() {
         ? "leads-pipeline"
         : "summary";
 
-      const token = localStorage.getItem("token") || sessionStorage.getItem("token") || "";
-      const res = await fetch(`/api/reports/export/${endpoint}`, {
+      const token = await getNeonToken();
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
+      const res = await fetch(`${apiBase}/api/reports/export/${endpoint}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!res.ok) throw new Error("Failed to export report CSV");

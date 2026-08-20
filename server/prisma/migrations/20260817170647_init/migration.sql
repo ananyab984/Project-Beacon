@@ -2,6 +2,9 @@
 CREATE TYPE "UserRole" AS ENUM ('OWNER', 'RECRUITER', 'CONTRACTOR');
 
 -- CreateEnum
+CREATE TYPE "WorkStatus" AS ENUM ('PERMANENT', 'CONTRACTOR');
+
+-- CreateEnum
 CREATE TYPE "LeadStage" AS ENUM ('NEW', 'CONTACTED', 'REPLIED', 'NEGOTIATING', 'INVITE_SENT', 'ONBOARDED', 'COLD');
 
 -- CreateEnum
@@ -23,7 +26,7 @@ CREATE TYPE "FlagAction" AS ENUM ('ADDED', 'REMOVED');
 CREATE TYPE "EnrichmentStatus" AS ENUM ('PENDING', 'IN_PROGRESS', 'COMPLETE', 'FLAGGED_REVIEW');
 
 -- CreateEnum
-CREATE TYPE "LeadSource" AS ENUM ('LINKEDIN', 'PROZ', 'APOLLO', 'REFERRAL', 'IMPORT', 'GITHUB');
+CREATE TYPE "LeadSource" AS ENUM ('LINKEDIN', 'PROZ', 'ADA', 'ATA', 'ATAA', 'BODALGO', 'FREELANCER', 'APOLLO');
 
 -- CreateEnum
 CREATE TYPE "InteractionDirection" AS ENUM ('OUTBOUND', 'INBOUND');
@@ -53,15 +56,6 @@ CREATE TYPE "ConversationChannel" AS ENUM ('LINKEDIN', 'INSTAGRAM', 'WHATSAPP', 
 CREATE TYPE "MessageSender" AS ENUM ('ME', 'THEM');
 
 -- CreateEnum
-CREATE TYPE "RateUnit" AS ENUM ('HOUR', 'MINUTE', 'PROJECT');
-
--- CreateEnum
-CREATE TYPE "Currency" AS ENUM ('USD', 'EUR', 'GBP', 'INR');
-
--- CreateEnum
-CREATE TYPE "PreferredContact" AS ENUM ('EMAIL', 'PHONE', 'WHATSAPP');
-
--- CreateEnum
 CREATE TYPE "LeadPriority" AS ENUM ('P0', 'P1', 'P2', 'P3');
 
 -- CreateEnum
@@ -71,7 +65,7 @@ CREATE TYPE "EscalationPriority" AS ENUM ('P1', 'P2', 'P3');
 CREATE TYPE "EscalationStatus" AS ENUM ('OPEN', 'ACKNOWLEDGED', 'IN_PROGRESS');
 
 -- CreateEnum
-CREATE TYPE "EmailQueueStatus" AS ENUM ('AI_DRAFTED', 'FOLLOW_UP', 'REVIEW_NEEDED');
+CREATE TYPE "EmailQueueStatus" AS ENUM ('AI_DRAFTED', 'FOLLOW_UP', 'REVIEW_NEEDED', 'SENT');
 
 -- CreateEnum
 CREATE TYPE "ClientDemandPriority" AS ENUM ('STANDARD', 'HIGH', 'CRITICAL');
@@ -80,7 +74,13 @@ CREATE TYPE "ClientDemandPriority" AS ENUM ('STANDARD', 'HIGH', 'CRITICAL');
 CREATE TYPE "ClientDemandStatus" AS ENUM ('ACTIVE', 'PAUSED', 'FULFILLED');
 
 -- CreateEnum
-CREATE TYPE "UserFlagType" AS ENUM ('DNU');
+CREATE TYPE "AccountStatus" AS ENUM ('CONNECTING', 'OK', 'RECONNECTION_NEEDED', 'PERMISSION_REVOKED', 'DISCONNECTED');
+
+-- CreateEnum
+CREATE TYPE "UnipileProvider" AS ENUM ('LINKEDIN', 'GOOGLE', 'MAIL', 'OUTLOOK', 'EMAIL');
+
+-- CreateEnum
+CREATE TYPE "RequirementStatus" AS ENUM ('UNASSIGNED', 'ACTIVE', 'PAUSED', 'FULFILLED');
 
 -- CreateTable
 CREATE TABLE "users" (
@@ -89,6 +89,8 @@ CREATE TABLE "users" (
     "email" TEXT NOT NULL,
     "password_hash" TEXT NOT NULL,
     "role" "UserRole" NOT NULL,
+    "work_status" "WorkStatus" NOT NULL DEFAULT 'PERMANENT',
+    "languages" TEXT[] DEFAULT ARRAY[]::TEXT[],
     "email_verified" BOOLEAN NOT NULL DEFAULT false,
     "verify_token" TEXT,
     "reset_token" TEXT,
@@ -96,38 +98,6 @@ CREATE TABLE "users" (
     "start_date" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "is_active" BOOLEAN NOT NULL DEFAULT true,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "headline" TEXT,
-    "country_of_residence" TEXT,
-    "timezone" TEXT,
-    "bio" TEXT,
-    "avatar_url" TEXT,
-    "phone" TEXT,
-    "whatsapp" TEXT,
-    "preferred_contact" "PreferredContact",
-    "services" TEXT[] DEFAULT ARRAY[]::TEXT[],
-    "source_language" TEXT,
-    "target_languages" TEXT[] DEFAULT ARRAY[]::TEXT[],
-    "secondary_languages" TEXT[] DEFAULT ARRAY[]::TEXT[],
-    "years_of_experience" DECIMAL(4,1),
-    "vendor_experience" TEXT,
-    "rate_amount" DECIMAL(10,2),
-    "rate_unit" "RateUnit",
-    "currency" "Currency" DEFAULT 'USD',
-    "resume_filename" TEXT,
-    "resume_size_kb" INTEGER,
-    "portfolio_url" TEXT,
-    "linkedin_url" TEXT,
-    "proz_url" TEXT,
-    "website_url" TEXT,
-    "availability_status" "Availability" NOT NULL DEFAULT 'UNKNOWN',
-    "available_from" TIMESTAMP(3),
-    "weekly_capacity_hours" INTEGER,
-    "blackout_dates" TIMESTAMP(3)[] DEFAULT ARRAY[]::TIMESTAMP(3)[],
-    "notify_new_lead" BOOLEAN NOT NULL DEFAULT true,
-    "notify_duplicate" BOOLEAN NOT NULL DEFAULT true,
-    "notify_message" BOOLEAN NOT NULL DEFAULT true,
-    "notify_weekly_digest" BOOLEAN NOT NULL DEFAULT false,
-    "two_fa_enabled" BOOLEAN NOT NULL DEFAULT false,
 
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
@@ -273,6 +243,7 @@ CREATE TABLE "interaction_events" (
     "ai_reply_classification" TEXT,
     "ai_classification_confidence" DECIMAL(4,3),
     "delivery_status" TEXT,
+    "external_message_id" TEXT,
 
     CONSTRAINT "interaction_events_pkey" PRIMARY KEY ("id")
 );
@@ -377,9 +348,56 @@ CREATE TABLE "system_config" (
 );
 
 -- CreateTable
+CREATE TABLE "clients" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "industry" TEXT,
+    "contact_name" TEXT,
+    "contact_email" TEXT,
+    "notes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "clients_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "requirements" (
+    "id" TEXT NOT NULL,
+    "client_id" TEXT NOT NULL,
+    "title" TEXT NOT NULL,
+    "language" TEXT NOT NULL,
+    "service" TEXT NOT NULL,
+    "region" TEXT,
+    "project_name" TEXT,
+    "headcount_needed" INTEGER NOT NULL,
+    "filled" INTEGER NOT NULL DEFAULT 0,
+    "gap" INTEGER NOT NULL DEFAULT 0,
+    "priority" "ClientDemandPriority" NOT NULL DEFAULT 'STANDARD',
+    "status" "RequirementStatus" NOT NULL DEFAULT 'UNASSIGNED',
+    "recruiter_id" TEXT,
+    "deadline" TIMESTAMP(3),
+    "notes" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "requirements_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "requirement_assignments" (
+    "id" TEXT NOT NULL,
+    "requirement_id" TEXT NOT NULL,
+    "recruiter_id" TEXT,
+    "assigned_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "assigned_by_id" TEXT NOT NULL,
+    "note" TEXT,
+
+    CONSTRAINT "requirement_assignments_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
 CREATE TABLE "client_demand" (
     "id" TEXT NOT NULL,
-    "client_name" TEXT NOT NULL,
+    "client_id" TEXT NOT NULL,
     "language" TEXT NOT NULL,
     "recruiter_id" TEXT,
     "headcount_needed" INTEGER NOT NULL,
@@ -432,6 +450,8 @@ CREATE TABLE "email_queue_items" (
     "body" TEXT NOT NULL,
     "ai_generated" BOOLEAN NOT NULL DEFAULT false,
     "received_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "sent_at" TIMESTAMP(3),
+    "sent_channel" TEXT,
 
     CONSTRAINT "email_queue_items_pkey" PRIMARY KEY ("id")
 );
@@ -446,6 +466,7 @@ CREATE TABLE "conversations" (
     "channel" "ConversationChannel" NOT NULL,
     "unread" BOOLEAN NOT NULL DEFAULT false,
     "last_message_at" TIMESTAMP(3),
+    "unipile_chat_id" TEXT,
 
     CONSTRAINT "conversations_pkey" PRIMARY KEY ("id")
 );
@@ -457,24 +478,9 @@ CREATE TABLE "conversation_messages" (
     "sender" "MessageSender" NOT NULL,
     "text" TEXT NOT NULL,
     "sent_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "external_message_id" TEXT,
 
     CONSTRAINT "conversation_messages_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "user_flag_events" (
-    "id" TEXT NOT NULL,
-    "user_id" TEXT NOT NULL,
-    "flag" "UserFlagType" NOT NULL,
-    "action" "FlagAction" NOT NULL,
-    "set_by_recruiter_id" TEXT NOT NULL,
-    "set_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "confirmed_by_recruiter_id" TEXT,
-    "confirmed_at" TIMESTAMP(3),
-    "reason" TEXT,
-    "removed_at" TIMESTAMP(3),
-
-    CONSTRAINT "user_flag_events_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -501,6 +507,7 @@ CREATE TABLE "escalations" (
     "impact" TEXT,
     "recruiter_id" TEXT,
     "lead_id" TEXT,
+    "client_id" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "escalations_pkey" PRIMARY KEY ("id")
@@ -527,6 +534,56 @@ CREATE TABLE "recruiter_kpi_summaries" (
     "computed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "recruiter_kpi_summaries_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "connected_accounts" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "provider" "UnipileProvider" NOT NULL,
+    "unipile_account_id" TEXT NOT NULL,
+    "account_name" TEXT,
+    "status" "AccountStatus" NOT NULL DEFAULT 'CONNECTING',
+    "status_message" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updated_at" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "connected_accounts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "unipile_auth_attempts" (
+    "id" TEXT NOT NULL,
+    "user_id" TEXT NOT NULL,
+    "provider" "UnipileProvider" NOT NULL,
+    "nonce" TEXT NOT NULL,
+    "expires_at" TIMESTAMP(3) NOT NULL,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "unipile_auth_attempts_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "unipile_webhook_events" (
+    "id" TEXT NOT NULL,
+    "dedupe_key" TEXT NOT NULL,
+    "event_type" TEXT NOT NULL,
+    "payload" JSONB NOT NULL,
+    "processed_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "unipile_webhook_events_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "account_degradations" (
+    "id" TEXT NOT NULL,
+    "connected_account_id" TEXT NOT NULL,
+    "from_status" "AccountStatus" NOT NULL,
+    "to_status" "AccountStatus" NOT NULL,
+    "reason" TEXT,
+    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "account_degradations_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
@@ -578,6 +635,9 @@ CREATE INDEX "interaction_events_lead_id_idx" ON "interaction_events"("lead_id")
 CREATE INDEX "interaction_events_direction_occurred_at_idx" ON "interaction_events"("direction", "occurred_at");
 
 -- CreateIndex
+CREATE INDEX "interaction_events_external_message_id_idx" ON "interaction_events"("external_message_id");
+
+-- CreateIndex
 CREATE INDEX "manual_activity_logs_lead_id_idx" ON "manual_activity_logs"("lead_id");
 
 -- CreateIndex
@@ -599,7 +659,22 @@ CREATE UNIQUE INDEX "recruiter_metric_snapshots_score_snapshot_id_metric_key_key
 CREATE UNIQUE INDEX "recruiter_monthly_metrics_recruiter_id_metric_name_month_key" ON "recruiter_monthly_metrics"("recruiter_id", "metric_name", "month");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "clients_name_key" ON "clients"("name");
+
+-- CreateIndex
+CREATE INDEX "requirements_client_id_idx" ON "requirements"("client_id");
+
+-- CreateIndex
+CREATE INDEX "requirements_status_idx" ON "requirements"("status");
+
+-- CreateIndex
+CREATE INDEX "requirement_assignments_requirement_id_idx" ON "requirement_assignments"("requirement_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "client_demand_sheet_row_id_key" ON "client_demand"("sheet_row_id");
+
+-- CreateIndex
+CREATE INDEX "client_demand_client_id_idx" ON "client_demand"("client_id");
 
 -- CreateIndex
 CREATE INDEX "client_demand_language_idx" ON "client_demand"("language");
@@ -620,6 +695,9 @@ CREATE INDEX "email_queue_items_lead_id_idx" ON "email_queue_items"("lead_id");
 CREATE INDEX "email_queue_items_status_idx" ON "email_queue_items"("status");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "conversations_unipile_chat_id_key" ON "conversations"("unipile_chat_id");
+
+-- CreateIndex
 CREATE INDEX "conversations_lead_id_idx" ON "conversations"("lead_id");
 
 -- CreateIndex
@@ -629,10 +707,7 @@ CREATE INDEX "conversations_recruiter_id_idx" ON "conversations"("recruiter_id")
 CREATE INDEX "conversation_messages_conversation_id_idx" ON "conversation_messages"("conversation_id");
 
 -- CreateIndex
-CREATE INDEX "user_flag_events_user_id_idx" ON "user_flag_events"("user_id");
-
--- CreateIndex
-CREATE INDEX "user_flag_events_flag_idx" ON "user_flag_events"("flag");
+CREATE INDEX "conversation_messages_external_message_id_idx" ON "conversation_messages"("external_message_id");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "contractor_assignments_contractor_id_key" ON "contractor_assignments"("contractor_id");
@@ -645,6 +720,21 @@ CREATE INDEX "escalations_priority_idx" ON "escalations"("priority");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "recruiter_kpi_summaries_recruiter_id_key" ON "recruiter_kpi_summaries"("recruiter_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "connected_accounts_unipile_account_id_key" ON "connected_accounts"("unipile_account_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "connected_accounts_user_id_provider_key" ON "connected_accounts"("user_id", "provider");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "unipile_auth_attempts_nonce_key" ON "unipile_auth_attempts"("nonce");
+
+-- CreateIndex
+CREATE INDEX "unipile_auth_attempts_user_id_idx" ON "unipile_auth_attempts"("user_id");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "unipile_webhook_events_dedupe_key_key" ON "unipile_webhook_events"("dedupe_key");
 
 -- AddForeignKey
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -704,6 +794,24 @@ ALTER TABLE "recruiter_metric_snapshots" ADD CONSTRAINT "recruiter_metric_snapsh
 ALTER TABLE "recruiter_monthly_metrics" ADD CONSTRAINT "recruiter_monthly_metrics_recruiter_id_fkey" FOREIGN KEY ("recruiter_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "requirements" ADD CONSTRAINT "requirements_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "requirements" ADD CONSTRAINT "requirements_recruiter_id_fkey" FOREIGN KEY ("recruiter_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "requirement_assignments" ADD CONSTRAINT "requirement_assignments_requirement_id_fkey" FOREIGN KEY ("requirement_id") REFERENCES "requirements"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "requirement_assignments" ADD CONSTRAINT "requirement_assignments_recruiter_id_fkey" FOREIGN KEY ("recruiter_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "requirement_assignments" ADD CONSTRAINT "requirement_assignments_assigned_by_id_fkey" FOREIGN KEY ("assigned_by_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "client_demand" ADD CONSTRAINT "client_demand_client_id_fkey" FOREIGN KEY ("client_id") REFERENCES "clients"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "client_demand" ADD CONSTRAINT "client_demand_recruiter_id_fkey" FOREIGN KEY ("recruiter_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -725,15 +833,6 @@ ALTER TABLE "conversations" ADD CONSTRAINT "conversations_recruiter_id_fkey" FOR
 ALTER TABLE "conversation_messages" ADD CONSTRAINT "conversation_messages_conversation_id_fkey" FOREIGN KEY ("conversation_id") REFERENCES "conversations"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "user_flag_events" ADD CONSTRAINT "user_flag_events_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "user_flag_events" ADD CONSTRAINT "user_flag_events_set_by_recruiter_id_fkey" FOREIGN KEY ("set_by_recruiter_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "user_flag_events" ADD CONSTRAINT "user_flag_events_confirmed_by_recruiter_id_fkey" FOREIGN KEY ("confirmed_by_recruiter_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "contractor_assignments" ADD CONSTRAINT "contractor_assignments_recruiter_id_fkey" FOREIGN KEY ("recruiter_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -744,3 +843,9 @@ ALTER TABLE "escalations" ADD CONSTRAINT "escalations_owner_user_id_fkey" FOREIG
 
 -- AddForeignKey
 ALTER TABLE "recruiter_kpi_summaries" ADD CONSTRAINT "recruiter_kpi_summaries_recruiter_id_fkey" FOREIGN KEY ("recruiter_id") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "connected_accounts" ADD CONSTRAINT "connected_accounts_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "account_degradations" ADD CONSTRAINT "account_degradations_connected_account_id_fkey" FOREIGN KEY ("connected_account_id") REFERENCES "connected_accounts"("id") ON DELETE CASCADE ON UPDATE CASCADE;

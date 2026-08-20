@@ -2,7 +2,6 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
 import { config } from "./config";
 import { authRouter } from "./routes/auth.routes";
 import { leadRouter } from "./routes/lead.routes";
@@ -62,18 +61,6 @@ app.use(
 );
 app.use(express.json());
 app.use(cookieParser());
-
-// Brute-force/enumeration hardening on the two unauthenticated credential endpoints.
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: "RATE_LIMITED", message: "Too many attempts, please try again later" },
-});
-app.use("/api/auth/login", authLimiter);
-app.use("/api/auth/signup", authLimiter);
-app.use("/api/auth/forgot-password", authLimiter);
 
 // Health Check
 app.get("/health", (req, res) => {
