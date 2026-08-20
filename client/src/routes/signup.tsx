@@ -35,9 +35,19 @@ function SignupPage() {
   });
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const parsed = schema.safeParse(form);
+    // Same autofill gotcha as /login: read the real DOM values at submit
+    // time rather than trusting React state, which password managers can
+    // silently bypass.
+    const formData = new FormData(e.currentTarget);
+    const merged = {
+      name: String(formData.get("name") ?? form.name),
+      email: String(formData.get("email") ?? form.email),
+      password: String(formData.get("password") ?? form.password),
+      role: form.role,
+    };
+    const parsed = schema.safeParse(merged);
     if (!parsed.success) {
       toast.error(parsed.error.issues[0].message);
       return;
@@ -45,8 +55,13 @@ function SignupPage() {
     setLoading(true);
     try {
       await signUp(parsed.data as any);
-      toast.success("Account created successfully! Please sign in with your email and password.");
-      navigate({ to: "/login" });
+
+      // Three-step flow, always: sign up -> verify (once, ever) -> sign in.
+      // No session starts here -- /login is the only place that ever issues
+      // one, and it now refuses to until this address is verified. Neon Auth
+      // emails the verification code itself; nothing to check here.
+      toast.success("Account created. Enter the code we emailed you.");
+      navigate({ to: "/verify-email", search: { email: parsed.data.email } });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Sign-up failed");
     } finally {
@@ -72,6 +87,8 @@ function SignupPage() {
           <Label htmlFor="name">Full name</Label>
           <Input
             id="name"
+            name="name"
+            autoComplete="name"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="Sarah Jenkins"
@@ -81,6 +98,7 @@ function SignupPage() {
           <Label htmlFor="email">Work email</Label>
           <Input
             id="email"
+            name="email"
             type="email"
             autoComplete="email"
             value={form.email}
@@ -92,6 +110,7 @@ function SignupPage() {
           <Label htmlFor="password">Password</Label>
           <Input
             id="password"
+            name="password"
             type="password"
             autoComplete="new-password"
             value={form.password}

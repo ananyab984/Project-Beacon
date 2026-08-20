@@ -47,7 +47,7 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
       toast.success(
-        `Recruiter "${result.user.name}" added. Temporary password: ${result.tempPassword} — share this with them securely (no automated invite email yet).`,
+        `Recruiter "${result.user.name}" added. They can now sign up at /signup with ${result.user.email} to set their own password.`,
         { duration: 12000 },
       );
       setNewRecruiterName("");

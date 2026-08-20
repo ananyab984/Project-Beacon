@@ -17,65 +17,14 @@ import type {
   UserRole,
   WorkStatus,
 } from "@/lib/api-types";
+import { getNeonToken } from "@/lib/neon-auth";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
 
-function getAccessToken(): string | null {
-  try {
-    const raw = localStorage.getItem("g3.session.v2");
-    if (raw) {
-      const session = JSON.parse(raw);
-      return session.accessToken || `demo_token_${session.userId || "user"}`;
-    }
-  } catch {}
-  return "demo_token_user";
-}
-
-let isRefreshing = false;
-let refreshPromise: Promise<string | null> | null = null;
-
-async function refreshAccessToken(): Promise<string | null> {
-  if (isRefreshing && refreshPromise) return refreshPromise;
-
-  isRefreshing = true;
-  refreshPromise = (async () => {
-    try {
-      const raw = localStorage.getItem("g3.session.v2");
-      if (!raw) return null;
-      const session = JSON.parse(raw);
-      const refreshToken = session.refreshToken;
-      if (!refreshToken) return null;
-
-      const res = await fetch(`${API_BASE_URL}/api/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken }),
-      });
-
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (data.accessToken) {
-        session.accessToken = data.accessToken;
-        localStorage.setItem("g3.session.v2", JSON.stringify(session));
-        return data.accessToken;
-      }
-    } catch {
-      return null;
-    } finally {
-      isRefreshing = false;
-      refreshPromise = null;
-    }
-    return null;
-  })();
-
-  return refreshPromise;
-}
-
-/** Shared fetch wrapper: attaches the bearer token, builds the full URL from
- *  VITE_API_BASE_URL, auto-refreshes expired tokens silently, and normalizes
- *  errors into ApiRequestError. */
-async function request<T = any>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
-  const token = getAccessToken();
+/** Shared fetch wrapper: attaches the Neon Auth bearer token, builds the full
+ *  URL from VITE_API_BASE_URL, and normalizes errors into ApiRequestError. */
+async function request<T = any>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = await getNeonToken();
   const res = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
@@ -84,14 +33,6 @@ async function request<T = any>(path: string, options: RequestInit = {}, isRetry
       ...options.headers,
     },
   });
-
-  // If token expired (401) and not already a retry, attempt a silent token refresh and retry once
-  if (res.status === 401 && !isRetry && !path.includes("/api/auth/login") && !path.includes("/api/auth/refresh")) {
-    const newToken = await refreshAccessToken();
-    if (newToken) {
-      return request<T>(path, options, true);
-    }
-  }
 
   const isJson = res.headers.get("content-type")?.includes("application/json");
   const data = isJson ? await res.json().catch(() => ({})) : await res.text();
@@ -199,8 +140,23 @@ export const api = {
     return request(`/api/leads/${id}/activities`, { method: "POST", body: JSON.stringify(activity) });
   },
 
-  leadsExportUrl(filters: Record<string, string | undefined> = {}): string {
-    return `${API_BASE_URL}/api/leads/export${qs(filters)}`;
+  // A plain `window.open`/`<a href>` to this endpoint can't carry the Neon
+  // Auth bearer token (browsers don't let you attach headers to a bare
+  // navigation), so this fetches the CSV with auth and triggers the download
+  // client-side instead of exposing a raw URL.
+  async downloadLeadsExport(filters: Record<string, string | undefined> = {}): Promise<void> {
+    const token = await getNeonToken();
+    const res = await fetch(`${API_BASE_URL}/api/leads/export${qs(filters)}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "leads_export.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   },
 
   // -------------------- users (recruiters / contractors) --------------------
@@ -210,7 +166,7 @@ export const api = {
   },
 
   async createUser(input: { name: string; email: string; role: UserRole; workStatus?: WorkStatus; languages?: string[] }) {
-    return request<{ user: ApiUser; tempPassword: string }>("/api/users", { method: "POST", body: JSON.stringify(input) });
+    return request<{ user: ApiUser }>("/api/users", { method: "POST", body: JSON.stringify(input) });
   },
 
   async deactivateUser(id: string): Promise<{ user: ApiUser }> {

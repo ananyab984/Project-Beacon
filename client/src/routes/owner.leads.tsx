@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Trash2 } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Trash2, Table2, KanbanSquare } from "lucide-react";
 import { useMemo, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
+import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 
 export const Route = createFileRoute("/owner/leads")({
   head: () => ({
@@ -72,6 +73,7 @@ function LeadsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
+  const [mode, setMode] = useState<"table" | "board">("table");
   const pageSize = 12;
 
   const filters = useMemo(
@@ -185,6 +187,13 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to update lead"),
   });
 
+  const stageMutation = useMutation({
+    mutationFn: ({ id, stage, closureReason }: { id: string; stage: string; closureReason?: string }) =>
+      api.updateLead(id, { stage, closureReason } as Partial<ApiLead>),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
+  });
+
   const assignMutation = useMutation({
     mutationFn: ({ ids, recruiterId }: { ids: string[]; recruiterId: string }) =>
       api.bulkUpdateLeads(ids, { recruiterId }),
@@ -262,6 +271,10 @@ function LeadsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
+          <div role="tablist" aria-label="Lead view" className="inline-flex rounded-lg border border-border bg-card p-0.5">
+            <ViewTab active={mode === "table"} onClick={() => setMode("table")} label="Table" icon={Table2} />
+            <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
+          </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
         </div>
       </div>
@@ -295,7 +308,7 @@ function LeadsPage() {
       </div>
 
       {/* Bulk action bar */}
-      {selected.size > 0 && (
+      {mode === "table" && selected.size > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
           <div className="flex items-center gap-3">
             <span className="font-medium">{selected.size} selected</span>
@@ -312,7 +325,8 @@ function LeadsPage() {
               size="sm"
               className="h-8 text-xs gap-1.5"
               onClick={() => {
-                window.open(api.leadsExportUrl(filters as unknown as Record<string, string | undefined>), "_blank");
+                api.downloadLeadsExport(filters as unknown as Record<string, string | undefined>)
+                  .catch((err) => toast.error(err instanceof Error ? err.message : "Export failed"));
               }}
             >
               <Download className="h-3.5 w-3.5" /> Export
@@ -330,7 +344,18 @@ function LeadsPage() {
         </div>
       )}
 
+      {/* Board */}
+      {mode === "board" && (
+        <LeadKanbanBoard
+          leads={filtered}
+          recruiters={recruiterList}
+          isLoading={leadsQuery.isLoading}
+          onStageChange={(id, stage, closureReason) => stageMutation.mutate({ id, stage, closureReason })}
+        />
+      )}
+
       {/* Table */}
+      {mode === "table" && (
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="max-h-[68vh] overflow-auto">
           <table className="w-full text-sm">
@@ -441,6 +466,7 @@ function LeadsPage() {
           </div>
         </div>
       </div>
+      )}
 
       {/* Manual Enrichment Modal */}
       <ManualEnrichmentDialog
@@ -459,6 +485,23 @@ function LeadsPage() {
         pending={assignMutation.isPending}
       />
     </div>
+  );
+}
+
+function ViewTab({
+  active, onClick, label, icon: Icon,
+}: { active: boolean; onClick: () => void; label: string; icon: typeof Table2 }) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+        active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" /> {label}
+    </button>
   );
 }
 
