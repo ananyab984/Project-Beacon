@@ -114,6 +114,17 @@ class LeadRequest(BaseModel):
     Secondary_Languages: Optional[str] = None
     Years_of_Exp: Optional[Any] = None
     Vendor_Experience: Optional[str] = None
+    Headline: Optional[str] = None
+    About_Snippet: Optional[str] = None
+    Current_Title: Optional[str] = None
+    Tools_Software: Optional[str] = None
+    Certifications: Optional[str] = None
+    # Not a lead field -- the caller's persisted record of which canonical
+    # fields were already resolved (and by what source) on a PRIOR
+    # enrichment run for this same lead, so a second run doesn't re-spend an
+    # LLM call re-verifying something already settled. Stripped out before
+    # building the lead dict; see `run_server`'s /enrich handler below.
+    Field_Sources: Optional[Dict[str, str]] = None
 
 
 class EnrichmentResponse(BaseModel):
@@ -169,7 +180,8 @@ def run_server(host: str, port: int, config) -> None:
     def enrich_single_lead(payload: LeadRequest):
         try:
             lead_dict = payload.model_dump(exclude_unset=True)
-            result = orchestrator.process_lead(lead_dict)
+            known_field_sources = lead_dict.pop("Field_Sources", None)
+            result = orchestrator.process_lead(lead_dict, known_field_sources=known_field_sources)
             return result
         except Exception as exc:
             log.exception("Error enriching lead: %s", exc)
@@ -181,7 +193,8 @@ def run_server(host: str, port: int, config) -> None:
             results = []
             for item in payload:
                 lead_dict = item.model_dump(exclude_unset=True)
-                results.append(orchestrator.process_lead(lead_dict))
+                known_field_sources = lead_dict.pop("Field_Sources", None)
+                results.append(orchestrator.process_lead(lead_dict, known_field_sources=known_field_sources))
             duplicate_candidates = find_duplicate_candidates(
                 [r["lead"] for r in results], threshold=config.dedup_match_threshold,
             )

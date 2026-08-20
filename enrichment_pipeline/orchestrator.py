@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, TypedDict
 
 from config import Config
 from core.field_audit import audit_lead_fields
-from core.schema import CRITICAL_FIELDS, is_empty_value
+from core.schema import is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
 from llm_fallback.prompt_builder import build_targeted_prompt
@@ -27,6 +27,24 @@ from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 
 log = get_logger(__name__)
+
+# Fields where a manually-typed value is frequently just an approximation (a
+# name spelling/nickname, a rough one-item service guess picked from a
+# dropdown, a best-guess language pair) and a verified profile value is the
+# source of truth once we have it -- shared between Stage 3's deterministic
+# merge and Stage 6's LLM-verified merge below, since production evidence
+# shows many BrightData LinkedIn profiles don't return a structured
+# `skills`/`languages` section at all, making free-text LLM extraction the
+# only remaining path to correct a wrong manual guess for those leads.
+OVERRIDE_ON_VERIFIED_FIELDS = {
+    "Full_Name", "First_Name",
+    "Services", "Source_Language", "Target_Language",
+    "Secondary_Languages", "Country_of_Residence",
+}
+
+# Fields with no manual-entry equivalent -- only worth asking the LLM fallback
+# about when still empty after Stage 3's deterministic parse.
+FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications"]
 
 
 class PipelineResult(TypedDict):
@@ -58,16 +76,20 @@ class EnrichmentOrchestrator:
             "generic_llm": GenericParser(),
         }
 
-    def process_lead(self, lead_input: Dict[str, Any]) -> PipelineResult:
+    def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
         lead = dict(lead_input)
         logs: list[str] = []
-        field_sources: Dict[str, str] = {}
+        # Seed from the caller's persisted record of what was already
+        # resolved (and how) on a prior run for this same lead, so a repeat
+        # enrichment doesn't re-spend an LLM call re-verifying something
+        # already settled -- see `_unverified()` below.
+        field_sources: Dict[str, str] = dict(known_field_sources or {})
 
-        # Mark existing populated fields
+        # Mark any populated field not already carrying a known source as "existing"
         initial_audit = audit_lead_fields(lead)
         for k, v in lead.items():
-            if not is_empty_value(v):
+            if not is_empty_value(v) and k not in field_sources:
                 field_sources[k] = "existing"
 
         logs.append(f"Stage 1 Complete: Initial Enrichment Score = {initial_audit['enrichment_percentage']}% ({initial_audit['populated_count']}/{initial_audit['total_fields']} fields)")
@@ -110,28 +132,27 @@ class EnrichmentOrchestrator:
             parser = self.parsers.get(parser_name, GenericParser())
             stage3_parsed = parser.parse(profile_link, raw_scraped_data)
 
-            # Merge rules: NEVER overwrite existing data -- EXCEPT fields
-            # where a manually-typed value is frequently just an
-            # approximation (a name spelling/nickname, a rough one-item
-            # service guess picked from a dropdown, a best-guess language
-            # pair) and the scraped profile is the verified source of truth
-            # once we have it. Everything else (contact fields) keeps the
-            # strict never-overwrite rule and is instead handled by the
-            # dedicated Stage 4-6 critical-field audit/fallback below.
-            OVERRIDE_ON_VERIFIED_FIELDS = {
-                "Full_Name", "First_Name",
-                "Services", "Source_Language", "Target_Language",
-                "Secondary_Languages", "Country_of_Residence",
-            }
+            # Merge rules: NEVER overwrite existing data -- EXCEPT
+            # OVERRIDE_ON_VERIFIED_FIELDS (see module-level comment above).
+            # Everything else (contact fields) keeps the strict
+            # never-overwrite rule and is instead handled by the dedicated
+            # Stage 4-6 critical-field audit/fallback below.
             for k, v in stage3_parsed.items():
                 if is_empty_value(v):
                     continue
                 source = "brightdata" if provider_type == "brightdata" else "tavily"
                 if k in OVERRIDE_ON_VERIFIED_FIELDS:
+                    # Mark it verified even when the scraped value happens to
+                    # match the manual one -- otherwise field_sources stays
+                    # "existing" and Stage 4 would needlessly re-send an
+                    # already-confirmed field to the LLM fallback.
                     if lead.get(k) != v:
                         lead[k] = v
                         field_sources[k] = source
                         logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, verified profile overrides manual entry)")
+                    else:
+                        field_sources[k] = source
+                        logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, confirmed matches manual entry)")
                 elif is_empty_value(lead.get(k)):
                     lead[k] = v
                     field_sources[k] = source
@@ -143,28 +164,31 @@ class EnrichmentOrchestrator:
         # Stage 4: Critical Field Audit & LLM Bypass Guard
         missing_critical = post_stage3_audit["missing_critical_fields"]
 
-        # Beyond the 3 critical contact fields, also give the LLM fallback a
-        # shot at Services/language/country whenever the deterministic parser
-        # left them empty -- these are core to a linguist-outreach product
-        # and are often only stated in free text (e.g. a headline reading
-        # "English to Spanish subtitler"), not a structured field. Reuses the
-        # same verbatim-evidence-verified mechanism as the critical fields,
-        # rather than bypassing entirely just because contact info is done.
-        LLM_ENRICHABLE_FIELDS = CRITICAL_FIELDS + [
-            "Services", "Source_Language", "Target_Language",
-            "Secondary_Languages", "Country_of_Residence",
-        ]
-        missing_enrichable = [f for f in LLM_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
+        # A field counts as "still resting on an unverified manual entry" if
+        # it hasn't been confirmed by a scrape ("brightdata"/"tavily") OR by
+        # a prior LLM-verified pass ("llm_fallback", persisted by the caller
+        # via known_field_sources) -- covers a field that's still empty AND a
+        # populated-but-never-verified manual guess, while never re-asking
+        # about something already settled on an earlier run of this same
+        # lead. Many BrightData LinkedIn profiles don't return a structured
+        # skills/languages section at all (confirmed in production), so this
+        # free-text LLM pass is sometimes the only way to catch a wrong
+        # manual guess -- but only needs to run once per lead, not every time.
+        def _unverified(field: str) -> bool:
+            return field_sources.get(field) not in ("brightdata", "tavily", "llm_fallback")
 
-        if not missing_critical and not missing_enrichable:
-            # ABSOLUTE RULE: If scrapers/parsers filled every LLM-eligible field, BYPASS LLM STAGE ENTIRELY
-            msg = "Stage 4 Bypass Guard: All critical and enrichable fields are present! BYPASSING LLM FALLBACK ENTIRELY."
+        override_candidates = [f for f in OVERRIDE_ON_VERIFIED_FIELDS if _unverified(f)]
+        missing_fill_only = [f for f in FILL_ONLY_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
+        fallback_targets = list(dict.fromkeys(missing_critical + override_candidates + missing_fill_only))
+
+        if not fallback_targets:
+            # ABSOLUTE RULE: nothing left to fill or verify -- BYPASS LLM STAGE ENTIRELY
+            msg = "Stage 4 Bypass Guard: nothing left for the LLM to fill or verify! BYPASSING LLM FALLBACK ENTIRELY."
             logs.append(msg)
             log.info(msg)
         else:
             # Stage 5 & 6: Targeted LLM Fallback & Verbatim Evidence Verification
-            fallback_targets = missing_critical + [f for f in missing_enrichable if f not in missing_critical]
-            logs.append(f"Stage 4 Audit: Missing fields {fallback_targets} -> Triggering Targeted LLM Fallback")
+            logs.append(f"Stage 4 Audit: Target fields {fallback_targets} -> Triggering Targeted LLM Fallback")
 
             if self.claude and raw_source_text:
                 try:
@@ -175,7 +199,20 @@ class EnrichmentOrchestrator:
                     verified_llm = verify_against_source(llm_raw_output, raw_source_text)
 
                     for k, v in verified_llm.items():
-                        if is_empty_value(lead.get(k)) and not is_empty_value(v):
+                        if is_empty_value(v):
+                            continue
+                        if k in OVERRIDE_ON_VERIFIED_FIELDS:
+                            # Mark it settled even when the LLM-verified value
+                            # matches what's already there -- otherwise a
+                            # future re-enrichment of this same lead would
+                            # spend another Claude call re-asking about it.
+                            if lead.get(k) != v:
+                                lead[k] = v
+                                logs.append(f"Stage 6 Verified LLM: {k} = {v!r} (verified profile overrides manual entry)")
+                            else:
+                                logs.append(f"Stage 6 Verified LLM: {k} = {v!r} (confirmed matches manual entry)")
+                            field_sources[k] = "llm_fallback"
+                        elif is_empty_value(lead.get(k)):
                             lead[k] = v
                             field_sources[k] = "llm_fallback"
                             logs.append(f"Stage 6 Verified LLM: {k} = {v!r}")

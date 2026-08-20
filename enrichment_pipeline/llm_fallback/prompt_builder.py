@@ -11,6 +11,14 @@ from typing import List, Tuple
 # field is verified directly against its own value (see verifier.py).
 _YEARS_FIELD = "Years_of_Exp"
 
+# Fields our system stores as a comma-joined list -- asking for a single
+# prose string here ("French and German") would either fail the verbatim
+# check outright or, if it passed, downstream comma-splitting would treat it
+# as one malformed item. Instead these get a JSON array schema entry, each
+# element independently verbatim-verified, then joined with ", " once
+# validated (see verifier.py).
+LIST_FIELDS = {"Secondary_Languages", "Services"}
+
 
 def build_targeted_prompt(missing_fields: List[str]) -> str:
     """Build a strict anti-hallucination system prompt targeting ONLY the missing target fields."""
@@ -23,7 +31,10 @@ def build_targeted_prompt(missing_fields: List[str]) -> str:
     for field in missing_fields:
         if field == _YEARS_FIELD:
             continue
-        schema_lines.append(f'  "{field}": <string or null>,')
+        if field in LIST_FIELDS:
+            schema_lines.append(f'  "{field}": [<verbatim substrings from the text>] (empty array if none),')
+        else:
+            schema_lines.append(f'  "{field}": <string or null>,')
     schema_body = "\n".join(schema_lines).rstrip(",")
 
     return f"""You are a STRICT information-extraction system. You are given RAW text scraped from a professional profile page.
@@ -34,7 +45,8 @@ STRICT RULES — follow all of them:
 2. Do NOT guess, infer, estimate, compute, or fabricate anything.
 3. Do NOT calculate years of experience from start/end dates or education years. Only return years of experience if explicitly written in words/numbers as total experience.
 4. For Years_of_Exp specifically, include the EXACT verbatim substring from the source text that supports it. If you cannot quote it directly from the text, return null for both.
-5. For every other field, return it ONLY if the exact value you're returning appears verbatim (not paraphrased, not translated, not inferred) somewhere in the source text. Do NOT invent or normalize emails, phone numbers, languages, or services.
+5. For {", ".join(LIST_FIELDS)} specifically: return each distinct item as its own array element, exactly as it appears in the text (e.g. "French and German" in the source becomes ["French", "German"], not one combined string). Do NOT merge multiple items into a single string.
+6. For every other field, return it ONLY if the exact value you're returning appears verbatim (not paraphrased, not translated, not inferred) somewhere in the source text. Do NOT invent or normalize emails, phone numbers, languages, or services.
 
 Respond with STRICT JSON exactly matching this schema:
 {{

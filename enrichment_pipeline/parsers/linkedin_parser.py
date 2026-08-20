@@ -186,13 +186,110 @@ _KNOWN_TOOLS = [
 ]
 
 
-def _extract_tools_software(skill_names: List[str]) -> Optional[str]:
+def _extract_tools_software(text_blob: str) -> Optional[str]:
+    """Matches `_KNOWN_TOOLS` against any text blob -- the profile's skills
+    list joined into text, or its headline/About text, or both. BrightData's
+    LinkedIn dataset (confirmed in production) frequently omits a structured
+    `skills` section entirely, so a tool mentioned only in prose ("hands-on
+    with OOONA and WinCaps") still gets picked up."""
+    lowered = text_blob.lower()
     matched: List[str] = []
-    for skill in skill_names:
-        for tool in _KNOWN_TOOLS:
-            if tool.lower() in skill.lower() and tool not in matched:
-                matched.append(tool)
+    for tool in _KNOWN_TOOLS:
+        if tool.lower() in lowered and tool not in matched:
+            matched.append(tool)
     return ", ".join(matched) if matched else None
+
+
+# Canonical linguist service category -> the surface phrases/synonyms a bio
+# might use for it. Scanned against headline/About text as a deterministic
+# fallback when BrightData returns no structured `skills` list (confirmed to
+# happen for most profiles in production) -- this is what lets Stage 3 itself
+# resolve Services correctly most of the time, instead of needing the LLM
+# fallback for every single lead.
+_SERVICE_ALIASES: Dict[str, List[str]] = {
+    "Audio Description": ["audio description"],
+    "Subtitling": ["subtitling", "subtitler", "subtitles"],
+    "Closed Captioning": ["closed captioning", "closed caption"],
+    "Captioning": ["captioning"],
+    "Dubbing": ["dubbing", "dubbing artist", "dubbing director"],
+    "Voice-over": ["voice-over", "voice over", "voiceover"],
+    "Interpretation": ["interpretation", "interpreter", "interpreting"],
+    "Translation": ["translation", "translator"],
+    "Localization": ["localization", "localisation"],
+    "Transcription": ["transcription", "transcriber"],
+    "Proofreading": ["proofreading", "proofreader"],
+    "Transcreation": ["transcreation"],
+    "Copywriting": ["copywriting", "copywriter"],
+    "Linguistic QA": ["linguistic qa", "lqa"],
+    "Post-Editing": ["post-editing", "post editing", "mtpe"],
+}
+
+
+def _extract_services_from_text(text_blob: str) -> List[str]:
+    lowered = text_blob.lower()
+    matched: List[str] = []
+    for canonical, aliases in _SERVICE_ALIASES.items():
+        if canonical not in matched and any(alias in lowered for alias in aliases):
+            matched.append(canonical)
+    return matched
+
+
+# Common language names a linguist bio states a working pair in (e.g.
+# "English to Spanish subtitler", "EN<>ES", "German-English translator").
+# Sorted longest-first when compiled so e.g. "Chinese" is tried before a
+# shorter substring could partially match first.
+_KNOWN_LANGUAGES = [
+    "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
+    "Russian", "Mandarin", "Cantonese", "Chinese", "Japanese", "Korean", "Arabic",
+    "Hindi", "Bengali", "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi",
+    "Gujarati", "Punjabi", "Urdu", "Turkish", "Polish", "Swedish", "Norwegian",
+    "Danish", "Finnish", "Greek", "Hebrew", "Thai", "Vietnamese", "Indonesian",
+    "Malay", "Tagalog", "Filipino", "Ukrainian", "Czech", "Romanian", "Hungarian",
+    "Slovak", "Bulgarian", "Croatian", "Serbian",
+]
+_LANG_ALTERNATION = "|".join(sorted((re.escape(lang) for lang in _KNOWN_LANGUAGES), key=len, reverse=True))
+_LANG_PAIR_RE = re.compile(
+    rf"\b({_LANG_ALTERNATION})\s*(?:to|<>|>|-|/)\s*({_LANG_ALTERNATION})\b",
+    re.IGNORECASE,
+)
+
+
+def _canonical_language(name: str) -> str:
+    for lang in _KNOWN_LANGUAGES:
+        if lang.lower() == name.lower():
+            return lang
+    return name.title()
+
+
+def _extract_language_pair(text_blob: str) -> Optional[Tuple[str, str]]:
+    """Best-effort "source to target" extraction from free text (e.g. a
+    headline reading "English to Spanish subtitler"). Only used when a field
+    is genuinely missing -- never overrides a value already present."""
+    match = _LANG_PAIR_RE.search(text_blob)
+    if not match:
+        return None
+    return _canonical_language(match.group(1)), _canonical_language(match.group(2))
+
+
+_CERT_TOOL_ALTERNATION = "|".join(re.escape(t) for t in _KNOWN_TOOLS)
+_CERT_RE = re.compile(
+    rf"\b({_CERT_TOOL_ALTERNATION})\s+certified\b|\bcertified\s+(?:in\s+)?({_CERT_TOOL_ALTERNATION})\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_certifications_from_text(text_blob: str) -> List[str]:
+    """Catches "OOONA Certified" / "Certified in SDL Trados" style phrases in
+    free text -- a lighter-weight deterministic net for the common case,
+    still falling through to the LLM fallback for phrasing this can't catch."""
+    found: List[str] = []
+    for match in _CERT_RE.finditer(text_blob):
+        tool = match.group(1) or match.group(2)
+        canon = next((t for t in _KNOWN_TOOLS if t.lower() == tool.lower()), tool)
+        label = f"{canon} Certified"
+        if label not in found:
+            found.append(label)
+    return found
 
 
 def _extract_headline(profile: dict) -> Optional[str]:
@@ -244,6 +341,18 @@ def _extract_certifications(profile: dict, max_items: int = 5) -> Optional[str]:
         if name and str(name) not in names:
             names.append(str(name))
     return ", ".join(names[:max_items]) if names else None
+
+
+def _extract_certifications_deep(profile: dict) -> Optional[str]:
+    """Structured section first (rare, but authoritative when present); falls
+    through to a free-text pattern match against headline/About text -- most
+    BrightData LinkedIn scrapes return no structured certifications section
+    at all (confirmed in production)."""
+    structured = _extract_certifications(profile)
+    if structured:
+        return structured
+    from_text = _extract_certifications_from_text(_about_text_blob(profile))
+    return ", ".join(from_text) if from_text else None
 
 
 def _extract_vendor_experience(profile: dict) -> Optional[str]:
@@ -311,7 +420,12 @@ class LinkedInParser(BaseParser):
         if vendors:
             result["Vendor_Experience"] = vendors
 
-        # Skills & Languages
+        # Skills & Languages -- structured `skills` first when BrightData
+        # actually returns it (rare in production for this dataset), then a
+        # deterministic free-text scan of headline/About against known
+        # service categories / language names / tool names. This is what
+        # lets Stage 3 resolve these fields itself in the common case,
+        # instead of needing the LLM fallback for every single lead.
         skills = profile.get("skills")
         skill_names: List[str] = []
         if isinstance(skills, list):
@@ -320,8 +434,6 @@ class LinkedInParser(BaseParser):
         elif skills:
             result["Services"] = str(skills)
 
-        # Additional personalization material from the same scrape, that was
-        # previously parsed once (for internal regex mining) then discarded.
         headline = _extract_headline(profile)
         if headline:
             result["Headline"] = headline
@@ -334,11 +446,22 @@ class LinkedInParser(BaseParser):
         if current_title:
             result["Current_Title"] = current_title
 
-        tools = _extract_tools_software(skill_names)
+        free_text = _about_text_blob(profile)
+
+        if not result.get("Services"):
+            text_services = _extract_services_from_text(free_text)
+            if text_services:
+                result["Services"] = ", ".join(text_services)
+
+        lang_pair = _extract_language_pair(free_text)
+        if lang_pair:
+            result["Source_Language"], result["Target_Language"] = lang_pair
+
+        tools = _extract_tools_software(" ".join(skill_names) + " " + free_text)
         if tools:
             result["Tools_Software"] = tools
 
-        certifications = _extract_certifications(profile)
+        certifications = _extract_certifications_deep(profile)
         if certifications:
             result["Certifications"] = certifications
 
