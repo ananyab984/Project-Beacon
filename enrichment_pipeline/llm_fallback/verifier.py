@@ -11,10 +11,13 @@ log = get_logger(__name__)
 
 
 def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> Dict[str, Any]:
-    """Belt-and-suspenders verification.
+    """Belt-and-suspenders verification, generalized over whatever fields were
+    requested (the 3 original critical fields, plus Services/languages/
+    country when those were also targeted -- see orchestrator.py's
+    LLM_ENRICHABLE_FIELDS).
 
-    Nulls out any LLM-extracted value whose evidence quote does NOT appear verbatim
-    in the raw source text.
+    Nulls out any LLM-extracted value that doesn't verifiably appear in the
+    raw source text.
     """
     if not isinstance(llm_result, dict):
         return {}
@@ -22,7 +25,9 @@ def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> D
     src = (raw_source_text or "").lower()
     verified: Dict[str, Any] = {}
 
-    # 1. Verify Years_of_Exp
+    # 1. Verify Years_of_Exp via its dedicated evidence-quote field -- a bare
+    # integer can't be verbatim-matched against source text the way a
+    # name/language/service string can.
     years_val = llm_result.get("Years_of_Exp")
     years_quote = (llm_result.get("years_experience_evidence") or "").strip().lower()
     if years_val is not None:
@@ -35,16 +40,7 @@ def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> D
         else:
             log.warning("DISCARDING LLM Years_of_Exp=%s: evidence quote %r not found verbatim in source", years_val, years_quote)
 
-    # 2. Verify Email_Address
-    email_val = llm_result.get("Email_Address")
-    if email_val and isinstance(email_val, str):
-        if email_val.strip().lower() in src:
-            verified["Email_Address"] = email_val.strip()
-            log.info("Verified LLM Email_Address=%s in source text", email_val)
-        else:
-            log.warning("DISCARDING LLM Email_Address=%s: not found in source text", email_val)
-
-    # 3. Verify Contact_Number
+    # 2. Verify Contact_Number via digit-normalized comparison (formatting varies).
     phone_val = llm_result.get("Contact_Number")
     if phone_val and isinstance(phone_val, str):
         digits_phone = re.sub(r"[^\d+]", "", phone_val)
@@ -54,5 +50,19 @@ def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> D
             log.info("Verified LLM Contact_Number=%s in source text", phone_val)
         else:
             log.warning("DISCARDING LLM Contact_Number=%s: digits not found in source text", phone_val)
+
+    # 3. Every other requested field (Email_Address, Services, Source_Language,
+    # Target_Language, Secondary_Languages, Country_of_Residence, ...):
+    # accept only if the exact returned value appears verbatim (case-
+    # insensitive) somewhere in the source text.
+    _HANDLED = {"Years_of_Exp", "years_experience_evidence", "Contact_Number"}
+    for key, val in llm_result.items():
+        if key in _HANDLED or not val or not isinstance(val, str):
+            continue
+        if val.strip().lower() in src:
+            verified[key] = val.strip()
+            log.info("Verified LLM %s=%s in source text", key, val)
+        else:
+            log.warning("DISCARDING LLM %s=%s: not found verbatim in source text", key, val)
 
     return verified

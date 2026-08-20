@@ -57,6 +57,11 @@ class Lead:
     years_of_exp: Optional[int] = None
     vendor_experience: Optional[str] = None
     enrichment_status: Optional[str] = None
+    headline: Optional[str] = None
+    about_snippet: Optional[str] = None
+    current_title: Optional[str] = None
+    tools_software: List[str] = field(default_factory=list)
+    certifications: List[str] = field(default_factory=list)
 
     @property
     def primary_language(self) -> str:
@@ -108,6 +113,16 @@ class Lead:
             facts["years_of_experience"] = f"{self.years_of_exp} years"
         if self.vendor_experience:
             facts["current_role_or_company"] = self.vendor_experience
+        if self.current_title:
+            facts["current_title"] = self.current_title
+        if self.headline:
+            facts["headline"] = self.headline
+        if self.tools_software:
+            facts["tools_software"] = ", ".join(self.tools_software)
+        if self.certifications:
+            facts["certifications"] = ", ".join(self.certifications)
+        if self.about_snippet:
+            facts["about_snippet"] = self.about_snippet
         return facts
 
 
@@ -155,6 +170,11 @@ def from_record(rec: Dict[str, Any]) -> Lead:
         years_of_exp=_to_int(rec.get("Years_of_Exp") or rec.get("years_of_exp")),
         vendor_experience=_clean(rec.get("Vendor_Experience")) or _clean(rec.get("vendor_experience")),
         enrichment_status=_clean(rec.get("Enrichment_Status")) or _clean(rec.get("enrichment_status")),
+        headline=_clean(rec.get("Headline")) or _clean(rec.get("headline")),
+        about_snippet=_clean(rec.get("About_Snippet")) or _clean(rec.get("about_snippet")),
+        current_title=_clean(rec.get("Current_Title")) or _clean(rec.get("current_title")),
+        tools_software=_split_list(rec.get("Tools_Software") or rec.get("tools_software")),
+        certifications=_split_list(rec.get("Certifications") or rec.get("certifications")),
     )
 
 

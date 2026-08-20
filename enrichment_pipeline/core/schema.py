@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-# The 13 canonical fields from Template_ProjectBeacon.xlsx
+# The 13 canonical fields from Template_ProjectBeacon.xlsx, plus 5 additional
+# fields captured from the same LinkedIn scrape to maximize personalization
+# material (headline, About text, current title, named tools/software,
+# certifications) that was previously discarded after parsing.
 CANONICAL_FIELDS: List[str] = [
     "First_Name",
     "Full_Name",
@@ -19,6 +22,11 @@ CANONICAL_FIELDS: List[str] = [
     "Secondary_Languages",
     "Years_of_Exp",
     "Vendor_Experience",
+    "Headline",
+    "About_Snippet",
+    "Current_Title",
+    "Tools_Software",
+    "Certifications",
 ]
 
 # The 3 critical fields that determine if LLM fallback is triggered

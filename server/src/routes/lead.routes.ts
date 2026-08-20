@@ -6,7 +6,7 @@ import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from "../services/lead.service";
-import { buildEmailDraft } from "../lib/messageTemplates";
+import { buildEmailDraft, candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 
 export const leadRouter = Router();
@@ -321,7 +321,7 @@ leadRouter.post(
           leadId: lead.id,
           recruiterId: req.user!.id,
           candidateName: lead.fullName || "Candidate",
-          candidateRole: parsed.services.join(", ") || parsed.targetLanguage || "Freelance Linguist",
+          candidateRole: candidateRoleOf(parsed.services, parsed.targetLanguage),
           status: "REVIEW_NEEDED",
           subject,
           body,
@@ -336,7 +336,7 @@ leadRouter.post(
             leadId: lead.id,
             recruiterId: req.user!.id,
             candidateName: lead.fullName || "Candidate",
-            candidateRole: parsed.services.join(", ") || parsed.targetLanguage || "Freelance Linguist",
+            candidateRole: candidateRoleOf(parsed.services, parsed.targetLanguage),
             channel: "LINKEDIN",
           },
         }).catch(() => {});
@@ -434,7 +434,7 @@ leadRouter.post(
               leadId: lead.id,
               recruiterId: req.user!.id,
               candidateName: lead.fullName || "Candidate",
-              candidateRole: (row.services && row.services.length > 0) ? row.services.join(", ") : row.targetLanguage || "Freelance Linguist",
+              candidateRole: candidateRoleOf(row.services, row.targetLanguage),
               status: "REVIEW_NEEDED",
               subject,
               body,
@@ -448,7 +448,7 @@ leadRouter.post(
                 leadId: lead.id,
                 recruiterId: req.user!.id,
                 candidateName: lead.fullName || "Candidate",
-                candidateRole: (row.services && row.services.length > 0) ? row.services.join(", ") : row.targetLanguage || "Freelance Linguist",
+                candidateRole: candidateRoleOf(row.services, row.targetLanguage),
                 channel: "LINKEDIN",
               },
             }).catch(() => {});
@@ -663,7 +663,7 @@ leadRouter.patch(
     }
 
     // Auto-update Email Queue items for this lead with corrected email & enriched portfolio details
-    if (patch.identityResolved || patch.email || patch.yearsOfExperience || patch.vendorExperience || patch.targetLanguage) {
+    if (patch.identityResolved || patch.email || patch.yearsOfExperience || patch.vendorExperience || patch.targetLanguage || patch.services || patch.sourceLanguage || patch.country) {
       const items = await prisma.emailQueueItem.findMany({ where: { leadId: existing.id } });
       for (const item of items) {
         const candidateName = patch.displayName || updated.fullName || item.candidateName;

@@ -373,6 +373,13 @@ model Lead {
   targetLanguage     String?  @map("target_language")
   secondaryLanguages String[] @default([]) @map("secondary_languages")
 
+  // --- additional LinkedIn profile material, captured for draft personalization ---
+  headline       String?  @map("headline")
+  aboutSnippet   String?  @map("about_snippet")
+  currentTitle   String?  @map("current_title")
+  toolsSoftware  String[] @default([]) @map("tools_software")
+  certifications String[] @default([]) @map("certifications")
+
   // --- source + enrichment (Phase 1: Bright Data / ProZ / Claude wrapper) ---
   source                  LeadSource
   prozProfileId           String?      @map("proz_profile_id")

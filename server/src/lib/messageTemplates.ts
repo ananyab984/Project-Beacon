@@ -27,6 +27,14 @@ function languageOf(sourceLanguage: string | null, targetLanguage: string | null
   return targetLanguage?.trim() || sourceLanguage?.trim() || null;
 }
 
+/** The dashboard's "service" tag shown on a lead card / email-queue item /
+ *  conversation thread. Centralized here because six call sites across
+ *  lead.routes.ts, email-queue.routes.ts, and conversation.routes.ts used to
+ *  duplicate this exact fallback chain inline. */
+export function candidateRoleOf(services: string[] | null | undefined, targetLanguage: string | null | undefined): string {
+  return (services && services.length > 0 ? services.join(", ") : "") || targetLanguage?.trim() || "Freelance Linguist";
+}
+
 interface NameAndLanguageLead {
   fullName: string | null;
   firstName: string | null;

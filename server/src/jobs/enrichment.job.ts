@@ -1,6 +1,12 @@
 import axios from "axios";
 import { prisma } from "../prisma";
 import { config } from "../config";
+import { candidateRoleOf } from "../lib/messageTemplates";
+
+function splitToArray(val: unknown): string[] | undefined {
+  if (typeof val !== "string" || !val.trim()) return undefined;
+  return val.split(",").map((s) => s.trim()).filter(Boolean);
+}
 
 const BATCH_SIZE = 20;
 
@@ -55,6 +61,22 @@ export async function enrichLeadById(leadId: string) {
     // the random maskedLabel placeholder until this is set). fullName stays
     // untouched as the audit trail of what was actually typed at Add-Lead.
     let enrichedDisplayName = lead.displayName;
+    // These five are allowed to OVERRIDE a manually-typed value once the
+    // pipeline's Stage 3 merge (orchestrator.py) has verified a scraped
+    // LinkedIn value -- a manual dropdown pick or free-typed language is
+    // often just an approximation, same precedent as Full_Name/First_Name.
+    let enrichedServices = lead.services;
+    let enrichedSourceLanguage = lead.sourceLanguage;
+    let enrichedTargetLanguage = lead.targetLanguage;
+    let enrichedSecondaryLanguages = lead.secondaryLanguages;
+    let enrichedCountry = lead.country;
+    // Purely additive fields -- never set manually, so there's nothing to
+    // reconcile, just capture whatever the scrape found.
+    let enrichedHeadline = lead.headline;
+    let enrichedAboutSnippet = lead.aboutSnippet;
+    let enrichedCurrentTitle = lead.currentTitle;
+    let enrichedToolsSoftware = lead.toolsSoftware;
+    let enrichedCertifications = lead.certifications;
 
     if (data?.lead) {
       const el = data.lead;
@@ -67,6 +89,18 @@ export async function enrichLeadById(leadId: string) {
       if (el.Vendor_Experience) enrichedVendorExp = el.Vendor_Experience;
       const resolvedName = String(el.Full_Name || el.First_Name || "").trim();
       if (resolvedName) enrichedDisplayName = resolvedName;
+
+      if (el.Services) enrichedServices = splitToArray(el.Services) ?? enrichedServices;
+      if (el.Source_Language) enrichedSourceLanguage = el.Source_Language;
+      if (el.Target_Language) enrichedTargetLanguage = el.Target_Language;
+      if (el.Secondary_Languages) enrichedSecondaryLanguages = splitToArray(el.Secondary_Languages) ?? enrichedSecondaryLanguages;
+      if (el.Country_of_Residence) enrichedCountry = el.Country_of_Residence;
+
+      if (el.Headline) enrichedHeadline = el.Headline;
+      if (el.About_Snippet) enrichedAboutSnippet = el.About_Snippet;
+      if (el.Current_Title) enrichedCurrentTitle = el.Current_Title;
+      if (el.Tools_Software) enrichedToolsSoftware = splitToArray(el.Tools_Software) ?? enrichedToolsSoftware;
+      if (el.Certifications) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
     }
 
     const hasContact = !!(enrichedEmail || enrichedContactNumber || lead.profileLink);
@@ -84,6 +118,16 @@ export async function enrichLeadById(leadId: string) {
         yearsOfExperience: enrichedYearsOfExp,
         vendorExperience: enrichedVendorExp,
         displayName: enrichedDisplayName,
+        services: enrichedServices,
+        sourceLanguage: enrichedSourceLanguage,
+        targetLanguage: enrichedTargetLanguage,
+        secondaryLanguages: enrichedSecondaryLanguages,
+        country: enrichedCountry,
+        headline: enrichedHeadline,
+        aboutSnippet: enrichedAboutSnippet,
+        currentTitle: enrichedCurrentTitle,
+        toolsSoftware: enrichedToolsSoftware,
+        certifications: enrichedCertifications,
         identityResolved: isComplete,
         enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
         flags: flags as any,
@@ -91,6 +135,21 @@ export async function enrichLeadById(leadId: string) {
         justEnrichedUntil: isComplete ? new Date(Date.now() + 24 * 3600_000) : undefined,
       },
     });
+
+    // Keep the dashboard's service tag in sync -- previously this was only
+    // ever stamped once at Add-Lead time from the manual entry and never
+    // refreshed when enrichment corrected it (the reported bug). Only the
+    // tag is touched here, never subject/body -- redrafting stays a
+    // deliberate, recruiter-triggered action via generate-draft.
+    const candidateRole = candidateRoleOf(enrichedServices, enrichedTargetLanguage);
+    await prisma.emailQueueItem.updateMany({
+      where: { leadId: lead.id },
+      data: { candidateRole },
+    }).catch(() => {});
+    await prisma.conversation.updateMany({
+      where: { leadId: lead.id },
+      data: { candidateRole },
+    }).catch(() => {});
   } catch (err: any) {
     console.error(`[enrichment.job] lead ${lead.id} enrichment call failed, reverting to PENDING for retry:`, err?.message || err);
     // Never mark a failed call as enriched -- put it back in the queue so

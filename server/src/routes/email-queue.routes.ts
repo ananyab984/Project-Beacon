@@ -8,7 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { config } from "../config";
 import { UnipileService } from "../services/unipile.service";
-import { buildEmailDraft } from "../lib/messageTemplates";
+import { buildEmailDraft, candidateRoleOf } from "../lib/messageTemplates";
 
 export const emailQueueRouter = Router();
 
@@ -65,7 +65,7 @@ emailQueueRouter.post(
         leadId: lead.id,
         recruiterId: req.user!.id,
         candidateName: lead.displayName || lead.fullName || "Candidate",
-        candidateRole: lead.services.join(", ") || lead.targetLanguage || "Freelance Linguist",
+        candidateRole: candidateRoleOf(lead.services, lead.targetLanguage),
         status: "REVIEW_NEEDED",
         subject: draft.subject,
         body: draft.body,
@@ -133,6 +133,11 @@ emailQueueRouter.post(
             Years_of_Exp: item.lead.yearsOfExperience ? item.lead.yearsOfExperience.toNumber() : null,
             Vendor_Experience: item.lead.vendorExperience,
             Enrichment_Status: item.lead.enrichmentStatus,
+            Headline: item.lead.headline,
+            About_Snippet: item.lead.aboutSnippet,
+            Current_Title: item.lead.currentTitle,
+            Tools_Software: item.lead.toolsSoftware.join(", "),
+            Certifications: item.lead.certifications.join(", "),
           },
           channel: "email",
         },
