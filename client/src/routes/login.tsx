@@ -66,10 +66,15 @@ function LoginPage() {
     } catch (err: any) {
       if (err?.code === "NO_PROFILE") {
         setNeedsSetupEmail(err.email ?? parsed.data.email);
-      } else if (err?.code === "EMAIL_NOT_VERIFIED" || err?.status === 403) {
+      } else if (err?.code === "EMAIL_NOT_VERIFIED") {
         setUnverifiedEmail(err.email ?? parsed.data.email);
       } else {
-        toast.error(err instanceof Error ? err.message : "Sign-in failed");
+        // Was previously also treating any 403 as "email not verified" --
+        // that was a guess (never confirmed against Neon's actual error
+        // code) and it can misfire on an unrelated 403, showing the wrong
+        // message and masking the real one. Show what Neon actually said.
+        const suffix = err?.code ? ` (${err.code})` : "";
+        toast.error(err instanceof Error ? `${err.message}${suffix}` : "Sign-in failed");
       }
     } finally {
       setLoading(false);

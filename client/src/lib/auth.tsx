@@ -80,37 +80,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isHydrating, setIsHydrating] = useState(true);
   const [needsRoleSetup, setNeedsRoleSetup] = useState(false);
 
-  /** Given an active Neon Auth session, resolve (or auto-link) the app profile. */
-  const resolveProfile = useCallback(async (): Promise<AuthUser | null> => {
-    const token = await getNeonToken();
-    if (!token) return null;
-
-    const result = await fetchAppProfile(token);
-    if (result !== "NO_PROFILE") {
-      setNeedsRoleSetup(false);
-      return result;
+  /**
+   * Given an active Neon Auth session, resolve (or auto-link) the app
+   * profile. Returns a discriminated result rather than null-for-everything
+   * so a genuine "never set up" case can't be confused with "the token/
+   * network call itself failed" -- collapsing those together was the exact
+   * bug that made real failures show up as a misleading "not set up yet"
+   * screen with no way to tell what actually went wrong.
+   */
+  const resolveProfile = useCallback(async (): Promise<
+    { status: "ok"; user: AuthUser } | { status: "no_profile" } | { status: "error"; detail: string }
+  > => {
+    const { token, errorDetail } = await getNeonTokenResult();
+    if (!token) {
+      return { status: "error", detail: `Couldn't get a session token from Neon Auth: ${errorDetail || "unknown reason"}` };
     }
 
+    const result = await fetchAppProfile(token);
+    if (result === null) {
+      return { status: "error", detail: "Couldn't reach Global3's server to check your account. Check the browser console for details." };
+    }
+    if (result !== "NO_PROFILE") {
+      return { status: "ok", user: result };
+    }
+
+    // No profile yet -- try to auto-link using the role picked at signup,
+    // in case the immediate post-verification attempt (see verifyEmailOtp)
+    // didn't get a chance to run or failed transiently.
     const { data: sessionData } = await authClient.getSession();
     const email = sessionData?.user?.email;
     const pendingRole = email ? (sessionStorage.getItem(pendingRoleKey(email)) as Role | null) : null;
 
     if (email && pendingRole) {
-      const linked = await postProfile(token, { role: pendingRole });
-      sessionStorage.removeItem(pendingRoleKey(email));
-      setNeedsRoleSetup(false);
-      return linked;
+      try {
+        const linked = await postProfile(token, { role: pendingRole });
+        sessionStorage.removeItem(pendingRoleKey(email));
+        return { status: "ok", user: linked };
+      } catch (err) {
+        return { status: "error", detail: err instanceof Error ? err.message : "Could not finish setting up your profile" };
+      }
     }
 
-    setNeedsRoleSetup(true);
-    return null;
+    return { status: "no_profile" };
   }, []);
 
   useEffect(() => {
     (async () => {
       try {
         const { data } = await authClient.getSession();
-        if (data?.user) setUser(await resolveProfile());
+        if (data?.user) {
+          const resolution = await resolveProfile();
+          if (resolution.status === "ok") setUser(resolution.user);
+          setNeedsRoleSetup(resolution.status === "no_profile");
+        }
       } finally {
         setIsHydrating(false);
       }
@@ -126,15 +148,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw toError(error.message || "Invalid email or password", { code: error.code, status: error.status, email });
     }
 
-    const profile = await resolveProfile();
-    if (!profile) {
-      throw toError("This account isn't set up in Global3 yet. Choose a role to finish setting up.", {
-        code: "NO_PROFILE",
-        email,
-      });
+    const resolution = await resolveProfile();
+    if (resolution.status === "ok") {
+      setNeedsRoleSetup(false);
+      setUser(resolution.user);
+      return resolution.user;
     }
-    setUser(profile);
-    return profile;
+    if (resolution.status === "no_profile") {
+      setNeedsRoleSetup(true);
+      throw toError("This account isn't set up in Global3 yet. Choose a role to finish setting up.", { code: "NO_PROFILE", email });
+    }
+    setNeedsRoleSetup(false);
+    throw toError(resolution.detail, { code: "PROFILE_CHECK_FAILED", email });
   }, [resolveProfile]);
 
   const signUp = useCallback(async ({ name, email, password, role }: { name: string; email: string; password: string; role: Role }) => {
