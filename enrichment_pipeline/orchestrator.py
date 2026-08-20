@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional, TypedDict
 
 from config import Config
 from core.field_audit import audit_lead_fields
-from core.schema import is_empty_value
+from core.schema import CRITICAL_FIELDS, is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
 from llm_fallback.prompt_builder import build_targeted_prompt
@@ -70,7 +70,7 @@ class EnrichmentOrchestrator:
             if not is_empty_value(v):
                 field_sources[k] = "existing"
 
-        logs.append(f"Stage 1 Complete: Initial Enrichment Score = {initial_audit['enrichment_percentage']}% ({initial_audit['populated_count']}/13 fields)")
+        logs.append(f"Stage 1 Complete: Initial Enrichment Score = {initial_audit['enrichment_percentage']}% ({initial_audit['populated_count']}/{initial_audit['total_fields']} fields)")
         log.info("Lead %s baseline score: %d%%", lead.get("Full_Name") or lead.get("Profile_Link") or "unnamed", initial_audit["enrichment_percentage"])
 
         # Stage 2: Source Router (based strictly on explicit Source dropdown value)
@@ -110,24 +110,28 @@ class EnrichmentOrchestrator:
             parser = self.parsers.get(parser_name, GenericParser())
             stage3_parsed = parser.parse(profile_link, raw_scraped_data)
 
-            # Merge rules: NEVER overwrite existing data -- EXCEPT the
-            # person's own name. Full_Name/First_Name are always non-empty by
-            # the time a lead reaches here (required at Add-Lead), so the
-            # never-overwrite rule would otherwise permanently discard the
-            # name actually scraped off the profile the lead points to. A
-            # manually-typed name is frequently an approximation (spelling
-            # variant, nickname, partial); the scraped profile is the source
-            # of truth once we have it, so it wins.
-            NAME_FIELDS = {"Full_Name", "First_Name"}
+            # Merge rules: NEVER overwrite existing data -- EXCEPT fields
+            # where a manually-typed value is frequently just an
+            # approximation (a name spelling/nickname, a rough one-item
+            # service guess picked from a dropdown, a best-guess language
+            # pair) and the scraped profile is the verified source of truth
+            # once we have it. Everything else (contact fields) keeps the
+            # strict never-overwrite rule and is instead handled by the
+            # dedicated Stage 4-6 critical-field audit/fallback below.
+            OVERRIDE_ON_VERIFIED_FIELDS = {
+                "Full_Name", "First_Name",
+                "Services", "Source_Language", "Target_Language",
+                "Secondary_Languages", "Country_of_Residence",
+            }
             for k, v in stage3_parsed.items():
                 if is_empty_value(v):
                     continue
                 source = "brightdata" if provider_type == "brightdata" else "tavily"
-                if k in NAME_FIELDS:
+                if k in OVERRIDE_ON_VERIFIED_FIELDS:
                     if lead.get(k) != v:
                         lead[k] = v
                         field_sources[k] = source
-                        logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, verified name overrides manual entry)")
+                        logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, verified profile overrides manual entry)")
                 elif is_empty_value(lead.get(k)):
                     lead[k] = v
                     field_sources[k] = source
@@ -139,18 +143,32 @@ class EnrichmentOrchestrator:
         # Stage 4: Critical Field Audit & LLM Bypass Guard
         missing_critical = post_stage3_audit["missing_critical_fields"]
 
-        if not missing_critical:
-            # ABSOLUTE RULE: If scrapers/parsers filled all critical fields, BYPASS LLM STAGE ENTIRELY
-            msg = "Stage 4 Bypass Guard: All critical fields (Years_of_Exp, Contact_Number, Email_Address) are present! BYPASSING LLM FALLBACK ENTIRELY."
+        # Beyond the 3 critical contact fields, also give the LLM fallback a
+        # shot at Services/language/country whenever the deterministic parser
+        # left them empty -- these are core to a linguist-outreach product
+        # and are often only stated in free text (e.g. a headline reading
+        # "English to Spanish subtitler"), not a structured field. Reuses the
+        # same verbatim-evidence-verified mechanism as the critical fields,
+        # rather than bypassing entirely just because contact info is done.
+        LLM_ENRICHABLE_FIELDS = CRITICAL_FIELDS + [
+            "Services", "Source_Language", "Target_Language",
+            "Secondary_Languages", "Country_of_Residence",
+        ]
+        missing_enrichable = [f for f in LLM_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
+
+        if not missing_critical and not missing_enrichable:
+            # ABSOLUTE RULE: If scrapers/parsers filled every LLM-eligible field, BYPASS LLM STAGE ENTIRELY
+            msg = "Stage 4 Bypass Guard: All critical and enrichable fields are present! BYPASSING LLM FALLBACK ENTIRELY."
             logs.append(msg)
             log.info(msg)
         else:
             # Stage 5 & 6: Targeted LLM Fallback & Verbatim Evidence Verification
-            logs.append(f"Stage 4 Audit: Missing critical fields {missing_critical} -> Triggering Targeted LLM Fallback")
+            fallback_targets = missing_critical + [f for f in missing_enrichable if f not in missing_critical]
+            logs.append(f"Stage 4 Audit: Missing fields {fallback_targets} -> Triggering Targeted LLM Fallback")
 
             if self.claude and raw_source_text:
                 try:
-                    system_prompt = build_targeted_prompt(missing_critical)
+                    system_prompt = build_targeted_prompt(fallback_targets)
                     llm_raw_output = self.claude.extract_critical_fields(system_prompt, raw_source_text)
 
                     # Stage 6: Verbatim Evidence Verification

@@ -172,6 +172,80 @@ def _extract_years_of_experience(profile: dict) -> Optional[int]:
     return None
 
 
+# Known linguist-industry tools/software -- matched case-insensitively
+# against the profile's `skills` list to surface a concrete, named detail
+# (e.g. "OOONA", "WinCaps") separately from the broad `Services` category
+# list, since a named tool is far stronger personalization material than a
+# generic service category. Purely additive: `Services` keeps its existing
+# full-skills-list behavior unchanged.
+_KNOWN_TOOLS = [
+    "OOONA", "WinCaps", "EZTitles", "Subtitle Edit", "Aegisub",
+    "SDL Trados", "Trados", "memoQ", "MemoQ", "Wordfast", "Phrase",
+    "Memsource", "VoiceQ", "Pro Tools", "Adobe Audition", "Reaper",
+    "Annotation Edit", "Subtitle Workshop", "CaptionHub", "Amara",
+]
+
+
+def _extract_tools_software(skill_names: List[str]) -> Optional[str]:
+    matched: List[str] = []
+    for skill in skill_names:
+        for tool in _KNOWN_TOOLS:
+            if tool.lower() in skill.lower() and tool not in matched:
+                matched.append(tool)
+    return ", ".join(matched) if matched else None
+
+
+def _extract_headline(profile: dict) -> Optional[str]:
+    headline = profile.get("headline") or profile.get("position") or profile.get("title")
+    return str(headline).strip() if headline else None
+
+
+def _extract_about_snippet(profile: dict, max_chars: int = 280) -> Optional[str]:
+    """A short, personalization-usable excerpt of the profile's About/summary
+    text -- distinct from `_about_text_blob`, which mixes in headline/bio and
+    is used only for internal regex mining, not surfaced as a fact itself."""
+    text = str(profile.get("about") or profile.get("summary") or profile.get("summary_text") or "").strip()
+    if not text:
+        return None
+    text = " ".join(text.split())
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars].rsplit(" ", 1)[0]
+    return truncated + "..."
+
+
+def _extract_current_title(profile: dict) -> Optional[str]:
+    curr = profile.get("current_company")
+    if isinstance(curr, dict):
+        title = curr.get("title") or curr.get("position")
+        if title:
+            return str(title).strip()
+
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if isinstance(exp_list, list) and len(exp_list) > 0 and isinstance(exp_list[0], dict):
+        title = exp_list[0].get("title") or exp_list[0].get("position")
+        if title:
+            return str(title).strip()
+    return None
+
+
+def _extract_certifications(profile: dict, max_items: int = 5) -> Optional[str]:
+    certs = (
+        profile.get("certifications")
+        or profile.get("licenses_and_certifications")
+        or profile.get("licenses")
+        or profile.get("courses")
+    )
+    if not isinstance(certs, list):
+        return None
+    names = []
+    for item in certs:
+        name = item.get("title") or item.get("name") if isinstance(item, dict) else str(item)
+        if name and str(name) not in names:
+            names.append(str(name))
+    return ", ".join(names[:max_items]) if names else None
+
+
 def _extract_vendor_experience(profile: dict) -> Optional[str]:
     """Extract company/vendor experience portfolio."""
     companies = []
@@ -239,11 +313,34 @@ class LinkedInParser(BaseParser):
 
         # Skills & Languages
         skills = profile.get("skills")
+        skill_names: List[str] = []
         if isinstance(skills, list):
-            names = [s.get("name") if isinstance(s, dict) else str(s) for s in skills if s]
-            result["Services"] = ", ".join([n for n in names if n])
+            skill_names = [str(s.get("name")) if isinstance(s, dict) and s.get("name") else str(s) for s in skills if s]
+            result["Services"] = ", ".join([n for n in skill_names if n])
         elif skills:
             result["Services"] = str(skills)
+
+        # Additional personalization material from the same scrape, that was
+        # previously parsed once (for internal regex mining) then discarded.
+        headline = _extract_headline(profile)
+        if headline:
+            result["Headline"] = headline
+
+        about_snippet = _extract_about_snippet(profile)
+        if about_snippet:
+            result["About_Snippet"] = about_snippet
+
+        current_title = _extract_current_title(profile)
+        if current_title:
+            result["Current_Title"] = current_title
+
+        tools = _extract_tools_software(skill_names)
+        if tools:
+            result["Tools_Software"] = tools
+
+        certifications = _extract_certifications(profile)
+        if certifications:
+            result["Certifications"] = certifications
 
         return result
 

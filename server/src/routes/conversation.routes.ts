@@ -9,6 +9,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { config } from "../config";
 import { UnipileService } from "../services/unipile.service";
+import { candidateRoleOf } from "../lib/messageTemplates";
 
 export const conversationRouter = Router();
 
@@ -95,7 +96,7 @@ conversationRouter.post(
         // displayName (the enrichment-verified name) wins once it exists --
         // fullName is just whatever was typed at Add-Lead time.
         candidateName: lead.displayName || lead.fullName || "Candidate",
-        candidateRole: lead.services.join(", ") || lead.targetLanguage || "Freelance Linguist",
+        candidateRole: candidateRoleOf(lead.services, lead.targetLanguage),
         channel: ConversationChannel.LINKEDIN,
         unread: false,
       },

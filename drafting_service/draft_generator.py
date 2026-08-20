@@ -42,6 +42,32 @@ class Draft:
     rate_flag: Optional[str] = None
 
 
+_SPECIFICITY_RETRY_NOTE = (
+    "Your previous draft didn't reference any specific named fact (a tool, certification, "
+    "current title, or employer) even though one was available in LEAD FACTS. Regenerate "
+    "the draft and this time explicitly name at least one of them, per the HARD REQUIREMENT "
+    "rule above."
+)
+
+
+def _specific_fact_strings(lead: Lead) -> list[str]:
+    """Concrete, named facts a draft can point to -- used to verify the model
+    actually cited something specific rather than only a generic category."""
+    facts: list[str] = []
+    facts.extend(lead.tools_software)
+    facts.extend(lead.certifications)
+    if lead.current_title:
+        facts.append(lead.current_title)
+    if lead.vendor_experience:
+        facts.extend(c.strip() for c in lead.vendor_experience.split(",") if c.strip())
+    return [f for f in facts if f]
+
+
+def _has_specific_fact(body: str, facts: list[str]) -> bool:
+    lowered = body.lower()
+    return any(f.lower() in lowered for f in facts)
+
+
 def _ensure_links(body: str, channel: str) -> str:
     """Guardrail: make sure the canonical brand links survived generation.
 
@@ -68,6 +94,19 @@ def generate_email(client: ClaudeClient, cfg: Config, lead: Lead, rate_match: Op
         temperature=cfg.gen_temperature, json_mode=True, max_tokens=900,
     )
     data = _parse(completion.text)
+
+    specific_facts = _specific_fact_strings(lead)
+    if specific_facts and not _has_specific_fact(data.get("body") or "", specific_facts):
+        log.warning("Email draft for %s cited no specific fact from %s -- regenerating once", lead.first_name, specific_facts)
+        retry_user = f"{user}\n\n{_SPECIFICITY_RETRY_NOTE}"
+        completion = client.chat(
+            system, retry_user, model=cfg.gen_model,
+            temperature=cfg.gen_temperature, json_mode=True, max_tokens=900,
+        )
+        data = _parse(completion.text)
+        if not _has_specific_fact(data.get("body") or "", specific_facts):
+            log.warning("Retry for %s still cited no specific fact; keeping it as best-effort", lead.first_name)
+
     subject = (data.get("subject") or f"Freelance partnership with {pb.BRAND['company']}").strip()
     body = _ensure_links((data.get("body") or "").strip(), "email")
     return Draft(
@@ -86,6 +125,19 @@ def generate_linkedin(client: ClaudeClient, cfg: Config, lead: Lead, rate_match:
         temperature=cfg.gen_temperature, json_mode=True, max_tokens=400,
     )
     data = _parse(completion.text)
+
+    specific_facts = _specific_fact_strings(lead)
+    if specific_facts and not _has_specific_fact(data.get("body") or "", specific_facts):
+        log.warning("LinkedIn draft for %s cited no specific fact from %s -- regenerating once", lead.first_name, specific_facts)
+        retry_user = f"{user}\n\n{_SPECIFICITY_RETRY_NOTE}"
+        completion = client.chat(
+            system, retry_user, model=cfg.gen_model,
+            temperature=cfg.gen_temperature, json_mode=True, max_tokens=400,
+        )
+        data = _parse(completion.text)
+        if not _has_specific_fact(data.get("body") or "", specific_facts):
+            log.warning("Retry for %s still cited no specific fact; keeping it as best-effort", lead.first_name)
+
     body = _ensure_links((data.get("body") or "").strip(), "linkedin")
     return Draft(
         channel="linkedin", lead=lead, subject=None, body=body,

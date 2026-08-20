@@ -34,9 +34,21 @@ salesy buzzwords, no exaggerated claims.
 STRICT RULES:
 - Use ONLY the facts provided in LEAD FACTS below. Do NOT invent achievements, employers,
   projects, credentials, rates, or numbers that are not explicitly listed there.
-- If LEAD FACTS includes years of experience, services, languages, country, or current
-  role/company, weave the ones that are actually present naturally into the opening --
-  do not list every fact mechanically, and do not mention a fact that is not in LEAD FACTS.
+- HARD REQUIREMENT — specificity: if LEAD FACTS contains any concrete, named detail --
+  tools_software, certifications, current_title, headline, or a named company inside
+  current_role_or_company -- the opening MUST name at least one of them explicitly.
+  A draft that only paraphrases generically ("your experience in subtitling") when a
+  specific tool, employer, or certification is available in LEAD FACTS is NOT acceptable.
+  Weak (do not do this): "believe your background in subtitling would be a strong asset."
+  Strong (do this instead): "particularly your hands-on experience with OOONA and WinCaps
+  at Sfera Studios." Prefer the specific named fact over the generic category whenever
+  one is present.
+- If LEAD FACTS includes years of experience, services, languages, country, current
+  role/company, or the specificity facts above, weave the ones that are actually present
+  naturally into the opening -- do not list every fact mechanically, and do not mention a
+  fact that is not in LEAD FACTS.
+- about_snippet, when present, is background context for tone/angle only -- pull at most
+  one short specific phrase from it if useful; never quote it at length.
 - If a fact is absent from LEAD FACTS, simply don't mention it -- never guess, estimate,
   or use a generic placeholder in its place.
 - NEVER fabricate, invent, or guess a rate figure. Rates are cited ONLY if provided in RATE CONTEXT.
@@ -44,6 +56,8 @@ STRICT RULES:
 - Keep {BRAND['company']}'s structure, links and sign-off intact:
   site {BRAND['site']}, apply portal {BRAND['apply_url']}.
 - Exactly ONE clear, low-friction call to action.
+- Before returning, verify: (1) at least one concrete named fact is used if one exists in
+  LEAD FACTS, (2) no invented facts, (3) exactly one CTA, (4) structure/links/sign-off intact.
 - Return STRICT JSON only — no markdown, no commentary outside the JSON."""
 
 # --- Approved reference templates (the pattern every draft must follow) -----
@@ -98,7 +112,10 @@ CHANNEL: Email (long-form, {EMAIL_WORD_TARGET}).
 Must include: a personalized opening naturally referencing whichever LEAD FACTS are
 present (language, services, years of experience, current role/company -- only the
 ones actually listed above), {BRAND['site']}, the apply portal link {BRAND['apply_url']},
-the contact {BRAND['contact_email']}, and the sign-off "Resources Team".
+the contact {BRAND['contact_email']}, and the sign-off "Resources Team". If LEAD FACTS
+contains a concrete named detail (tools_software, certifications, current_title,
+headline, or a company name), the opening must name at least one of them -- not only
+the broad service category.
 
 PATTERN TO FOLLOW (this is the approved structure -- match its shape, tone, links,
 and sign-off; personalize the opening sentence with the real LEAD FACTS instead of
@@ -127,10 +144,14 @@ CHANNEL: LinkedIn connection note ({LINKEDIN_CHAR_TARGET}).
 CRITICAL REQUIREMENT: Total text length MUST NOT EXCEED 200 CHARACTERS, including the
 apply link. No subject line.
 
-PRIORITY: If years of experience is present in LEAD FACTS, it MUST be worked into the
-note (e.g. "10 yrs in Dubbing") even briefly -- this is the single most important fact
-to keep if something has to be cut for length. Prefer short numerals/abbreviations
-("10 yrs", "German dubbing") over full sentences to stay under the cap.
+PRIORITY (in order, given the tight character budget): 1) years of experience, if
+present, MUST be worked into the note (e.g. "10 yrs in Dubbing") even briefly -- this is
+the single most important fact to keep if something has to be cut for length; 2) if room
+remains, prefer naming ONE concrete detail (a tool from tools_software, a certification,
+or current_title) over a generic service category -- e.g. "10 yrs, OOONA-certified"
+beats "10 yrs in subtitling" when both fit; 3) generic service category last, only if
+there's still room. Prefer short numerals/abbreviations ("10 yrs", "German dubbing")
+over full sentences to stay under the cap.
 
 PATTERN TO FOLLOW (this is the approved structure -- match its shape and links;
 personalize using the real LEAD FACTS instead of the bracketed placeholders,
