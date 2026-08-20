@@ -48,6 +48,16 @@ export async function enrichLeadById(leadId: string) {
         Years_of_Exp: lead.yearsOfExperience ? lead.yearsOfExperience.toNumber() : undefined,
         Vendor_Experience: lead.vendorExperience,
         Source: lead.source || "LinkedIn",
+        Headline: lead.headline,
+        About_Snippet: lead.aboutSnippet,
+        Current_Title: lead.currentTitle,
+        Tools_Software: lead.toolsSoftware.join(", "),
+        Certifications: lead.certifications.join(", "),
+        // Round-trips what was already resolved (and by what source) on a
+        // prior run, so the pipeline doesn't re-spend an LLM call
+        // re-verifying something already settled -- see orchestrator.py's
+        // `_unverified()`.
+        Field_Sources: lead.fieldSources ?? undefined,
       },
       { timeout: 30_000 }
     );
@@ -128,6 +138,7 @@ export async function enrichLeadById(leadId: string) {
         currentTitle: enrichedCurrentTitle,
         toolsSoftware: enrichedToolsSoftware,
         certifications: enrichedCertifications,
+        fieldSources: (data?.field_sources ?? lead.fieldSources) as any,
         identityResolved: isComplete,
         enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
         flags: flags as any,

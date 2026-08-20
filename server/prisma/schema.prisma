@@ -379,6 +379,12 @@ model Lead {
   currentTitle   String?  @map("current_title")
   toolsSoftware  String[] @default([]) @map("tools_software")
   certifications String[] @default([]) @map("certifications")
+  // Which canonical enrichment fields were resolved, and by what source
+  // ("brightdata" | "tavily" | "llm_fallback" | "existing") -- round-tripped
+  // to the enrichment_pipeline on every enrichLeadById call so a repeat
+  // enrichment of the same lead doesn't re-spend an LLM call re-verifying
+  // something already settled.
+  fieldSources Json? @map("field_sources")
 
   // --- source + enrichment (Phase 1: Bright Data / ProZ / Claude wrapper) ---
   source                  LeadSource

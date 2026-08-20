@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict
 
+from llm_fallback.prompt_builder import LIST_FIELDS
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -51,11 +52,31 @@ def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> D
         else:
             log.warning("DISCARDING LLM Contact_Number=%s: digits not found in source text", phone_val)
 
-    # 3. Every other requested field (Email_Address, Services, Source_Language,
-    # Target_Language, Secondary_Languages, Country_of_Residence, ...):
-    # accept only if the exact returned value appears verbatim (case-
-    # insensitive) somewhere in the source text.
-    _HANDLED = {"Years_of_Exp", "years_experience_evidence", "Contact_Number"}
+    # 3. LIST_FIELDS (Secondary_Languages, Services): expect a JSON array,
+    # each element independently verbatim-verified, then joined with ", " --
+    # storing a single unverified prose string ("French and German") would
+    # break downstream comma-splitting into a malformed one-item list.
+    for key in LIST_FIELDS:
+        items = llm_result.get(key)
+        if not isinstance(items, list):
+            continue
+        verified_items = []
+        for item in items:
+            if not item or not isinstance(item, str):
+                continue
+            if item.strip().lower() in src and item.strip() not in verified_items:
+                verified_items.append(item.strip())
+            else:
+                log.warning("DISCARDING LLM %s item=%s: not found verbatim in source text", key, item)
+        if verified_items:
+            verified[key] = ", ".join(verified_items)
+            log.info("Verified LLM %s=%s in source text", key, verified[key])
+
+    # 4. Every other requested field (Email_Address, Source_Language,
+    # Target_Language, Country_of_Residence, Current_Title, ...): accept only
+    # if the exact returned value appears verbatim (case-insensitive)
+    # somewhere in the source text.
+    _HANDLED = {"Years_of_Exp", "years_experience_evidence", "Contact_Number", *LIST_FIELDS}
     for key, val in llm_result.items():
         if key in _HANDLED or not val or not isinstance(val, str):
             continue
