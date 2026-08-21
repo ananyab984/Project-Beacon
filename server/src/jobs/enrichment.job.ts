@@ -53,6 +53,8 @@ export async function enrichLeadById(leadId: string) {
         Current_Title: lead.currentTitle,
         Tools_Software: lead.toolsSoftware.join(", "),
         Certifications: lead.certifications.join(", "),
+        Experience_History: lead.experienceHistory,
+        Full_Profile_Context: lead.fullProfileContext,
         // Round-trips what was already resolved (and by what source) on a
         // prior run, so the pipeline doesn't re-spend an LLM call
         // re-verifying something already settled -- see orchestrator.py's
@@ -87,6 +89,8 @@ export async function enrichLeadById(leadId: string) {
     let enrichedCurrentTitle = lead.currentTitle;
     let enrichedToolsSoftware = lead.toolsSoftware;
     let enrichedCertifications = lead.certifications;
+    let enrichedExperienceHistory = lead.experienceHistory;
+    let enrichedFullProfileContext = lead.fullProfileContext;
 
     if (data?.lead) {
       const el = data.lead;
@@ -111,6 +115,8 @@ export async function enrichLeadById(leadId: string) {
       if (el.Current_Title) enrichedCurrentTitle = el.Current_Title;
       if (el.Tools_Software) enrichedToolsSoftware = splitToArray(el.Tools_Software) ?? enrichedToolsSoftware;
       if (el.Certifications) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
+      if (el.Experience_History) enrichedExperienceHistory = el.Experience_History;
+      if (el.Full_Profile_Context) enrichedFullProfileContext = el.Full_Profile_Context;
     }
 
     const hasContact = !!(enrichedEmail || enrichedContactNumber || lead.profileLink);
@@ -138,6 +144,8 @@ export async function enrichLeadById(leadId: string) {
         currentTitle: enrichedCurrentTitle,
         toolsSoftware: enrichedToolsSoftware,
         certifications: enrichedCertifications,
+        experienceHistory: enrichedExperienceHistory,
+        fullProfileContext: enrichedFullProfileContext,
         fieldSources: (data?.field_sources ?? lead.fieldSources) as any,
         identityResolved: isComplete,
         enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",

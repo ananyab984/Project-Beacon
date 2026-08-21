@@ -27,6 +27,7 @@ CANONICAL_FIELDS: List[str] = [
     "Current_Title",
     "Tools_Software",
     "Certifications",
+    "Experience_History",
 ]
 
 # The 3 critical fields that determine if LLM fallback is triggered

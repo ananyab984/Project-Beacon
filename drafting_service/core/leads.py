@@ -62,6 +62,8 @@ class Lead:
     current_title: Optional[str] = None
     tools_software: List[str] = field(default_factory=list)
     certifications: List[str] = field(default_factory=list)
+    experience_history: Optional[str] = None
+    full_profile_context: Optional[str] = None
 
     @property
     def primary_language(self) -> str:
@@ -123,6 +125,8 @@ class Lead:
             facts["certifications"] = ", ".join(self.certifications)
         if self.about_snippet:
             facts["about_snippet"] = self.about_snippet
+        if self.experience_history:
+            facts["experience_history"] = self.experience_history
         return facts
 
 
@@ -175,6 +179,8 @@ def from_record(rec: Dict[str, Any]) -> Lead:
         current_title=_clean(rec.get("Current_Title")) or _clean(rec.get("current_title")),
         tools_software=_split_list(rec.get("Tools_Software") or rec.get("tools_software")),
         certifications=_split_list(rec.get("Certifications") or rec.get("certifications")),
+        experience_history=_clean(rec.get("Experience_History")) or _clean(rec.get("experience_history")),
+        full_profile_context=_clean(rec.get("Full_Profile_Context")) or _clean(rec.get("full_profile_context")),
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Optional
 
+from parsers._context_utils import strip_page_boilerplate
 from parsers.base import BaseParser
 
 
@@ -37,6 +38,13 @@ class AtaParser(BaseParser):
         record["Country_of_Residence"] = self._extract_country(raw_content)
 
         return record
+
+    def build_context(self, profile_link: str, raw_data: Any) -> Optional[str]:
+        raw_content = raw_data.get("raw_content", "") if isinstance(raw_data, dict) else str(raw_data)
+        # No captured sample to design a site-specific cutoff marker against
+        # (unlike ADA/Bodalgo) -- the generic boilerplate patterns still
+        # apply since this is the same Tavily Extract shape.
+        return strip_page_boilerplate(raw_content)
 
     @staticmethod
     def _extract_full_name(raw_content: str) -> Optional[str]:

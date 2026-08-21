@@ -34,21 +34,36 @@ salesy buzzwords, no exaggerated claims.
 STRICT RULES:
 - Use ONLY the facts provided in LEAD FACTS below. Do NOT invent achievements, employers,
   projects, credentials, rates, or numbers that are not explicitly listed there.
-- HARD REQUIREMENT — specificity: if LEAD FACTS contains any concrete, named detail --
-  tools_software, certifications, current_title, headline, or a named company inside
-  current_role_or_company -- the opening MUST name at least one of them explicitly.
-  A draft that only paraphrases generically ("your experience in subtitling") when a
-  specific tool, employer, or certification is available in LEAD FACTS is NOT acceptable.
+- HARD REQUIREMENT — specificity, tier 1: if LEAD FACTS contains any concrete, named
+  detail -- tools_software, certifications, current_title, headline, a named company
+  inside current_role_or_company, or a specific role/project/employer mentioned in
+  experience_history -- the opening MUST name at least one of them explicitly. A draft
+  that only paraphrases generically ("your experience in subtitling") when a specific
+  tool, employer, project, or certification is available in LEAD FACTS is NOT acceptable.
   Weak (do not do this): "believe your background in subtitling would be a strong asset."
   Strong (do this instead): "particularly your hands-on experience with OOONA and WinCaps
   at Sfera Studios." Prefer the specific named fact over the generic category whenever
-  one is present.
-- If LEAD FACTS includes years of experience, services, languages, country, current
-  role/company, or the specificity facts above, weave the ones that are actually present
-  naturally into the opening -- do not list every fact mechanically, and do not mention a
-  fact that is not in LEAD FACTS.
-- about_snippet, when present, is background context for tone/angle only -- pull at most
-  one short specific phrase from it if useful; never quote it at length.
+  one is present. experience_history may list several past roles -- pick the single most
+  relevant or most recent one to reference, don't list them mechanically or summarize the
+  whole career history.
+- HARD REQUIREMENT — specificity, tier 2 (fallback): if and only if NONE of tier 1's
+  fields are present, but about_snippet is, you MUST still pull one distinguishing phrase
+  from it -- a stated role, specialty, or focus area actually written there -- and use
+  that phrase in the opening instead of relying on services + years_of_experience alone.
+  Example: about_snippet reads "Experienced project manager and multilingual content
+  specialist..." -> opening should reference "your background as a multilingual content
+  specialist", not just "your experience in audio description". Never quote about_snippet
+  at length -- one short phrase, lightly reworded to fit the sentence, is enough.
+- HARD REQUIREMENT — specificity, tier 3 (fallback): if and only if NEITHER tier 1 NOR
+  tier 2 applies, but ADDITIONAL RAW PROFILE CONTEXT (below RATE CONTEXT) is present, you
+  MUST scan it for one clearly professional, specific, real detail -- a named award, an
+  institution, a distinct skill, a notable project -- and use it, exactly the same way
+  tier 1/2 facts are used. Do not skip this tier just because it takes more effort to
+  read; a real detail buried in the raw context is just as usable as one already in LEAD
+  FACTS. Only fall back to services + years_of_experience + languages + country +
+  current_role_or_company alone if NONE of the three tiers yields anything.
+- Weave whichever facts are actually present naturally into the opening -- do not list
+  every fact mechanically, and do not mention a fact that is not in LEAD FACTS.
 - If a fact is absent from LEAD FACTS, simply don't mention it -- never guess, estimate,
   or use a generic placeholder in its place.
 - NEVER fabricate, invent, or guess a rate figure. Rates are cited ONLY if provided in RATE CONTEXT.
@@ -56,8 +71,10 @@ STRICT RULES:
 - Keep {BRAND['company']}'s structure, links and sign-off intact:
   site {BRAND['site']}, apply portal {BRAND['apply_url']}.
 - Exactly ONE clear, low-friction call to action.
-- Before returning, verify: (1) at least one concrete named fact is used if one exists in
-  LEAD FACTS, (2) no invented facts, (3) exactly one CTA, (4) structure/links/sign-off intact.
+- Before returning, verify: (1) the highest tier that applies was actually used --
+  tier 1 if any tier-1 field exists, else tier 2 if about_snippet exists, else tier 3 if
+  ADDITIONAL RAW PROFILE CONTEXT has a usable detail, (2) no invented facts, (3) exactly
+  one CTA, (4) structure/links/sign-off intact.
 - Return STRICT JSON only — no markdown, no commentary outside the JSON."""
 
 # --- Approved reference templates (the pattern every draft must follow) -----
@@ -91,6 +108,23 @@ def _facts_block(lead: Lead) -> str:
     return "\n".join(lines)
 
 
+def _raw_context_block(lead: Lead) -> str:
+    """Every professionally-relevant raw scrape section not already surfaced
+    as a named LEAD FACT -- supplementary mining ground for one more specific
+    detail, never a replacement for the curated facts above. Empty when
+    nothing was captured (e.g. non-LinkedIn sources, or a profile with no
+    extra sections), in which case this contributes nothing to the prompt."""
+    if not lead.full_profile_context:
+        return ""
+    return f"""
+
+ADDITIONAL RAW PROFILE CONTEXT (background only -- the exact same anti-hallucination
+rules apply: never invent anything not literally present here or in LEAD FACTS above.
+Use this only to find ONE more specific, real detail if LEAD FACTS above doesn't already
+give you one; ignore anything here that isn't clearly professional/relevant):
+{lead.full_profile_context}"""
+
+
 def _rate_block(rate_match: Optional[Dict[str, Any]]) -> str:
     if rate_match:
         return f"- Validated Rate Card: {rate_match.get('currency', 'USD')} ${rate_match.get('rate')} {rate_match.get('unit', 'per word')}"
@@ -104,6 +138,7 @@ def build_email_prompt(lead: Lead, rate_match: Optional[Dict[str, Any]] = None) 
 
 LEAD FACTS (the only facts you may use):
 {_facts_block(lead)}
+{_raw_context_block(lead)}
 
 RATE CONTEXT:
 {_rate_block(rate_match)}
@@ -114,8 +149,10 @@ present (language, services, years of experience, current role/company -- only t
 ones actually listed above), {BRAND['site']}, the apply portal link {BRAND['apply_url']},
 the contact {BRAND['contact_email']}, and the sign-off "Resources Team". If LEAD FACTS
 contains a concrete named detail (tools_software, certifications, current_title,
-headline, or a company name), the opening must name at least one of them -- not only
-the broad service category.
+headline, a company name, or a specific role/project in experience_history), the opening
+must name at least one of them -- not only the broad service category. If none of those are present but about_snippet is, pull one
+distinguishing phrase from it instead (see tier-2 rule above) rather than defaulting to
+services + years_of_experience alone.
 
 PATTERN TO FOLLOW (this is the approved structure -- match its shape, tone, links,
 and sign-off; personalize the opening sentence with the real LEAD FACTS instead of

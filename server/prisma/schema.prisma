@@ -379,6 +379,15 @@ model Lead {
   currentTitle   String?  @map("current_title")
   toolsSoftware  String[] @default([]) @map("tools_software")
   certifications String[] @default([]) @map("certifications")
+  // Full per-role detail from the profile's Experience section (title,
+  // company, dates, description) -- richer than `toolsSoftware`/
+  // `certifications`, which only pull out named tools/credentials.
+  experienceHistory String? @map("experience_history")
+  // Every professionally-relevant raw scrape section (about, experience,
+  // education, honors, skills, etc.) as compact JSON -- supplementary
+  // drafting context beyond the curated fields above, always refreshed to
+  // the latest scrape rather than treated as a fixed fact.
+  fullProfileContext String? @map("full_profile_context")
   // Which canonical enrichment fields were resolved, and by what source
   // ("brightdata" | "tavily" | "llm_fallback" | "existing") -- round-tripped
   // to the enrichment_pipeline on every enrichLeadById call so a repeat

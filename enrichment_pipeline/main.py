@@ -119,6 +119,8 @@ class LeadRequest(BaseModel):
     Current_Title: Optional[str] = None
     Tools_Software: Optional[str] = None
     Certifications: Optional[str] = None
+    Experience_History: Optional[str] = None
+    Full_Profile_Context: Optional[str] = None
     # Not a lead field -- the caller's persisted record of which canonical
     # fields were already resolved (and by what source) on a PRIOR
     # enrichment run for this same lead, so a second run doesn't re-spend an

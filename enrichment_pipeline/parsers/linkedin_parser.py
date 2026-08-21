@@ -379,6 +379,93 @@ def _extract_vendor_experience(profile: dict) -> Optional[str]:
     return profile.get("company") or None
 
 
+def _strip_html(text: str) -> str:
+    return re.sub(r"<[^>]+>", " ", text or "").strip()
+
+
+def _extract_experience_history(profile: dict, max_roles: int = 4, max_chars: int = 900) -> Optional[str]:
+    """Full per-role detail from the profile's Experience section -- title,
+    company, dates, and description -- not just the company NAMES that
+    `_extract_vendor_experience` keeps. This is what actually makes a draft's
+    opening feel specific ("led subtitling QA for Netflix originals at Sfera
+    Studios, 2019-2022") instead of a generic category, so it's surfaced as
+    its own fact rather than discarded after `_extract_vendor_experience`
+    picks out the company name.
+
+    Field names follow the same defensive multi-key convention as the rest
+    of this parser (BrightData's shape varies across dataset revisions) --
+    `start_year`/`end_year`/`description_html` are confirmed real key names
+    from this dataset's `education` entries, so the analogous `experience`
+    entry keys are checked here too, alongside the more common
+    `start_date`/`end_date`/`description` variants.
+    """
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if not isinstance(exp_list, list) or not exp_list:
+        return None
+
+    lines: List[str] = []
+    for item in exp_list[:max_roles]:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title") or item.get("position")
+        company = item.get("company") or item.get("company_name")
+        start = item.get("start_date") or item.get("start_year")
+        end = item.get("end_date") or item.get("end_year") or ("Present" if item.get("is_current") else None)
+        duration = item.get("duration") or (f"{start} - {end}" if start else None)
+        description = _strip_html(str(item.get("description") or item.get("description_html") or ""))
+
+        header = " ".join(
+            p for p in [title, f"at {company}" if company else None, f"({duration})" if duration else None] if p
+        )
+        if not header:
+            continue
+        if description:
+            snippet = description[:180]
+            if len(description) > 180:
+                snippet = snippet.rsplit(" ", 1)[0] + "..."
+            header += f": {snippet}"
+        lines.append(header)
+
+    if not lines:
+        return None
+    text = "; ".join(lines)
+    if len(text) > max_chars:
+        text = text[:max_chars].rsplit(" ", 1)[0] + "..."
+    return text
+
+
+# Sections of the raw BrightData payload worth keeping as supplementary
+# drafting context beyond the curated facts above -- every professionally
+# relevant part of the profile, not just what the narrow canonical fields
+# happen to capture. Deliberately EXCLUDES: `activity` (the person's own
+# LinkedIn posts -- can be off-topic, personal, or even a public complaint
+# rant, confirmed in production; referencing it in outreach copy is a real
+# reputational risk, not a personalization win), `people_also_viewed` /
+# `similar_profiles` (other people entirely), and vanity/tracking metadata
+# (avatar/banner images, follower/connection counts, internal linkedin IDs,
+# timestamps) that carries no personalization value.
+_CONTEXT_SECTIONS = (
+    "about", "summary", "headline", "position", "city", "country", "location",
+    "current_company", "experience", "positions", "education",
+    "educations_details", "honors_and_awards", "skills", "certifications",
+    "licenses_and_certifications", "courses", "languages", "bio_links",
+)
+
+
+def _build_full_profile_context(profile: dict, max_chars: int = 4000) -> Optional[str]:
+    """Every professionally-relevant raw section of the scrape, formatted as
+    compact JSON -- supplementary background for the drafting prompt to mine
+    for an extra specific detail beyond what the curated facts above already
+    surface, rather than discarding everything not mapped to a named field."""
+    context = {k: profile[k] for k in _CONTEXT_SECTIONS if profile.get(k) not in (None, "", [], {})}
+    if not context:
+        return None
+    text = json.dumps(context, ensure_ascii=False, default=str)
+    if len(text) > max_chars:
+        text = text[:max_chars] + "...(truncated)"
+    return text
+
+
 class LinkedInParser(BaseParser):
     """Parser for Bright Data LinkedIn JSON responses with deep contact & experience extraction."""
 
@@ -419,6 +506,10 @@ class LinkedInParser(BaseParser):
         vendors = _extract_vendor_experience(profile)
         if vendors:
             result["Vendor_Experience"] = vendors
+
+        experience_history = _extract_experience_history(profile)
+        if experience_history:
+            result["Experience_History"] = experience_history
 
         # Skills & Languages -- structured `skills` first when BrightData
         # actually returns it (rare in production for this dataset), then a
@@ -466,6 +557,12 @@ class LinkedInParser(BaseParser):
             result["Certifications"] = certifications
 
         return result
+
+    def build_context(self, profile_link: str, raw_data: Any) -> Optional[str]:
+        profile = self._unwrap(raw_data)
+        if not profile or not isinstance(profile, dict):
+            return None
+        return _build_full_profile_context(profile)
 
     @staticmethod
     def _unwrap(raw: Any) -> Dict[str, Any]:

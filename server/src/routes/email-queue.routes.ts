@@ -138,6 +138,8 @@ emailQueueRouter.post(
             Current_Title: item.lead.currentTitle,
             Tools_Software: item.lead.toolsSoftware.join(", "),
             Certifications: item.lead.certifications.join(", "),
+            Experience_History: item.lead.experienceHistory,
+            Full_Profile_Context: item.lead.fullProfileContext,
           },
           channel: "email",
         },

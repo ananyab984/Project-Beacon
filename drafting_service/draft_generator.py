@@ -14,6 +14,7 @@ Includes _ensure_links() guardrail to guarantee brand URLs survive generation.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -44,23 +45,123 @@ class Draft:
 
 _SPECIFICITY_RETRY_NOTE = (
     "Your previous draft didn't reference any specific named fact (a tool, certification, "
-    "current title, or employer) even though one was available in LEAD FACTS. Regenerate "
-    "the draft and this time explicitly name at least one of them, per the HARD REQUIREMENT "
-    "rule above."
+    "current title, employer, or -- when none of those exist -- a distinguishing phrase "
+    "from about_snippet) even though one was available in LEAD FACTS. Regenerate the draft "
+    "and this time explicitly use it, per the HARD REQUIREMENT rules above."
 )
+
+
+def _about_snippet_phrases(about_snippet: str) -> list[str]:
+    """Rough candidate distinguishing phrases from free-form About text, used
+    only as the tier-2 fallback (see prompt_builder._VOICE_RULES) when no
+    tier-1 concrete fact exists -- e.g. "project manager and multilingual
+    content specialist" -> ["project manager", "multilingual content
+    specialist"]. Heuristic, not exhaustive -- just enough to verify the
+    model pulled *something* distinguishing rather than ignoring the field."""
+    chunks = re.split(r",|;|\.\s|\band\b|\bwith\b|\bwho\b|\bwhere\b", about_snippet)
+    phrases = []
+    for chunk in chunks:
+        phrase = chunk.strip(" .")
+        words = phrase.split()
+        if not words:
+            continue
+        # Truncate an overlong chunk to its first few words instead of
+        # discarding it outright -- still a meaningful distinguishing phrase.
+        if len(words) > 6:
+            words = words[:6]
+            phrase = " ".join(words)
+        if len(words) >= 2 and 8 <= len(phrase) <= 60:
+            phrases.append(phrase)
+    return phrases
+
+
+def _experience_role_facts(experience_history: str) -> list[str]:
+    """Extract "title" and "company" tokens from each formatted role entry
+    (see linkedin_parser._extract_experience_history's "Title at Company
+    (dates): description" shape) as individually checkable fact strings --
+    finer-grained than the whole line, since the model paraphrases around
+    the raw text rather than reproducing it verbatim."""
+    facts: list[str] = []
+    for role in experience_history.split("; "):
+        header = role.split(":", 1)[0].strip()
+        match = re.match(r"^(.*?)\s+at\s+(.+?)(?:\s*\(.*\))?$", header)
+        if match:
+            title, company = match.group(1).strip(), match.group(2).strip()
+            if title:
+                facts.append(title)
+            if company and company.lower() != pb.BRAND["company"].lower():
+                facts.append(company)
+        elif header:
+            facts.append(header)
+    return facts
+
+
+_CONTEXT_FACT_KEYS = {"title", "name", "issuer", "subtitle", "school", "field", "degree", "company"}
+
+
+def _full_context_facts(full_profile_context: str) -> list[str]:
+    """Tier-3 fallback: pull candidate specific strings (award titles,
+    institution names, skill names, ...) out of the raw JSON blob
+    (`linkedin_parser._build_full_profile_context`) by walking it for values
+    under name-ish keys -- used only when tiers 1 and 2 are both empty, so
+    the retry mechanism can still catch the model ignoring a real detail
+    that exists only in the raw context, not in the curated fields."""
+    try:
+        data = json.loads(full_profile_context)
+    except (json.JSONDecodeError, TypeError):
+        return []
+
+    found: list[str] = []
+
+    def _walk(obj: Any) -> None:
+        if isinstance(obj, dict):
+            for k, v in obj.items():
+                if k in _CONTEXT_FACT_KEYS and isinstance(v, str) and v.strip():
+                    found.append(v.strip())
+                else:
+                    _walk(v)
+        elif isinstance(obj, list):
+            for item in obj:
+                _walk(item)
+
+    _walk(data)
+    return found
 
 
 def _specific_fact_strings(lead: Lead) -> list[str]:
     """Concrete, named facts a draft can point to -- used to verify the model
-    actually cited something specific rather than only a generic category."""
+    actually cited something specific rather than only a generic category.
+    Tier 1 (tools/certifications/title/employer/experience_history) takes
+    priority; falls back to about_snippet-derived phrases (tier 2), then to
+    full_profile_context-derived facts (tier 3), only when the prior tier is
+    empty -- mirrors prompt_builder._VOICE_RULES' three-tier specificity
+    requirement."""
     facts: list[str] = []
     facts.extend(lead.tools_software)
     facts.extend(lead.certifications)
     if lead.current_title:
         facts.append(lead.current_title)
     if lead.vendor_experience:
-        facts.extend(c.strip() for c in lead.vendor_experience.split(",") if c.strip())
-    return [f for f in facts if f]
+        # Exclude our own company name -- it appears in the boilerplate
+        # brand references regardless of personalization, so it would
+        # trivially "pass" the check without the draft actually being
+        # personalized to this lead.
+        facts.extend(
+            c.strip() for c in lead.vendor_experience.split(",")
+            if c.strip() and c.strip().lower() != pb.BRAND["company"].lower()
+        )
+    if lead.experience_history:
+        facts.extend(_experience_role_facts(lead.experience_history))
+    facts = [f for f in facts if f]
+    if facts:
+        return facts
+    if lead.about_snippet:
+        tier2 = _about_snippet_phrases(lead.about_snippet)
+        if tier2:
+            return tier2
+    if lead.full_profile_context:
+        return _full_context_facts(lead.full_profile_context)
+    return []
 
 
 def _has_specific_fact(body: str, facts: list[str]) -> bool:

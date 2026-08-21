@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
+from parsers._context_utils import strip_page_boilerplate
 from parsers.base import BaseParser
 
 REFERENCE_YEAR = 2026
@@ -83,6 +84,10 @@ class AdaParser(BaseParser):
             record["Secondary_Languages"] = secondary_lang
 
         return record
+
+    def build_context(self, profile_link: str, raw_data: Any) -> Optional[str]:
+        raw_content = raw_data.get("raw_content", "") if isinstance(raw_data, dict) else str(raw_data)
+        return strip_page_boilerplate(raw_content, cutoff_markers=BODY_END_MARKERS)
 
     @staticmethod
     def _extract_body(raw_content: str) -> str:

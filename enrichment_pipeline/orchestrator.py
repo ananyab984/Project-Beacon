@@ -46,6 +46,14 @@ OVERRIDE_ON_VERIFIED_FIELDS = {
 # about when still empty after Stage 3's deterministic parse.
 FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications"]
 
+# Always overwritten with whatever the latest scrape produced, regardless of
+# whether a value is already present -- unlike OVERRIDE_ON_VERIFIED_FIELDS,
+# these never participate in the LLM fallback (there's nothing to "ask
+# Claude to extract" about a raw JSON dump of the same scrape it came from,
+# and no manual-entry equivalent to reconcile against). Kept as a separate
+# set so `_unverified()` below never adds it to the LLM target list.
+ALWAYS_REFRESH_FIELDS = {"Full_Profile_Context"}
+
 
 class PipelineResult(TypedDict):
     lead: Dict[str, Any]
@@ -132,6 +140,15 @@ class EnrichmentOrchestrator:
             parser = self.parsers.get(parser_name, GenericParser())
             stage3_parsed = parser.parse(profile_link, raw_scraped_data)
 
+            # Every parser also independently builds curated drafting
+            # context straight from the raw scrape (not from stage3_parsed's
+            # already-narrowed fields) -- merged in here so it flows through
+            # the same ALWAYS_REFRESH_FIELDS branch below as any other
+            # source's context blob would.
+            context = parser.build_context(profile_link, raw_scraped_data)
+            if context:
+                stage3_parsed = {**stage3_parsed, "Full_Profile_Context": context}
+
             # Merge rules: NEVER overwrite existing data -- EXCEPT
             # OVERRIDE_ON_VERIFIED_FIELDS (see module-level comment above).
             # Everything else (contact fields) keeps the strict
@@ -153,6 +170,10 @@ class EnrichmentOrchestrator:
                     else:
                         field_sources[k] = source
                         logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, confirmed matches manual entry)")
+                elif k in ALWAYS_REFRESH_FIELDS:
+                    lead[k] = v
+                    field_sources[k] = source
+                    logs.append(f"Stage 3 Parsed: {k} refreshed from latest scrape (from {source})")
                 elif is_empty_value(lead.get(k)):
                     lead[k] = v
                     field_sources[k] = source

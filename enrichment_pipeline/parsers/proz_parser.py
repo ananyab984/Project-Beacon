@@ -65,6 +65,25 @@ class ProzParser(BaseParser):
 
         return record
 
+    def build_context(self, profile_link: str, raw_data: Any) -> Optional[str]:
+        """Context from `primary_snippet` only -- `other_snippets` are other
+        search results for the same name query, not confirmed to be this
+        person (a real risk: ProZ search is keyed on name-text matching, not
+        a profile ID, so a common name can surface a different member
+        entirely), and `tavily_raw` is API-response plumbing, not profile
+        content. Same exclusion principle as LinkedIn dropping
+        people-also-viewed/similar-profiles."""
+        primary = raw_data.get("primary_snippet") if isinstance(raw_data, dict) else None
+        if not primary:
+            return None
+        text = " ".join(filter(None, [primary.get("title"), primary.get("content")])).strip()
+        if not text:
+            return None
+        text = re.sub(r"\s+", " ", text)
+        if len(text) > 2000:
+            text = text[:2000].rsplit(" ", 1)[0] + "..."
+        return text
+
     @staticmethod
     def _all_texts(primary: Optional[dict], others: list) -> List[str]:
         texts = []
