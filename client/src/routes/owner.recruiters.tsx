@@ -312,37 +312,21 @@ function RecruitersPage() {
           {active && (
             <div className="space-y-6">
               <SheetHeader className="pb-4 border-b border-border">
-                <SheetTitle className="flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
-                      style={{ background: `oklch(0.55 0.16 ${avatarHue(active.id)})` }}
-                    >
-                      {active.name.charAt(0)}
+                <SheetTitle className="flex items-center gap-3">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
+                    style={{ background: `oklch(0.55 0.16 ${avatarHue(active.id)})` }}
+                  >
+                    {active.name.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 text-lg font-bold">
+                      <span>{active.name}</span>
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2 text-lg font-bold">
-                        <span>{active.name}</span>
-                      </div>
-                      <div className="text-xs font-normal text-muted-foreground">
-                        {active.role === "CONTRACTOR" ? "Contractor Evaluation" : "Full-Access Recruiter Evaluation"}
-                      </div>
+                    <div className="text-xs font-normal text-muted-foreground">
+                      {active.role === "CONTRACTOR" ? "Contractor Evaluation" : "Full-Access Recruiter Evaluation"}
                     </div>
                   </div>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="gap-1.5 text-xs"
-                    onClick={() => {
-                      if (confirm(`Deactivate ${active.name}? Their history is preserved — this is a soft deactivation, not a permanent delete.`)) {
-                        deactivateMutation.mutate(active.id);
-                        setOpenId(null);
-                        toast.success(`Deactivated ${active.name}`);
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Deactivate Recruiter
-                  </Button>
                 </SheetTitle>
               </SheetHeader>
 
@@ -351,6 +335,26 @@ function RecruitersPage() {
                 subjectName={active.name}
                 roleLabel={active.role === "CONTRACTOR" ? "Contractor" : "Recruiter"}
               />
+
+              <div className="flex items-center justify-between border-t border-border pt-4">
+                <div className="text-xs text-muted-foreground">
+                  Deactivating this recruiter retains their performance history and logs.
+                </div>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  onClick={() => {
+                    if (confirm(`Deactivate ${active.name}? Their history is preserved — this is a soft deactivation, not a permanent delete.`)) {
+                      deactivateMutation.mutate(active.id);
+                      setOpenId(null);
+                      toast.success(`Deactivated ${active.name}`);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Deactivate Recruiter
+                </Button>
+              </div>
             </div>
           )}
         </SheetContent>
