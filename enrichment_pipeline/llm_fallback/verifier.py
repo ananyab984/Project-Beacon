@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from llm_fallback.prompt_builder import LIST_FIELDS
 from logger import get_logger
@@ -86,4 +86,31 @@ def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> D
         else:
             log.warning("DISCARDING LLM %s=%s: not found verbatim in source text", key, val)
 
+    return verified
+
+
+def filter_web_search_result(result: Dict[str, Any], target_fields: List[str]) -> Dict[str, Any]:
+    """Process safeguard for the web_search fallback, in place of verbatim
+    verification: Bright Data's own tool matches search results server-side
+    and returns them to us as encrypted content blocks, so unlike
+    verify_against_source there's no client-visible source text to check
+    extracted facts against. Instead: discard everything if the model
+    reported finding nothing, or cited no real source URL for the batch --
+    grounding here rests on the prompt's strict rules plus this minimum
+    citation requirement, not an independent verbatim match.
+    """
+    if not isinstance(result, dict) or result.get("could_not_find_anything"):
+        return {}
+
+    sources = result.get("sources_used")
+    if not isinstance(sources, list) or not any(isinstance(s, str) and s.strip() for s in sources):
+        log.warning("DISCARDING web_search result: no real source URL cited")
+        return {}
+
+    verified: Dict[str, Any] = {}
+    for field in target_fields:
+        val = result.get(field)
+        if isinstance(val, str) and val.strip():
+            verified[field] = val.strip()
+            log.info("Accepted web_search %s=%s (sources=%s)", field, val, sources)
     return verified

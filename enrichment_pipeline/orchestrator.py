@@ -12,7 +12,7 @@ from core.schema import is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
 from llm_fallback.prompt_builder import build_targeted_prompt
-from llm_fallback.verifier import verify_against_source
+from llm_fallback.verifier import filter_web_search_result, verify_against_source
 from logger import get_logger
 from providers.brightdata_client import BrightDataClient, BrightDataError
 from providers.tavily_client import TavilyClient, TavilyError
@@ -43,8 +43,14 @@ OVERRIDE_ON_VERIFIED_FIELDS = {
 }
 
 # Fields with no manual-entry equivalent -- only worth asking the LLM fallback
-# about when still empty after Stage 3's deterministic parse.
-FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications"]
+# about when still empty after Stage 3's deterministic parse. Headline and
+# Experience_History were confirmed in production to come back empty from
+# BrightData for a meaningful share of LinkedIn profiles (its `headline`/
+# `position`/`title`/`experience` fields returning null) yet were never
+# wired into any fallback list, so they silently stayed empty forever with
+# zero LLM attempt -- unlike Current_Title/Tools_Software/Certifications,
+# which already got one.
+FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications", "Headline", "Experience_History"]
 
 # Always overwritten with whatever the latest scrape produced, regardless of
 # whether a value is already present -- unlike OVERRIDE_ON_VERIFIED_FIELDS,
@@ -247,6 +253,35 @@ class EnrichmentOrchestrator:
                     logs.append("LLM Fallback skipped: CLAUDE_API_KEY not configured")
                 elif not raw_source_text:
                     logs.append("LLM Fallback skipped: No raw scraped text available")
+
+        # Stage 6b: Web-Search Fallback (LinkedIn only) for fill-only fields
+        # still empty after Stage 4-6 -- Bright Data's LinkedIn scrape
+        # frequently returns null for Headline/Experience_History/
+        # Current_Title even on a "successful" scrape (confirmed in
+        # production), which leaves nothing in raw_source_text for the
+        # extraction above to find. Scoped strictly to
+        # FILL_ONLY_ENRICHABLE_FIELDS -- never critical/contact fields --
+        # since this fallback's grounding rests on the model's own search
+        # discipline rather than an independent verbatim check (see
+        # filter_web_search_result), which isn't an acceptable bar for
+        # emails/phone numbers.
+        still_missing_fill_only = [f for f in FILL_ONLY_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
+        if provider_type == "brightdata" and still_missing_fill_only and self.claude:
+            try:
+                full_name = lead.get("Full_Name") or ""
+                web_result = self.claude.search_missing_fields(still_missing_fill_only, full_name, profile_link)
+                verified_web = filter_web_search_result(web_result, still_missing_fill_only)
+                if verified_web:
+                    for k, v in verified_web.items():
+                        lead[k] = v
+                        field_sources[k] = "llm_fallback_websearch"
+                        logs.append(f"Stage 6b Web Search: {k} = {v!r} (sources: {web_result.get('sources_used')})")
+                else:
+                    logs.append("Stage 6b Web Search: nothing found/verified")
+            except ClaudeError as exc:
+                msg = f"Web search fallback error: {exc}"
+                logs.append(msg)
+                log.error(msg)
 
         # Stage 7: Finalize & Score Calculation
         final_audit = audit_lead_fields(lead)

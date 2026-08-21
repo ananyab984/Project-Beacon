@@ -53,3 +53,32 @@ Respond with STRICT JSON exactly matching this schema:
 {schema_body}
 }}
 """
+
+
+def build_web_search_prompt(missing_fields: List[str], full_name: str, profile_link: str) -> str:
+    """Prompt Claude to use its web_search tool to find specific missing
+    fields about a named, disambiguated person -- for when Bright Data's
+    scrape had nothing for them to begin with, so there's no source text left
+    for build_targeted_prompt's raw-text extraction to work from. Same strict
+    grounding philosophy, adapted for a live web search instead of a fixed
+    source blob."""
+    field_targets = ", ".join(missing_fields)
+    schema_lines = "\n".join(f'  "{field}": <string or null>,' for field in missing_fields)
+
+    return f"""I'm researching a real person named {full_name} for a recruiting/outreach purpose. Their LinkedIn profile URL is {profile_link} -- use that only as an identity hint to make sure you find the right person (there may be other people with the same name), not something to fetch directly (LinkedIn profile pages cannot be fetched directly).
+
+Use web_search to find whatever real, public information exists about this specific person for these fields: {field_targets}. Try multiple search angles if the first doesn't turn up much (their name plus any known company/location, third-party profile aggregators, press mentions, company bios, etc).
+
+STRICT RULES:
+1. Only report information you actually found in real search-result content. Do NOT guess, infer, estimate, or fabricate anything about this specific person.
+2. Leave a field null if you genuinely found nothing for it -- do not pad with generic guesses.
+3. List every source URL that actually supported a fact in sources_used. If sources_used is empty, every field above must be null.
+4. Set could_not_find_anything to true if you found nothing usable at all.
+
+Respond with ONLY a single JSON object (no markdown fence, no prose before or after) matching exactly this shape:
+{{
+{schema_lines}
+  "sources_used": [<url string>, ...],
+  "could_not_find_anything": <true or false>
+}}
+"""

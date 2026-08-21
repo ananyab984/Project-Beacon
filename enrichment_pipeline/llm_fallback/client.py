@@ -4,14 +4,21 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
 from config import Config
+from llm_fallback.prompt_builder import build_web_search_prompt
 from logger import get_logger
 
 log = get_logger(__name__)
+
+# search_missing_fields always uses this model regardless of config.claude_model
+# (which defaults to Haiku 4.5 for cost reasons on the plain extraction path):
+# the web_search_20260209 tool type requires Opus 5/4.8/4.7/4.6, Sonnet 5, or
+# Sonnet 4.6 -- Haiku 4.5 isn't supported for it.
+_WEB_SEARCH_MODEL = "claude-sonnet-5"
 
 
 class ClaudeError(RuntimeError):
@@ -108,3 +115,53 @@ class ClaudeClient:
                 time.sleep(self.config.retry_backoff_base ** attempt)
 
         raise ClaudeError("Claude LLM call failed")
+
+    def search_missing_fields(
+        self, missing_fields: List[str], full_name: str, profile_link: str
+    ) -> Dict[str, Any]:
+        """Ask Claude to use its web_search server tool to find specific
+        missing fields about a named person -- used when Bright Data's own
+        scrape left them empty, so extract_critical_fields would have no
+        source text to mine. No `system` field or output_config.format here:
+        combining a strict JSON schema with server tool use in the same call
+        was confirmed (in this project's own testing) to make the model skip
+        calling the tool entirely and hallucinate a schema-shaped answer
+        instead -- the JSON instruction lives in the prompt text, and the
+        result is salvaged from the final text block the same way
+        extract_critical_fields does.
+
+        Response times run well past extract_critical_fields' usual latency
+        (multiple real searches per call), so this uses its own longer
+        timeout rather than self.config.request_timeout.
+        """
+        system_prompt = build_web_search_prompt(missing_fields, full_name, profile_link)
+        body = {
+            "model": _WEB_SEARCH_MODEL,
+            "max_tokens": 4096,
+            "tools": [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            "messages": [{"role": "user", "content": system_prompt}],
+        }
+
+        log.info("Claude web_search fallback START name=%r", full_name)
+        try:
+            resp = self.session.post(
+                self.config.claude_base_url,
+                json=body,
+                timeout=max(self.config.request_timeout, 240),
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except Exception as exc:
+            raise ClaudeError(f"Claude web_search fallback failed: {exc}") from exc
+
+        text_blocks = [b.get("text", "") for b in data.get("content", []) if b.get("type") == "text"]
+        if not text_blocks:
+            raise ClaudeError("Claude web_search fallback returned no text content")
+
+        try:
+            result = _extract_json_object(text_blocks[-1])
+        except json.JSONDecodeError as exc:
+            raise ClaudeError(f"Claude web_search fallback returned non-JSON output: {exc}") from exc
+
+        log.info("Claude web_search fallback SUCCESS name=%r sources=%s", full_name, result.get("sources_used"))
+        return result
