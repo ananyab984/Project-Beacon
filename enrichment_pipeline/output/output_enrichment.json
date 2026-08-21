@@ -1,0 +1,971 @@
+{
+  "note": "Parser 1 output (canonical fields used to mark a lead enriched), rebuilt from the current live Postgres state and re-audited with the same audit_lead_fields() production uses -- proves marking enrichment is unaffected by the drafting-context work layered on top.",
+  "canonical_field_count": 19,
+  "canonical_fields": [
+    "First_Name",
+    "Full_Name",
+    "Country_of_Residence",
+    "Source",
+    "Profile_Link",
+    "Contact_Number",
+    "Email_Address",
+    "Services",
+    "Source_Language",
+    "Target_Language",
+    "Secondary_Languages",
+    "Years_of_Exp",
+    "Vendor_Experience",
+    "Headline",
+    "About_Snippet",
+    "Current_Title",
+    "Tools_Software",
+    "Certifications",
+    "Experience_History"
+  ],
+  "critical_fields": [
+    "Email_Address",
+    "Contact_Number",
+    "Years_of_Exp"
+  ],
+  "total_leads": 16,
+  "leads": [
+    {
+      "lead_id": "8f70245f-f0b5-4f6a-8b4a-f295a3dccd29",
+      "name": "Sunaina Satish",
+      "profile_link": "https://www.linkedin.com/in/sunaina-satish/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": "Sunaina",
+        "Full_Name": "Sunaina Satish",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/sunaina-satish/",
+        "Contact_Number": null,
+        "Email_Address": "sunainasatishk@gmail.com",
+        "Services": "Dubbing",
+        "Source_Language": "English",
+        "Target_Language": "Malayalam",
+        "Secondary_Languages": "Tamil",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 10,
+        "enrichment_percentage": 53,
+        "missing_fields": [
+          "Contact_Number",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Contact_Number",
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "First_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Secondary_Languages": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "6821db1e-b52b-4e45-85c4-86e78c4f8e86",
+      "name": "Divya Shyam",
+      "profile_link": "https://www.linkedin.com/in/divya-shyam-912612177/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Divya",
+        "Country_of_Residence": "Bengaluru",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/divya-shyam-912612177/",
+        "Contact_Number": "9148249940",
+        "Email_Address": "divya.shyam@global3.io",
+        "Services": "Dubbing, Subtitling",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": "Global3",
+        "Headline": null,
+        "About_Snippet": "My professional journey has been shaped by working at the intersection of people…",
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 11,
+        "enrichment_percentage": 58,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Headline",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "brightdata",
+        "First_Name": "brightdata",
+        "Profile_Link": "existing",
+        "About_Snippet": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Vendor_Experience": "existing",
+        "Country_of_Residence": "brightdata"
+      }
+    },
+    {
+      "lead_id": "f78cdda6-1e71-4327-a879-59acf24700d9",
+      "name": "Mathumitha Senthil",
+      "profile_link": "https://www.linkedin.com/in/mathumitha-senthil/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Mathumitha",
+        "Country_of_Residence": "Bengaluru",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/mathumitha-senthil/",
+        "Contact_Number": "9003640552",
+        "Email_Address": "mathumitha.s@global3.io",
+        "Services": "Dubbing, SDH",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "French, Telugu, Hindi",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": "With a solid academic foundation in Electronics and Communications Engineering (BTech)…",
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "Complete Figma Megacourse, UI UX Design & Development, Enterprise Design Thinking Practitioner, Power BI, Illustrations and Doodling",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 12,
+        "enrichment_percentage": 63,
+        "missing_fields": [
+          "First_Name",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "Current_Title",
+          "Tools_Software",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "brightdata",
+        "First_Name": "brightdata",
+        "Profile_Link": "existing",
+        "About_Snippet": "existing",
+        "Email_Address": "existing",
+        "Certifications": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Secondary_Languages": "llm_fallback",
+        "Country_of_Residence": "brightdata"
+      }
+    },
+    {
+      "lead_id": "ae315d31-11cb-41b7-8816-2b561c64a8c5",
+      "name": "Shivendra Giri",
+      "profile_link": "https://www.linkedin.com/in/shivendra-giri-370a0615/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Shivendar",
+        "Country_of_Residence": "Bengaluru",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/shivendra-giri-370a0615/",
+        "Contact_Number": "8123987543",
+        "Email_Address": "shivendra.giri@global3.io",
+        "Services": "Dubbing, Localization",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": "Global3",
+        "Headline": null,
+        "About_Snippet": "I lead media localization and AI dubbing initiatives at the intersection of storytelling,…",
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 11,
+        "enrichment_percentage": 58,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Headline",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "brightdata",
+        "Full_Name": "brightdata",
+        "First_Name": "brightdata",
+        "Profile_Link": "existing",
+        "About_Snippet": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Vendor_Experience": "existing",
+        "Country_of_Residence": "brightdata"
+      }
+    },
+    {
+      "lead_id": "9b192ee2-550b-4f4b-b099-8bc654b3bf45",
+      "name": "Ananya Reddy",
+      "profile_link": "https://www.linkedin.com/in/ananya-reddy-voice/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Ananya Reddy",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/ananya-reddy-voice/",
+        "Contact_Number": "9845123456",
+        "Email_Address": "ananya.reddy@gmail.com",
+        "Services": "Dubbing, Voice Actor",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "f3d4e353-c530-459b-ab58-560150c551c9",
+      "name": "Rajesh Kumar",
+      "profile_link": "https://www.linkedin.com/in/rajesh-kumar-dub/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Rajesh Kumar",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/rajesh-kumar-dub/",
+        "Contact_Number": "9012345678",
+        "Email_Address": "rajesh.kumar@yahoo.com",
+        "Services": "Dubbing, SDH",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "d09a160c-8f9f-48c1-bf7c-9dfe6cf6554c",
+      "name": "Priyanka  Nair",
+      "profile_link": "https://www.linkedin.com/in/priyanka-nair-ad/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Priyanka  Nair",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/priyanka-nair-ad/",
+        "Contact_Number": "9876054321",
+        "Email_Address": "priyanka.nair@outlook.com",
+        "Services": "Audio Description, SDH",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "5dafb940-b0af-4358-a998-c3a42ed521c9",
+      "name": "Muhammad Irfan",
+      "profile_link": "https://www.linkedin.com/in/muhammad-irfan-va/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Muhammad Irfan",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/muhammad-irfan-va/",
+        "Contact_Number": "97654 32109",
+        "Email_Address": "irfan.voiceover@gmail.com",
+        "Services": "Dubbing, Voice Actor",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "c9b60f03-ecf0-4af1-a77e-2dd1332be2b6",
+      "name": "kavya iyer",
+      "profile_link": "https://www.linkedin.com/in/kavya-iyer-subs/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "kavya iyer",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/kavya-iyer-subs/",
+        "Contact_Number": "9988776655",
+        "Email_Address": "kavya.iyer@gmail.com",
+        "Services": "SDH, Subtitling",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "7e6cc777-e3f4-4a45-afd4-f0e46b0b2bc2",
+      "name": "Suresh  Babu",
+      "profile_link": "https://www.linkedin.com/in/suresh-babu-dubbing/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Suresh  Babu",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/suresh-babu-dubbing/",
+        "Contact_Number": "+91-8899001122",
+        "Email_Address": "suresh.babu@rediffmail.com",
+        "Services": "Dubbing",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "53d88608-bf49-4260-a76f-7e4ed1af0525",
+      "name": "Farhana Sheikh",
+      "profile_link": "https://www.linkedin.com/in/farhana-sheikh-ad/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Farhana Sheikh",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/farhana-sheikh-ad/",
+        "Contact_Number": "9223344556",
+        "Email_Address": "farhana.sheikh@gmail.com",
+        "Services": "Audio Description",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "07cc5334-baf3-4c8c-bd89-191ca6334fe8",
+      "name": "Neha Deshmukh",
+      "profile_link": "https://www.linkedin.com/in/neha-deshmukh-va/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Neha Deshmukh",
+        "Country_of_Residence": "India",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/neha-deshmukh-va/",
+        "Contact_Number": "9334455667",
+        "Email_Address": "neha.deshmukh@gmail.com",
+        "Services": "Dubbing",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "c83f3a96-c50b-451c-99ec-06dfeb55808d",
+      "name": "Arvind Menon",
+      "profile_link": "https://www.proz.com/translator/arvind_menon",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": null,
+        "Full_Name": "Arvind Menon",
+        "Country_of_Residence": "India",
+        "Source": "PROZ",
+        "Profile_Link": "https://www.proz.com/translator/arvind_menon",
+        "Contact_Number": "9778899001",
+        "Email_Address": "arvind.menon@gmail.com",
+        "Services": "Translation",
+        "Source_Language": "Italian, English",
+        "Target_Language": "English, Italian",
+        "Secondary_Languages": "",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 9,
+        "enrichment_percentage": 47,
+        "missing_fields": [
+          "First_Name",
+          "Secondary_Languages",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "tavily",
+        "Full_Name": "existing",
+        "Profile_Link": "existing",
+        "Email_Address": "existing",
+        "Contact_Number": "existing",
+        "Source_Language": "tavily",
+        "Target_Language": "tavily",
+        "Country_of_Residence": "existing"
+      }
+    },
+    {
+      "lead_id": "3be4f223-0de5-4dbb-a32a-51eaa9901f49",
+      "name": "S",
+      "profile_link": null,
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": "Asid",
+        "Full_Name": "S",
+        "Country_of_Residence": "Germany",
+        "Source": "LINKEDIN",
+        "Profile_Link": null,
+        "Contact_Number": "172727222",
+        "Email_Address": "aash@gmail.com",
+        "Services": "Dubbing",
+        "Source_Language": "English",
+        "Target_Language": "German",
+        "Secondary_Languages": "French",
+        "Years_of_Exp": null,
+        "Vendor_Experience": null,
+        "Headline": null,
+        "About_Snippet": null,
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 10,
+        "enrichment_percentage": 53,
+        "missing_fields": [
+          "Profile_Link",
+          "Years_of_Exp",
+          "Vendor_Experience",
+          "Headline",
+          "About_Snippet",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": null
+    },
+    {
+      "lead_id": "58b048a1-66ea-41fe-8ab4-36ac2821da4e",
+      "name": "Christina Fernandez",
+      "profile_link": "https://www.linkedin.com/in/christina-fernandez-68682921/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": "Christina",
+        "Full_Name": "Fernandez",
+        "Country_of_Residence": "Bengaluru",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/christina-fernandez-68682921/",
+        "Contact_Number": null,
+        "Email_Address": "christina.fernandez@global3.io",
+        "Services": "Dubbing",
+        "Source_Language": "English",
+        "Target_Language": "Hindi",
+        "Secondary_Languages": "French",
+        "Years_of_Exp": null,
+        "Vendor_Experience": "Global3",
+        "Headline": null,
+        "About_Snippet": "Currently pursuing entrepreneurial exploits through my current labour of love called…",
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 12,
+        "enrichment_percentage": 63,
+        "missing_fields": [
+          "Contact_Number",
+          "Years_of_Exp",
+          "Headline",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Contact_Number",
+          "Years_of_Exp"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "brightdata",
+        "First_Name": "brightdata",
+        "Profile_Link": "existing",
+        "About_Snippet": "existing",
+        "Email_Address": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Vendor_Experience": "existing",
+        "Secondary_Languages": "llm_fallback",
+        "Country_of_Residence": "brightdata"
+      }
+    },
+    {
+      "lead_id": "f34049d4-d3b4-4ba8-b142-7b7f31ab6871",
+      "name": "Alex Anthraper",
+      "profile_link": "https://www.linkedin.com/in/alex-anthraper/",
+      "db_enrichment_status": "COMPLETE",
+      "canonical_fields_parser_1": {
+        "First_Name": "Alex ",
+        "Full_Name": "Alex Anthraper",
+        "Country_of_Residence": "Bengaluru",
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/alex-anthraper/",
+        "Contact_Number": null,
+        "Email_Address": "acanthraper@gmail.com",
+        "Services": "Audio Description (AD)",
+        "Source_Language": "English",
+        "Target_Language": "English",
+        "Secondary_Languages": "English (UK)",
+        "Years_of_Exp": "10",
+        "Vendor_Experience": "Global3",
+        "Headline": null,
+        "About_Snippet": "Experienced project manager and multilingual content specialist with 10+ years in media…",
+        "Current_Title": null,
+        "Tools_Software": "",
+        "Certifications": "",
+        "Experience_History": null
+      },
+      "recomputed_audit": {
+        "total_fields": 19,
+        "populated_count": 13,
+        "enrichment_percentage": 68,
+        "missing_fields": [
+          "Contact_Number",
+          "Headline",
+          "Current_Title",
+          "Tools_Software",
+          "Certifications",
+          "Experience_History"
+        ],
+        "missing_critical_fields": [
+          "Contact_Number"
+        ],
+        "is_complete": false
+      },
+      "field_sources": {
+        "Source": "existing",
+        "Services": "existing",
+        "Full_Name": "brightdata",
+        "First_Name": "brightdata",
+        "Profile_Link": "existing",
+        "Years_of_Exp": "existing",
+        "About_Snippet": "existing",
+        "Email_Address": "existing",
+        "Source_Language": "existing",
+        "Target_Language": "existing",
+        "Vendor_Experience": "existing",
+        "Secondary_Languages": "existing",
+        "Country_of_Residence": "brightdata"
+      }
+    }
+  ]
+}

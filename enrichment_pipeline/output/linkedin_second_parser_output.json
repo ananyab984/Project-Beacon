@@ -1,0 +1,42 @@
+{
+  "profile_link": "https://www.linkedin.com/in/alex-anthraper/",
+  "parser_1_canonical_fields": {
+    "Source": "LinkedIn",
+    "Profile_Link": "https://www.linkedin.com/in/alex-anthraper/",
+    "Full_Name": "Alex Anthraper",
+    "First_Name": "Alex",
+    "Country_of_Residence": "Bengaluru",
+    "Vendor_Experience": "Global3",
+    "About_Snippet": "Experienced project manager and multilingual content specialist with 10+ years in media…"
+  },
+  "parser_2_drafting_context": {
+    "about": "Experienced project manager and multilingual content specialist with 10+ years in media…",
+    "city": "Bengaluru, Karnataka, India",
+    "location": "Bengaluru",
+    "current_company": {
+      "link": "https://www.linkedin.com/company/global3?trk=public_profile_topcard-current-company",
+      "name": "Global3",
+      "company_id": "global3",
+      "location": null
+    },
+    "education": [
+      {
+        "title": "CMS College of Science and Commerce, Coimbatore",
+        "url": "https://in.linkedin.com/school/cms-college-of-science-and-commerce-coimbatore/",
+        "start_year": "2008-06",
+        "end_year": "2011-04",
+        "description": null,
+        "description_html": null,
+        "institute_logo_url": null
+      },
+      {
+        "start_year": "2006-06",
+        "end_year": "2008-04",
+        "description": null,
+        "description_html": null,
+        "institute_logo_url": null
+      }
+    ],
+    "educations_details": "CMS College of Science and Commerce, Coimbatore"
+  }
+}

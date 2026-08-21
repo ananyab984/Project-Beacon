@@ -1,0 +1,502 @@
+{
+  "note": "Complete, untruncated About text and the raw Experience array straight from BrightData for every real LinkedIn lead, plus the canonical fields and curated Full_Profile_Context.",
+  "total_leads": 14,
+  "leads": [
+    {
+      "lead_id": "8f70245f-f0b5-4f6a-8b4a-f295a3dccd29",
+      "name": "Sunaina Satish",
+      "profile_link": "https://www.linkedin.com/in/sunaina-satish/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/sunaina-satish/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "6821db1e-b52b-4e45-85c4-86e78c4f8e86",
+      "name": "Divya Shyam",
+      "profile_link": "https://www.linkedin.com/in/divya-shyam-912612177/",
+      "full_about_section": "My professional journey has been shaped by working at the intersection of people…",
+      "experience_array": null,
+      "education_array": [
+        {
+          "start_year": "2002",
+          "end_year": "2005",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        }
+      ],
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/divya-shyam-912612177/",
+        "Full_Name": "Divya Shyam",
+        "First_Name": "Divya",
+        "Country_of_Residence": "Bengaluru",
+        "Vendor_Experience": "Global3",
+        "About_Snippet": "My professional journey has been shaped by working at the intersection of people…"
+      },
+      "full_profile_context": {
+        "about": "My professional journey has been shaped by working at the intersection of people…",
+        "city": "Bengaluru, Karnataka, India",
+        "location": "Bengaluru",
+        "current_company": {
+          "link": "https://www.linkedin.com/company/global3?trk=public_profile_topcard-current-company",
+          "name": "Global3",
+          "company_id": "global3",
+          "location": null
+        },
+        "education": [
+          {
+            "start_year": "2002",
+            "end_year": "2005",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          }
+        ],
+        "educations_details": "Bangalore University"
+      }
+    },
+    {
+      "lead_id": "f78cdda6-1e71-4327-a879-59acf24700d9",
+      "name": "Mathumitha Senthil",
+      "profile_link": "https://www.linkedin.com/in/mathumitha-senthil/",
+      "full_about_section": "With a solid academic foundation in Electronics and Communications Engineering (BTech)…",
+      "experience_array": null,
+      "education_array": [
+        {
+          "title": "SRM University",
+          "url": "https://in.linkedin.com/school/srm-university-official/",
+          "start_year": "2022-06",
+          "end_year": "2024-07",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        },
+        {
+          "start_year": "2018",
+          "end_year": "2022",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        }
+      ],
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/mathumitha-senthil/",
+        "Full_Name": "Mathumitha Senthil",
+        "First_Name": "Mathumitha",
+        "Country_of_Residence": "Bengaluru",
+        "About_Snippet": "With a solid academic foundation in Electronics and Communications Engineering (BTech)…",
+        "Certifications": "Complete Figma Megacourse, UI UX Design & Development, Enterprise Design Thinking Practitioner, Power BI, Illustrations and Doodling"
+      },
+      "full_profile_context": {
+        "about": "With a solid academic foundation in Electronics and Communications Engineering (BTech)…",
+        "city": "Bengaluru, Karnataka, India",
+        "location": "Bengaluru",
+        "current_company": {
+          "location": null
+        },
+        "education": [
+          {
+            "title": "SRM University",
+            "url": "https://in.linkedin.com/school/srm-university-official/",
+            "start_year": "2022-06",
+            "end_year": "2024-07",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          },
+          {
+            "start_year": "2018",
+            "end_year": "2022",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          }
+        ],
+        "educations_details": "SRM University",
+        "certifications": [
+          {
+            "meta": "Issued Jan 2024 Credential ID UC-dd3384fb-d973-4f05-9372-2a21df1d9a34 See credential",
+            "subtitle": "Udemy",
+            "title": "Complete Figma Megacourse",
+            "credential_url": "https://www.udemy.com/certificate/UC-dd3384fb-d973-4f05-9372-2a21df1d9a34/?trk=public_profile_see-credential",
+            "credential_id": "UC-dd3384fb-d973-4f05-9372-2a21df1d9a34"
+          },
+          {
+            "meta": "Issued Jan 2024",
+            "subtitle": "FITA Academy",
+            "title": "UI UX Design & Development",
+            "credential_url": null,
+            "credential_id": null
+          },
+          {
+            "meta": "Issued Nov 2022 See credential",
+            "subtitle": "IBM",
+            "title": "Enterprise Design Thinking Practitioner",
+            "credential_url": "https://www.credly.com/badges/5a0e54b1-bff0-4a5a-99fc-288508a66ee6/linked_in_profile?trk=public_profile_see-credential",
+            "credential_id": null
+          },
+          {
+            "meta": "Issued Oct 2022 Credential ID 3867827",
+            "subtitle": "Simplilearn",
+            "title": "Power BI",
+            "credential_url": null,
+            "credential_id": "3867827"
+          },
+          {
+            "meta": "Issued Aug 2021",
+            "subtitle": "MyCaptain",
+            "title": "Illustrations and Doodling",
+            "credential_url": null,
+            "credential_id": null
+          },
+          {
+            "meta": "Issued May 2020 Credential ID WE9CRQTTC3SY See credential",
+            "subtitle": "Coursera",
+            "title": "IT Fundamentals for Cybersecurity Specialization",
+            "credential_url": "https://www.coursera.org/account/accomplishments/specialization/certificate/WE9CRQTTC3SY?trk=public_profile_see-credential",
+            "credential_id": "WE9CRQTTC3SY"
+          },
+          {
+            "meta": "Issued May 2020",
+            "subtitle": "Kumaraguru College of Technology",
+            "title": "Transactional Analysis",
+            "credential_url": null,
+            "credential_id": null
+          },
+          {
+            "meta": "Issued Nov 2022 Expires Nov 2025 Credential ID 4KYH4DMC51VE1DGR See credential",
+            "subtitle": "Amazon Web Services (AWS)",
+            "title": "AWS Certified Cloud Practitioner",
+            "credential_url": "https://www.certmetrics.com/amazon/candidate/cert_summary.aspx?trk=public_profile_see-credential",
+            "credential_id": "4KYH4DMC51VE1DGR"
+          },
+          {
+            "meta": "Credential ID UC-37e88810-8714-4d89-9f52-f58cfefb3a37",
+            "subtitle": "Udemy",
+            "title": "Creativity, problem solving and generating alternatives",
+            "credential_url": null,
+            "credential_id": "UC-37e88810-8714-4d89-9f52-f58cfefb3a37"
+          },
+          {
+            "subtitle": "University of California, Irvine Division of Continuing Education",
+            "title": "Effective Problem-Solving and Decision-Making",
+            "credential_url": null,
+            "credential_id": null
+          }
+        ],
+        "languages": [
+          {
+            "subtitle": "Native or bilingual proficiency",
+            "title": "Tamil"
+          },
+          {
+            "subtitle": "Full professional proficiency",
+            "title": "English"
+          },
+          {
+            "subtitle": "Elementary proficiency",
+            "title": "French"
+          },
+          {
+            "subtitle": "Elementary proficiency",
+            "title": "Telugu"
+          },
+          {
+            "subtitle": "Elementary proficiency",
+            "title": "Hindi"
+          }
+        ]
+      }
+    },
+    {
+      "lead_id": "ae315d31-11cb-41b7-8816-2b561c64a8c5",
+      "name": "Shivendra Giri",
+      "profile_link": "https://www.linkedin.com/in/shivendra-giri-370a0615/",
+      "full_about_section": "I lead media localization and AI dubbing initiatives at the intersection of storytelling,…",
+      "experience_array": null,
+      "education_array": [
+        {
+          "title": "University of Wales",
+          "url": "https://uk.linkedin.com/school/university-of-wales/",
+          "start_year": "2009-06",
+          "end_year": "2012-06",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        }
+      ],
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/shivendra-giri-370a0615/",
+        "Full_Name": "Shivendra Giri",
+        "First_Name": "Shivendra",
+        "Country_of_Residence": "Bengaluru",
+        "Vendor_Experience": "Global3",
+        "About_Snippet": "I lead media localization and AI dubbing initiatives at the intersection of storytelling,…",
+        "Services": "Dubbing, Localization"
+      },
+      "full_profile_context": {
+        "about": "I lead media localization and AI dubbing initiatives at the intersection of storytelling,…",
+        "city": "Bengaluru, Karnataka, India",
+        "location": "Bengaluru",
+        "current_company": {
+          "link": "https://www.linkedin.com/company/global3?trk=public_profile_topcard-current-company",
+          "name": "Global3",
+          "company_id": "global3",
+          "location": null
+        },
+        "education": [
+          {
+            "title": "University of Wales",
+            "url": "https://uk.linkedin.com/school/university-of-wales/",
+            "start_year": "2009-06",
+            "end_year": "2012-06",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          }
+        ],
+        "educations_details": "University of Wales"
+      }
+    },
+    {
+      "lead_id": "9b192ee2-550b-4f4b-b099-8bc654b3bf45",
+      "name": "Ananya Reddy",
+      "profile_link": "https://www.linkedin.com/in/ananya-reddy-voice/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/ananya-reddy-voice/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "f3d4e353-c530-459b-ab58-560150c551c9",
+      "name": "Rajesh Kumar",
+      "profile_link": "https://www.linkedin.com/in/rajesh-kumar-dub/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/rajesh-kumar-dub/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "d09a160c-8f9f-48c1-bf7c-9dfe6cf6554c",
+      "name": "Priyanka  Nair",
+      "profile_link": "https://www.linkedin.com/in/priyanka-nair-ad/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/priyanka-nair-ad/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "5dafb940-b0af-4358-a998-c3a42ed521c9",
+      "name": "Muhammad Irfan",
+      "profile_link": "https://www.linkedin.com/in/muhammad-irfan-va/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/muhammad-irfan-va/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "c9b60f03-ecf0-4af1-a77e-2dd1332be2b6",
+      "name": "kavya iyer",
+      "profile_link": "https://www.linkedin.com/in/kavya-iyer-subs/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/kavya-iyer-subs/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "7e6cc777-e3f4-4a45-afd4-f0e46b0b2bc2",
+      "name": "Suresh  Babu",
+      "profile_link": "https://www.linkedin.com/in/suresh-babu-dubbing/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/suresh-babu-dubbing/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "53d88608-bf49-4260-a76f-7e4ed1af0525",
+      "name": "Farhana Sheikh",
+      "profile_link": "https://www.linkedin.com/in/farhana-sheikh-ad/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/farhana-sheikh-ad/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "07cc5334-baf3-4c8c-bd89-191ca6334fe8",
+      "name": "Neha Deshmukh",
+      "profile_link": "https://www.linkedin.com/in/neha-deshmukh-va/",
+      "full_about_section": null,
+      "experience_array": null,
+      "education_array": null,
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/neha-deshmukh-va/"
+      },
+      "full_profile_context": null
+    },
+    {
+      "lead_id": "58b048a1-66ea-41fe-8ab4-36ac2821da4e",
+      "name": "Christina Fernandez",
+      "profile_link": "https://www.linkedin.com/in/christina-fernandez-68682921/",
+      "full_about_section": "Currently pursuing entrepreneurial exploits through my current labour of love called…",
+      "experience_array": null,
+      "education_array": [
+        {
+          "title": "Mount Carmel College, Bangalore",
+          "start_year": "1998",
+          "end_year": "2003",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        }
+      ],
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/christina-fernandez-68682921/",
+        "Full_Name": "Christina Fernandez",
+        "First_Name": "Christina",
+        "Country_of_Residence": "Bengaluru",
+        "Vendor_Experience": "Global3",
+        "About_Snippet": "Currently pursuing entrepreneurial exploits through my current labour of love called…"
+      },
+      "full_profile_context": {
+        "about": "Currently pursuing entrepreneurial exploits through my current labour of love called…",
+        "city": "Bengaluru, Karnataka, India",
+        "location": "Bengaluru",
+        "current_company": {
+          "link": "https://www.linkedin.com/company/global3?trk=public_profile_topcard-current-company",
+          "name": "Global3",
+          "company_id": "global3",
+          "location": null
+        },
+        "education": [
+          {
+            "title": "Mount Carmel College, Bangalore",
+            "start_year": "1998",
+            "end_year": "2003",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          }
+        ],
+        "educations_details": "Mount Carmel College, Bangalore",
+        "languages": [
+          {
+            "subtitle": "Native or bilingual proficiency",
+            "title": "English"
+          },
+          {
+            "subtitle": "Limited working proficiency",
+            "title": "French"
+          }
+        ],
+        "bio_links": [
+          {
+            "title": "Company Website",
+            "link": "https://kitster.in/"
+          }
+        ]
+      }
+    },
+    {
+      "lead_id": "f34049d4-d3b4-4ba8-b142-7b7f31ab6871",
+      "name": "Alex Anthraper",
+      "profile_link": "https://www.linkedin.com/in/alex-anthraper/",
+      "full_about_section": "Experienced project manager and multilingual content specialist with 10+ years in media…",
+      "experience_array": null,
+      "education_array": [
+        {
+          "title": "CMS College of Science and Commerce, Coimbatore",
+          "url": "https://in.linkedin.com/school/cms-college-of-science-and-commerce-coimbatore/",
+          "start_year": "2008-06",
+          "end_year": "2011-04",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        },
+        {
+          "start_year": "2006-06",
+          "end_year": "2008-04",
+          "description": null,
+          "description_html": null,
+          "institute_logo_url": null
+        }
+      ],
+      "canonical_fields": {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/alex-anthraper/",
+        "Full_Name": "Alex Anthraper",
+        "First_Name": "Alex",
+        "Country_of_Residence": "Bengaluru",
+        "Vendor_Experience": "Global3",
+        "About_Snippet": "Experienced project manager and multilingual content specialist with 10+ years in media…"
+      },
+      "full_profile_context": {
+        "about": "Experienced project manager and multilingual content specialist with 10+ years in media…",
+        "city": "Bengaluru, Karnataka, India",
+        "location": "Bengaluru",
+        "current_company": {
+          "link": "https://www.linkedin.com/company/global3?trk=public_profile_topcard-current-company",
+          "name": "Global3",
+          "company_id": "global3",
+          "location": null
+        },
+        "education": [
+          {
+            "title": "CMS College of Science and Commerce, Coimbatore",
+            "url": "https://in.linkedin.com/school/cms-college-of-science-and-commerce-coimbatore/",
+            "start_year": "2008-06",
+            "end_year": "2011-04",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          },
+          {
+            "start_year": "2006-06",
+            "end_year": "2008-04",
+            "description": null,
+            "description_html": null,
+            "institute_logo_url": null
+          }
+        ],
+        "educations_details": "CMS College of Science and Commerce, Coimbatore"
+      }
+    }
+  ]
+}
