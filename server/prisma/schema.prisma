@@ -917,6 +917,26 @@ model ContractorAssignment {
 }
 
 // ----------------------------------------------------------------------------
+// FAQ ENTRIES — self-service knowledge base for structured lookups
+// Triggered by button in email compose; matched against candidate questions
+// to auto-fill responses without sending.
+// ----------------------------------------------------------------------------
+
+model FaqEntry {
+  id        String   @id @default(uuid())
+  category  String
+  question  String
+  answer    String
+  tags      String[] @default([])
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("faq_entries")
+}
+
+// ----------------------------------------------------------------------------
 // ESCALATIONS — owner-facing alert queue (g3-mock.ts Escalation)
 // ----------------------------------------------------------------------------
 

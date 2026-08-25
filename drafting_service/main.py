@@ -17,6 +17,7 @@ from core.leads import check_channel_eligibility, load_leads
 from logger import configure_logging, get_logger
 from core.rate_card import RateCardService
 from orchestrator import DraftingOrchestrator
+from draft_generator import generate_faq_reply
 
 log = get_logger(__name__)
 
@@ -146,6 +147,12 @@ class EditLogRequest(BaseModel):
     edited_body: str
 
 
+class FaqReplyRequest(BaseModel):
+    lead_message: str
+    faq_question: str
+    faq_answer: str
+
+
 def run_server(host: str, port: int, config) -> None:
     """Run pipeline as a FastAPI HTTP server (ready for Node.js backend integration).
 
@@ -196,6 +203,19 @@ def run_server(host: str, port: int, config) -> None:
             return orchestrator.record_edit(payload.draft_id, payload.original_body, payload.edited_body)
         except Exception as exc:
             log.exception("Error logging recruiter edit: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    @app.post("/faq-reply")
+    def faq_reply_endpoint(payload: FaqReplyRequest):
+        try:
+            if not orchestrator.client:
+                raise HTTPException(status_code=500, detail="CLAUDE_API_KEY is not configured in drafting service.")
+            result = generate_faq_reply(orchestrator.client, config, payload.lead_message, payload.faq_question, payload.faq_answer)
+            return {"body": result.body, "model": result.model, "latency_ms": result.latency_ms}
+        except HTTPException:
+            raise
+        except Exception as exc:
+            log.exception("Error generating FAQ reply: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     log.info("Starting AI Message Drafting FastAPI server at http://%s:%d", host, port)

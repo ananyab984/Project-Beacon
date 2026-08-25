@@ -16,6 +16,7 @@ import {
   Paperclip,
   Lock,
   MessageCircle,
+  MessageCircleQuestion,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -65,6 +66,7 @@ export function ConversationsPageView() {
   const [to, setTo] = useState("");
   const [sending, setSending] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
+  const [isCheckingFaq, setIsCheckingFaq] = useState(false);
   const [searchThread, setSearchThread] = useState("");
 
   const [connectDialogOpen, setConnectDialogOpen] = useState(false);
@@ -110,6 +112,33 @@ export function ConversationsPageView() {
       toast.info("Loaded official LinkedIn template draft.");
     } finally {
       setIsGeneratingDraft(false);
+    }
+  };
+
+  const handleCheckFaq = async () => {
+    if (!conv) return;
+    const lastLeadMessage = [...conv.messages].reverse().find((m: ApiConversationMessage) => m.sender === "THEM");
+    if (!lastLeadMessage) {
+      toast.error("No reply from the candidate yet to check");
+      return;
+    }
+    setIsCheckingFaq(true);
+    try {
+      const result = await api.checkFaq(lastLeadMessage.text);
+      if (result.match && result.answer) {
+        setDraft(result.answer);
+        toast.success(`FAQ match found: "${result.matchedQuestion}"`);
+      } else {
+        toast.info("No confident FAQ match for this reply");
+      }
+    } catch (err: any) {
+      if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
+        toast.error("Drafting service unavailable — check the FAQ manually");
+      } else {
+        toast.error(err.message || "Failed to check FAQ");
+      }
+    } finally {
+      setIsCheckingFaq(false);
     }
   };
 
@@ -407,6 +436,15 @@ export function ConversationsPageView() {
                         </button>
                         <button type="button" className="hover:text-foreground transition-colors cursor-pointer" title="Attach file">
                           <Paperclip className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCheckFaq}
+                          disabled={isCheckingFaq}
+                          className="text-cyan-400 hover:text-cyan-300 font-medium flex items-center gap-1.5 disabled:opacity-50 cursor-pointer text-xs"
+                        >
+                          {isCheckingFaq ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleQuestion className="h-3.5 w-3.5" />}
+                          <span>{isCheckingFaq ? "Checking…" : "Check FAQ"}</span>
                         </button>
                         <button
                           type="button"
