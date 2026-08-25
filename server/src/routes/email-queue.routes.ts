@@ -8,6 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { config } from "../config";
 import { UnipileService } from "../services/unipile.service";
+import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { buildEmailDraft, candidateRoleOf } from "../lib/messageTemplates";
 
 export const emailQueueRouter = Router();
@@ -114,31 +115,27 @@ emailQueueRouter.post(
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
 
+    // A recruiter typing an address into the TO field is a legitimate way to
+    // supply an email the enrichment pipeline never found -- previously this
+    // never reached generate-draft at all (only /send read it), so it could
+    // never unblock a NO_EMAIL-ineligible lead no matter what was typed.
+    const manualToRaw = typeof req.body?.to === "string" ? req.body.to.trim() : "";
+    const manualTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualToRaw) ? manualToRaw : null;
+    const effectiveEmail = item.lead.email || manualTo;
+
+    // Fill-only, never overwrite: if the lead had no email on file yet, a
+    // manually-supplied one is real lead data worth keeping, not just a
+    // one-off send-time detail -- but an existing (enriched) email always wins.
+    if (manualTo && !item.lead.email) {
+      await prisma.lead.update({ where: { id: item.lead.id }, data: { email: manualTo } });
+    }
+
     let draft: { subject?: string | null; body: string };
     try {
       const response = await axios.post(
         `${config.draftingServiceUrl}/draft`,
         {
-          lead: {
-            First_Name: item.lead.firstName,
-            Full_Name: item.lead.fullName,
-            Country_of_Residence: item.lead.country,
-            Source: item.lead.source,
-            Profile_Link: item.lead.profileLink,
-            Email_Address: item.lead.email,
-            Services: item.lead.services.join(", "),
-            Source_Language: item.lead.sourceLanguage,
-            Target_Language: item.lead.targetLanguage,
-            Secondary_Languages: item.lead.secondaryLanguages.join(", "),
-            Years_of_Exp: item.lead.yearsOfExperience ? item.lead.yearsOfExperience.toNumber() : null,
-            Vendor_Experience: item.lead.vendorExperience,
-            Enrichment_Status: item.lead.enrichmentStatus,
-            Headline: item.lead.headline,
-            About_Snippet: item.lead.aboutSnippet,
-            Current_Title: item.lead.currentTitle,
-            Tools_Software: item.lead.toolsSoftware.join(", "),
-            Certifications: item.lead.certifications.join(", "),
-          },
+          lead: buildDraftLeadPayload(item.lead, effectiveEmail),
           channel: "email",
         },
         { timeout: 20_000 }

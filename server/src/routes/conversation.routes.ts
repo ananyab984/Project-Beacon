@@ -10,6 +10,7 @@ import { ApiError } from "../lib/apiError";
 import { config } from "../config";
 import { UnipileService } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
+import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 
 export const conversationRouter = Router();
 
@@ -131,21 +132,12 @@ conversationRouter.post(
       const response = await axios.post(
         `${config.draftingServiceUrl}/draft`,
         {
-          lead: {
-            First_Name: conversation.lead.firstName,
-            Full_Name: conversation.lead.fullName,
-            Country_of_Residence: conversation.lead.country,
-            Source: conversation.lead.source,
-            Profile_Link: conversation.lead.profileLink,
-            Email_Address: conversation.lead.email,
-            Services: conversation.lead.services.join(", "),
-            Source_Language: conversation.lead.sourceLanguage,
-            Target_Language: conversation.lead.targetLanguage,
-            Secondary_Languages: conversation.lead.secondaryLanguages.join(", "),
-            Years_of_Exp: conversation.lead.yearsOfExperience ? conversation.lead.yearsOfExperience.toNumber() : null,
-            Vendor_Experience: conversation.lead.vendorExperience,
-            Enrichment_Status: conversation.lead.enrichmentStatus,
-          },
+          // Previously omitted Headline/About_Snippet/Current_Title/
+          // Tools_Software/Certifications entirely -- LinkedIn drafts were
+          // personalizing on strictly less material than email drafts. Now
+          // shares the exact same payload builder (and gets Clay's richer
+          // data) as the email route.
+          lead: buildDraftLeadPayload(conversation.lead),
           channel: "linkedin",
         },
         { timeout: 20_000 }
