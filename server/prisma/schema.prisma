@@ -385,6 +385,19 @@ model Lead {
   // enrichment of the same lead doesn't re-spend an LLM call re-verifying
   // something already settled.
   fieldSources Json? @map("field_sources")
+  // Full-fidelity enrichment payload from Clay's "Enrich person" action --
+  // Experience, Education, Languages, Courses, Projects, etc. The thin
+  // canonical fields above (headline, aboutSnippet, ...) are a lossy summary
+  // of a subset of this; this column exists so drafting can ground on the
+  // richer material (specific past roles/companies/dates) that the thin
+  // fields alone can't carry.
+  clayData Json? @map("clay_data")
+  // The complete raw Bright Data/Tavily scrape payload, verbatim -- same
+  // "nothing dropped" principle as clayData above, extended to the primary
+  // scrape source. Previously computed in orchestrator.py purely for
+  // internal LLM-fallback verification and discarded before the response
+  // was even built; now persisted so drafting can mine it too.
+  rawScrapeData Json? @map("raw_scrape_data")
 
   // --- source + enrichment (Phase 1: Bright Data / ProZ / Claude wrapper) ---
   source                  LeadSource
