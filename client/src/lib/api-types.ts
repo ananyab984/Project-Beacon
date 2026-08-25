@@ -55,6 +55,15 @@ export interface ApiLead {
   source: LeadSource;
   yearsOfExperience: number | null;
   vendorExperience: string | null;
+  headline: string | null;
+  aboutSnippet: string | null;
+  currentTitle: string | null;
+  toolsSoftware: string[];
+  certifications: string[];
+  /** Per-field provenance: "brightdata" | "tavily" | "llm_fallback" | "clay" | "existing" */
+  fieldSources: Record<string, string> | null;
+  /** Full-fidelity Clay enrichment: { experience, education, languages, courses, projects, currentExperience } */
+  clayData: Record<string, any> | null;
   availability: Availability;
   availabilityFromDate: string | null;
   createdAt: string;

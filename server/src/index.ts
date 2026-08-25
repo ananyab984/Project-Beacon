@@ -6,6 +6,7 @@ import { config } from "./config";
 import { authRouter } from "./routes/auth.routes";
 import { leadRouter } from "./routes/lead.routes";
 import { unipileRouter } from "./routes/unipile.routes";
+import { webhooksRouter } from "./routes/webhooks.routes";
 import { outreachRouter } from "./routes/outreach.routes";
 import { userRouter } from "./routes/user.routes";
 import { clientRouter } from "./routes/client.routes";
@@ -71,6 +72,7 @@ app.get("/health", (req, res) => {
 app.use("/api/auth", authRouter);
 app.use("/api/leads", leadRouter);
 app.use("/api/unipile", unipileRouter);
+app.use("/api/webhooks", webhooksRouter);
 app.use("/api/outreach", outreachRouter);
 app.use("/api/users", userRouter);
 app.use("/api/clients", clientRouter);

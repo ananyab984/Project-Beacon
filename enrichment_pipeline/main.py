@@ -136,6 +136,8 @@ class EnrichmentResponse(BaseModel):
     execution_time_ms: int
     logs: List[str]
     duplicate_flag: Optional[Dict[str, Any]] = None
+    clay_fallback: Optional[Dict[str, Any]] = None
+    raw_enrichment_data: Optional[Any] = None
 
 
 class BatchEnrichmentResponse(BaseModel):

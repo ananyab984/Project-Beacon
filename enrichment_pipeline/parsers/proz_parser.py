@@ -118,7 +118,12 @@ class ProzParser(BaseParser):
             match = re.search(r"Services\s+([A-Z][\w/\s,]+?)\.", text)
             if match:
                 return match.group(1).strip()
-        return "Translation"
+        # Previously defaulted to "Translation" when nothing matched -- that
+        # made every ProZ lead look like the scrape found *something*, even
+        # when it found nothing at all, which silently blocked Stage 3.5's
+        # "did the primary provider find anything" check from ever firing
+        # for ProZ. If it wasn't actually in the scraped text, it's not known.
+        return None
 
     def _extract_years_of_exp(self, primary: Optional[dict], others: list) -> Optional[int]:
         for text in self._all_texts(primary, others):

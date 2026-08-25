@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, Dict, Optional, TypedDict
 
@@ -15,6 +16,7 @@ from llm_fallback.prompt_builder import build_targeted_prompt
 from llm_fallback.verifier import verify_against_source
 from logger import get_logger
 from providers.brightdata_client import BrightDataClient, BrightDataError
+from providers.clay_client import ClayClient, ClayError
 from providers.tavily_client import TavilyClient, TavilyError
 
 # Parsers
@@ -55,6 +57,19 @@ class PipelineResult(TypedDict):
     audit: Dict[str, Any]
     execution_time_ms: int
     logs: list[str]
+    # Set only when Bright Data returned nothing for a LinkedIn profile and
+    # Clay's async fallback was dispatched. `correlation_id` is what
+    # /api/webhooks/clay (Node) matches Clay's later result back to this
+    # lead by -- currently Profile_Link, since no lead-id crosses this
+    # request boundary today. `None` means Clay was never triggered.
+    clay_fallback: Optional[Dict[str, Any]]
+    # The COMPLETE raw scrape payload (Bright Data or Tavily, whichever ran)
+    # -- previously computed as raw_source_text purely for internal LLM
+    # fallback verification, then discarded before the response was even
+    # built. Same "nothing dropped" principle as Clay's clay_data: drafting
+    # can't personalize on detail that was never handed to it. None if no
+    # scrape ran or it returned nothing.
+    raw_enrichment_data: Optional[Any]
 
 
 class EnrichmentOrchestrator:
@@ -65,6 +80,7 @@ class EnrichmentOrchestrator:
         self.brightdata = BrightDataClient(config) if config.brightdata_api_key else None
         self.tavily = TavilyClient(config) if config.tavily_api_key else None
         self.claude = ClaudeClient(config) if config.claude_api_key else None
+        self.clay = ClayClient(config) if config.clay_webhook_url else None
 
         self.parsers = {
             "linkedin": LinkedInParser(),
@@ -128,6 +144,7 @@ class EnrichmentOrchestrator:
                 log.warning(msg)
 
         # Run parser if raw scraped data was obtained
+        stage3_parsed: Dict[str, Any] = {}
         if raw_scraped_data is not None:
             parser = self.parsers.get(parser_name, GenericParser())
             stage3_parsed = parser.parse(profile_link, raw_scraped_data)
@@ -160,6 +177,78 @@ class EnrichmentOrchestrator:
 
         post_stage3_audit = audit_lead_fields(lead)
         logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")
+
+        # Stage 3.5: Clay fallback -- now ACROSS ALL SOURCES (LinkedIn via
+        # Bright Data, ProZ/ATA/ATAA/Bodalgo/generic via Tavily), not just
+        # LinkedIn. Fires only when the primary provider returned literally
+        # nothing (not a per-field gap; that's Stage 4-6's job) AND we have
+        # an identifier Clay's "Enrich person" action can actually use --
+        # confirmed against Clay's own UI, it only accepts a LinkedIn/
+        # SalesNav URL or an email address as input, so a bare ProZ/ATA
+        # profile link alone can't be dispatched (clay_client already sends
+        # both Profile Link and Email in every dispatch -- Clay's own
+        # waterfall picks whichever is usable). Clay's enrichment is
+        # asynchronous (its own outbound webhook, not a response to this
+        # request), so this only ever dispatches and moves on; it never
+        # blocks process_lead waiting for Clay's result.
+        clay_fallback: Optional[Dict[str, Any]] = None
+        # NOTE: checking raw_scraped_data's truthiness alone is NOT enough --
+        # confirmed live against the real API, Bright Data returns a non-empty
+        # response even for a profile that doesn't exist, e.g.
+        # `[{"timestamp": "...", "input": {"url": "..."}}]` with zero actual
+        # profile fields. Parsers also always echo back Source/Profile_Link
+        # regardless of what was actually found (they come straight from the
+        # input, confirmed by direct test against this exact payload) --
+        # excluded here since they carry no real signal about whether the
+        # scrape found anything. "Nothing from the primary provider" means
+        # "the parser extracted no ACTUAL profile field", not "the raw
+        # payload was empty" or "stage3_parsed has any key at all".
+        _INPUT_ECHO_FIELDS = {"Source", "Profile_Link"}
+        _CLAY_CAPABLE_PROVIDERS = {"brightdata", "tavily_search", "tavily_extract"}
+        primary_provider_got_nothing = provider_type in _CLAY_CAPABLE_PROVIDERS and not any(
+            not is_empty_value(v) for k, v in stage3_parsed.items() if k not in _INPUT_ECHO_FIELDS
+        )
+        # Clay's "Enrich person" action only accepts a LinkedIn/SalesNav URL
+        # or an email as input -- a ProZ/ATA/etc. profile link alone is not
+        # something it can enrich from. Gate dispatch on actually having one
+        # of those two identifiers, regardless of which Source this lead is.
+        _has_linkedin_url = bool(re.search(r"linkedin\.com/(in|sales)/", profile_link or "", re.IGNORECASE))
+        _has_email = not is_empty_value(lead.get("Email_Address"))
+        has_clay_identifier = _has_linkedin_url or _has_email
+        # A lead that's dispatched-but-not-yet-answered is still "PENDING"
+        # overall (no critical fields resolved), so the Node backend's
+        # pollPendingEnrichment() cron will call /enrich on it again every
+        # few minutes while it waits. Without this guard, every one of those
+        # polls would re-dispatch the SAME lead to Clay as a brand-new row.
+        # `known_field_sources` round-trips this exactly the way it already
+        # prevents re-asking the LLM fallback about an already-settled field.
+        already_dispatched = field_sources.get("_clay_dispatch") == "pending"
+        if primary_provider_got_nothing and already_dispatched:
+            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": "already_pending"}
+            logs.append("Stage 3.5 skipped: Clay fallback already dispatched for this lead, awaiting its async result")
+        elif primary_provider_got_nothing and has_clay_identifier:
+            if self.clay and profile_link:
+                try:
+                    self.clay.dispatch_lead(lead, correlation_id=profile_link)
+                    field_sources["_clay_dispatch"] = "pending"
+                    clay_fallback = {"dispatched": True, "correlation_id": profile_link, "reason": f"{provider_type}_empty"}
+                    msg = f"Stage 3.5: {provider_type} returned nothing for this profile -- dispatched to Clay fallback (async, result arrives via webhook)"
+                    logs.append(msg)
+                    log.info("Lead %s: %s", lead.get("Full_Name") or profile_link, msg)
+                except ClayError as exc:
+                    msg = f"Stage 3.5: Clay dispatch failed: {exc}"
+                    logs.append(msg)
+                    log.error(msg)
+            elif not self.clay:
+                logs.append(f"Stage 3.5 skipped: {provider_type} returned nothing, but CLAY_WEBHOOK_URL not configured")
+            elif not profile_link:
+                logs.append(f"Stage 3.5 skipped: {provider_type} returned nothing, but no Profile_Link to use as Clay's correlation id")
+        elif primary_provider_got_nothing and not has_clay_identifier:
+            logs.append(
+                f"Stage 3.5 skipped: {provider_type} returned nothing, but no LinkedIn URL or "
+                "Email_Address is available for Clay to enrich from (ProZ/ATA-style profile links "
+                "alone aren't a usable input to Clay's Enrich Person action)"
+            )
 
         # Stage 4: Critical Field Audit & LLM Bypass Guard
         missing_critical = post_stage3_audit["missing_critical_fields"]
@@ -242,4 +331,6 @@ class EnrichmentOrchestrator:
             "audit": final_audit,
             "execution_time_ms": elapsed_ms,
             "logs": logs,
+            "clay_fallback": clay_fallback,
+            "raw_enrichment_data": raw_scraped_data,
         }

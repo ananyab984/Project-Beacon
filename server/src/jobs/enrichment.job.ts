@@ -113,7 +113,14 @@ export async function enrichLeadById(leadId: string) {
       if (el.Certifications) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
     }
 
-    const hasContact = !!(enrichedEmail || enrichedContactNumber || lead.profileLink);
+    // BUG FIX: lead.profileLink was previously OR'd into hasContact -- but a
+    // profile link is an INPUT precondition for even attempting enrichment
+    // (every lead needs one to be scraped at all), not a signal that
+    // enrichment actually found anything. That made isComplete trivially
+    // true for nearly every lead regardless of whether Bright Data/Clay
+    // found real contact info, which is exactly why leads Clay reported
+    // "No Profile Found" for were still showing "Enriched" on the dashboard.
+    const hasContact = !!(enrichedEmail || enrichedContactNumber);
     const pipelineStatus = String(data?.enrichment_status || "").toLowerCase();
     const isComplete = hasContact || pipelineStatus === "enrichment_complete";
 
@@ -139,6 +146,13 @@ export async function enrichLeadById(leadId: string) {
         toolsSoftware: enrichedToolsSoftware,
         certifications: enrichedCertifications,
         fieldSources: (data?.field_sources ?? lead.fieldSources) as any,
+        // Complete raw Bright Data/Tavily payload, verbatim -- same
+        // "nothing dropped" principle as Clay's clayData. Bright Data
+        // returns a list, Tavily a dict -- shape varies by provider, so
+        // (unlike clayData, which is always one dict) this replaces rather
+        // than key-merges; a fresh non-empty scrape result is always the
+        // more current one anyway.
+        rawScrapeData: (data?.raw_enrichment_data ?? lead.rawScrapeData) as any,
         identityResolved: isComplete,
         enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
         flags: flags as any,
