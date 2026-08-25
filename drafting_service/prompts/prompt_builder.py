@@ -8,9 +8,17 @@ phrasing to the specific linguist using the facts actually provided.
 
 from __future__ import annotations
 
+import json
 from typing import Any, Dict, Optional, Tuple
 
 from core.leads import Lead
+
+# Generous but bounded -- this is a raw JSON dump of everything Clay returned,
+# not curated prose, so it can legitimately run a few KB for a lead with a
+# long work history. Capped so one unusually large profile can't blow the
+# request; the curated grounding_facts() above already carries the highest-
+# value specifics regardless, so truncation here only loses secondary detail.
+_MAX_CLAY_BLOCK_CHARS = 6000
 
 # --- Brand constants (single source of truth for every draft) ---------------
 BRAND = {
@@ -34,6 +42,15 @@ salesy buzzwords, no exaggerated claims.
 STRICT RULES:
 - Use ONLY the facts provided in LEAD FACTS below. Do NOT invent achievements, employers,
   projects, credentials, rates, or numbers that are not explicitly listed there.
+- NEVER splice two separate facts into one compound claim that isn't actually true. Each
+  LEAD FACTS entry describes ONE thing -- current_title is their role NOW, recent_experience
+  lists PAST roles at PAST employers. Do not attach current_title to a company name from
+  recent_experience, or vice versa, unless a single fact entry states both together. Example
+  of what NOT to do: current_title says "Sr. Project Coordinator" and recent_experience says
+  "Project Manager at Acme Inc" -- writing "your background as Sr. Project Coordinator at
+  Acme Inc" is FABRICATION even though both halves are individually true facts, because that
+  exact pairing was never stated. If in doubt, keep facts in their own separate sentences
+  rather than merging them into one claim.
 - HARD REQUIREMENT — specificity: if LEAD FACTS contains any concrete, named detail --
   tools_software, certifications, current_title, headline, or a named company inside
   current_role_or_company -- the opening MUST name at least one of them explicitly.
@@ -43,6 +60,25 @@ STRICT RULES:
   Strong (do this instead): "particularly your hands-on experience with OOONA and WinCaps
   at Sfera Studios." Prefer the specific named fact over the generic category whenever
   one is present.
+- recent_experience is the HIGHEST-VALUE source of specificity when present: each entry
+  after the colon is a real excerpt from that person's own profile, and it names actual
+  productions, clients, publications, technologies, ratings, or named projects -- not
+  generic category words. The role title and company name are the WEAKEST part of this
+  fact -- the text after the colon is where the real specificity lives, and it MUST be
+  mined, not just the company name. Naming only the employer ("your experience at Absolute
+  Translations") when the excerpt also contains something more distinctive ("360° language
+  services," "Trustpilot rating of 4.8," "legal document translation") is NOT acceptable --
+  pull the single most impressive or distinctive claim, number, or named detail out of the
+  excerpt itself. Weak: "your work in dubbing and voice acting" or "your experience at
+  Acme Inc." Also weak (company name only, ignoring richer detail that was available):
+  "your background at Absolute Translations." Strong: "your voice work for Paramount
+  Pictures' Kung Fu Panda," "the 800+ scripts you translated for National Geographic
+  Channel Bengali," or "Absolute Translations' 4.8 Trustpilot rating in legal
+  document translation." This is what shows the lead we actually looked at their real
+  background, not a template. Still never add detail beyond what recent_experience
+  literally states -- pick from what's there, don't embellish it.
+  education's field_of_study (e.g. "Media Management") is a secondary source of the same
+  kind of specific, named detail when recent_experience isn't available or is thin.
 - If LEAD FACTS includes years of experience, services, languages, country, current
   role/company, or the specificity facts above, weave the ones that are actually present
   naturally into the opening -- do not list every fact mechanically, and do not mention a
@@ -82,6 +118,35 @@ _LINKEDIN_EXEMPLAR = (
 )
 
 
+def _dump_capped(data: Any) -> str:
+    dumped = json.dumps(data, indent=2, ensure_ascii=False, default=str)
+    if len(dumped) > _MAX_CLAY_BLOCK_CHARS:
+        return dumped[:_MAX_CLAY_BLOCK_CHARS] + "\n... (truncated -- rely on LEAD FACTS above for anything cut off here)"
+    return dumped
+
+
+def _full_raw_data_block(lead: Lead) -> str:
+    """Every raw enrichment payload this lead has, verbatim, labeled by
+    source -- on top of the curated grounding_facts() above, not instead of
+    it. Covers BOTH Clay's "Enrich person" data and the primary scrape
+    (Bright Data for LinkedIn, Tavily for ProZ/ATA/etc.), so the model can
+    mine anything not explicitly modeled by the Lead dataclass (connections,
+    volunteering, structured_location, a raw about/experience field the
+    curated facts summarized, etc.) rather than a code-level decision in
+    advance about what counts as relevant. Still governed by the same
+    anti-fabrication rule in _VOICE_RULES -- only reference what's literally
+    present here, never infer or embellish.
+    """
+    sections = []
+    if lead.clay_full_data:
+        sections.append(f"--- From Clay ---\n{_dump_capped(lead.clay_full_data)}")
+    if lead.raw_scrape_data:
+        sections.append(f"--- From the primary scrape (Bright Data/Tavily) ---\n{_dump_capped(lead.raw_scrape_data)}")
+    if not sections:
+        return "(none -- no additional raw enrichment data available for this lead)"
+    return "\n\n".join(sections)
+
+
 def _facts_block(lead: Lead) -> str:
     """Render the lead's grounding facts as a compact, labeled block -- this
     is the ONLY data the model is given, and it already includes every real
@@ -104,6 +169,14 @@ def build_email_prompt(lead: Lead, rate_match: Optional[Dict[str, Any]] = None) 
 
 LEAD FACTS (the only facts you may use):
 {_facts_block(lead)}
+
+ADDITIONAL RAW PROFILE DATA (every enrichment source for this lead, raw and
+supplementary -- same rule applies: only reference what's literally present
+here, never infer or embellish beyond it. LEAD FACTS above is the pre-vetted
+primary source; treat this as a place to find ONE more specific, distinctive
+detail if LEAD FACTS didn't already give you enough to satisfy the
+specificity requirement below -- not a mandate to use everything in it):
+{_full_raw_data_block(lead)}
 
 RATE CONTEXT:
 {_rate_block(rate_match)}
@@ -137,6 +210,13 @@ def build_linkedin_prompt(lead: Lead, rate_match: Optional[Dict[str, Any]] = Non
 LEAD FACTS (the only facts you may use):
 {_facts_block(lead)}
 
+ADDITIONAL RAW PROFILE DATA (every enrichment source for this lead, raw and
+supplementary -- same rule applies: only reference what's literally present
+here, never infer or embellish beyond it. Given the tight character budget,
+only pull from this if it contains something more distinctive than what's
+already in LEAD FACTS):
+{_full_raw_data_block(lead)}
+
 RATE CONTEXT:
 {_rate_block(rate_match)}
 
@@ -147,11 +227,14 @@ apply link. No subject line.
 PRIORITY (in order, given the tight character budget): 1) years of experience, if
 present, MUST be worked into the note (e.g. "10 yrs in Dubbing") even briefly -- this is
 the single most important fact to keep if something has to be cut for length; 2) if room
-remains, prefer naming ONE concrete detail (a tool from tools_software, a certification,
-or current_title) over a generic service category -- e.g. "10 yrs, OOONA-certified"
-beats "10 yrs in subtitling" when both fit; 3) generic service category last, only if
-there's still room. Prefer short numerals/abbreviations ("10 yrs", "German dubbing")
-over full sentences to stay under the cap.
+remains, prefer naming ONE concrete, specific detail over a generic service category --
+in order of how compelling/personal they read: a named past employer/role from
+recent_experience (e.g. "your role at Absolute Translations" -- always one of THEIR
+past employers, never Global3 itself), a tool from tools_software, a
+certification, or current_title -- e.g. "10 yrs, incl. your role at [Company]" beats
+"10 yrs, OOONA-certified" beats "10 yrs in subtitling" when multiple fit; 3) generic
+service category last, only if there's still room. Prefer short numerals/abbreviations
+("10 yrs", "German dubbing") over full sentences to stay under the cap.
 
 PATTERN TO FOLLOW (this is the approved structure -- match its shape and links;
 personalize using the real LEAD FACTS instead of the bracketed placeholders,
