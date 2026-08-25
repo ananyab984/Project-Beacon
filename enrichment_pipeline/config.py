@@ -44,6 +44,10 @@ class Config:
     tavily_api_key: str
     claude_api_key: str
     groq_api_key: str = ""
+    # Optional -- LinkedIn-only fallback (Stage 3.5). Leads route to Clay only
+    # when Bright Data returns nothing at all; if this is unset, that stage is
+    # a no-op rather than a hard failure, so Clay is never a required dependency.
+    clay_webhook_url: str = ""
 
     brightdata_base_url: str = "https://api.brightdata.com/datasets/v3/scrape"
     tavily_extract_url: str = "https://api.tavily.com/extract"
@@ -84,6 +88,7 @@ def load_config(require_keys: bool = False) -> Config:
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     claude_key = os.getenv("CLAUDE_API_KEY", "").strip()
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
+    clay_webhook_url = os.getenv("CLAY_WEBHOOK_URL", "").strip()
 
     if require_keys:
         missing = []
@@ -115,6 +120,7 @@ def load_config(require_keys: bool = False) -> Config:
         claude_api_key=claude_key,
         claude_model=_resolve_claude_model(os.getenv("CLAUDE_MODEL", "")),
         groq_api_key=groq_key,
+        clay_webhook_url=clay_webhook_url,
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
         request_timeout=int(os.getenv("REQUEST_TIMEOUT", "60")),
         max_retries=int(os.getenv("MAX_RETRIES", "3")),

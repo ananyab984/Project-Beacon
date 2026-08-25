@@ -34,7 +34,9 @@ class AtaParser(BaseParser):
         if phone:
             record["Contact_Number"] = phone
 
-        record["Country_of_Residence"] = self._extract_country(raw_content)
+        country = self._extract_country(raw_content)
+        if country:
+            record["Country_of_Residence"] = country
 
         return record
 
@@ -57,7 +59,12 @@ class AtaParser(BaseParser):
         return match.group(0) if match else None
 
     @staticmethod
-    def _extract_country(raw_content: str) -> str:
+    def _extract_country(raw_content: str) -> Optional[str]:
+        # Previously returned "United States" unconditionally regardless of
+        # whether the text actually said so (both branches returned the same
+        # value) -- that made every ATA lead look like the scrape found a
+        # country, even when it found nothing, silently blocking Stage 3.5's
+        # "did the primary provider find anything" check from ever firing.
         if "United States" in raw_content or " USA" in raw_content:
             return "United States"
-        return "United States"
+        return None
