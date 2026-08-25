@@ -2,7 +2,8 @@
 // and the old in-memory AuthService both used, so the existing manual-test
 // flow (owner@global3.co / recruiter@global3.co / contractor@global3.co, all
 // password "demo1234") keeps working once auth is backed by real Postgres.
-import bcrypt from "bcryptjs";
+// Note: Passwords are managed externally by Neon Auth; this seed just creates
+// the app profiles and FAQ entries.
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
@@ -106,19 +107,17 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
 ];
 
 async function main() {
-  const passwordHash = bcrypt.hashSync("demo1234", 12);
-
   // Clean up any old synthetic dummy accounts and their dependent rows
   const dummyEmails = ["mathu@global3.co", "divya@global3.co", "varsha@global3.co", "sharmistha@global3.co", "sunaina@global3.co"];
   const dummyUsers = await prisma.user.findMany({ where: { email: { in: dummyEmails } }, select: { id: true } });
-  const dummyIds = dummyUsers.map(u => u.id);
+  const dummyIds = dummyUsers.map((u: any) => u.id);
 
   if (dummyIds.length > 0) {
     const snapshots = await prisma.recruiterScoreSnapshot.findMany({
       where: { recruiterId: { in: dummyIds } },
       select: { id: true },
     });
-    const snapshotIds = snapshots.map(s => s.id);
+    const snapshotIds = snapshots.map((s: any) => s.id);
     if (snapshotIds.length > 0) {
       await prisma.recruiterMetricSnapshot.deleteMany({ where: { scoreSnapshotId: { in: snapshotIds } } });
       await prisma.recruiterScoreSnapshot.deleteMany({ where: { id: { in: snapshotIds } } });
@@ -141,7 +140,6 @@ async function main() {
         email: u.email,
         role: u.role,
         languages: u.languages,
-        passwordHash,
         emailVerified: true,
         isActive: true,
       },
