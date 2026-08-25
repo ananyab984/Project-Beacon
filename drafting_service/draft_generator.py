@@ -147,6 +147,39 @@ def generate_linkedin(client: ClaudeClient, cfg: Config, lead: Lead, rate_match:
     )
 
 
+@dataclass
+class FaqReply:
+    """A phrased FAQ answer plus provenance, same shape as Draft."""
+    body: str
+    model: str
+    latency_ms: int
+    prompt_tokens: Optional[int]
+    completion_tokens: Optional[int]
+
+
+def generate_faq_reply(client: ClaudeClient, cfg: Config, lead_message: str, faq_question: str, faq_answer: str) -> FaqReply:
+    """Phrase a matched FAQ answer as a natural reply to the lead's message.
+
+    Grounded strictly in faq_answer -- never adds a fact not present there,
+    same grounding discipline as rate_card lookups (cite only the matched row,
+    escalate rather than guess when there's no confident match upstream)."""
+    system = (
+        "You are a helpful recruiting assistant replying to a candidate's message. "
+        "You have been given the ONE FAQ answer that matches their question. "
+        "Rewrite it as a short, natural, friendly reply in your own words. "
+        "Do not add any fact, number, or claim that is not in the FAQ answer below. "
+        'Respond with ONLY a JSON object: {"body": "..."}.'
+    )
+    user = f"CANDIDATE'S MESSAGE:\n{lead_message}\n\nMATCHED FAQ:\nQ: {faq_question}\nA: {faq_answer}"
+    completion = client.chat(system, user, model=cfg.gen_model, temperature=0.3, json_mode=True, max_tokens=300)
+    data = _parse(completion.text)
+    return FaqReply(
+        body=(data.get("body") or "").strip(),
+        model=completion.model, latency_ms=completion.latency_ms,
+        prompt_tokens=completion.prompt_tokens, completion_tokens=completion.completion_tokens,
+    )
+
+
 def _parse(text: str) -> dict:
     try:
         return json.loads(text)

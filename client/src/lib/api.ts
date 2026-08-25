@@ -440,4 +440,11 @@ export const api = {
   getReportExportUrl(type: string): string {
     return `/api/reports/export/${type}`;
   },
+
+  // -------------------- FAQ --------------------
+
+  /** Check a lead's message against the FAQ table (button-triggered, structured lookup) */
+  async checkFaq(leadMessage: string): Promise<{ match: boolean; answer?: string; matchedQuestion?: string }> {
+    return request("/api/faq/check", { method: "POST", body: JSON.stringify({ leadMessage }) });
+  },
 };
