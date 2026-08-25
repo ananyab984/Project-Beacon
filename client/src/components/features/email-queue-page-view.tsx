@@ -201,7 +201,11 @@ export function EmailQueuePageView() {
     if (!selected) return;
     setIsGeneratingDraft(true);
     try {
-      const { item } = await api.generateEmailDraft(selected.id);
+      // Pass along whatever the recruiter has typed into the TO field --
+      // previously this was silently dropped, so a manually-entered email
+      // could never unblock a NO_EMAIL-ineligible lead (the field only ever
+      // reached the backend at send time, never at draft time).
+      const { item } = await api.generateEmailDraft(selected.id, to.trim() || undefined);
       setBody(item.body);
       setSubject(item.subject);
       setSaveState("saved");

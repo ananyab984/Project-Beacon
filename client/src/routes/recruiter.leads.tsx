@@ -12,6 +12,7 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
+import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 
 export const Route = createFileRoute("/recruiter/leads")({
@@ -75,6 +76,7 @@ function LeadsPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
+  const [detailsLead, setDetailsLead] = useState<ApiLead | null>(null);
   const [mode, setMode] = useState<"table" | "board">("table");
   const pageSize = 12;
 
@@ -427,9 +429,12 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {isEnriched ? (
-                        <span className="font-semibold text-xs text-emerald-400">
+                        <button
+                          onClick={() => setDetailsLead(l)}
+                          className="font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
+                        >
                           Enriched
-                        </span>
+                        </button>
                       ) : isPending ? (
                         <span className="font-semibold text-xs text-amber-400">
                           Enriching…
@@ -510,6 +515,12 @@ function LeadsPage() {
         onOpenChange={(o) => !o && setEnrichRaw(null)}
         lead={enrichLead}
         onMarkEnriched={handleMarkEnriched}
+      />
+
+      <EnrichmentDetailsDialog
+        open={!!detailsLead}
+        onOpenChange={(o) => !o && setDetailsLead(null)}
+        lead={detailsLead}
       />
     </div>
   );

@@ -303,8 +303,11 @@ export const api = {
     return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
   },
 
-  async generateEmailDraft(id: string) {
-    return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}/generate-draft`, { method: "POST" });
+  async generateEmailDraft(id: string, to?: string) {
+    return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}/generate-draft`, {
+      method: "POST",
+      body: JSON.stringify({ to }),
+    });
   },
 
   async sendEmailQueueItem(id: string, payload: { to?: string; subject?: string; body: string; channel: "LINKEDIN" | "EMAIL"; accountId?: string }) {
