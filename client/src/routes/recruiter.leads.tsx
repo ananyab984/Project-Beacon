@@ -41,6 +41,20 @@ function formatStageLabel(stage: string): string {
   return stage.charAt(0) + stage.slice(1).toLowerCase().replace(/_/g, " ");
 }
 
+// Purely a visual completeness signal for the recruiter -- never gates any
+// action. Reuses the exact same fields enrichLeadById (server/src/jobs/
+// enrichment.job.ts) already treats as "critical" (its own comment: "email,
+// contact number, years of experience"), plus identityResolved as the
+// verified-name signal, rather than inventing a second definition of
+// enriched. No numeric enrichment score exists anywhere else in the app to
+// reuse instead (confirmed: the one thing that looks like one, the owner
+// dashboard's "profile completeness" tile, is hardcoded mock data).
+function enrichmentCompleteness(l: ApiLead): number {
+  const checks = [l.identityResolved, !!l.email, !!l.contactNumber, l.yearsOfExperience != null];
+  return checks.filter(Boolean).length / checks.length;
+}
+const ENRICHMENT_COMPLETENESS_THRESHOLD = 0.75;
+
 function relativeTime(iso: string | null): string {
   if (!iso) return "—";
   const then = new Date(iso).getTime();
@@ -426,6 +440,8 @@ function LeadsPage() {
                 // signal instead of inferring it from enrichmentStatus alone.
                 const isOnHold = !isEnriched && (l.flags ?? []).includes("ON_HOLD");
                 const isPending = !isEnriched && !isOnHold;
+                const completeness = enrichmentCompleteness(l);
+                const isWellEnriched = completeness >= ENRICHMENT_COMPLETENESS_THRESHOLD;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -433,6 +449,10 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${isWellEnriched ? "bg-emerald-500" : "bg-destructive"}`}
+                          title={isWellEnriched ? "Well-enriched profile" : "Profile data still incomplete"}
+                        />
                         <span className="font-medium">{label}</span>
                       </div>
                     </td>
