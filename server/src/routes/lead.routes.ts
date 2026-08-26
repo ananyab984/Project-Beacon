@@ -6,7 +6,7 @@ import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from "../services/lead.service";
-import { buildEmailDraft, candidateRoleOf } from "../lib/messageTemplates";
+import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 
 export const leadRouter = Router();
@@ -312,10 +312,11 @@ leadRouter.post(
       },
     });
 
-    // 1. Auto-add to email queue if created by recruiter/owner, using the
-    // approved template filled ONLY with this lead's real fields
+    // 1. Auto-add to email queue if created by recruiter/owner. Body/subject
+    // start empty -- a queue item should always require an explicit
+    // "Generate Draft" click (or manual typing) before it has any content,
+    // never arrive pre-written.
     if (role !== "contractor") {
-      const { subject, body } = buildEmailDraft(lead);
       await prisma.emailQueueItem.create({
         data: {
           leadId: lead.id,
@@ -323,14 +324,19 @@ leadRouter.post(
           candidateName: lead.fullName || "Candidate",
           candidateRole: candidateRoleOf(parsed.services, parsed.targetLanguage),
           status: "REVIEW_NEEDED",
-          subject,
-          body,
+          subject: "",
+          body: "",
           aiGenerated: false,
         },
       }).catch((err) => console.error("Failed to auto-create email queue item:", err));
 
-      // Auto-create conversation thread if LinkedIn profile exists
-      if (parsed.profileLink || parsed.source === "LINKEDIN") {
+      // Auto-create conversation thread only for an actual LinkedIn lead --
+      // `parsed.profileLink` alone used to be enough, which is the same gap
+      // fixed for the explicit "Search Lead" path in conversation.routes.ts's
+      // POST / (a proz.com/bodalgo.com link was enough to trip this before).
+      const isLinkedInLead =
+        parsed.source === "LINKEDIN" && !!parsed.profileLink && /linkedin\.com/i.test(parsed.profileLink);
+      if (isLinkedInLead) {
         await prisma.conversation.create({
           data: {
             leadId: lead.id,
@@ -426,9 +432,9 @@ leadRouter.post(
           },
         });
 
-        // Auto-create email queue and conversation items
+        // Auto-create email queue and conversation items -- body/subject
+        // start empty, same reasoning as the single-lead create above.
         if (role !== "contractor") {
-          const { subject, body } = buildEmailDraft(lead);
           await prisma.emailQueueItem.create({
             data: {
               leadId: lead.id,
@@ -436,13 +442,15 @@ leadRouter.post(
               candidateName: lead.fullName || "Candidate",
               candidateRole: candidateRoleOf(row.services, row.targetLanguage),
               status: "REVIEW_NEEDED",
-              subject,
-              body,
+              subject: "",
+              body: "",
               aiGenerated: false,
             },
           }).catch(() => {});
 
-          if (row.profileLink || row.source === "LINKEDIN") {
+          const isLinkedInLead =
+            row.source === "LINKEDIN" && !!row.profileLink && /linkedin\.com/i.test(row.profileLink);
+          if (isLinkedInLead) {
             await prisma.conversation.create({
               data: {
                 leadId: lead.id,

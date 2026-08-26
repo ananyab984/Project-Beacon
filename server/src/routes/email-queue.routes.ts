@@ -7,7 +7,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { UnipileService } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
-import { buildEmailDraft, candidateRoleOf } from "../lib/messageTemplates";
+import { candidateRoleOf } from "../lib/messageTemplates";
 import { getDraftingOrchestrator } from "../drafting/instance";
 
 export const emailQueueRouter = Router();
@@ -59,7 +59,10 @@ emailQueueRouter.post(
     });
     if (existing) return res.json({ item: existing });
 
-    const draft = buildEmailDraft(lead);
+    // Body/subject start empty -- a lead landing in the queue should always
+    // require an explicit "Generate Draft" click (or manual typing) before
+    // it has any content, never arrive pre-written. The real AI-personalized
+    // draft only ever comes from POST /:id/generate-draft below.
     const item = await prisma.emailQueueItem.create({
       data: {
         leadId: lead.id,
@@ -67,8 +70,8 @@ emailQueueRouter.post(
         candidateName: lead.displayName || lead.fullName || "Candidate",
         candidateRole: candidateRoleOf(lead.services, lead.targetLanguage),
         status: "REVIEW_NEEDED",
-        subject: draft.subject,
-        body: draft.body,
+        subject: "",
+        body: "",
         aiGenerated: false,
       },
       include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
