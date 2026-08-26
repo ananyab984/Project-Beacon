@@ -180,23 +180,18 @@ class EnrichmentOrchestrator:
 
         # Stage 3.5: Clay fallback.
         #
-        # BUG FIX (2026-08-26): this used to gate on "the primary provider
-        # returned LITERALLY NOTHING" (a total miss) -- confirmed live in
-        # production that this was wrong. Bright Data very often SUCCEEDS at
-        # scraping a real LinkedIn profile (name, headline, services, etc.)
-        # but LinkedIn simply doesn't expose an email address in the scrape
-        # -- that's a real, common, PARTIAL result, not a total miss, so the
-        # old gate skipped Clay entirely and went straight to Stage 4-6's LLM
-        # fallback, which can never legitimately find an email that was never
-        # in the source text either (verify_against_source would just
-        # discard it). Clay's actual value (its "Personal Email" finder) is
-        # exactly for this common case, not just total misses. The gate is
-        # now: is Email_Address still missing after Stage 3, and do we have a
-        # LinkedIn identifier Clay's Enrich Person action can use -- Bright
-        # Data having found OTHER fields doesn't disqualify a Clay attempt.
+        # BUG FIX (2026-08-26): went through two narrower gates before this
+        # (total-miss-only, then email-missing-only) -- explicitly corrected
+        # to fire for EVERY LinkedIn lead, unconditionally, once per lead.
+        # Clay isn't just a gap-filler for a missing field; it's a genuinely
+        # richer second enrichment pass (experience, education, courses,
+        # languages -- see core/leads.py's grounding_facts on the drafting
+        # side) that's worth having on every LinkedIn lead regardless of what
+        # Bright Data already found. Gate is now just: do we have a LinkedIn
+        # identifier Clay's Enrich Person action can use, and has this lead
+        # not already been through Clay before.
         clay_fallback: Optional[Dict[str, Any]] = None
         _CLAY_CAPABLE_PROVIDERS = {"brightdata", "tavily_search", "tavily_extract"}
-        needs_email = is_empty_value(lead.get("Email_Address"))
         # Confirmed live against Clay's own dashboard (2026-08-26): dispatching
         # a non-LinkedIn Profile_Link (ProZ/Bodalgo/personal-site URLs, even
         # with a real Email included in the same payload) makes Clay's
@@ -207,19 +202,17 @@ class EnrichmentOrchestrator:
         # strictly on a genuine LinkedIn/SalesNav URL until Clay is
         # reconfigured (if ever) with an email-based enrichment path.
         has_clay_identifier = bool(re.search(r"linkedin\.com/(in|sales)/", profile_link or "", re.IGNORECASE))
-        clay_worth_trying = provider_type in _CLAY_CAPABLE_PROVIDERS and needs_email and has_clay_identifier
+        clay_worth_trying = provider_type in _CLAY_CAPABLE_PROVIDERS and has_clay_identifier
         # A lead that's dispatched-but-not-yet-answered is still "PENDING"
         # overall (no critical fields resolved), so the Node backend's
         # pollPendingEnrichment() cron will call /enrich on it again every
         # few minutes while it waits. Without this guard, every one of those
         # polls would re-dispatch the SAME lead to Clay as a brand-new row.
         # Checks for ANY prior attempt (pending/complete/failed), not just
-        # "pending" -- once Clay has resolved a lead, it should never be
-        # re-tried, even if Email_Address is still empty afterward (Clay
-        # itself couldn't find one; retrying won't change that).
+        # "pending" -- once Clay has resolved a lead, it's never re-tried.
         clay_dispatch_state = field_sources.get("_clay_dispatch")
         already_dispatched = bool(clay_dispatch_state)
-        if needs_email and already_dispatched:
+        if clay_worth_trying and already_dispatched:
             clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": f"already_{clay_dispatch_state}"}
             logs.append(f"Stage 3.5 skipped: Clay fallback already attempted for this lead (state={clay_dispatch_state!r}), not re-dispatching")
         elif clay_worth_trying:
@@ -227,8 +220,8 @@ class EnrichmentOrchestrator:
                 try:
                     self.clay.dispatch_lead(lead, correlation_id=profile_link)
                     field_sources["_clay_dispatch"] = "pending"
-                    clay_fallback = {"dispatched": True, "correlation_id": profile_link, "reason": "email_missing"}
-                    msg = f"Stage 3.5: Email_Address still missing after {provider_type} -- dispatched to Clay fallback (async, result arrives via webhook)"
+                    clay_fallback = {"dispatched": True, "correlation_id": profile_link, "reason": "linkedin_lead"}
+                    msg = f"Stage 3.5: dispatched to Clay (LinkedIn lead, {provider_type} scrape complete) -- async, result arrives via webhook"
                     logs.append(msg)
                     log.info("Lead %s: %s", lead.get("Full_Name") or profile_link, msg)
                 except ClayError as exc:
@@ -236,14 +229,14 @@ class EnrichmentOrchestrator:
                     logs.append(msg)
                     log.error(msg)
             elif not self.clay:
-                logs.append("Stage 3.5 skipped: Email_Address still missing, but CLAY_WEBHOOK_URL not configured")
+                logs.append("Stage 3.5 skipped: LinkedIn lead, but CLAY_WEBHOOK_URL not configured")
             elif not profile_link:
-                logs.append("Stage 3.5 skipped: Email_Address still missing, but no Profile_Link to use as Clay's correlation id")
-        elif needs_email and not has_clay_identifier and provider_type in _CLAY_CAPABLE_PROVIDERS:
+                logs.append("Stage 3.5 skipped: LinkedIn lead, but no Profile_Link to use as Clay's correlation id")
+        elif provider_type in _CLAY_CAPABLE_PROVIDERS and not has_clay_identifier:
             logs.append(
-                "Stage 3.5 skipped: Email_Address still missing, but this lead has no LinkedIn "
-                "URL -- Clay's Enrich Person action rejects everything else (ProZ/ATA/Bodalgo profile "
-                "links, or an email alone) with 'Invalid person identifier', confirmed live 2026-08-26"
+                "Stage 3.5 skipped: this lead has no LinkedIn URL -- Clay's Enrich Person action "
+                "rejects everything else (ProZ/ATA/Bodalgo profile links, or an email alone) with "
+                "'Invalid person identifier', confirmed live 2026-08-26"
             )
 
         # Stage 4: Critical Field Audit & LLM Bypass Guard
