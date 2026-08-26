@@ -37,19 +37,75 @@ export function ConnectAccountDialog({ trigger, open: controlledOpen, onOpenChan
     onError: (err: any) => toast.error(err?.message || "Failed to disconnect account"),
   });
 
+  // Same provider-group check used for linkedInAccount/emailAccount below --
+  // kept as a function so the popup-close handler can re-run it against a
+  // freshly refetched account list instead of a possibly-stale closure.
+  function isProviderConnected(list: any[], provider: string) {
+    const active = list.filter((a: any) => a.status !== "DISCONNECTED");
+    const group = provider === "LINKEDIN" ? ["LINKEDIN"] : ["EMAIL", "GOOGLE", "MAIL", "OUTLOOK"];
+    return active.some((a: any) => group.some((p) => (a.provider || "").toUpperCase().includes(p)));
+  }
+
   async function handleConnect(provider: "LINKEDIN" | "EMAIL" | "GOOGLE" | "OUTLOOK") {
     setLoadingProvider(provider);
     try {
       const res = await api.connectAccount(provider);
       if (res?.url) {
         toast.success(`Opening Unipile connection window for ${provider}…`);
-        window.open(res.url, "_blank", "width=600,height=700");
+        const popup = window.open(res.url, "_blank", "width=600,height=700");
+        watchForAbandonedPopup(popup, provider);
       }
     } catch (err: any) {
-      toast.error(err.message || `Failed to initiate ${provider} account connection`);
+      if (err.code === "CONNECTION_PENDING") {
+        // Don't just tell them to wait -- an escape hatch is always
+        // available regardless of why the automatic cleanup (see
+        // watchForAbandonedPopup) didn't already clear this. Safe to click
+        // any time: cancelPendingAuthAttempt no-ops if a real connection
+        // actually just succeeded instead of deleting anything live.
+        toast.error(err.message, {
+          action: {
+            label: "Cancel and retry",
+            onClick: async () => {
+              try {
+                await api.cancelPendingConnection(provider);
+                handleConnect(provider);
+              } catch (cancelErr: any) {
+                toast.error(cancelErr.message || "Failed to cancel pending connection attempt");
+              }
+            },
+          },
+        });
+      } else {
+        toast.error(err.message || `Failed to initiate ${provider} account connection`);
+      }
     } finally {
       setLoadingProvider(null);
     }
+  }
+
+  // Detects the popup closing without a completed connection (the common
+  // way a connect attempt gets abandoned) and clears it automatically,
+  // instead of leaving the recruiter to wait out the full expiry window or
+  // hunt for a manual retry. Waits ~6s after close before concluding it was
+  // abandoned -- comfortably longer than normal webhook delivery latency --
+  // and re-checks the connected-accounts list first: if it actually
+  // succeeded (the popup can close itself the instant OAuth completes,
+  // before the webhook necessarily lands), this does nothing at all.
+  function watchForAbandonedPopup(popup: Window | null, provider: string) {
+    if (!popup) return;
+    const poll = setInterval(() => {
+      if (!popup.closed) return;
+      clearInterval(poll);
+      setTimeout(async () => {
+        const fresh = await api.getConnectedAccounts();
+        if (isProviderConnected(fresh, provider)) {
+          refetch();
+          return;
+        }
+        await api.cancelPendingConnection(provider).catch(() => {});
+        refetch();
+      }, 6_000);
+    }, 1_000);
   }
 
   const activeAccounts = accounts.filter((a: any) => a.status !== "DISCONNECTED");

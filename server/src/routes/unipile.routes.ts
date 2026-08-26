@@ -26,7 +26,10 @@ unipileRouter.post("/connect", authenticateJwt, async (req: Request, res: Respon
     console.error("[unipile] /connect failed:", req.user?.id, err?.response?.status, err?.response?.data || err.message);
     const status = err.statusCode || err?.response?.status || 500;
     const detail = err?.response?.data?.detail || err?.response?.data?.message;
-    return res.status(status).json({ error: "CONNECT_FAILED", message: detail || err.message || "Failed to mint hosted link" });
+    // Forward the real error code (CONNECTION_PENDING, ALREADY_CONNECTED)
+    // instead of always flattening to CONNECT_FAILED -- the dialog needs
+    // to tell these apart to offer "Cancel and retry" only where it applies.
+    return res.status(status).json({ error: err.code || "CONNECT_FAILED", message: detail || err.message || "Failed to mint hosted link" });
   }
 });
 
@@ -45,7 +48,26 @@ unipileRouter.post("/reconnect", authenticateJwt, async (req: Request, res: Resp
     console.error("[unipile] /reconnect failed:", req.user?.id, err?.response?.status, err?.response?.data || err.message);
     const status = err.statusCode || err?.response?.status || 500;
     const detail = err?.response?.data?.detail || err?.response?.data?.message;
-    return res.status(status).json({ error: "RECONNECT_FAILED", message: detail || err.message || "Failed to mint reconnect link" });
+    return res.status(status).json({ error: err.code || "RECONNECT_FAILED", message: detail || err.message || "Failed to mint reconnect link" });
+  }
+});
+
+// POST /api/unipile/cancel-pending — clear the current user's own outstanding
+// connect attempt (see UnipileService.cancelPendingAuthAttempt for the
+// race it guards against). Idempotent: succeeds whether or not a pending
+// attempt actually exists, so the dialog's retry button never has to
+// special-case "already gone."
+unipileRouter.post("/cancel-pending", authenticateJwt, async (req: Request, res: Response) => {
+  try {
+    const { provider } = req.body || {};
+    if (!provider) {
+      return res.status(400).json({ error: "MISSING_PROVIDER", message: "Provider is required" });
+    }
+    await UnipileService.cancelPendingAuthAttempt(req.user!.id, provider);
+    return res.json({ success: true });
+  } catch (err: any) {
+    console.error("[unipile] /cancel-pending failed:", req.user?.id, err.message);
+    return res.status(500).json({ error: "CANCEL_FAILED", message: err.message || "Failed to cancel pending connection attempt" });
   }
 });
 

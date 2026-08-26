@@ -142,10 +142,7 @@ export class UnipileService {
     // Connect again by mistake. EMAIL groups GOOGLE/OUTLOOK/MAIL/EMAIL
     // together since a hosted link minted for "EMAIL" can land as any of them.
     if (mode === "create") {
-      const dedupeProviders =
-        providerEnum === UnipileProvider.EMAIL
-          ? [UnipileProvider.EMAIL, UnipileProvider.GOOGLE, UnipileProvider.OUTLOOK, UnipileProvider.MAIL]
-          : [providerEnum];
+      const dedupeProviders = this.getDedupeProviders(providerEnum);
       const existingConnected = await prisma.connectedAccount.findFirst({
         where: { userId, provider: { in: dedupeProviders }, status: AccountStatus.OK },
       });
@@ -180,7 +177,11 @@ export class UnipileService {
     }
 
     const nonce = crypto.randomBytes(16).toString("hex");
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    // Was 15 minutes -- shortened as one of three complementary layers (see
+    // cancelPendingAuthAttempt and the dialog's popup-close detection) so an
+    // abandoned attempt no longer leaves a recruiter blocked for anywhere
+    // near that long. Still generous enough for a real login + 2FA flow.
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
 
     await prisma.unipileAuthAttempt.create({
       data: {
@@ -216,6 +217,53 @@ export class UnipileService {
     });
 
     return { url: response.data.url, nonce };
+  }
+
+  // EMAIL groups GOOGLE/OUTLOOK/MAIL/EMAIL together since a hosted link
+  // minted for "EMAIL" can land as any of them -- shared by every place that
+  // needs to treat those four as one dedupe group (the ALREADY_CONNECTED
+  // check, the CONNECTION_PENDING check, and cancelPendingAuthAttempt below).
+  private static getDedupeProviders(providerEnum: UnipileProvider): UnipileProvider[] {
+    return providerEnum === UnipileProvider.EMAIL
+      ? [UnipileProvider.EMAIL, UnipileProvider.GOOGLE, UnipileProvider.OUTLOOK, UnipileProvider.MAIL]
+      : [providerEnum];
+  }
+
+  /**
+   * Clears an outstanding connect attempt for this user+provider so an
+   * abandoned flow doesn't have to wait out the full expiry window --
+   * called automatically ~6s after the connect popup closes without
+   * succeeding, and manually via a "Cancel and retry" action in the dialog
+   * for any case that misses (popup blocked, browser closed outright).
+   *
+   * SECURITY/CORRECTNESS: guards against the one real race this creates --
+   * for LinkedIn the hosted link is minted with bypass_success_screen, so
+   * the popup can close itself the instant OAuth completes, before
+   * Unipile's completion webhook has necessarily reached us yet. If this
+   * deleted the attempt row unconditionally, it could delete it out from
+   * under a webhook that's about to need it to attribute a real, just-
+   * succeeded connection -- silently failing to sync a real success and
+   * risking the user retrying into a genuine duplicate account (the exact
+   * bug the CONNECTION_PENDING check exists to prevent). So: if a
+   * ConnectedAccount already exists for this user+provider group, treat
+   * that as "it already succeeded" and do nothing, rather than deleting
+   * anything live.
+   */
+  static async cancelPendingAuthAttempt(userId: string, provider: string): Promise<void> {
+    const pUpper = (provider || "").toUpperCase();
+    const validProviders = Object.values(UnipileProvider);
+    if (!pUpper || !validProviders.includes(pUpper as UnipileProvider)) return;
+    const providerEnum = pUpper as UnipileProvider;
+    const dedupeProviders = this.getDedupeProviders(providerEnum);
+
+    const alreadyConnected = await prisma.connectedAccount.findFirst({
+      where: { userId, provider: { in: dedupeProviders }, status: AccountStatus.OK },
+    });
+    if (alreadyConnected) return;
+
+    await prisma.unipileAuthAttempt.deleteMany({
+      where: { userId, provider: { in: dedupeProviders } },
+    });
   }
 
   /**

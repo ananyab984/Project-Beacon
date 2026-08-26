@@ -419,6 +419,11 @@ export const api = {
     return request(`/api/unipile/accounts/${accountId}`, { method: "DELETE" });
   },
 
+  /** Clear this user's own outstanding connect attempt (idempotent) */
+  async cancelPendingConnection(provider: string): Promise<{ success: boolean }> {
+    return request("/api/unipile/cancel-pending", { method: "POST", body: JSON.stringify({ provider }) });
+  },
+
   /** Send outreach via Unipile (LinkedIn DM or Tracked Email) */
   async sendOutreach(payload: {
     leadId: string;
