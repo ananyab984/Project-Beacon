@@ -1,5 +1,9 @@
 import { Router, Request, Response } from "express";
+import { z } from "zod";
 import { authenticateJwt } from "../middleware/auth";
+import { requireRole } from "../middleware/rbac";
+import { asyncHandler } from "../lib/asyncHandler";
+import { ApiError } from "../lib/apiError";
 import { prisma } from "../prisma";
 import { generateFaqReply } from "../drafting/draftGenerator";
 import { ClaudeClient } from "../drafting/claudeClient";
@@ -7,13 +11,15 @@ import { loadDraftingConfig } from "../drafting/config";
 
 export const faqRouter = Router();
 
+faqRouter.use(authenticateJwt);
+
 // POST /api/faq/check — button-triggered: takes the lead's latest reply text
 // and looks it up against faq_entries via ranked full-text + trigram match
 // (structured lookup, not vector RAG). Only if the match clears a confidence
 // floor does it call the drafting service to phrase the matched answer;
 // otherwise it returns match:false. Never auto-sends -- the frontend only
 // autofills the compose box, which still requires a human Send click.
-faqRouter.post("/check", authenticateJwt, async (req: Request, res: Response) => {
+faqRouter.post("/check", async (req: Request, res: Response) => {
   try {
     const { leadMessage } = req.body || {};
     if (!leadMessage || typeof leadMessage !== "string" || !leadMessage.trim()) {
@@ -63,3 +69,67 @@ faqRouter.post("/check", authenticateJwt, async (req: Request, res: Response) =>
     return res.status(status).json({ error: code, message: err.message || "Failed to check FAQ" });
   }
 });
+
+// Every field optional (PATCH semantics), but at least one must be present --
+// an empty body would otherwise be a no-op UPDATE that still bumps updated_at.
+const updateFaqSchema = z
+  .object({
+    category: z.string().min(1).optional(),
+    question: z.string().min(1).optional(),
+    answer: z.string().min(1).optional(),
+    tags: z.array(z.string()).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((patch) => Object.keys(patch).length > 0, {
+    message: "Provide at least one field to update",
+  });
+
+// GET /api/faq — list all active FAQs, newest first.
+faqRouter.get(
+  "/",
+  asyncHandler(async (_req: Request, res: Response) => {
+    const faqEntries = await prisma.faqEntry.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "desc" },
+    });
+    return res.json({ faqEntries });
+  })
+);
+
+// GET /api/faq/:id — single FAQ.
+faqRouter.get(
+  "/:id",
+  asyncHandler(async (req: Request, res: Response) => {
+    const faqEntry = await prisma.faqEntry.findUnique({ where: { id: req.params.id } });
+    if (!faqEntry) throw new ApiError(404, "FAQ_NOT_FOUND", "FAQ entry not found");
+    return res.json({ faqEntry });
+  })
+);
+
+// PATCH /api/faq/:id — update provided fields only. Owner only.
+faqRouter.patch(
+  "/:id",
+  requireRole("owner"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const patch = updateFaqSchema.parse(req.body);
+
+    const existing = await prisma.faqEntry.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new ApiError(404, "FAQ_NOT_FOUND", "FAQ entry not found");
+
+    const faqEntry = await prisma.faqEntry.update({ where: { id: req.params.id }, data: patch });
+    return res.json({ faqEntry });
+  })
+);
+
+// DELETE /api/faq/:id — soft delete (isActive: false), never a hard delete. Owner only.
+faqRouter.delete(
+  "/:id",
+  requireRole("owner"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const existing = await prisma.faqEntry.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new ApiError(404, "FAQ_NOT_FOUND", "FAQ entry not found");
+
+    await prisma.faqEntry.update({ where: { id: req.params.id }, data: { isActive: false } });
+    return res.json({ success: true });
+  })
+);
