@@ -5,7 +5,7 @@ import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { prisma } from "../prisma";
-import { generateFaqReply } from "../drafting/draftGenerator";
+import { generateFaqReply, generateFaqKeywords } from "../drafting/draftGenerator";
 import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
 
@@ -70,6 +70,15 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
   }
 });
 
+// All three fields required on create -- unlike the PATCH schema below, there is
+// no prior record to fall back on. `tags` is not accepted from the client: it is
+// filled by auto-tagging so FAQs stay searchable without manual curation.
+const createFaqSchema = z.object({
+  category: z.string().min(1),
+  question: z.string().min(1),
+  answer: z.string().min(1),
+});
+
 // Every field optional (PATCH semantics), but at least one must be present --
 // an empty body would otherwise be a no-op UPDATE that still bumps updated_at.
 const updateFaqSchema = z
@@ -103,6 +112,43 @@ faqRouter.get(
     const faqEntry = await prisma.faqEntry.findUnique({ where: { id: req.params.id } });
     if (!faqEntry) throw new ApiError(404, "FAQ_NOT_FOUND", "FAQ entry not found");
     return res.json({ faqEntry });
+  })
+);
+
+// POST /api/faq — create an FAQ with auto-generated keywords. Owner only.
+// Keyword generation is best-effort: if Claude is unreachable or returns nothing
+// usable, the FAQ is still created (with no tags) and keywordsGenerated is false,
+// so a drafting-service outage never blocks FAQ authoring.
+faqRouter.post(
+  "/",
+  requireRole("owner"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { category, question, answer } = createFaqSchema.parse(req.body);
+
+    let tags: string[] = [];
+    let keywordsGenerated = false;
+    try {
+      const draftingConfig = loadDraftingConfig();
+      const client = new ClaudeClient(draftingConfig);
+      const result = await generateFaqKeywords(client, draftingConfig, question, answer);
+      tags = result.keywords;
+      keywordsGenerated = tags.length > 0;
+    } catch (err: any) {
+      console.warn("[faqRouter] Keyword generation failed, creating FAQ without tags:", err.message);
+    }
+
+    const faqEntry = await prisma.faqEntry.create({
+      data: {
+        id: `faq_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        category,
+        question,
+        answer,
+        tags,
+        isActive: true,
+      },
+    });
+
+    return res.status(201).json({ faqEntry, keywordsGenerated });
   })
 );
 
