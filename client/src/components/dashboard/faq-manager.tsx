@@ -86,9 +86,9 @@ export function FaqManager() {
                     <p className="text-xs text-gray-500 mb-1">{faq.category}</p>
                     <p className="font-semibold text-lg mb-2">{faq.question}</p>
                     <p className="text-gray-700 mb-2">{faq.answer}</p>
-                    {faq.tags.length > 0 && (
+                    {faq.tags.filter(Boolean).length > 0 && (
                       <div className="flex gap-2 flex-wrap">
-                        {faq.tags.map((tag) => (
+                        {faq.tags.filter(Boolean).map((tag) => (
                           <span key={tag} className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
                             {tag}
                           </span>
@@ -101,9 +101,19 @@ export function FaqManager() {
                       <Pencil size={14} />
                       Edit
                     </Button>
-                    <Button variant="outline" size="sm" onClick={() => deleteMutation.mutate(faq.id)} className="gap-1 text-red-600">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={deleteMutation.isPending}
+                      onClick={() => {
+                        if (confirm(`Delete the FAQ "${faq.question}"? Its history is preserved — this is a soft delete, not a permanent removal.`)) {
+                          deleteMutation.mutate(faq.id);
+                        }
+                      }}
+                      className="gap-1 text-red-600"
+                    >
                       <Trash2 size={14} />
-                      Delete
+                      {deleteMutation.isPending ? "Deleting..." : "Delete"}
                     </Button>
                   </div>
                 </div>
@@ -140,7 +150,18 @@ function CreateFaqForm({ onSubmit, isLoading, onCancel }: any) {
 }
 
 function EditFaqForm({ faq, onSubmit, isLoading, onCancel }: any) {
-  const [formData, setFormData] = useState({ category: faq.category, question: faq.question, answer: faq.answer, tags: faq.tags });
+  const [formData, setFormData] = useState({ category: faq.category, question: faq.question, answer: faq.answer });
+  // Kept as raw text so the user can type commas freely; split/filtered on submit.
+  const [tagsText, setTagsText] = useState<string>((faq.tags ?? []).filter(Boolean).join(", "));
+  const isValid = formData.category?.trim() && formData.question?.trim() && formData.answer?.trim();
+
+  const handleSubmit = () => {
+    const tags = tagsText
+      .split(",")
+      .map((t: string) => t.trim())
+      .filter(Boolean);
+    onSubmit({ ...formData, tags });
+  };
 
   return (
     <div className="border rounded-lg p-4 bg-gray-50">
@@ -150,11 +171,13 @@ function EditFaqForm({ faq, onSubmit, isLoading, onCancel }: any) {
         <Input placeholder="Question" value={formData.question} onChange={(e) => setFormData({ ...formData, question: e.target.value })} />
         <Textarea placeholder="Answer" value={formData.answer} onChange={(e) => setFormData({ ...formData, answer: e.target.value })} className="min-h-24" />
         <div>
-          <label className="text-sm font-medium">Keywords (comma-separated, edit to refine)</label>
-          <Input placeholder="e.g., training, payment, schedule" value={formData.tags.join(", ")} onChange={(e) => setFormData({ ...formData, tags: e.target.value.split(",").map((t) => t.trim()) })} />
+          <label htmlFor="faq-keywords" className="text-sm font-medium">
+            Keywords (comma-separated, edit to refine)
+          </label>
+          <Input id="faq-keywords" placeholder="e.g., training, payment, schedule" value={tagsText} onChange={(e) => setTagsText(e.target.value)} />
         </div>
         <div className="flex gap-2">
-          <Button onClick={() => onSubmit(formData)} disabled={isLoading}>
+          <Button onClick={handleSubmit} disabled={isLoading || !isValid}>
             {isLoading ? "Saving..." : "Save FAQ"}
           </Button>
           <Button variant="outline" onClick={onCancel}>
