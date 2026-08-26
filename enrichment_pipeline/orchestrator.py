@@ -208,13 +208,18 @@ class EnrichmentOrchestrator:
         primary_provider_got_nothing = provider_type in _CLAY_CAPABLE_PROVIDERS and not any(
             not is_empty_value(v) for k, v in stage3_parsed.items() if k not in _INPUT_ECHO_FIELDS
         )
-        # Clay's "Enrich person" action only accepts a LinkedIn/SalesNav URL
-        # or an email as input -- a ProZ/ATA/etc. profile link alone is not
-        # something it can enrich from. Gate dispatch on actually having one
-        # of those two identifiers, regardless of which Source this lead is.
+        # Confirmed live against Clay's own dashboard (2026-08-26): dispatching
+        # a non-LinkedIn Profile_Link (ProZ/Bodalgo/personal-site URLs, even
+        # with a real Email included in the same payload) makes Clay's
+        # "Enrich person" waterfall action fail every row with "Invalid
+        # input: Invalid person identifier" -- it does not fall back to
+        # searching by email despite Email being sent as its own field. The
+        # earlier assumption that Clay accepts either identifier was wrong;
+        # this table's Enrich Person step is LinkedIn-URL-only. Gate dispatch
+        # strictly on a genuine LinkedIn/SalesNav URL until Clay is
+        # reconfigured (if ever) with an email-based enrichment path.
         _has_linkedin_url = bool(re.search(r"linkedin\.com/(in|sales)/", profile_link or "", re.IGNORECASE))
-        _has_email = not is_empty_value(lead.get("Email_Address"))
-        has_clay_identifier = _has_linkedin_url or _has_email
+        has_clay_identifier = _has_linkedin_url
         # A lead that's dispatched-but-not-yet-answered is still "PENDING"
         # overall (no critical fields resolved), so the Node backend's
         # pollPendingEnrichment() cron will call /enrich on it again every
@@ -245,9 +250,9 @@ class EnrichmentOrchestrator:
                 logs.append(f"Stage 3.5 skipped: {provider_type} returned nothing, but no Profile_Link to use as Clay's correlation id")
         elif primary_provider_got_nothing and not has_clay_identifier:
             logs.append(
-                f"Stage 3.5 skipped: {provider_type} returned nothing, but no LinkedIn URL or "
-                "Email_Address is available for Clay to enrich from (ProZ/ATA-style profile links "
-                "alone aren't a usable input to Clay's Enrich Person action)"
+                f"Stage 3.5 skipped: {provider_type} returned nothing, but this lead has no LinkedIn "
+                "URL -- Clay's Enrich Person action rejects everything else (ProZ/ATA/Bodalgo profile "
+                "links, or an email alone) with 'Invalid person identifier', confirmed live 2026-08-26"
             )
 
         # Stage 4: Critical Field Audit & LLM Bypass Guard
