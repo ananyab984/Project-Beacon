@@ -30,6 +30,7 @@ import { Route as OnboardingConnectRouteImport } from './routes/onboarding.conne
 import { Route as OwnerIndexRouteImport } from './routes/owner.index'
 import { Route as OwnerAssignmentConfigRouteImport } from './routes/owner.assignment-config'
 import { Route as OwnerClientsRouteImport } from './routes/owner.clients'
+import { Route as OwnerFaqsRouteImport } from './routes/owner.faqs'
 import { Route as OwnerLeadsRouteImport } from './routes/owner.leads'
 import { Route as OwnerPipelinesRouteImport } from './routes/owner.pipelines'
 import { Route as OwnerRecruitersRouteImport } from './routes/owner.recruiters'
@@ -150,6 +151,11 @@ const OwnerClientsRoute = OwnerClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => OwnerRoute,
 } as any)
+const OwnerFaqsRoute = OwnerFaqsRouteImport.update({
+  id: '/faqs',
+  path: '/faqs',
+  getParentRoute: () => OwnerRoute,
+} as any)
 const OwnerLeadsRoute = OwnerLeadsRouteImport.update({
   id: '/leads',
   path: '/leads',
@@ -242,6 +248,7 @@ export interface FileRoutesByFullPath {
   '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
+  '/owner/faqs': typeof OwnerFaqsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
   '/owner/recruiters': typeof OwnerRecruitersRoute
@@ -276,6 +283,7 @@ export interface FileRoutesByTo {
   '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
+  '/owner/faqs': typeof OwnerFaqsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
   '/owner/recruiters': typeof OwnerRecruitersRoute
@@ -314,6 +322,7 @@ export interface FileRoutesById {
   '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
+  '/owner/faqs': typeof OwnerFaqsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
   '/owner/recruiters': typeof OwnerRecruitersRoute
@@ -353,6 +362,7 @@ export interface FileRouteTypes {
     | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
+    | '/owner/faqs'
     | '/owner/leads'
     | '/owner/pipelines'
     | '/owner/recruiters'
@@ -387,6 +397,7 @@ export interface FileRouteTypes {
     | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
+    | '/owner/faqs'
     | '/owner/leads'
     | '/owner/pipelines'
     | '/owner/recruiters'
@@ -424,6 +435,7 @@ export interface FileRouteTypes {
     | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
+    | '/owner/faqs'
     | '/owner/leads'
     | '/owner/pipelines'
     | '/owner/recruiters'
@@ -605,6 +617,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerClientsRouteImport
       parentRoute: typeof OwnerRoute
     }
+    '/owner/faqs': {
+      id: '/owner/faqs'
+      path: '/faqs'
+      fullPath: '/owner/faqs'
+      preLoaderRoute: typeof OwnerFaqsRouteImport
+      parentRoute: typeof OwnerRoute
+    }
     '/owner/leads': {
       id: '/owner/leads'
       path: '/leads'
@@ -733,6 +752,7 @@ const ContractorRouteWithChildren = ContractorRoute._addFileChildren(
 interface OwnerRouteChildren {
   OwnerAssignmentConfigRoute: typeof OwnerAssignmentConfigRoute
   OwnerClientsRoute: typeof OwnerClientsRoute
+  OwnerFaqsRoute: typeof OwnerFaqsRoute
   OwnerLeadsRoute: typeof OwnerLeadsRoute
   OwnerPipelinesRoute: typeof OwnerPipelinesRoute
   OwnerRecruitersRoute: typeof OwnerRecruitersRoute
@@ -745,6 +765,7 @@ interface OwnerRouteChildren {
 const OwnerRouteChildren: OwnerRouteChildren = {
   OwnerAssignmentConfigRoute: OwnerAssignmentConfigRoute,
   OwnerClientsRoute: OwnerClientsRoute,
+  OwnerFaqsRoute: OwnerFaqsRoute,
   OwnerLeadsRoute: OwnerLeadsRoute,
   OwnerPipelinesRoute: OwnerPipelinesRoute,
   OwnerRecruitersRoute: OwnerRecruitersRoute,
