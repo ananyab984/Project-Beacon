@@ -57,6 +57,7 @@ export function ConversationsPageView() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["conversations"],
     queryFn: api.getConversations,
+    refetchInterval: 10_000, // Poll every 10s for new inbound messages
   });
   const conversations = data?.conversations ?? [];
 
@@ -269,17 +270,22 @@ export function ConversationsPageView() {
                 {searchedFiltered.map((c: ApiConversation) => {
                   const lastMessage = c.messages[c.messages.length - 1];
                   return (
-                    <button key={c.id} onClick={() => pickConv(c.id)} className={`block w-full p-3 text-left transition-colors ${conv?.id === c.id ? "bg-muted/60" : "hover:bg-muted/30"}`}>
+                    <button key={c.id} onClick={() => pickConv(c.id)} className={`block w-full p-3 text-left transition-colors ${conv?.id === c.id ? "bg-muted/60" : c.unread ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30"}`}>
                       <div className="flex items-center gap-2">
-                        <div className="h-8 w-8 shrink-0 rounded-full bg-muted flex items-center justify-center text-[11px] font-medium">{candidateName(c).split(" ").map((s: string) => s[0]).slice(0, 2).join("")}</div>
+                        <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-[11px] font-medium ${c.unread ? "bg-primary/20 text-primary ring-1 ring-primary/30" : "bg-muted"}`}>{candidateName(c).split(" ").map((s: string) => s[0]).slice(0, 2).join("")}</div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-sm font-medium">{candidateName(c)}</span>
+                            <span className={`truncate text-sm ${c.unread ? "font-semibold" : "font-medium"}`}>{candidateName(c)}</span>
                             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(c.lastMessageAt)}</span>
                           </div>
-                          <div className="truncate text-[11px] text-muted-foreground">{lastMessage?.text ?? "No messages yet"}</div>
+                          <div className={`truncate text-[11px] ${c.unread ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}>{lastMessage?.text ?? "No messages yet"}</div>
                         </div>
-                        {c.unread && <span className="h-2 w-2 rounded-full bg-primary" />}
+                        {c.unread && (
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="h-2.5 w-2.5 rounded-full bg-primary animate-pulse" />
+                            <span className="text-[8px] font-bold text-primary uppercase tracking-wider">New</span>
+                          </div>
+                        )}
                       </div>
                     </button>
                   );

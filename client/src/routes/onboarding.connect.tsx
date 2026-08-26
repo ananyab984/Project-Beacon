@@ -42,7 +42,7 @@ function OnboardingConnectPage() {
   const [linkedinStatus, setLinkedinStatus] = useState<ProviderStatus>("idle");
   const [emailStatus, setEmailStatus] = useState<ProviderStatus>("idle");
 
-  const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
+  const apiBase = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5001").replace(/\/+$/, "");
 
   async function handleConnect(provider: "LINKEDIN" | "EMAIL") {
     const setter = provider === "LINKEDIN" ? setLinkedinStatus : setEmailStatus;

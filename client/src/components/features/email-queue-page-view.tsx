@@ -5,13 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search } from "lucide-react";
+import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search, Mail, MessageCircle } from "lucide-react";
 import { useAiToolsEnabled } from "@/hooks/use-ai-tools";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
 
 import { api } from "@/lib/api";
-import type { ApiEmailQueueItem, EmailQueueStatus } from "@/lib/api-types";
+import type { ApiEmailQueueItem, ApiConversationMessage, EmailQueueStatus } from "@/lib/api-types";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
 import { AddLeadDialog } from "@/components/features/add-lead-dialog";
 import { SearchLeadDialog } from "@/components/features/search-lead-dialog";
@@ -405,6 +405,11 @@ export function EmailQueuePageView() {
                   className="mt-1 min-h-[320px] font-sans text-xs leading-relaxed"
                 />
               </div>
+
+              {/* Inbound email replies section — shown below the draft for SENT items */}
+              {selected.status === "SENT" && (
+                <EmailRepliesSection leadId={selected.leadId} candidateName={candidateName(selected)} />
+              )}
             </div>
           </div>
         )}
@@ -450,4 +455,78 @@ function statusTone(s: EmailQueueStatus) {
   if (s === "FOLLOW_UP") return "border-accent/40 text-accent";
   if (s === "SENT") return "border-[oklch(0.55_0.14_155)]/40 text-[oklch(0.55_0.14_155)]";
   return "border-warning/40 text-warning";
+}
+
+function formatReplyTime(iso: string | null): string {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (isNaN(date.getTime())) return "";
+  return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candidateName: string }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ["email-replies", leadId],
+    queryFn: () => api.getConversationByLead(leadId, "EMAIL"),
+    refetchInterval: 15_000, // Poll every 15s for new email replies
+    enabled: !!leadId,
+  });
+
+  const replies: ApiConversationMessage[] = (data?.messages ?? []).filter(
+    (m) => m.sender === "THEM"
+  );
+
+  return (
+    <div className="mt-4 border-t border-border pt-3">
+      <div className="flex items-center gap-2 mb-2">
+        <div className="rounded-md bg-blue-500/10 p-1">
+          <Mail className="h-3.5 w-3.5 text-blue-500" />
+        </div>
+        <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+          Received Replies
+        </span>
+        {replies.length > 0 && (
+          <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-blue-500/10 text-blue-500 border-0">
+            {replies.length}
+          </Badge>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-3">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading replies…
+        </div>
+      ) : replies.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-6 text-center space-y-1.5">
+          <div className="h-10 w-10 rounded-full bg-muted/30 border border-border/40 flex items-center justify-center text-muted-foreground/40">
+            <MessageCircle className="h-5 w-5 stroke-[1.5]" />
+          </div>
+          <div className="text-xs text-muted-foreground">No replies received yet.</div>
+          <div className="text-[10px] text-muted-foreground/60">Replies will appear here automatically.</div>
+        </div>
+      ) : (
+        <div className="max-h-[240px] overflow-y-auto space-y-2 pr-1">
+          {replies.map((reply) => (
+            <div
+              key={reply.id}
+              className="rounded-xl border border-border/60 bg-blue-500/5 p-3 space-y-1.5 transition-colors hover:bg-blue-500/10"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-5 w-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[9px] font-bold">
+                    {candidateName.slice(0, 1).toUpperCase()}
+                  </div>
+                  <span className="text-[11px] font-semibold text-foreground">{candidateName}</span>
+                </div>
+                <span className="text-[10px] text-muted-foreground">{formatReplyTime(reply.sentAt)}</span>
+              </div>
+              <div className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap pl-6">
+                {reply.text}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }

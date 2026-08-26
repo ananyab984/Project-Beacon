@@ -11,7 +11,11 @@ export type AuthUser = {
   emailVerified: boolean;
 };
 
-const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL || "http://localhost:5001"}/api/auth`;
+// Strip a trailing slash from VITE_API_BASE_URL before appending "/api/auth"
+// -- a trailing slash here produces a double slash ("...com//api/auth/me")
+// that Express's router 404s on. Confirmed live: this was the actual cause
+// of "Couldn't reach Global3's server to check your account" in production.
+const API_BASE_URL = `${(import.meta.env.VITE_API_BASE_URL || "http://localhost:5001").replace(/\/+$/, "")}/api/auth`;
 
 /**
  * The role picked on /signup can't be attached to the Neon Auth identity

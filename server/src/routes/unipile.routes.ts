@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { UnipileService } from "../services/unipile.service";
+import { processInboundMessage } from "../services/processInboundMessage";
 import { authenticateJwt } from "../middleware/auth";
 
 export const unipileRouter = Router();
@@ -77,7 +78,17 @@ unipileRouter.post("/webhook/:token", async (req: Request, res: Response) => {
     const { token } = req.params;
     const secretHeader = req.headers["x-g3-webhook-secret"] as string | undefined;
     const result = await UnipileService.handleWebhookEvent(token, secretHeader, req.body);
-    return res.status(200).json({ status: "ok", result });
+    res.status(200).json({ status: "ok", result });
+
+    // Fire-and-forget: enqueue async processing AFTER the 200 is sent.
+    // This keeps the webhook response fast and avoids Unipile retry storms.
+    if (result.inboundMessageId) {
+      setImmediate(() => {
+        processInboundMessage(result.inboundMessageId!).catch((err) =>
+          console.error("[webhook] async processInboundMessage failed:", err)
+        );
+      });
+    }
   } catch (err: any) {
     const status = err.statusCode || 400;
     return res.status(status).json({ error: "WEBHOOK_FAILED", message: err.message });

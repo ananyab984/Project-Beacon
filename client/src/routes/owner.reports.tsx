@@ -97,7 +97,7 @@ function ReportsPage() {
         : "summary";
 
       const token = await getNeonToken();
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:5001";
+      const apiBase = (import.meta.env.VITE_API_BASE_URL || "http://localhost:5001").replace(/\/+$/, "");
       const res = await fetch(`${apiBase}/api/reports/export/${endpoint}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });

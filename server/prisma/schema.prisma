@@ -165,6 +165,7 @@ enum SnapshotStatus {
 /// Instagram/WhatsApp/SMS are real, seeded channels in the live UI.
 enum ConversationChannel {
   LINKEDIN
+  EMAIL
   INSTAGRAM
   WHATSAPP
   SMS
@@ -1037,5 +1038,30 @@ model AccountDegradation {
   createdAt          DateTime         @default(now()) @map("created_at")
 
   @@map("account_degradations")
+}
+
+// ----------------------------------------------------------------------------
+// INBOUND MESSAGES — webhook-received LinkedIn & email replies (idempotent)
+// ----------------------------------------------------------------------------
+
+enum InboundChannel {
+  LINKEDIN
+  EMAIL
+}
+
+model InboundMessage {
+  id               String         @id @default(uuid())
+  unipileMessageId String         @unique @map("unipile_message_id")
+  channel          InboundChannel
+  accountId        String         @map("account_id")
+  threadId         String?        @map("thread_id")
+  sender           String
+  content          String
+  receivedAt       DateTime       @map("received_at")
+  processed        Boolean        @default(false)
+
+  @@index([accountId])
+  @@index([threadId])
+  @@map("inbound_messages")
 }
 

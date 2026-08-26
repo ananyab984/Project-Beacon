@@ -7,6 +7,7 @@ import type {
   ApiClientDemand,
   ApiEmailQueueItem,
   ApiConversation,
+  ApiConversationMessage,
   ApiEscalation,
   ApiKpiConfig,
   ApiRecruiterScoreSnapshot,
@@ -19,7 +20,13 @@ import type {
 } from "@/lib/api-types";
 import { getNeonToken } from "@/lib/neon-auth";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "";
+// Strip any trailing slash(es) -- every call site appends a path starting
+// with "/", so a trailing slash on VITE_API_BASE_URL (e.g. set with one in
+// Vercel's env, "https://api.example.com/") produces a double slash
+// ("https://api.example.com//api/auth/me") that Express's router doesn't
+// match, 404ing every request. Confirmed live: production was hitting this
+// exact bug.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/+$/, "");
 
 /** Shared fetch wrapper: attaches the Neon Auth bearer token, builds the full
  *  URL from VITE_API_BASE_URL, and normalizes errors into ApiRequestError. */
@@ -341,6 +348,11 @@ export const api = {
 
   async sendConversationMessage(id: string, text: string, accountId?: string, to?: string) {
     return request(`/api/conversations/${id}/messages`, { method: "POST", body: JSON.stringify({ text, accountId, to }) });
+  },
+
+  async getConversationByLead(leadId: string, channel?: string): Promise<{ conversation: ApiConversation | null; messages: ApiConversationMessage[] }> {
+    const qs = channel ? `?channel=${encodeURIComponent(channel)}` : "";
+    return request(`/api/conversations/by-lead/${leadId}${qs}`);
   },
 
   // -------------------- escalations --------------------

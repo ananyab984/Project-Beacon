@@ -40,11 +40,48 @@ conversationRouter.get(
         lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
         messages: { orderBy: { sentAt: "asc" } },
       },
-      orderBy: { lastMessageAt: "desc" },
+      // Postgres defaults to NULLS FIRST for DESC, so threads with no
+      // messages yet (lastMessageAt: null) would otherwise always outrank
+      // ones with a real, more recent timestamp -- the opposite of "newest
+      // activity at the top."
+      orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
     });
     return res.json({ conversations });
   })
 );
+
+// GET /api/conversations/by-lead/:leadId — look up a conversation by lead + optional channel
+conversationRouter.get(
+  "/by-lead/:leadId",
+  asyncHandler(async (req: Request, res: Response) => {
+    const { leadId } = req.params;
+    const channel = (req.query.channel as string || "").toUpperCase();
+
+    const role = req.user!.role.toLowerCase();
+    const baseWhere: any = { leadId };
+    if (role !== "owner") baseWhere.recruiterId = req.user!.id;
+    if (channel) baseWhere.channel = channel;
+
+    const conversation = await prisma.conversation.findFirst({
+      where: baseWhere,
+      include: {
+        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
+        messages: { orderBy: { sentAt: "asc" } },
+      },
+      // Postgres defaults to NULLS FIRST for DESC, so threads with no
+      // messages yet (lastMessageAt: null) would otherwise always outrank
+      // ones with a real, more recent timestamp -- the opposite of "newest
+      // activity at the top."
+      orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
+    });
+
+    if (!conversation) {
+      return res.json({ conversation: null, messages: [] });
+    }
+    return res.json({ conversation, messages: conversation.messages });
+  })
+);
+
 
 // GET /api/conversations/:id — single thread, recruiter-scoped
 conversationRouter.get(

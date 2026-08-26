@@ -1,12 +1,13 @@
 import { Router, Request, Response } from "express";
 import { UnipileService } from "../services/unipile.service";
 import { authenticateJwt } from "../middleware/auth";
+import { requireRole } from "../middleware/rbac";
 import { prisma } from "../prisma";
 
 export const outreachRouter = Router();
 
 // POST /api/outreach/send — Sends outreach message via Unipile & records InteractionEvent
-outreachRouter.post("/send", authenticateJwt, async (req: Request, res: Response) => {
+outreachRouter.post("/send", authenticateJwt, requireRole("owner", "recruiter", "contractor"), async (req: Request, res: Response) => {
   try {
     const { leadId, channel, to, subject, body, emailQueueId } = req.body || {};
     if (!leadId || !channel || !body) {
@@ -33,10 +34,15 @@ outreachRouter.post("/send", authenticateJwt, async (req: Request, res: Response
       return res.status(400).json({ error: "INVALID_CHANNEL", message: "Channel must be LINKEDIN or EMAIL" });
     }
 
-    // If an EmailQueueItem ID was provided, delete or update it in DB
+    // If an EmailQueueItem ID was provided, delete or update it in DB.
+    // SECURITY: scoped by recruiterId -- a bare `where: { id: emailQueueId }`
+    // would let any authenticated user delete ANY recruiter's queue item by
+    // guessing/passing an arbitrary id, since nothing here confirms the id
+    // actually belongs to the caller. deleteMany + recruiterId filter makes
+    // it a no-op (not a 500) if it doesn't.
     if (emailQueueId) {
       try {
-        await prisma.emailQueueItem.delete({ where: { id: emailQueueId } });
+        await prisma.emailQueueItem.deleteMany({ where: { id: emailQueueId, recruiterId: userId } });
       } catch (err: any) {
         // Silently skip if item already deleted or doesn't exist
       }

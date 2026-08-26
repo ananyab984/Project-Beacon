@@ -179,7 +179,7 @@ export interface ApiEmailQueueItem {
   sentChannel: "LINKEDIN" | "EMAIL" | null;
 }
 
-export type ConversationChannel = "LINKEDIN" | "INSTAGRAM" | "WHATSAPP" | "SMS";
+export type ConversationChannel = "LINKEDIN" | "EMAIL" | "INSTAGRAM" | "WHATSAPP" | "SMS";
 export type MessageSender = "ME" | "THEM";
 
 export interface ApiConversationMessage {
