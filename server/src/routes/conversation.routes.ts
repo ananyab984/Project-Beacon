@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import axios from "axios";
 import { z } from "zod";
 import { MessageSender, ConversationChannel } from "@prisma/client";
 import { prisma } from "../prisma";
@@ -6,10 +7,10 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
+import { config } from "../config";
 import { UnipileService } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
-import { getDraftingOrchestrator } from "../drafting/instance";
 
 export const conversationRouter = Router();
 
@@ -126,18 +127,27 @@ conversationRouter.post(
     });
     if (!conversation) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
 
-    let draft: { subject: string | null; body: string };
+    let draft: { subject?: string | null; body: string };
     try {
-      // Previously omitted Headline/About_Snippet/Current_Title/
-      // Tools_Software/Certifications entirely -- LinkedIn drafts were
-      // personalizing on strictly less material than email drafts. Now
-      // shares the exact same payload builder (and gets Clay's richer
-      // data) as the email route. Drafting runs in-process (server/src/drafting/)
-      // -- no network hop, no DRAFTING_SERVICE_URL to misconfigure.
-      const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin");
-      draft = { subject: result.subject, body: result.body };
-      if (result.verdict === "INELIGIBLE" || !draft.body.trim()) {
-        const reason = result.flags[0] || "missing required lead data";
+      const response = await axios.post(
+        `${config.draftingServiceUrl}/draft`,
+        {
+          // Previously omitted Headline/About_Snippet/Current_Title/
+          // Tools_Software/Certifications entirely -- LinkedIn drafts were
+          // personalizing on strictly less material than email drafts. Now
+          // shares the exact same payload builder (and gets Clay's richer
+          // data) as the email route.
+          lead: buildDraftLeadPayload(conversation.lead),
+          channel: "linkedin",
+        },
+        { timeout: 20_000 }
+      );
+      draft = response.data;
+      if (!draft || typeof draft.body !== "string") {
+        throw new Error("Drafting service returned an unexpected response shape");
+      }
+      if (response.data.verdict === "INELIGIBLE" || !draft.body.trim()) {
+        const reason = (response.data.flags || [])[0] || "missing required lead data";
         throw new ApiError(
           422,
           "LEAD_NOT_DRAFT_ELIGIBLE",
@@ -148,8 +158,8 @@ conversationRouter.post(
       if (err instanceof ApiError) throw err;
       throw new ApiError(
         502,
-        "DRAFTING_FAILED",
-        "Could not generate a draft — write the message manually"
+        "DRAFTING_SERVICE_UNAVAILABLE",
+        "Could not reach the drafting service — write the message manually"
       );
     }
 

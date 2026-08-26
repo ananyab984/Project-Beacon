@@ -1,14 +1,15 @@
 import { Router, Request, Response } from "express";
+import axios from "axios";
 import { z } from "zod";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
+import { config } from "../config";
 import { UnipileService } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { buildEmailDraft, candidateRoleOf } from "../lib/messageTemplates";
-import { getDraftingOrchestrator } from "../drafting/instance";
 
 export const emailQueueRouter = Router();
 
@@ -129,20 +130,25 @@ emailQueueRouter.post(
       await prisma.lead.update({ where: { id: item.lead.id }, data: { email: manualTo } });
     }
 
-    let draft: { subject: string | null; body: string };
+    let draft: { subject?: string | null; body: string };
     try {
-      // Drafting runs in-process (server/src/drafting/) -- no network hop,
-      // no DRAFTING_SERVICE_URL to misconfigure.
-      const result = await getDraftingOrchestrator().processDraft(
-        buildDraftLeadPayload(item.lead, effectiveEmail),
-        "email"
+      const response = await axios.post(
+        `${config.draftingServiceUrl}/draft`,
+        {
+          lead: buildDraftLeadPayload(item.lead, effectiveEmail),
+          channel: "email",
+        },
+        { timeout: 20_000 }
       );
-      draft = { subject: result.subject, body: result.body };
+      draft = response.data;
+      if (!draft || typeof draft.body !== "string") {
+        throw new Error("Drafting service returned an unexpected response shape");
+      }
       // INELIGIBLE means the pipeline correctly refused to draft anything
       // (e.g. no email address on file yet) -- its body is deliberately
-      // empty, not a failure to surface as "unavailable".
-      if (result.verdict === "INELIGIBLE" || !draft.body.trim()) {
-        const reason = result.flags[0] || "missing required lead data";
+      // empty, not a failure to surface as "service unavailable".
+      if (response.data.verdict === "INELIGIBLE" || !draft.body.trim()) {
+        const reason = (response.data.flags || [])[0] || "missing required lead data";
         throw new ApiError(
           422,
           "LEAD_NOT_DRAFT_ELIGIBLE",
@@ -155,8 +161,8 @@ emailQueueRouter.post(
       // the recruiter write the message by hand or retry.
       throw new ApiError(
         502,
-        "DRAFTING_FAILED",
-        "Could not generate a draft — write the message manually"
+        "DRAFTING_SERVICE_UNAVAILABLE",
+        "Could not reach the drafting service — write the message manually"
       );
     }
 
