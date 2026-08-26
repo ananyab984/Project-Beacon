@@ -113,32 +113,28 @@ export async function enrichLeadById(leadId: string) {
       if (el.Certifications) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
     }
 
-    // BUG FIX: lead.profileLink was previously OR'd into hasContact -- but a
-    // profile link is an INPUT precondition for even attempting enrichment
-    // (every lead needs one to be scraped at all), not a signal that
-    // enrichment actually found anything. That made isComplete trivially
-    // true for nearly every lead regardless of whether Bright Data/Clay
-    // found real contact info, which is exactly why leads Clay reported
-    // "No Profile Found" for were still showing "Enriched" on the dashboard.
-    const hasContact = !!(enrichedEmail || enrichedContactNumber);
-    const pipelineStatus = String(data?.enrichment_status || "").toLowerCase();
-    const isComplete = hasContact || pipelineStatus === "enrichment_complete";
-
-    // BUG FIX: this used to mark every incomplete pass ON_HOLD unconditionally
-    // -- including a lead that was JUST dispatched to Clay's async fallback
-    // this same pass (or is still awaiting a previous dispatch's webhook
-    // reply). That's not "on hold", it's actively enriching -- Clay's result
-    // arrives later via /api/webhooks/clay and clay.service.ts will correctly
-    // mark it COMPLETE or (if Clay genuinely found nothing) ON_HOLD then.
-    // Reserve ON_HOLD for when this pass concluded incomplete AND there is no
-    // outstanding Clay dispatch to wait on -- i.e. genuinely nothing further
-    // to automatically try. `_clay_dispatch: "pending"` is the pipeline's own
-    // signal for "awaiting Clay's webhook", round-tripped via field_sources.
     const returnedFieldSources = (data?.field_sources as Record<string, string> | undefined) || {};
-    const clayAwaiting = returnedFieldSources._clay_dispatch === "pending";
 
+    // "Enriched" means the pipeline has reached a TERMINAL state for this
+    // lead, not "we have a way to contact them" -- those are two different
+    // questions now. `_clay_dispatch: "pending"` is the only thing that can
+    // still be running after this call returns (Clay resolves later via its
+    // own webhook); everything else in this pass (Bright Data/Tavily scrape,
+    // AI extraction) already finished synchronously. So: not still awaiting
+    // Clay == nothing further left for automation to do == Enriched, whatever
+    // that pass actually turned up. A non-LinkedIn lead (Clay never
+    // applicable) is Enriched right after this first pass; a LinkedIn lead
+    // stays not-yet-Enriched only while Clay's dispatch is in flight.
+    const clayAwaiting = returnedFieldSources._clay_dispatch === "pending";
+    const isComplete = !clayAwaiting;
+
+    // ON_HOLD is now a SEPARATE signal from "Enriched": it flags "the
+    // pipeline finished (isComplete) but we still have no way to reach this
+    // person" -- a reachability concern, not an enrichment-progress one.
+    // Never set while still awaiting Clay (that's "Enriching", not stuck).
+    const hasContact = !!(enrichedEmail || enrichedContactNumber);
     const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
-    const flags = isComplete || clayAwaiting ? currentFlags : ["ON_HOLD"];
+    const flags = isComplete && !hasContact ? Array.from(new Set([...currentFlags, "ON_HOLD"])) : currentFlags;
 
     await prisma.lead.update({
       where: { id: lead.id },

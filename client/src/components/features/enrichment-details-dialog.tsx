@@ -37,6 +37,18 @@ function formatEducation(entry: any): string {
   return [degree, institution].filter((x) => x && String(x).toLowerCase() !== "not specified").join(", ");
 }
 
+/** A language/course entry may be a plain string or an object depending on
+ * which Clay action produced it -- same defensive extraction as
+ * drafting_service's core/leads.py `_label_of`. */
+function labelOf(entry: any): string {
+  if (typeof entry === "string") return entry.trim();
+  if (entry && typeof entry === "object") {
+    const val = entry.language ?? entry.name ?? entry.title ?? "";
+    return String(val).trim();
+  }
+  return "";
+}
+
 /** Read-only view of exactly what enrichment actually found for this lead,
  * field by field, with where each value came from -- the "click Enriched to
  * see what you actually got" feature. Previously "Enriched" was static text
@@ -53,9 +65,16 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead }: Props) {
   const educationRows: string[] = Array.isArray(clay.education)
     ? clay.education.map(formatEducation).filter(Boolean)
     : [];
+  const languageRows: string[] = Array.isArray(clay.languages)
+    ? clay.languages.map(labelOf).filter(Boolean)
+    : [];
+  const courseRows: string[] = Array.isArray(clay.courses)
+    ? clay.courses.map(labelOf).filter(Boolean)
+    : [];
   const rows: Array<{ label: string; value: string | null; sourceKey: string }> = [
     { label: "Email", value: lead.email, sourceKey: "Email_Address" },
     { label: "Contact Number", value: lead.contactNumber, sourceKey: "Contact_Number" },
+    { label: "Country", value: lead.country, sourceKey: "Country_of_Residence" },
     { label: "Headline", value: lead.headline, sourceKey: "Headline" },
     { label: "Current Title", value: lead.currentTitle, sourceKey: "Current_Title" },
     { label: "About", value: lead.aboutSnippet, sourceKey: "About_Snippet" },
@@ -114,10 +133,26 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead }: Props) {
           </div>
         )}
 
+        {(languageRows.length > 0 || courseRows.length > 0) && (
+          <div className="mt-3 pt-3 border-t border-border/40">
+            <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+              Languages &amp; Courses
+              <Badge variant="secondary" className="text-[10px]">Clay</Badge>
+            </div>
+            {languageRows.length > 0 && (
+              <p className="text-sm mb-1">{languageRows.join(", ")}</p>
+            )}
+            {courseRows.length > 0 && (
+              <p className="text-sm text-muted-foreground">{courseRows.join(", ")}</p>
+            )}
+          </div>
+        )}
+
         {!lead.email && !lead.contactNumber && (
           <p className="text-xs text-amber-500">
-            No email or contact number found yet — this is why the lead isn't marked fully Enriched
-            despite having other profile content.
+            Automated enrichment has finished for this lead (this is the maximum profile data
+            obtainable), but no email or contact number was found — needs manual follow-up to get
+            in touch.
           </p>
         )}
       </DialogContent>

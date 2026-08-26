@@ -90,6 +90,27 @@ export class ClayService {
 
     const hasRawData = Object.keys(rawEnrichment).length > 0;
     if (Object.keys(patch).length === 0 && !hasRawData) {
+      // Clay still answered -- just with nothing usable (e.g. its waterfall
+      // genuinely found no data for this profile). That's still "Clay gave
+      // us its response, this is the max obtainable" -- clear the dispatch
+      // marker so enrichLeadById's next pass doesn't wait on this forever,
+      // and mark the lead terminal/Enriched rather than leaving it stuck
+      // PENDING with no automated step left to try.
+      const fieldSources = { ...((lead.fieldSources as Record<string, string>) || {}) };
+      fieldSources._clay_dispatch = "complete";
+      const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
+      const hasContact = !!(lead.email || lead.contactNumber);
+      await prisma.lead.update({
+        where: { id: lead.id },
+        data: {
+          fieldSources: fieldSources as any,
+          identityResolved: true,
+          enrichmentStatus: "COMPLETE",
+          flags: (hasContact ? currentFlags : Array.from(new Set([...currentFlags, "ON_HOLD"]))) as any,
+          promotedToGlobalAt: new Date(),
+          justEnrichedUntil: new Date(Date.now() + 24 * 3600_000),
+        },
+      });
       return { status: "empty_enrichment", leadId: lead.id };
     }
 
@@ -102,13 +123,14 @@ export class ClayService {
     // still awaiting a pending result.
     fieldSources._clay_dispatch = "complete";
 
-    // Clay's current "Enrich person" action returns profile content (About,
-    // Headline, Title, Certifications) but NEVER email/phone -- confirmed
-    // against real captured payloads, no `email`/`contactNumber` key exists
-    // in its schema. Unconditionally marking the lead COMPLETE just because
-    // Clay sent something back was exactly the bug reported: leads showing
-    // "Enriched" with no way to actually contact them. Completeness has to
-    // mean "has real contact info", same fixed definition as enrichLeadById.
+    // "Enriched" means the pipeline reached a terminal state, not "we have a
+    // way to contact them" -- Clay having responded with something usable
+    // (we're past the empty-response early-return above) IS that terminal
+    // state: whatever it found is the maximum obtainable for this profile
+    // automatically, so enrichmentStatus goes to COMPLETE unconditionally
+    // below. ON_HOLD stays a separate, reachability-specific signal:
+    // "enrichment is done, but we still have no contact info" -- not a
+    // progress indicator.
     const hasContact = !!(patch.email || patch.contactNumber || lead.email || lead.contactNumber);
     const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
 
@@ -126,10 +148,10 @@ export class ClayService {
         // We now know the lead's real identity/profile content even without
         // contact info -- separate concept from "can we reach them yet".
         identityResolved: true,
-        enrichmentStatus: hasContact ? "COMPLETE" : "PENDING",
+        enrichmentStatus: "COMPLETE" as const,
         flags: (hasContact ? currentFlags : Array.from(new Set([...currentFlags, "ON_HOLD"]))) as any,
-        promotedToGlobalAt: hasContact ? new Date() : lead.promotedToGlobalAt,
-        justEnrichedUntil: hasContact ? new Date(Date.now() + 24 * 3600_000) : lead.justEnrichedUntil,
+        promotedToGlobalAt: new Date(),
+        justEnrichedUntil: new Date(Date.now() + 24 * 3600_000),
       },
     });
 
