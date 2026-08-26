@@ -203,6 +203,7 @@ export function ConversationsPageView() {
         <div className="flex items-center gap-2">
           {/* Search Lead Dialog */}
           <SearchLeadDialog
+            requireLinkedIn
             onSelectLead={handleSelectLeadFromSearch}
             title="Search & Add Lead to Conversations"
             description="Select a lead from the database. Enriched profile details & LinkedIn outreach draft will be auto-prefilled."
@@ -231,6 +232,7 @@ export function ConversationsPageView() {
         <div className="flex flex-1 items-center justify-center rounded-2xl border border-dashed border-border bg-card/40 text-sm text-muted-foreground flex-col gap-3">
           <div>No LinkedIn conversations yet.</div>
           <SearchLeadDialog
+            requireLinkedIn
             onSelectLead={handleSelectLeadFromSearch}
             trigger={
               <Button size="sm" className="bg-primary text-primary-foreground text-xs gap-1.5">
@@ -248,6 +250,7 @@ export function ConversationsPageView() {
                 <div className="flex items-center justify-between">
                   <div className="text-sm font-semibold">LinkedIn Conversations</div>
                   <SearchLeadDialog
+                    requireLinkedIn
                     onSelectLead={handleSelectLeadFromSearch}
                     trigger={
                       <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-primary gap-1">

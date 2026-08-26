@@ -117,6 +117,21 @@ conversationRouter.post(
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
 
+    // This page only ever creates LINKEDIN-channel conversations -- confirmed
+    // live, a ProZ lead ended up here with its proz.com profileLink shown in
+    // the "TO" field, because nothing checked the lead was actually a
+    // LinkedIn lead before creating one. Require both signals: `source` is
+    // the intended one, the URL check catches a stale/mistagged `source`.
+    const isLinkedInLead =
+      lead.source === "LINKEDIN" && !!lead.profileLink && /linkedin\.com/i.test(lead.profileLink);
+    if (!isLinkedInLead) {
+      throw new ApiError(
+        400,
+        "LEAD_NOT_LINKEDIN",
+        `${lead.displayName || lead.fullName || "This lead"} isn't a LinkedIn lead (source: ${lead.source}) -- LinkedIn conversations can only be started for leads with a real linkedin.com profile.`
+      );
+    }
+
     const existing = await prisma.conversation.findFirst({
       where: { leadId, recruiterId: req.user!.id, channel: ConversationChannel.LINKEDIN },
       include: {

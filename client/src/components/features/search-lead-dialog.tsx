@@ -15,6 +15,11 @@ interface SearchLeadDialogProps {
   onSelectLead: (lead: ApiLead) => Promise<void> | void;
   title?: string;
   description?: string;
+  /** Conversations page only: hide non-LinkedIn leads entirely rather than
+   *  letting them get picked and hit the server's LEAD_NOT_LINKEDIN 400 --
+   *  the server check remains the real source of truth, this just avoids
+   *  most recruiters ever seeing that error in the first place. */
+  requireLinkedIn?: boolean;
 }
 
 export function SearchLeadDialog({
@@ -24,6 +29,7 @@ export function SearchLeadDialog({
   onSelectLead,
   title = "Search & Add Lead",
   description = "Search leads by name or email. Selected lead will be added with enriched profile data auto-prefilled.",
+  requireLinkedIn = false,
 }: SearchLeadDialogProps) {
   const [internalOpen, setInternalOpen] = useState(false);
   const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
@@ -39,8 +45,11 @@ export function SearchLeadDialog({
   });
 
   const leads = data?.leads ?? [];
+  const eligibleLeads = requireLinkedIn
+    ? leads.filter((l) => l.source === "LINKEDIN" && !!l.profileLink && /linkedin\.com/i.test(l.profileLink))
+    : leads;
 
-  const filtered = leads.filter((l) => {
+  const filtered = eligibleLeads.filter((l) => {
     if (!query.trim()) return true;
     const q = query.toLowerCase();
     const name = (l.fullName || l.displayName || "").toLowerCase();
