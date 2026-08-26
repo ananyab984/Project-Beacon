@@ -388,8 +388,12 @@ function LeadsPage() {
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
                 const isEnriched = l.enrichmentStatus === "COMPLETE";
-                const isPending = l.enrichmentStatus === "IN_PROGRESS";
-                const isOnHold = !isEnriched && !isPending;
+                // See recruiter.leads.tsx for why this reads `flags` rather
+                // than inferring "On Hold" from enrichmentStatus alone -- a
+                // lead awaiting Clay's async webhook reply was being shown
+                // as stuck the instant it actually started enriching.
+                const isOnHold = !isEnriched && (l.flags ?? []).includes("ON_HOLD");
+                const isPending = !isEnriched && !isOnHold;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">

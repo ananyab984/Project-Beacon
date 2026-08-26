@@ -124,8 +124,21 @@ export async function enrichLeadById(leadId: string) {
     const pipelineStatus = String(data?.enrichment_status || "").toLowerCase();
     const isComplete = hasContact || pipelineStatus === "enrichment_complete";
 
+    // BUG FIX: this used to mark every incomplete pass ON_HOLD unconditionally
+    // -- including a lead that was JUST dispatched to Clay's async fallback
+    // this same pass (or is still awaiting a previous dispatch's webhook
+    // reply). That's not "on hold", it's actively enriching -- Clay's result
+    // arrives later via /api/webhooks/clay and clay.service.ts will correctly
+    // mark it COMPLETE or (if Clay genuinely found nothing) ON_HOLD then.
+    // Reserve ON_HOLD for when this pass concluded incomplete AND there is no
+    // outstanding Clay dispatch to wait on -- i.e. genuinely nothing further
+    // to automatically try. `_clay_dispatch: "pending"` is the pipeline's own
+    // signal for "awaiting Clay's webhook", round-tripped via field_sources.
+    const returnedFieldSources = (data?.field_sources as Record<string, string> | undefined) || {};
+    const clayAwaiting = returnedFieldSources._clay_dispatch === "pending";
+
     const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
-    const flags = isComplete ? currentFlags : ["ON_HOLD"];
+    const flags = isComplete || clayAwaiting ? currentFlags : ["ON_HOLD"];
 
     await prisma.lead.update({
       where: { id: lead.id },

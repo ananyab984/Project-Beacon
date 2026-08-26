@@ -227,10 +227,20 @@ class EnrichmentOrchestrator:
         # polls would re-dispatch the SAME lead to Clay as a brand-new row.
         # `known_field_sources` round-trips this exactly the way it already
         # prevents re-asking the LLM fallback about an already-settled field.
-        already_dispatched = field_sources.get("_clay_dispatch") == "pending"
+        #
+        # BUG FIX: this used to check only `== "pending"` -- once Clay's
+        # webhook actually resolved it (clay.service.ts sets `_clay_dispatch`
+        # to "complete", or my cleanup script's "failed_invalid_identifier"),
+        # the guard fell through as if Clay had never been tried, and the
+        # very next 3-minute poll would dispatch the SAME lead to Clay again
+        # -- forever, once every 3 minutes, since a lead that's genuinely a
+        # total Bright Data miss stays that way on every re-scrape. Clay
+        # should only ever be attempted once per lead, regardless of outcome.
+        clay_dispatch_state = field_sources.get("_clay_dispatch")
+        already_dispatched = bool(clay_dispatch_state)
         if primary_provider_got_nothing and already_dispatched:
-            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": "already_pending"}
-            logs.append("Stage 3.5 skipped: Clay fallback already dispatched for this lead, awaiting its async result")
+            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": f"already_{clay_dispatch_state}"}
+            logs.append(f"Stage 3.5 skipped: Clay fallback already attempted for this lead (state={clay_dispatch_state!r}), not re-dispatching")
         elif primary_provider_got_nothing and has_clay_identifier:
             if self.clay and profile_link:
                 try:
@@ -275,7 +285,23 @@ class EnrichmentOrchestrator:
         missing_fill_only = [f for f in FILL_ONLY_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
         fallback_targets = list(dict.fromkeys(missing_critical + override_candidates + missing_fill_only))
 
-        if not fallback_targets:
+        # Waterfall order: Bright Data/Tavily -> Clay -> AI extraction, in
+        # that priority -- AI is the last resort, not a parallel guess fired
+        # in the same pass as an in-flight Clay dispatch. `_clay_dispatch`
+        # stays "pending" for both "just dispatched this pass" and "already
+        # dispatched on a prior pass, still awaiting its webhook reply" (the
+        # `already_dispatched` branch above doesn't touch it), so checking it
+        # here after Stage 3.5 has run covers both cases uniformly. Once
+        # Clay's webhook resolves it to "complete" (or the dispatch itself
+        # failed/was never applicable), this stops blocking and the next
+        # poll pass runs Stage 4-6 normally.
+        clay_awaiting = field_sources.get("_clay_dispatch") == "pending"
+
+        if clay_awaiting:
+            msg = "Stage 4 skipped: Clay fallback is still awaiting its async result -- AI extraction only runs after Clay has had its chance (or Clay doesn't apply to this lead)."
+            logs.append(msg)
+            log.info(msg)
+        elif not fallback_targets:
             # ABSOLUTE RULE: nothing left to fill or verify -- BYPASS LLM STAGE ENTIRELY
             msg = "Stage 4 Bypass Guard: nothing left for the LLM to fill or verify! BYPASSING LLM FALLBACK ENTIRELY."
             logs.append(msg)
