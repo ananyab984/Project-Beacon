@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { authClient, getNeonToken, getNeonTokenResult } from "./neon-auth";
 
 export type Role = "owner" | "recruiter" | "contractor";
@@ -83,6 +84,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isHydrating, setIsHydrating] = useState(true);
   const [needsRoleSetup, setNeedsRoleSetup] = useState(false);
+  // The QueryClient is one instance for the whole browser tab's lifetime
+  // (router.tsx), not per-user -- so switching who's signed in without a
+  // full page reload otherwise leaves the previous recruiter's cached
+  // conversations, email queue, etc. sitting under the same query keys for
+  // whoever is now signed in to see, until each query happens to refetch.
+  // Every place identity changes below must clear it.
+  const queryClient = useQueryClient();
 
   /**
    * Given an active Neon Auth session, resolve (or auto-link) the app
@@ -154,6 +162,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const resolution = await resolveProfile();
     if (resolution.status === "ok") {
+      // Discard anything cached under the previous identity (this tab's own
+      // sign-out already clears it, but a session expiring and a different
+      // person signing back in on the same tab wouldn't otherwise go through
+      // that path) before this recruiter's own data starts loading in.
+      queryClient.clear();
       setNeedsRoleSetup(false);
       setUser(resolution.user);
       return resolution.user;
@@ -164,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setNeedsRoleSetup(false);
     throw toError(resolution.detail, { code: "PROFILE_CHECK_FAILED", email });
-  }, [resolveProfile]);
+  }, [resolveProfile, queryClient]);
 
   const signUp = useCallback(async ({ name, email, password, role }: { name: string; email: string; password: string; role: Role }) => {
     const { error } = await authClient.signUp.email({ email, password, name });
@@ -174,9 +187,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     await authClient.signOut();
+    // Without this, the next person to use this browser tab (a shared
+    // machine, or just switching accounts without a full reload) would see
+    // this recruiter's cached conversations/email queue/leads under the same
+    // query keys until each one happened to refetch.
+    queryClient.clear();
     setUser(null);
     setNeedsRoleSetup(false);
-  }, []);
+  }, [queryClient]);
 
   const requestPasswordReset = useCallback(async (email: string) => {
     const { error } = await authClient.requestPasswordReset({ email, redirectTo: `${window.location.origin}/reset-password` });

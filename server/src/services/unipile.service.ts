@@ -581,6 +581,13 @@ export class UnipileService {
     });
 
     const externalMessageId = response.data.tracking_id || response.data.id || `mail_${Date.now()}`;
+    // Best-effort: capture the real email thread id if Unipile's send
+    // response includes one, the same way sendLinkedInMessage's direct-DM
+    // path captures chat_id -- lets a reply match immediately by thread id
+    // instead of waiting on a self-echo that emails may never produce (no
+    // "mail_sent"-type event is subscribed to, unlike LinkedIn's messaging
+    // webhook, which does echo our own sends back through message_received).
+    const unipileThreadId = response.data.thread_id || null;
 
     // Record InteractionEvent
     const event = await prisma.interactionEvent.create({
@@ -597,7 +604,7 @@ export class UnipileService {
     });
 
     // Also sync to Conversation table (same as LinkedIn's sendLinkedInMessage)
-    await this.syncToConversation(leadId, userId, "EMAIL", body, externalMessageId);
+    await this.syncToConversation(leadId, userId, "EMAIL", body, externalMessageId, unipileThreadId);
 
     return {
       success: true,
@@ -621,9 +628,16 @@ export class UnipileService {
     try {
       const lead = await prisma.lead.findUnique({ where: { id: leadId } });
       const candidateName = lead?.fullName || lead?.firstName || "Candidate";
+      const conversationChannel = channel === "LINKEDIN" ? ConversationChannel.LINKEDIN : ConversationChannel.EMAIL;
 
+      // BUG FIX: this lookup was missing a channel filter, so a lead already
+      // having a LINKEDIN conversation meant every EMAIL send for that same
+      // lead silently reused (and mutated) the LinkedIn conversation instead
+      // of creating its own -- confirmed live, an outreach email's body ended
+      // up appended into the candidate's LinkedIn thread. LinkedIn and Email
+      // are always distinct Conversation rows per lead+recruiter.
       let conv = await prisma.conversation.findFirst({
-        where: { leadId, recruiterId },
+        where: { leadId, recruiterId, channel: conversationChannel },
       });
 
       if (!conv) {
@@ -632,7 +646,7 @@ export class UnipileService {
             leadId,
             recruiterId,
             candidateName,
-            channel: channel === "LINKEDIN" ? ConversationChannel.LINKEDIN : ConversationChannel.SMS,
+            channel: conversationChannel,
             lastMessageAt: new Date(),
             unipileChatId: unipileChatId || undefined,
           },
@@ -861,18 +875,24 @@ export class UnipileService {
     }
 
     // 3. Messaging webhook (inbound and external outbound) per Unipile Metrics Guide
-    // Handles both LinkedIn (message_received) and Email (email.received) events.
-    const isMessageEvent = eventType === "message_received" || eventType === "email.received";
-    const inboundChannel = eventType === "email.received" ? InboundChannel.EMAIL : InboundChannel.LINKEDIN;
+    // Handles both LinkedIn (message_received) and Email (mail_received) events.
+    // Confirmed live: Unipile's actual registered email event is "mail_received",
+    // not "email.received" -- the latter never matched a real payload, so every
+    // inbound email reply was silently skipped by this whole block.
+    const isMessageEvent = eventType === "message_received" || eventType === "mail_received" || eventType === "email.received";
+    const inboundChannel = eventType === "mail_received" || eventType === "email.received" ? InboundChannel.EMAIL : InboundChannel.LINKEDIN;
 
     let inboundMessageId: string | null = null;
 
-    if (isMessageEvent && (body.message || body.text || body.body) && accountId) {
+    if (isMessageEvent && (body.message || body.text || body.body_plain || body.body) && accountId) {
       const connAcc = await prisma.connectedAccount.findUnique({
         where: { unipileAccountId: accountId },
       });
 
-      const messageText = body.message || body.text || body.body || "";
+      // Prefer body_plain for email -- body/body.body is the raw HTML including
+      // the quoted-reply chain and a 1x1 tracking pixel <img>, body_plain is
+      // the clean plaintext Unipile already extracts.
+      const messageText = body.message || body.text || body.body_plain || body.body || "";
       const externalMsgId = body.message_id || body.id || null;
 
       // --- InboundMessage table insert (idempotency via unipile_message_id) ---
@@ -893,8 +913,15 @@ export class UnipileService {
           if (!isNaN(parsed.getTime())) eventTimestamp = parsed;
         }
 
-        const senderName = body.sender?.display_name || body.sender?.attendee_provider_id
-          || body.from?.identifier || body.from?.display_name || body.sender_id || "unknown";
+        // Email payloads carry the sender under `from_attendee`, not `sender`/
+        // `from` -- confirmed live (identical bug pattern to the LinkedIn
+        // payload-shape mismatches already found this session). Prefer the
+        // raw identifier (email address / provider id) over any display name
+        // here since this value is never shown to end users -- it's compared
+        // against connAcc/providerUserId below to detect our own messages,
+        // and needs to be exact for that comparison to work.
+        const senderName = body.sender?.attendee_provider_id || body.from_attendee?.identifier
+          || body.from?.identifier || body.sender_id || "unknown";
         const chatId = body.chat_id || body.thread_id || null;
 
         const inboundRow = await prisma.inboundMessage.create({
@@ -913,9 +940,24 @@ export class UnipileService {
 
       // --- ConversationMessage + InteractionEvent (existing logic, now for both channels) ---
       if (connAcc) {
+        // LinkedIn payloads carry `account_info.user_id` (the connected
+        // account's own id, stable across every event regardless of who sent
+        // that particular message) -- email payloads have no such field, so
+        // fall back to the connected account's own email address instead.
+        // `ownIdentity` is this account's stable "that's us" value, reused
+        // below both to classify the current event AND (critically) to
+        // classify earlier InboundMessage rows during reconciliation, where
+        // comparing against THIS event's own sender would be wrong whenever
+        // this event itself happens to be the other party's message.
         const providerUserId = body.account_info?.user_id;
         const senderProviderId = body.sender?.attendee_provider_id || body.sender_id;
-        const isOutbound = (providerUserId && senderProviderId && providerUserId === senderProviderId) || body.is_sender === true;
+        const fromIdentity = (body.from_attendee?.identifier || "").toLowerCase();
+        const ownEmailIdentity = (connAcc.accountName || "").toLowerCase();
+        const ownIdentity = providerUserId || connAcc.accountName || null;
+        const isOutbound =
+          (providerUserId && senderProviderId && providerUserId === senderProviderId) ||
+          body.is_sender === true ||
+          (!!ownEmailIdentity && !!fromIdentity && ownEmailIdentity === fromIdentity);
 
         let eventTimestamp = new Date();
         if (body.timestamp) {
@@ -974,6 +1016,35 @@ export class UnipileService {
           }
         }
 
+        // Email-identity backfill: unlike LinkedIn, email sends don't self-echo
+        // through this webhook (only "mail_received" is subscribed, nothing
+        // fires for our own outgoing mail), so a genuine inbound reply is the
+        // only event this thread will ever produce -- there's no echo to wait
+        // for. Positively identify the Conversation via the lead's own stored
+        // email address matching who this reply came from (from_attendee),
+        // the same certainty guarantee as the account nonce match: an email
+        // address is who sent it, not a guess. Only ever fires for genuinely
+        // inbound mail (isOutbound false) with no chat id match yet.
+        if (!conversation && chatId && !isOutbound && connAcc && inboundChannel === InboundChannel.EMAIL && fromIdentity) {
+          const candidates = await prisma.conversation.findMany({
+            where: {
+              recruiterId: connAcc.userId,
+              channel: ConversationChannel.EMAIL,
+              unipileChatId: null,
+              lead: { email: { equals: fromIdentity, mode: "insensitive" } },
+            },
+          });
+          if (candidates.length === 1) {
+            conversation = await prisma.conversation.update({
+              where: { id: candidates[0].id },
+              data: { unipileChatId: chatId },
+            });
+            console.log(`[unipile webhook] Backfilled chat id ${chatId} onto conversation ${conversation.id} via lead-email match.`);
+          } else if (candidates.length > 1) {
+            console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${fromIdentity} -- refusing to guess.`);
+          }
+        }
+
         // Webhook delivery order across two events of the same send (our
         // echo vs. the candidate's real reply) isn't guaranteed -- confirmed
         // live, the real reply was processed before its own echo, so the
@@ -985,11 +1056,17 @@ export class UnipileService {
         // the OTHER party's messages here -- our own outbound messages are
         // already recorded synchronously at send time (syncToConversation),
         // so re-inserting an echo would just duplicate (or, worse, mislabel)
-        // something already shown. Direction is decided by comparing each
-        // row's stored sender identity against THIS event's own -- the only
-        // two participants possible in a 1:1 thread are us and the other
-        // party, so an exact non-match is always "them," never a guess
-        // between multiple candidates.
+        // something already shown.
+        //
+        // BUG FIX: direction must be decided against `ownIdentity` (this
+        // connected account's OWN stable id/email, same value on every
+        // event) -- NOT against THIS event's own sender. Confirmed live:
+        // comparing against the triggering event's sender broke exactly when
+        // that event was itself the other party's genuine reply -- e.g.
+        // candidate's "are you hiring for more roles" reconciling an earlier
+        // self-echo compared that echo's sender against the CANDIDATE's id,
+        // never matched, and silently mislabeled our own outreach message as
+        // coming from them.
         if (conversation && chatId) {
           const priorUnmatched = await prisma.inboundMessage.findMany({
             where: { threadId: chatId, channel: inboundChannel },
@@ -997,7 +1074,7 @@ export class UnipileService {
           });
           for (const prior of priorUnmatched) {
             if (prior.unipileMessageId === externalMsgId) continue; // this event, handled below
-            const priorIsOutbound = prior.sender === senderProviderId;
+            const priorIsOutbound = !!ownIdentity && prior.sender.toLowerCase() === ownIdentity.toLowerCase();
             if (priorIsOutbound) continue; // our own echo -- already recorded at send time
             const already = await prisma.conversationMessage.findFirst({
               where: { externalMessageId: prior.unipileMessageId },

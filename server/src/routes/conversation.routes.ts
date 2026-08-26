@@ -231,12 +231,15 @@ conversationRouter.post(
       throw toApiError(err);
     }
 
-    const message = await prisma.conversationMessage.create({
-      data: { conversationId: conversation.id, sender: MessageSender.ME, text },
-    });
-    await prisma.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: new Date() },
+    // sendLinkedInMessage already records this message (and bumps
+    // lastMessageAt) via its own internal syncToConversation call -- this
+    // route used to ALSO create a second ConversationMessage for the exact
+    // same text right here, which is the "message sent twice" duplicate
+    // confirmed live in the UI. Fetch the row syncToConversation just wrote
+    // instead of writing a second one.
+    const message = await prisma.conversationMessage.findFirst({
+      where: { conversationId: conversation.id, sender: MessageSender.ME, text },
+      orderBy: { sentAt: "desc" },
     });
 
     return res.status(201).json({ message });
