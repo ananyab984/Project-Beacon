@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { KpiTile, ScoreRing } from "@/components/features/kpi";
 import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
+import { FaqManager } from "@/components/dashboard/faq-manager";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/owner/")({
   head: () => ({
@@ -46,6 +48,7 @@ function Overview() {
   const recruiterCount = recruitersData?.users.length ?? 0;
   const escalationsList = escalationsData?.escalations ?? [];
   const { scale, label: rangeLabel } = useDateRange();
+  const { user } = useAuth();
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Good Morning Ethan Hero Header Block */}
@@ -212,6 +215,13 @@ function Overview() {
       </section>
 
       {/* Recruiter Roster */}
+
+      {/* FAQ Management Section (owner only) */}
+      {user?.role === "owner" && (
+        <div className="border-t pt-6">
+          <FaqManager />
+        </div>
+      )}
     </div>
   );
 }
