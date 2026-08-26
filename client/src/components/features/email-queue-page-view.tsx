@@ -438,13 +438,17 @@ export function EmailQueuePageView() {
                   <Textarea
                     value={body}
                     onChange={(e) => { setBody(e.target.value); markDirty(); }}
+                    readOnly={selected.status === "SENT"}
                     placeholder={!body ? "…or start typing here to write your own." : ""}
-                    className={`min-h-[320px] font-sans text-xs leading-relaxed ${!body ? "pt-14 text-center" : ""}`}
+                    className={`font-sans text-xs leading-relaxed ${!body ? "min-h-[320px] pt-14 text-center" : selected.status === "SENT" ? "min-h-[120px] bg-muted/20" : "min-h-[320px]"}`}
                   />
                 </div>
               </div>
 
-              {/* Inbound email replies section — shown below the draft for SENT items */}
+              {/* Inbound email replies section — shown below the draft for
+                  SENT items. The sent body no longer needs the same 320px of
+                  room once it's a historical, read-only record -- shrinking
+                  it here means Replies shows up without much scrolling. */}
               {selected.status === "SENT" && (
                 <EmailRepliesSection leadId={selected.leadId} candidateName={candidateName(selected)} />
               )}
