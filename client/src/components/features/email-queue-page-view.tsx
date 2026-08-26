@@ -319,7 +319,14 @@ export function EmailQueuePageView() {
             )}
             {!isLoading && !isError && emailQueue.length === 0 && (
               <div className="p-6 text-center text-xs text-muted-foreground">
-                No items in queue.
+                <SearchLeadDialog
+                  onSelectLead={(lead) => handleAddLeadToQueue(lead.id)}
+                  trigger={
+                    <button className="text-primary hover:underline font-medium">
+                      Add leads from an existing lead to get started
+                    </button>
+                  }
+                />
               </div>
             )}
             {emailQueue.map((e) => (
