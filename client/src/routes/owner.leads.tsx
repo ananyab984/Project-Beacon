@@ -12,6 +12,7 @@ import { useMemo, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
+import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 
 export const Route = createFileRoute("/owner/leads")({
@@ -72,6 +73,7 @@ function LeadsPage() {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
+  const [detailsLead, setDetailsLead] = useState<ApiLead | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [mode, setMode] = useState<"table" | "board">("table");
   const pageSize = 12;
@@ -406,9 +408,15 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3">
                       {isEnriched ? (
-                        <span className="font-semibold text-xs text-emerald-400">
+                        <button
+                          onClick={() => setDetailsLead(l)}
+                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
+                        >
+                          {!l.email && !l.contactNumber && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
+                          )}
                           Enriched
-                        </span>
+                        </button>
                       ) : isPending ? (
                         <span className="font-semibold text-xs text-amber-400">
                           Enriching…
@@ -478,6 +486,13 @@ function LeadsPage() {
         onOpenChange={(o) => !o && setEnrichRaw(null)}
         lead={enrichLead}
         onMarkEnriched={handleMarkEnriched}
+      />
+
+      <EnrichmentDetailsDialog
+        open={!!detailsLead}
+        onOpenChange={(o) => !o && setDetailsLead(null)}
+        lead={detailsLead}
+        onSave={(id, patch) => enrichMutation.mutate({ id, patch })}
       />
 
       {/* Assign picker */}

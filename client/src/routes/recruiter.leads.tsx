@@ -440,8 +440,11 @@ function LeadsPage() {
                       {isEnriched ? (
                         <button
                           onClick={() => setDetailsLead(l)}
-                          className="font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
+                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
                         >
+                          {!l.email && !l.contactNumber && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
+                          )}
                           Enriched
                         </button>
                       ) : isPending ? (
@@ -530,6 +533,7 @@ function LeadsPage() {
         open={!!detailsLead}
         onOpenChange={(o) => !o && setDetailsLead(null)}
         lead={detailsLead}
+        onSave={(id, patch) => enrichMutation.mutate({ id, patch })}
       />
     </div>
   );

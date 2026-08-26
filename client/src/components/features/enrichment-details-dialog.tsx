@@ -1,11 +1,16 @@
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { useEffect, useState } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import type { ApiLead } from "@/lib/api-types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lead: ApiLead | null;
+  onSave: (id: string, patch: Partial<ApiLead>) => void;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -49,65 +54,108 @@ function labelOf(entry: any): string {
   return "";
 }
 
-/** Read-only view of exactly what enrichment actually found for this lead,
- * field by field, with where each value came from -- the "click Enriched to
- * see what you actually got" feature. Previously "Enriched" was static text
- * with no way to inspect it; this is the same Dialog pattern already used by
- * ManualEnrichmentDialog for the "On Hold" click-through. */
-export function EnrichmentDetailsDialog({ open, onOpenChange, lead }: Props) {
+type FieldKind = "text" | "number" | "list";
+
+const FIELD_DEFS: Array<{ label: string; key: string; sourceKey: string; kind: FieldKind; placeholder?: string }> = [
+  { label: "Email", key: "email", sourceKey: "Email_Address", kind: "text", placeholder: "name@example.com" },
+  { label: "Contact Number", key: "contactNumber", sourceKey: "Contact_Number", kind: "text", placeholder: "+1 234 567 8900" },
+  { label: "Country", key: "country", sourceKey: "Country_of_Residence", kind: "text" },
+  { label: "Headline", key: "headline", sourceKey: "Headline", kind: "text" },
+  { label: "Current Title", key: "currentTitle", sourceKey: "Current_Title", kind: "text" },
+  { label: "About", key: "aboutSnippet", sourceKey: "About_Snippet", kind: "text" },
+  { label: "Years of Experience", key: "yearsOfExperience", sourceKey: "Years_of_Exp", kind: "number" },
+  { label: "Vendor Experience", key: "vendorExperience", sourceKey: "Vendor_Experience", kind: "text" },
+  { label: "Tools / Software", key: "toolsSoftware", sourceKey: "Tools_Software", kind: "list", placeholder: "comma-separated" },
+  { label: "Certifications", key: "certifications", sourceKey: "Certifications", kind: "list", placeholder: "comma-separated" },
+];
+
+/** Editable view of exactly what enrichment actually found for this lead,
+ * field by field, with where each value came from. Fields enrichment found
+ * are pre-filled; anything still missing is an empty, directly-editable
+ * input -- the recruiter can add a contact (or fix anything else) and save
+ * straight from here instead of the "On Hold" manual-enrichment flow. */
+export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave }: Props) {
+  const [values, setValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!lead) return;
+    const initial: Record<string, string> = {};
+    for (const f of FIELD_DEFS) {
+      const raw = (lead as any)[f.key];
+      initial[f.key] = f.kind === "list" ? (Array.isArray(raw) && raw.length ? raw.join(", ") : "") : raw != null ? String(raw) : "";
+    }
+    setValues(initial);
+  }, [lead]);
+
   if (!lead) return null;
 
   const sources = lead.fieldSources || {};
   const clay = lead.clayData || {};
-  const experienceRows: string[] = Array.isArray(clay.experience)
-    ? clay.experience.map(formatRole).filter(Boolean)
-    : [];
-  const educationRows: string[] = Array.isArray(clay.education)
-    ? clay.education.map(formatEducation).filter(Boolean)
-    : [];
-  const languageRows: string[] = Array.isArray(clay.languages)
-    ? clay.languages.map(labelOf).filter(Boolean)
-    : [];
-  const courseRows: string[] = Array.isArray(clay.courses)
-    ? clay.courses.map(labelOf).filter(Boolean)
-    : [];
-  const rows: Array<{ label: string; value: string | null; sourceKey: string }> = [
-    { label: "Email", value: lead.email, sourceKey: "Email_Address" },
-    { label: "Contact Number", value: lead.contactNumber, sourceKey: "Contact_Number" },
-    { label: "Country", value: lead.country, sourceKey: "Country_of_Residence" },
-    { label: "Headline", value: lead.headline, sourceKey: "Headline" },
-    { label: "Current Title", value: lead.currentTitle, sourceKey: "Current_Title" },
-    { label: "About", value: lead.aboutSnippet, sourceKey: "About_Snippet" },
-    { label: "Years of Experience", value: lead.yearsOfExperience?.toString() ?? null, sourceKey: "Years_of_Exp" },
-    { label: "Vendor Experience", value: lead.vendorExperience, sourceKey: "Vendor_Experience" },
-    { label: "Tools / Software", value: lead.toolsSoftware?.length ? lead.toolsSoftware.join(", ") : null, sourceKey: "Tools_Software" },
-    { label: "Certifications", value: lead.certifications?.length ? lead.certifications.join(", ") : null, sourceKey: "Certifications" },
-  ];
+  const experienceRows: string[] = Array.isArray(clay.experience) ? clay.experience.map(formatRole).filter(Boolean) : [];
+  const educationRows: string[] = Array.isArray(clay.education) ? clay.education.map(formatEducation).filter(Boolean) : [];
+  const languageRows: string[] = Array.isArray(clay.languages) ? clay.languages.map(labelOf).filter(Boolean) : [];
+  const courseRows: string[] = Array.isArray(clay.courses) ? clay.courses.map(labelOf).filter(Boolean) : [];
+
+  const hasContact = !!(values.email?.trim() || values.contactNumber?.trim());
+
+  function handleChange(key: string, val: string) {
+    setValues((v) => ({ ...v, [key]: val }));
+  }
+
+  function handleSave() {
+    if (!lead) return;
+    const patch: Partial<ApiLead> = {};
+    for (const f of FIELD_DEFS) {
+      const raw = (values[f.key] ?? "").trim();
+      if (f.kind === "number") {
+        (patch as any)[f.key] = raw === "" ? undefined : Number(raw);
+      } else if (f.kind === "list") {
+        (patch as any)[f.key] = raw
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+      } else {
+        (patch as any)[f.key] = raw || undefined;
+      }
+    }
+    onSave(lead.id, patch);
+    onOpenChange(false);
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{lead.displayName ?? lead.fullName ?? "Lead"} — Enrichment Details</DialogTitle>
-          <DialogDescription>Exactly what was found, and which source it came from.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2">
+            <span>{lead.displayName ?? lead.fullName ?? "Lead"} — Enrichment Details</span>
+            {!hasContact && (
+              <Badge variant="outline" className="border-destructive/40 bg-destructive/10 text-destructive text-[10px] shrink-0">
+                No contact yet
+              </Badge>
+            )}
+          </DialogTitle>
+          <DialogDescription>
+            Fields enrichment found are pre-filled below; anything still missing is empty — fill it in (especially
+            email/contact) and save.
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          {rows.map((r) => (
-            <div key={r.sourceKey} className="grid grid-cols-[140px_1fr] gap-3 text-sm border-b border-border/40 pb-2">
-              <div className="text-muted-foreground">{r.label}</div>
-              <div>
-                {r.value ? (
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="break-words">{r.value}</span>
-                    {sources[r.sourceKey] && (
-                      <Badge variant="secondary" className="shrink-0 text-[10px]">
-                        {SOURCE_LABEL[sources[r.sourceKey]] ?? sources[r.sourceKey]}
-                      </Badge>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-muted-foreground">— not found</span>
+        <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
+          {FIELD_DEFS.map((f) => (
+            <div key={f.key} className="grid grid-cols-[130px_1fr] gap-3 text-sm items-center">
+              <Label className="text-muted-foreground text-xs">{f.label}</Label>
+              <div className="flex items-center gap-2">
+                <Input
+                  type={f.kind === "number" ? "number" : "text"}
+                  value={values[f.key] ?? ""}
+                  onChange={(e) => handleChange(f.key, e.target.value)}
+                  placeholder={sources[f.sourceKey] ? undefined : f.placeholder ?? "Not found — add manually"}
+                  className="h-8 text-xs"
+                />
+                {sources[f.sourceKey] && (
+                  <Badge variant="secondary" className="shrink-0 text-[10px]">
+                    {SOURCE_LABEL[sources[f.sourceKey]] ?? sources[f.sourceKey]}
+                  </Badge>
                 )}
               </div>
             </div>
@@ -139,22 +187,21 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead }: Props) {
               Languages &amp; Courses
               <Badge variant="secondary" className="text-[10px]">Clay</Badge>
             </div>
-            {languageRows.length > 0 && (
-              <p className="text-sm mb-1">{languageRows.join(", ")}</p>
-            )}
-            {courseRows.length > 0 && (
-              <p className="text-sm text-muted-foreground">{courseRows.join(", ")}</p>
-            )}
+            {languageRows.length > 0 && <p className="text-sm mb-1">{languageRows.join(", ")}</p>}
+            {courseRows.length > 0 && <p className="text-sm text-muted-foreground">{courseRows.join(", ")}</p>}
           </div>
         )}
 
-        {!lead.email && !lead.contactNumber && (
+        {!hasContact && (
           <p className="text-xs text-amber-500">
-            Automated enrichment has finished for this lead (this is the maximum profile data
-            obtainable), but no email or contact number was found — needs manual follow-up to get
-            in touch.
+            Automated enrichment has finished for this lead (this is the maximum profile data obtainable), but no
+            email or contact number was found — add one above if you have it, or it needs manual follow-up.
           </p>
         )}
+
+        <DialogFooter>
+          <Button size="sm" onClick={handleSave}>Save</Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
