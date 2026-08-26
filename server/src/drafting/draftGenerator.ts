@@ -183,3 +183,100 @@ export async function generateLinkedin(
     rate_flag: rateFlag,
   };
 }
+
+export interface FaqReply {
+  body: string;
+  model: string;
+  latency_ms: number;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+}
+
+/** Generate a natural-language FAQ reply based on the candidate's question and a matched FAQ entry.
+ * Enforces strict grounding: the model can only reference facts from the FAQ answer itself,
+ * no external knowledge or assumptions. */
+export async function generateFaqReply(
+  client: ClaudeClient,
+  cfg: DraftingConfig,
+  leadMessage: string,
+  faqQuestion: string,
+  faqAnswer: string
+): Promise<FaqReply> {
+  const system = `You are a helpful support assistant responding to candidate inquiries.
+Your task is to answer the candidate's question based ONLY on the provided FAQ answer.
+Do not add any information not in the FAQ answer. Do not make assumptions or provide
+external knowledge. Respond naturally and conversationally, grounding every claim in
+the FAQ content provided.
+
+HARD REQUIREMENT: Every statement in your response must come directly from the FAQ answer.
+Do not invent details, timelines, or facts not explicitly stated.`;
+
+  const user = `Candidate's question: "${leadMessage}"
+
+FAQ entry:
+Question: ${faqQuestion}
+Answer: ${faqAnswer}
+
+Provide a natural, conversational response to the candidate's question using only the
+information from the FAQ answer above. Keep it concise (1-2 paragraphs).`;
+
+  const completion = await client.chat(system, user, {
+    model: cfg.genModel,
+    temperature: 0.3,
+    maxTokens: 300,
+  });
+
+  return {
+    body: completion.text.trim(),
+    model: completion.model,
+    latency_ms: completion.latency_ms,
+    prompt_tokens: completion.prompt_tokens,
+    completion_tokens: completion.completion_tokens,
+  };
+}
+
+/** Extract 3-5 short semantic keywords from an FAQ question + answer, for storing
+ * in `faqEntry.tags` so newly created FAQs are searchable without manual tagging.
+ * Low temperature keeps the extraction stable across repeat calls. */
+export async function generateFaqKeywords(
+  client: ClaudeClient,
+  cfg: DraftingConfig,
+  faqQuestion: string,
+  faqAnswer: string
+): Promise<{ keywords: string[] }> {
+  const system = `You are an expert at extracting semantic keywords from FAQ entries.
+Your task is to extract 3-5 short, meaningful keywords that represent the core topics
+of this FAQ. These keywords are used for search and categorization.
+
+Return ONLY a JSON object with a "keywords" array of strings. No markdown, no explanation.
+Example: {"keywords": ["payment", "training", "schedule"]}`;
+
+  const user = `FAQ Question: ${faqQuestion}
+
+FAQ Answer: ${faqAnswer}
+
+Extract 3-5 semantic keywords that capture the main topics. Keep keywords short (1-2 words).
+Focus on searchable concepts users would ask about.`;
+
+  const completion = await client.chat(system, user, {
+    model: cfg.genModel,
+    temperature: 0.1,
+    maxTokens: 150,
+  });
+
+  let data: any;
+  try {
+    data = JSON.parse(completion.text);
+  } catch {
+    const start = completion.text.indexOf("{");
+    const end = completion.text.lastIndexOf("}");
+    if (start >= 0 && start < end) {
+      data = JSON.parse(completion.text.slice(start, end + 1));
+    } else {
+      throw new Error("Could not parse keywords from Claude response");
+    }
+  }
+
+  const keywords = Array.isArray(data.keywords) ? data.keywords.filter((k: any) => typeof k === "string") : [];
+  return { keywords };
+}
