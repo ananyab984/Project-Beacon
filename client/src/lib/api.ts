@@ -59,6 +59,33 @@ function qs(params: Record<string, string | number | undefined | null>): string 
   return "?" + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join("&");
 }
 
+// -------------------- FAQ types --------------------
+
+export interface FaqEntry {
+  id: string;
+  category: string;
+  question: string;
+  answer: string;
+  tags: string[];
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateFaqInput {
+  category: string;
+  question: string;
+  answer: string;
+}
+
+export interface UpdateFaqInput {
+  category?: string;
+  question?: string;
+  answer?: string;
+  tags?: string[];
+  isActive?: boolean;
+}
+
 export const api = {
   // -------------------- leads --------------------
 
@@ -448,5 +475,43 @@ export const api = {
 
   getReportExportUrl(type: string): string {
     return `/api/reports/export/${type}`;
+  },
+
+  // -------------------- FAQ --------------------
+
+  /** Check a lead's message against the FAQ table (button-triggered, structured lookup) */
+  async checkFaq(leadMessage: string): Promise<{ match: boolean; answer?: string; matchedQuestion?: string }> {
+    return request("/api/faq/check", { method: "POST", body: JSON.stringify({ leadMessage }) });
+  },
+
+  /** List all FAQ entries */
+  async listFaqs(): Promise<{ faqEntries: FaqEntry[] }> {
+    return request("/api/faq");
+  },
+
+  /** Fetch a single FAQ entry by id */
+  async getFaq(id: string): Promise<{ faqEntry: FaqEntry }> {
+    return request(`/api/faq/${id}`);
+  },
+
+  /** Create an FAQ entry (owner only); keywords are auto-generated server-side */
+  async createFaq(data: CreateFaqInput): Promise<{ faqEntry: FaqEntry; keywordsGenerated: boolean }> {
+    return request("/api/faq", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Update an FAQ entry (owner only) */
+  async updateFaq(id: string, data: UpdateFaqInput): Promise<{ faqEntry: FaqEntry }> {
+    return request(`/api/faq/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Soft-delete an FAQ entry (owner only) */
+  async deleteFaq(id: string): Promise<{ success: boolean }> {
+    return request(`/api/faq/${id}`, { method: "DELETE" });
   },
 };

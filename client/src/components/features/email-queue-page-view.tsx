@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search, Mail, MessageCircle } from "lucide-react";
+import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search, Mail, MessageCircle, MessageCircleQuestion } from "lucide-react";
 import { useAiToolsEnabled } from "@/hooks/use-ai-tools";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
 
 import { api } from "@/lib/api";
+import { checkFaqAndAutofill } from "@/lib/faq";
 import type { ApiEmailQueueItem, ApiConversationMessage, EmailQueueStatus } from "@/lib/api-types";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
 import { AddLeadDialog } from "@/components/features/add-lead-dialog";
@@ -73,6 +74,27 @@ export function EmailQueuePageView() {
   const [searchLeadQuery, setSearchLeadQuery] = useState("");
   const [sending, setSending] = useState(false);
   const [addingLeadId, setAddingLeadId] = useState<string | null>(null);
+  const [isCheckingFaq, setIsCheckingFaq] = useState(false);
+
+  // Inbound email replies for the selected lead. Shares its query key with
+  // <EmailRepliesSection /> so the two are deduped by react-query; used here to
+  // find the candidate's latest message for the FAQ lookup.
+  const { data: emailThread } = useQuery({
+    queryKey: ["email-replies", selected?.leadId],
+    queryFn: () => api.getConversationByLead(selected!.leadId, "EMAIL"),
+    enabled: !!selected?.leadId,
+  });
+
+  const lastCandidateEmail = [...(emailThread?.messages ?? [])]
+    .reverse()
+    .find((m: ApiConversationMessage) => m.sender === "THEM")?.text;
+
+  async function handleCheckFaqEmail() {
+    await checkFaqAndAutofill(lastCandidateEmail, setIsCheckingFaq, (draft) => {
+      setBody(draft);
+      markDirty();
+    });
+  }
 
   // Auto-select the first item on initial load, and re-select whenever the
   // currently selected item disappears from the list (e.g. a newly-added
@@ -359,6 +381,17 @@ export function EmailQueuePageView() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button variant="outline" size="sm" onClick={saveDraft} disabled={selected.status === "SENT"} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCheckFaqEmail}
+                    disabled={isCheckingFaq || !lastCandidateEmail}
+                    title={lastCandidateEmail ? "Check the candidate's latest reply against the FAQ" : "No reply from the candidate yet to check"}
+                    className="h-8 text-xs gap-1.5 text-cyan-500 hover:text-cyan-400"
+                  >
+                    {isCheckingFaq ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MessageCircleQuestion className="h-3.5 w-3.5" />}
+                    {isCheckingFaq ? "Checking…" : "Check FAQ"}
+                  </Button>
                   {selected.status === "SENT" ? (
                     <Badge className="h-8 gap-1.5 border-0 bg-[oklch(0.55_0.14_155)]/15 px-3 text-xs font-semibold text-[oklch(0.55_0.14_155)]">
                       <CheckCircle2 className="h-3.5 w-3.5" />

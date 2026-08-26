@@ -1,5 +1,5 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { LayoutGrid, Building2, Users, ContactRound, Settings, Search, Sparkles, BarChart3, Plus } from "lucide-react";
+import { LayoutGrid, Building2, Users, ContactRound, HelpCircle, Settings, Search, Sparkles, BarChart3, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { EscalationsBell } from "@/components/features/escalations";
@@ -26,6 +26,7 @@ function useNav(): NavItem[] {
     { to: "/owner/clients", label: "Clients & Market", icon: Building2 },
     { to: "/owner/recruiters", label: "Recruiters", icon: Users },
     { to: "/owner/leads", label: "Leads", icon: ContactRound },
+    { to: "/owner/faqs", label: "FAQs", icon: HelpCircle },
     ...(ai ? [{ to: "/owner/pipelines", label: "AI Pipelines", icon: Sparkles }] : []),
     { to: "/owner/reports", label: "Reports", icon: BarChart3 },
     { to: "/owner/settings", label: "Settings", icon: Settings },
