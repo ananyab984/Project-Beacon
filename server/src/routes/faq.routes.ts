@@ -1,8 +1,9 @@
 import { Router, Request, Response } from "express";
-import axios from "axios";
 import { authenticateJwt } from "../middleware/auth";
 import { prisma } from "../prisma";
-import { config } from "../config";
+import { generateFaqReply } from "../drafting/draftGenerator";
+import { ClaudeClient } from "../drafting/claudeClient";
+import { loadDraftingConfig } from "../drafting/config";
 
 export const faqRouter = Router();
 
@@ -40,21 +41,18 @@ faqRouter.post("/check", authenticateJwt, async (req: Request, res: Response) =>
       return res.json({ match: false });
     }
 
-    let phrased: { body: string };
+    let phrased;
     try {
-      const response = await axios.post(
-        `${config.draftingServiceUrl}/faq-reply`,
-        { lead_message: leadMessage, faq_question: top.question, faq_answer: top.answer },
-        { timeout: 20_000 }
-      );
-      phrased = response.data;
+      const draftingConfig = loadDraftingConfig();
+      const client = new ClaudeClient(draftingConfig);
+      phrased = await generateFaqReply(client, draftingConfig, leadMessage, top.question, top.answer);
       if (!phrased || typeof phrased.body !== "string" || !phrased.body.trim()) {
-        throw new Error("Drafting service returned an unexpected response shape");
+        throw new Error("FAQ reply generation returned an unexpected response shape");
       }
     } catch (err: any) {
       return res.status(502).json({
-        error: "DRAFTING_SERVICE_UNAVAILABLE",
-        message: "Could not reach the drafting service — check the FAQ manually",
+        error: "FAQ_GENERATION_FAILED",
+        message: `Could not generate FAQ reply: ${err.message || "unknown error"}`,
       });
     }
 
