@@ -358,14 +358,6 @@ export function EmailQueuePageView() {
                   <SaveStatus state={saveState} savedAt={savedAt} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    onClick={handleGenerateDraft}
-                    disabled={isGeneratingDraft}
-                    className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
-                  >
-                    {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                    {isGeneratingDraft ? "Generating…" : "Generate Draft"}
-                  </Button>
                   <Button variant="outline" size="sm" onClick={saveDraft} disabled={selected.status === "SENT"} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
                   {selected.status === "SENT" ? (
                     <Badge className="h-8 gap-1.5 border-0 bg-[oklch(0.55_0.14_155)]/15 px-3 text-xs font-semibold text-[oklch(0.55_0.14_155)]">
@@ -396,21 +388,27 @@ export function EmailQueuePageView() {
                 <Input value={subject} onChange={(e) => { setSubject(e.target.value); markDirty(); }} className="mt-1" />
               </div>
               <div className="flex-1">
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Email Body</label>
-                  <button
-                    onClick={handleGenerateDraft}
-                    className="text-[11px] text-accent hover:underline font-medium flex items-center gap-1"
-                  >
-                    <Wand2 className="h-3 w-3" /> Insert Official Template
-                  </button>
+                <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Email Body</label>
+                <div className="relative mt-1">
+                  {!body && (
+                    <div className="absolute inset-x-0 top-3 z-10 flex justify-center">
+                      <Button
+                        onClick={handleGenerateDraft}
+                        disabled={isGeneratingDraft}
+                        className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
+                      >
+                        {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                        {isGeneratingDraft ? "Generating…" : "Generate Draft"}
+                      </Button>
+                    </div>
+                  )}
+                  <Textarea
+                    value={body}
+                    onChange={(e) => { setBody(e.target.value); markDirty(); }}
+                    placeholder={!body ? "…or start typing here to write your own." : ""}
+                    className={`min-h-[320px] font-sans text-xs leading-relaxed ${!body ? "pt-14 text-center" : ""}`}
+                  />
                 </div>
-                <Textarea
-                  value={body}
-                  onChange={(e) => { setBody(e.target.value); markDirty(); }}
-                  placeholder="Click 'Generate Draft' button above to generate official email outreach message..."
-                  className="mt-1 min-h-[320px] font-sans text-xs leading-relaxed"
-                />
               </div>
 
               {/* Inbound email replies section — shown below the draft for SENT items */}
