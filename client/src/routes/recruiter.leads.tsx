@@ -415,8 +415,17 @@ function LeadsPage() {
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
                 const isEnriched = l.enrichmentStatus === "COMPLETE";
-                const isPending = l.enrichmentStatus === "IN_PROGRESS";
-                const isOnHold = !isEnriched && !isPending;
+                // Previously: anything that wasn't COMPLETE or freshly
+                // IN_PROGRESS showed "On Hold" -- but IN_PROGRESS only lasts
+                // for the split second the pipeline call is in flight, so a
+                // lead awaiting Clay's async webhook reply (status flips
+                // back to PENDING the moment that call returns) was shown as
+                // "On Hold" the instant it actually started enriching. The
+                // server now only sets the ON_HOLD flag when a pass
+                // genuinely found nothing further to try -- trust that
+                // signal instead of inferring it from enrichmentStatus alone.
+                const isOnHold = !isEnriched && (l.flags ?? []).includes("ON_HOLD");
+                const isPending = !isEnriched && !isOnHold;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">

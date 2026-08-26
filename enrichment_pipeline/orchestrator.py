@@ -208,13 +208,18 @@ class EnrichmentOrchestrator:
         primary_provider_got_nothing = provider_type in _CLAY_CAPABLE_PROVIDERS and not any(
             not is_empty_value(v) for k, v in stage3_parsed.items() if k not in _INPUT_ECHO_FIELDS
         )
-        # Clay's "Enrich person" action only accepts a LinkedIn/SalesNav URL
-        # or an email as input -- a ProZ/ATA/etc. profile link alone is not
-        # something it can enrich from. Gate dispatch on actually having one
-        # of those two identifiers, regardless of which Source this lead is.
+        # Confirmed live against Clay's own dashboard (2026-08-26): dispatching
+        # a non-LinkedIn Profile_Link (ProZ/Bodalgo/personal-site URLs, even
+        # with a real Email included in the same payload) makes Clay's
+        # "Enrich person" waterfall action fail every row with "Invalid
+        # input: Invalid person identifier" -- it does not fall back to
+        # searching by email despite Email being sent as its own field. The
+        # earlier assumption that Clay accepts either identifier was wrong;
+        # this table's Enrich Person step is LinkedIn-URL-only. Gate dispatch
+        # strictly on a genuine LinkedIn/SalesNav URL until Clay is
+        # reconfigured (if ever) with an email-based enrichment path.
         _has_linkedin_url = bool(re.search(r"linkedin\.com/(in|sales)/", profile_link or "", re.IGNORECASE))
-        _has_email = not is_empty_value(lead.get("Email_Address"))
-        has_clay_identifier = _has_linkedin_url or _has_email
+        has_clay_identifier = _has_linkedin_url
         # A lead that's dispatched-but-not-yet-answered is still "PENDING"
         # overall (no critical fields resolved), so the Node backend's
         # pollPendingEnrichment() cron will call /enrich on it again every
@@ -222,10 +227,20 @@ class EnrichmentOrchestrator:
         # polls would re-dispatch the SAME lead to Clay as a brand-new row.
         # `known_field_sources` round-trips this exactly the way it already
         # prevents re-asking the LLM fallback about an already-settled field.
-        already_dispatched = field_sources.get("_clay_dispatch") == "pending"
+        #
+        # BUG FIX: this used to check only `== "pending"` -- once Clay's
+        # webhook actually resolved it (clay.service.ts sets `_clay_dispatch`
+        # to "complete", or my cleanup script's "failed_invalid_identifier"),
+        # the guard fell through as if Clay had never been tried, and the
+        # very next 3-minute poll would dispatch the SAME lead to Clay again
+        # -- forever, once every 3 minutes, since a lead that's genuinely a
+        # total Bright Data miss stays that way on every re-scrape. Clay
+        # should only ever be attempted once per lead, regardless of outcome.
+        clay_dispatch_state = field_sources.get("_clay_dispatch")
+        already_dispatched = bool(clay_dispatch_state)
         if primary_provider_got_nothing and already_dispatched:
-            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": "already_pending"}
-            logs.append("Stage 3.5 skipped: Clay fallback already dispatched for this lead, awaiting its async result")
+            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": f"already_{clay_dispatch_state}"}
+            logs.append(f"Stage 3.5 skipped: Clay fallback already attempted for this lead (state={clay_dispatch_state!r}), not re-dispatching")
         elif primary_provider_got_nothing and has_clay_identifier:
             if self.clay and profile_link:
                 try:
@@ -245,9 +260,9 @@ class EnrichmentOrchestrator:
                 logs.append(f"Stage 3.5 skipped: {provider_type} returned nothing, but no Profile_Link to use as Clay's correlation id")
         elif primary_provider_got_nothing and not has_clay_identifier:
             logs.append(
-                f"Stage 3.5 skipped: {provider_type} returned nothing, but no LinkedIn URL or "
-                "Email_Address is available for Clay to enrich from (ProZ/ATA-style profile links "
-                "alone aren't a usable input to Clay's Enrich Person action)"
+                f"Stage 3.5 skipped: {provider_type} returned nothing, but this lead has no LinkedIn "
+                "URL -- Clay's Enrich Person action rejects everything else (ProZ/ATA/Bodalgo profile "
+                "links, or an email alone) with 'Invalid person identifier', confirmed live 2026-08-26"
             )
 
         # Stage 4: Critical Field Audit & LLM Bypass Guard
@@ -270,7 +285,23 @@ class EnrichmentOrchestrator:
         missing_fill_only = [f for f in FILL_ONLY_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
         fallback_targets = list(dict.fromkeys(missing_critical + override_candidates + missing_fill_only))
 
-        if not fallback_targets:
+        # Waterfall order: Bright Data/Tavily -> Clay -> AI extraction, in
+        # that priority -- AI is the last resort, not a parallel guess fired
+        # in the same pass as an in-flight Clay dispatch. `_clay_dispatch`
+        # stays "pending" for both "just dispatched this pass" and "already
+        # dispatched on a prior pass, still awaiting its webhook reply" (the
+        # `already_dispatched` branch above doesn't touch it), so checking it
+        # here after Stage 3.5 has run covers both cases uniformly. Once
+        # Clay's webhook resolves it to "complete" (or the dispatch itself
+        # failed/was never applicable), this stops blocking and the next
+        # poll pass runs Stage 4-6 normally.
+        clay_awaiting = field_sources.get("_clay_dispatch") == "pending"
+
+        if clay_awaiting:
+            msg = "Stage 4 skipped: Clay fallback is still awaiting its async result -- AI extraction only runs after Clay has had its chance (or Clay doesn't apply to this lead)."
+            logs.append(msg)
+            log.info(msg)
+        elif not fallback_targets:
             # ABSOLUTE RULE: nothing left to fill or verify -- BYPASS LLM STAGE ENTIRELY
             msg = "Stage 4 Bypass Guard: nothing left for the LLM to fill or verify! BYPASSING LLM FALLBACK ENTIRELY."
             logs.append(msg)
