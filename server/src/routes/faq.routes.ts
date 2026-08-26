@@ -168,7 +168,7 @@ faqRouter.patch(
   })
 );
 
-// DELETE /api/faq/:id — soft delete (isActive: false), never a hard delete. Owner only.
+// DELETE /api/faq/:id — hard delete. Owner only.
 faqRouter.delete(
   "/:id",
   requireRole("owner"),
@@ -176,7 +176,7 @@ faqRouter.delete(
     const existing = await prisma.faqEntry.findUnique({ where: { id: req.params.id } });
     if (!existing) throw new ApiError(404, "FAQ_NOT_FOUND", "FAQ entry not found");
 
-    await prisma.faqEntry.update({ where: { id: req.params.id }, data: { isActive: false } });
+    await prisma.faqEntry.delete({ where: { id: req.params.id } });
     return res.json({ success: true });
   })
 );

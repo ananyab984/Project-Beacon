@@ -106,7 +106,7 @@ function FaqsPage() {
                       size="sm"
                       onClick={() => {
                         if (
-                          confirm(`Delete the FAQ "${faq.question}"? Its history is preserved — this is a soft delete, not a permanent removal.`)
+                          confirm(`Delete the FAQ "${faq.question}"? This cannot be undone.`)
                         ) {
                           deleteMutation.mutate(faq.id);
                         }
