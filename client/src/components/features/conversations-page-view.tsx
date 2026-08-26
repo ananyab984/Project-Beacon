@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { checkFaqAndAutofill } from "@/lib/faq";
 import type { ApiConversation, ApiConversationMessage, ApiLead } from "@/lib/api-types";
 import { SearchLeadDialog } from "@/components/features/search-lead-dialog";
 import { SelectAccountDialog } from "@/components/features/select-account-dialog";
@@ -119,28 +120,7 @@ export function ConversationsPageView() {
   const handleCheckFaq = async () => {
     if (!conv) return;
     const lastLeadMessage = [...conv.messages].reverse().find((m: ApiConversationMessage) => m.sender === "THEM");
-    if (!lastLeadMessage) {
-      toast.error("No reply from the candidate yet to check");
-      return;
-    }
-    setIsCheckingFaq(true);
-    try {
-      const result = await api.checkFaq(lastLeadMessage.text);
-      if (result.match && result.answer) {
-        setDraft(result.answer);
-        toast.success(`FAQ match found: "${result.matchedQuestion}"`);
-      } else {
-        toast.info("No confident FAQ match for this reply");
-      }
-    } catch (err: any) {
-      if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
-        toast.error("Drafting service unavailable — check the FAQ manually");
-      } else {
-        toast.error(err.message || "Failed to check FAQ");
-      }
-    } finally {
-      setIsCheckingFaq(false);
-    }
+    await checkFaqAndAutofill(lastLeadMessage?.text, setIsCheckingFaq, setDraft);
   };
 
   const handleSelectLeadFromSearch = async (lead: ApiLead) => {
