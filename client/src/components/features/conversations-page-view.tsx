@@ -311,18 +311,7 @@ export function ConversationsPageView() {
                     </div>
                     <div className="text-[11px] text-muted-foreground">{conv.candidateRole}</div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      onClick={handleGenerateLinkedInDraft}
-                      disabled={isGeneratingDraft}
-                      size="sm"
-                      className="h-7 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
-                    >
-                      {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                      {isGeneratingDraft ? "Generating…" : "Generate Draft"}
-                    </Button>
-                    <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
-                  </div>
+                  <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
                 </div>
 
                 <div className="shrink-0 border-b border-border px-4 py-2">
@@ -346,6 +335,15 @@ export function ConversationsPageView() {
                         <div className="text-sm font-semibold text-foreground">No messages yet.</div>
                         <div className="text-xs text-muted-foreground">Compose a message below to start the conversation.</div>
                       </div>
+                      <Button
+                        onClick={handleGenerateLinkedInDraft}
+                        disabled={isGeneratingDraft}
+                        size="sm"
+                        className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
+                      >
+                        {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                        {isGeneratingDraft ? "Generating…" : "Generate Draft"}
+                      </Button>
                     </div>
                   ) : (
                     <>
