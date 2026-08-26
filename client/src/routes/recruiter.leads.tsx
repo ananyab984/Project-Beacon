@@ -201,6 +201,15 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
   });
 
+  const retryEnrichmentMutation = useMutation({
+    mutationFn: (id: string) => api.retryLeadEnrichment(id),
+    onSuccess: () => {
+      invalidateLeads();
+      toast.success("Queued for re-enrichment");
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to retry enrichment"),
+  });
+
   const bulkCreateMutation = useMutation({
     mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
@@ -439,7 +448,8 @@ function LeadsPage() {
                 // genuinely found nothing further to try -- trust that
                 // signal instead of inferring it from enrichmentStatus alone.
                 const isOnHold = !isEnriched && (l.flags ?? []).includes("ON_HOLD");
-                const isPending = !isEnriched && !isOnHold;
+                const isStalled = !isEnriched && l.enrichmentStatus === "STALLED";
+                const isPending = !isEnriched && !isOnHold && !isStalled;
                 const completeness = enrichmentCompleteness(l);
                 const isWellEnriched = completeness >= ENRICHMENT_COMPLETENESS_THRESHOLD;
                 return (
@@ -471,6 +481,15 @@ function LeadsPage() {
                         <span className="font-semibold text-xs text-amber-400">
                           Enriching…
                         </span>
+                      ) : isStalled ? (
+                        <button
+                          onClick={() => retryEnrichmentMutation.mutate(l.id)}
+                          disabled={retryEnrichmentMutation.isPending}
+                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-destructive hover:underline cursor-pointer disabled:opacity-50"
+                          title="Enrichment didn't finish in time -- click to retry"
+                        >
+                          Stalled · Retry
+                        </button>
                       ) : (
                         <button
                           onClick={() => setEnrichRaw(l)}

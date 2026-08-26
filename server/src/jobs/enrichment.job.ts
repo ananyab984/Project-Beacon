@@ -25,7 +25,7 @@ export async function enrichLeadById(leadId: string) {
   try {
     await prisma.lead.update({
       where: { id: lead.id },
-      data: { enrichmentStatus: "IN_PROGRESS" },
+      data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
     });
 
     const { data } = await axios.post(
@@ -193,6 +193,42 @@ export async function enrichLeadById(leadId: string) {
       data: { enrichmentStatus: "PENDING" },
     }).catch(() => {});
   }
+}
+
+// A lead only sits in IN_PROGRESS for the split second enrichLeadById's own
+// axios call is in flight -- that call either lands in the try block's own
+// terminal update or the catch block's revert-to-PENDING. Confirmed live:
+// nothing was ever re-querying IN_PROGRESS, so a lead orphaned there (process
+// restart, an error thrown outside that try/catch) stayed stuck forever.
+// 20 minutes is generous slack above that split-second norm.
+const STALL_TIMEOUT_MS = 20 * 60_000;
+
+/** Finds leads stuck in IN_PROGRESS past STALL_TIMEOUT_MS and marks them
+ *  STALLED so they stop looking like they're still actively enriching.
+ *  Never silently retries on their behalf -- a lead that got orphaned mid-run
+ *  needs a human (or an explicit retry call) to decide it's safe to re-run,
+ *  not an automatic loop that could re-orphan it the same way. */
+export async function stallOverdueEnrichments() {
+  const cutoff = new Date(Date.now() - STALL_TIMEOUT_MS);
+  const overdue = await prisma.lead.findMany({
+    where: {
+      enrichmentStatus: "IN_PROGRESS",
+      // Also catches leads that were already IN_PROGRESS from before this
+      // field existed (confirmed live: two leads stuck for hours predate
+      // enrichmentStartedAt entirely) -- a currently-running lead with no
+      // start time recorded is itself already anomalous, not something to
+      // wait out.
+      OR: [{ enrichmentStartedAt: { lt: cutoff } }, { enrichmentStartedAt: null }],
+    },
+    select: { id: true },
+  });
+  if (overdue.length === 0) return;
+
+  await prisma.lead.updateMany({
+    where: { id: { in: overdue.map((l) => l.id) } },
+    data: { enrichmentStatus: "STALLED" },
+  });
+  console.warn(`[enrichment.job] Marked ${overdue.length} lead(s) STALLED after exceeding the ${STALL_TIMEOUT_MS / 60_000}min timeout: ${overdue.map((l) => l.id).join(", ")}`);
 }
 
 /** Polls PENDING leads and calls the enrichment_pipeline service for each. */

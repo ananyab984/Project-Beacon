@@ -793,6 +793,31 @@ leadRouter.post(
   })
 );
 
+// POST /api/leads/:id/retry-enrichment — recover a STALLED lead (or retry
+// any other non-running lead) by handing it back to the normal PENDING
+// queue, which pollPendingEnrichment picks up on its next 3-minute pass.
+// Deliberately does not call enrichLeadById directly here -- routing every
+// retry through the same poll path a fresh lead takes means there's exactly
+// one code path that can ever set IN_PROGRESS, not two.
+leadRouter.post(
+  "/:id/retry-enrichment",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+    if (lead.enrichmentStatus === "IN_PROGRESS") {
+      throw new ApiError(409, "ALREADY_RUNNING", "This lead's enrichment is still actively running");
+    }
+
+    const updated = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { enrichmentStatus: "PENDING" },
+    });
+    return res.json({ lead: updated });
+  })
+);
+
 // POST /api/leads/batch-delete — batch delete leads & cascade cleanup
 leadRouter.post(
   "/batch-delete",

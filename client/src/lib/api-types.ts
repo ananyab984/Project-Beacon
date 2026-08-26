@@ -13,7 +13,7 @@ export type LeadStatus =
 export type LeadPriority = "P0" | "P1" | "P2" | "P3";
 export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
 export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
-export type EnrichmentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW";
+export type EnrichmentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
 export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
 
 export interface ApiLead {

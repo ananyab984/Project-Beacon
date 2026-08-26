@@ -147,6 +147,10 @@ export const api = {
     return request(`/api/leads/${id}/activities`, { method: "POST", body: JSON.stringify(activity) });
   },
 
+  async retryLeadEnrichment(id: string): Promise<{ lead: ApiLead }> {
+    return request(`/api/leads/${id}/retry-enrichment`, { method: "POST" });
+  },
+
   // A plain `window.open`/`<a href>` to this endpoint can't carry the Neon
   // Auth bearer token (browsers don't let you attach headers to a bare
   // navigation), so this fetches the CSV with auth and triggers the download

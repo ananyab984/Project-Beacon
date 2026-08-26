@@ -98,6 +98,13 @@ enum EnrichmentStatus {
   IN_PROGRESS
   COMPLETE
   FLAGGED_REVIEW
+  /// A run that entered IN_PROGRESS and never reached a terminal status
+  /// within the timeout window (process crash, uncaught error, etc.) --
+  /// confirmed live: nothing previously re-queried IN_PROGRESS leads, so
+  /// they sat here forever. Distinct from the ON_HOLD *flag* (LeadFlagType)
+  /// -- that means "enrichment finished but we have no way to reach this
+  /// person"; STALLED means "enrichment itself never finished."
+  STALLED
 }
 
 /// Repo's Source type (g3-mock.ts) is a plain string union with values
@@ -341,7 +348,13 @@ model Lead {
   dupFlagged      Boolean @default(false) @map("dup_flagged")
   dupFlaggedField String? @map("dup_flagged_field") // "full_name" | "profile_link" | "email_address"
 
-  enrichmentStatus   EnrichmentStatus @default(PENDING) @map("enrichment_status")
+  enrichmentStatus    EnrichmentStatus @default(PENDING) @map("enrichment_status")
+  // Stamped the moment a run actually starts (enrichLeadById), used only to
+  // detect a stalled run (see stallOverdueEnrichments) -- deliberately its
+  // own field rather than a generic @updatedAt, since Lead has none and a
+  // generic one would reset on any unrelated field write while a run is
+  // stuck, masking exactly the staleness this needs to detect.
+  enrichmentStartedAt DateTime?        @map("enrichment_started_at")
   promotedToGlobalAt DateTime?        @map("promoted_to_global_at")
   justEnrichedUntil  DateTime?        @map("just_enriched_until") // repo: transient "recently enriched" highlight window
 
