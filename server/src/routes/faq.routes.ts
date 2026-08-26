@@ -41,9 +41,10 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
     `;
 
     const top = matches[0];
-    // Starting thresholds, not calibrated against production data yet --
-    // tune once you see real rank/sim values against the actual FAQ set.
-    if (!top || (top.rank < 0.15 && top.sim < 0.3)) {
+    // Both thresholds must be met: rank >= 0.3 AND similarity >= 0.4.
+    // This prevents loose matches like "contract" matching FAQ about "training"
+    // just because both mention generic business terms.
+    if (!top || top.rank < 0.3 || top.sim < 0.4) {
       return res.json({ match: false });
     }
 

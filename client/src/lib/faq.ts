@@ -22,7 +22,11 @@ export async function checkFaqAndAutofill(
   setLoading(true);
   try {
     const result = await api.checkFaq(message);
-    if (result.match && result.answer) {
+    // Guard against hallucinated refusals: detect "I don't have", "unable to answer",
+    // "not available" patterns that indicate the model refused instead of grounding.
+    const isRefusal = result.answer && /unable|don't (have|know)|no information|not available/i.test(result.answer);
+
+    if (result.match && result.answer && !isRefusal) {
       setDraft(result.answer);
       toast.success(`FAQ match found: "${result.matchedQuestion}"`);
     } else {
