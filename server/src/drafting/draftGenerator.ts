@@ -234,3 +234,49 @@ information from the FAQ answer above. Keep it concise (1-2 paragraphs).`;
     completion_tokens: completion.completion_tokens,
   };
 }
+
+/** Extract 3-5 short semantic keywords from an FAQ question + answer, for storing
+ * in `faqEntry.tags` so newly created FAQs are searchable without manual tagging.
+ * Low temperature keeps the extraction stable across repeat calls. */
+export async function generateFaqKeywords(
+  client: ClaudeClient,
+  cfg: DraftingConfig,
+  faqQuestion: string,
+  faqAnswer: string
+): Promise<{ keywords: string[] }> {
+  const system = `You are an expert at extracting semantic keywords from FAQ entries.
+Your task is to extract 3-5 short, meaningful keywords that represent the core topics
+of this FAQ. These keywords are used for search and categorization.
+
+Return ONLY a JSON object with a "keywords" array of strings. No markdown, no explanation.
+Example: {"keywords": ["payment", "training", "schedule"]}`;
+
+  const user = `FAQ Question: ${faqQuestion}
+
+FAQ Answer: ${faqAnswer}
+
+Extract 3-5 semantic keywords that capture the main topics. Keep keywords short (1-2 words).
+Focus on searchable concepts users would ask about.`;
+
+  const completion = await client.chat(system, user, {
+    model: cfg.genModel,
+    temperature: 0.1,
+    maxTokens: 150,
+  });
+
+  let data: any;
+  try {
+    data = JSON.parse(completion.text);
+  } catch {
+    const start = completion.text.indexOf("{");
+    const end = completion.text.lastIndexOf("}");
+    if (start >= 0 && start < end) {
+      data = JSON.parse(completion.text.slice(start, end + 1));
+    } else {
+      throw new Error("Could not parse keywords from Claude response");
+    }
+  }
+
+  const keywords = Array.isArray(data.keywords) ? data.keywords.filter((k: any) => typeof k === "string") : [];
+  return { keywords };
+}
