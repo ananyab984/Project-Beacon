@@ -45,17 +45,22 @@ export const config = {
   clayWebhookSecret: requireEnv("CLAY_WEBHOOK_SECRET"),
   clayWebhookPathToken: requireEnv("CLAY_WEBHOOK_PATH_TOKEN"),
   appBaseUrl: resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction),
-  // 127.0.0.1, not "localhost": both Python services bind IPv4-only, but
-  // "localhost" can resolve to the IPv6 loopback first depending on the
-  // process's DNS resolution order -- if anything else happens to be
-  // listening on the same port on ::1/[::] (e.g. the client dev server
-  // during local development), that ambiguity silently routes the request
-  // to the wrong service instead of a clean connection error.
-  draftingServiceUrl: resolveEnv("DRAFTING_SERVICE_URL", "http://127.0.0.1:8001", isProduction),
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
   enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction),
+
+  // Drafting is in-process (server/src/drafting/) -- no service URL to
+  // misconfigure. Not requireEnv: the orchestrator throws at call time if
+  // unset (matching the ported orchestrator.py's own RuntimeError), rather
+  // than blocking the whole server from booting over a drafting-only
+  // misconfiguration.
+  claudeApiKey: process.env.CLAUDE_API_KEY || "",
+  claudeModel: process.env.CLAUDE_MODEL || "",
+  genTemperature: parseFloat(process.env.GEN_TEMPERATURE || "0.5"),
+  requestTimeoutSeconds: parseInt(process.env.REQUEST_TIMEOUT || "60", 10),
+  maxRetries: parseInt(process.env.MAX_RETRIES || "4", 10),
+  retryBackoffBase: parseFloat(process.env.RETRY_BACKOFF_BASE || "2.0"),
   keepaliveEnabled: (process.env.KEEPALIVE_ENABLED || (isProduction ? "true" : "false")).trim().toLowerCase() !== "false",
   keepaliveUrl: resolveEnv("KEEPALIVE_URL", resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction), isProduction),
   keepaliveIntervalMs: parseInt(process.env.KEEPALIVE_INTERVAL_MS || "600000", 10),

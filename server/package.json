@@ -13,6 +13,7 @@
     "seed": "ts-node prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
     "@prisma/client": "^5.22.0",
     "axios": "^1.19.0",
     "cookie-parser": "^1.4.6",
