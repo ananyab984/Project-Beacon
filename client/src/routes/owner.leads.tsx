@@ -196,6 +196,15 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
   });
 
+  const retryEnrichmentMutation = useMutation({
+    mutationFn: (id: string) => api.retryLeadEnrichment(id),
+    onSuccess: () => {
+      invalidateLeads();
+      toast.success("Queued for re-enrichment");
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to retry enrichment"),
+  });
+
   const assignMutation = useMutation({
     mutationFn: ({ ids, recruiterId }: { ids: string[]; recruiterId: string }) =>
       api.bulkUpdateLeads(ids, { recruiterId }),
@@ -395,7 +404,13 @@ function LeadsPage() {
                 // lead awaiting Clay's async webhook reply was being shown
                 // as stuck the instant it actually started enriching.
                 const isOnHold = !isEnriched && (l.flags ?? []).includes("ON_HOLD");
-                const isPending = !isEnriched && !isOnHold;
+                // Without this, a STALLED lead (enrichment run that timed out
+                // -- see stallOverdueEnrichments in enrichment.job.ts) fell
+                // into isPending here and rendered as plain "Enriching…"
+                // forever, indistinguishable from one genuinely still
+                // running -- the owner view never had a way to tell.
+                const isStalled = !isEnriched && l.enrichmentStatus === "STALLED";
+                const isPending = !isEnriched && !isOnHold && !isStalled;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -421,6 +436,15 @@ function LeadsPage() {
                         <span className="font-semibold text-xs text-amber-400">
                           Enriching…
                         </span>
+                      ) : isStalled ? (
+                        <button
+                          onClick={() => retryEnrichmentMutation.mutate(l.id)}
+                          disabled={retryEnrichmentMutation.isPending}
+                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-destructive hover:underline cursor-pointer disabled:opacity-50"
+                          title="Enrichment didn't finish in time -- click to retry"
+                        >
+                          Stalled · Retry
+                        </button>
                       ) : (
                         <button
                           onClick={() => setEnrichRaw(l)}
