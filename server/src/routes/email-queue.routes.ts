@@ -37,8 +37,24 @@ emailQueueRouter.get(
     const items = await prisma.emailQueueItem.findMany({
       where: { recruiterId: req.user!.id },
       include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
-      orderBy: { receivedAt: "desc" },
     });
+
+    // Sort by most recent activity (matching how /api/conversations orders
+    // LinkedIn threads by lastMessageAt) rather than static receivedAt --
+    // otherwise a lead that just replied stays wherever it was originally
+    // added instead of surfacing to the top like an inbox does.
+    const conversations = await prisma.conversation.findMany({
+      where: { leadId: { in: items.map((i) => i.leadId) }, recruiterId: req.user!.id, channel: "EMAIL" },
+      select: { leadId: true, lastMessageAt: true },
+    });
+    const lastMessageByLead = new Map(conversations.map((c) => [c.leadId, c.lastMessageAt]));
+
+    items.sort((a, b) => {
+      const aTime = Math.max(a.receivedAt.getTime(), lastMessageByLead.get(a.leadId)?.getTime() ?? 0);
+      const bTime = Math.max(b.receivedAt.getTime(), lastMessageByLead.get(b.leadId)?.getTime() ?? 0);
+      return bTime - aTime;
+    });
+
     return res.json({ items });
   })
 );
