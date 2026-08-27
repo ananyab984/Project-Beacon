@@ -87,6 +87,21 @@ export class UnipileService {
     return dsn;
   }
 
+  // Kill switch checked first thing inside every method that actually
+  // dispatches a message to a real third party (direct DM, connection
+  // invite, email send) -- NOT account-connect/lookup/webhook methods,
+  // which don't reach anyone's inbox. See config.unipileLiveSendsEnabled.
+  private static assertLiveSendsAllowed(): void {
+    if (!config.unipileLiveSendsEnabled) {
+      throw {
+        statusCode: 403,
+        code: "LIVE_SENDS_DISABLED",
+        message:
+          "Real outbound sends are disabled in this environment. Set UNIPILE_ALLOW_LIVE_SENDS=true to enable a deliberate test window.",
+      };
+    }
+  }
+
   private static getUnipileHostUrl(): string {
     let dsn = (config.unipileDsn || "api25.unipile.com:15598").trim();
     if (!dsn.startsWith("http://") && !dsn.startsWith("https://")) {
@@ -417,6 +432,8 @@ export class UnipileService {
     text: string,
     preferredAccountId?: string
   ) {
+    this.assertLiveSendsAllowed();
+
     // 1. Find user's active LinkedIn account
     let connectedAcc: any = null;
     if (preferredAccountId) {
@@ -577,8 +594,18 @@ export class UnipileService {
     toEmail: string,
     subject: string,
     body: string,
-    preferredAccountId?: string
+    preferredAccountId?: string,
+    // Unipile's own id (or the email provider's id -- either works per
+    // their docs) of the SPECIFIC inbound message being replied to. This is
+    // `reply_to` in Unipile's actual /emails API (confirmed via their
+    // reference docs, mailscontroller_sendmail) -- NOT a thread id. A first
+    // guess at sending the conversation's `unipileChatId` as `thread_id`
+    // was tested live and confirmed wrong: Unipile silently ignored it and
+    // created a brand-new unrelated thread instead of threading the reply.
+    replyToMessageId?: string | null
   ) {
+    this.assertLiveSendsAllowed();
+
     // Find active Email account
     let connectedAcc: any = null;
     if (preferredAccountId) {
@@ -607,7 +634,7 @@ export class UnipileService {
     const account_id = connectedAcc.unipileAccountId;
     const unipileBaseUrl = this.getUnipileBaseUrl();
 
-    const payload = {
+    const payload: Record<string, unknown> = {
       account_id,
       to: [
         {
@@ -623,6 +650,9 @@ export class UnipileService {
         label: "global3-outreach",
       },
     };
+    if (replyToMessageId) {
+      payload.reply_to = replyToMessageId;
+    }
 
     const response = await axios.post(`${unipileBaseUrl}/emails`, payload, {
       headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),

@@ -377,8 +377,8 @@ export const api = {
     return request<{ draft: { body: string } }>(`/api/conversations/${id}/generate-draft`, { method: "POST" });
   },
 
-  async sendConversationMessage(id: string, text: string, accountId?: string, to?: string) {
-    return request(`/api/conversations/${id}/messages`, { method: "POST", body: JSON.stringify({ text, accountId, to }) });
+  async sendConversationMessage(id: string, text: string, accountId?: string, to?: string, replyToMessageId?: string) {
+    return request(`/api/conversations/${id}/messages`, { method: "POST", body: JSON.stringify({ text, accountId, to, replyToMessageId }) });
   },
 
   async getConversationByLead(leadId: string, channel?: string): Promise<{ conversation: ApiConversation | null; messages: ApiConversationMessage[] }> {

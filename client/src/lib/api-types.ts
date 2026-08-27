@@ -188,6 +188,10 @@ export interface ApiConversationMessage {
   sender: MessageSender;
   text: string;
   sentAt: string;
+  // Unipile's own id for this specific message -- for a EMAIL "THEM"
+  // message, this is exactly what a reply needs to pass as `reply_to` so
+  // Unipile threads the outbound reply under the right message.
+  externalMessageId: string | null;
 }
 
 export interface ApiConversation {

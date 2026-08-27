@@ -213,8 +213,16 @@ conversationRouter.post(
 conversationRouter.post(
   "/:id/messages",
   asyncHandler(async (req: Request, res: Response) => {
-    const { text, accountId, to } = z
-      .object({ text: z.string().min(1), accountId: z.string().optional(), to: z.string().optional() })
+    const { text, accountId, to, replyToMessageId } = z
+      .object({
+        text: z.string().min(1),
+        accountId: z.string().optional(),
+        to: z.string().optional(),
+        // The specific inbound ConversationMessage.externalMessageId being
+        // replied to (EMAIL only) -- Unipile's `reply_to`, confirmed via
+        // their docs to need the actual message id, not a thread id.
+        replyToMessageId: z.string().optional(),
+      })
       .parse(req.body);
 
     const conversation = await prisma.conversation.findUnique({
@@ -228,19 +236,42 @@ conversationRouter.post(
       throw new ApiError(403, "FORBIDDEN", "You do not have permission to send messages in this conversation");
     }
 
-    if (conversation.channel !== ConversationChannel.LINKEDIN) {
+    if (conversation.channel !== ConversationChannel.LINKEDIN && conversation.channel !== ConversationChannel.EMAIL) {
       throw new ApiError(
         400,
         "UNSUPPORTED_CHANNEL",
-        `In-app replies are only supported for LinkedIn conversations right now (this thread is ${conversation.channel})`
+        `In-app replies aren't supported for ${conversation.channel} conversations yet`
       );
     }
 
-    const target = to || conversation.lead.profileLink;
-    if (!target) throw new ApiError(400, "MISSING_LINKEDIN_PROFILE", "Lead has no LinkedIn profile link");
-
     try {
-      await UnipileService.sendLinkedInMessage(req.user!.id, conversation.leadId, target, text, accountId);
+      if (conversation.channel === ConversationChannel.LINKEDIN) {
+        const target = to || conversation.lead.profileLink;
+        if (!target) throw new ApiError(400, "MISSING_LINKEDIN_PROFILE", "Lead has no LinkedIn profile link");
+        await UnipileService.sendLinkedInMessage(req.user!.id, conversation.leadId, target, text, accountId);
+      } else {
+        const target = to || conversation.lead.email;
+        if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
+        // Conversation has no subject of its own -- reuse whatever this
+        // recruiter's most recent EmailQueueItem for this lead sent, same
+        // pattern as the original cold-outreach subject, prefixed "Re:"
+        // like any real reply (unless it already is one).
+        const latestQueueItem = await prisma.emailQueueItem.findFirst({
+          where: { leadId: conversation.leadId, recruiterId: conversation.recruiterId },
+          orderBy: { receivedAt: "desc" },
+        });
+        const originalSubject = latestQueueItem?.subject || conversation.candidateName;
+        const replySubject = /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+        await UnipileService.sendEmail(
+          req.user!.id,
+          conversation.leadId,
+          target,
+          replySubject,
+          text,
+          accountId,
+          replyToMessageId
+        );
+      }
     } catch (err: any) {
       // Never write the message as if it sent when the Unipile call failed.
       throw toApiError(err);

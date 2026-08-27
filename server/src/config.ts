@@ -71,4 +71,14 @@ export const config = {
   // because Vite only exposes VITE_-prefixed vars to the browser bundle, and
   // this one needs to be readable from plain Node.
   neonAuthUrl: requireEnv("NEON_AUTH_URL"),
+
+  // Kill switch for real outbound Unipile sends (an actual email/LinkedIn
+  // message dispatched to a real third party's real inbox). Defaults to
+  // BLOCKED everywhere except production: an incident where a live test
+  // send reached a real person's real Gmail during local debugging showed
+  // nothing previously stopped a script, curl call, or agent from
+  // triggering a genuine send through a real connected account. Must be
+  // explicitly opted into (UNIPILE_ALLOW_LIVE_SENDS=true) for a deliberate
+  // local/staging test window -- never left on as a standing default.
+  unipileLiveSendsEnabled: isProduction || (process.env.UNIPILE_ALLOW_LIVE_SENDS || "").trim().toLowerCase() === "true",
 };

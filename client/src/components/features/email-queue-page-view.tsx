@@ -562,7 +562,12 @@ function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candid
     if (!conversationId || !replyDraft.trim()) return;
     setIsSendingReply(true);
     try {
-      await api.sendConversationMessage(conversationId, replyDraft.trim());
+      // Thread the outbound reply under the specific inbound message the
+      // recruiter opened the reply box from, not just "the conversation" --
+      // Unipile's /emails needs the exact message id as `reply_to` to land
+      // in the same Gmail thread instead of starting a new one.
+      const replyToMessageId = replies.find((r) => r.id === activeReplyId)?.externalMessageId ?? undefined;
+      await api.sendConversationMessage(conversationId, replyDraft.trim(), undefined, undefined, replyToMessageId);
       await queryClient.invalidateQueries({ queryKey: ["email-replies", leadId] });
       toast.success("Reply sent");
       setActiveReplyId(null);
