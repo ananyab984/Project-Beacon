@@ -411,46 +411,52 @@ export function EmailQueuePageView() {
                 </div>
               </div>
             </div>
-            <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              <div>
-                <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
-                <Input value={to} onChange={(e) => { setTo(e.target.value); markDirty(); }} placeholder="recipient@example.com" className="mt-1" />
-              </div>
-              <div>
-                <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Subject</label>
-                <Input value={subject} onChange={(e) => { setSubject(e.target.value); markDirty(); }} className="mt-1" />
-              </div>
-              <div className="flex-1">
-                <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Email Body</label>
-                <div className="relative mt-1">
-                  {!body && (
-                    <div className="absolute inset-x-0 top-3 z-10 flex justify-center">
-                      <Button
-                        onClick={handleGenerateDraft}
-                        disabled={isGeneratingDraft}
-                        className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
-                      >
-                        {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                        {isGeneratingDraft ? "Generating…" : "Generate Draft"}
-                      </Button>
+            {/* One single scroll region for the whole panel -- SENT items
+                used to also nest EmailRepliesSection's own capped scroll
+                area inside this one, which is the "split sections" problem.
+                SENT gets a Gmail-style read-only view (replies first, per
+                the ask); anything still being drafted keeps the editable
+                form exactly as before. */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+              {selected.status === "SENT" ? (
+                <>
+                  <EmailRepliesSection leadId={selected.leadId} candidateName={candidateName(selected)} />
+                  <SentMessageSummary to={to} subject={subject} body={body} sentAt={selected.sentAt} />
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
+                    <Input value={to} onChange={(e) => { setTo(e.target.value); markDirty(); }} placeholder="recipient@example.com" className="mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Subject</label>
+                    <Input value={subject} onChange={(e) => { setSubject(e.target.value); markDirty(); }} className="mt-1" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Email Body</label>
+                    <div className="relative mt-1">
+                      {!body && (
+                        <div className="absolute inset-x-0 top-3 z-10 flex justify-center">
+                          <Button
+                            onClick={handleGenerateDraft}
+                            disabled={isGeneratingDraft}
+                            className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
+                          >
+                            {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                            {isGeneratingDraft ? "Generating…" : "Generate Draft"}
+                          </Button>
+                        </div>
+                      )}
+                      <Textarea
+                        value={body}
+                        onChange={(e) => { setBody(e.target.value); markDirty(); }}
+                        placeholder={!body ? "…or start typing here to write your own." : ""}
+                        className={`font-sans text-xs leading-relaxed ${!body ? "min-h-[320px] pt-14 text-center" : "min-h-[320px]"}`}
+                      />
                     </div>
-                  )}
-                  <Textarea
-                    value={body}
-                    onChange={(e) => { setBody(e.target.value); markDirty(); }}
-                    readOnly={selected.status === "SENT"}
-                    placeholder={!body ? "…or start typing here to write your own." : ""}
-                    className={`font-sans text-xs leading-relaxed ${!body ? "min-h-[320px] pt-14 text-center" : selected.status === "SENT" ? "min-h-[120px] bg-muted/20" : "min-h-[320px]"}`}
-                  />
+                  </div>
                 </div>
-              </div>
-
-              {/* Inbound email replies section — shown below the draft for
-                  SENT items. The sent body no longer needs the same 320px of
-                  room once it's a historical, read-only record -- shrinking
-                  it here means Replies shows up without much scrolling. */}
-              {selected.status === "SENT" && (
-                <EmailRepliesSection leadId={selected.leadId} candidateName={candidateName(selected)} />
               )}
             </div>
           </div>
@@ -506,7 +512,24 @@ function formatReplyTime(iso: string | null): string {
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
+function SentMessageSummary({ to, subject, body, sentAt }: { to: string; subject: string; body: string; sentAt: string | null }) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/10 p-3 space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
+          <Send className="h-3 w-3 shrink-0" />
+          <span className="truncate">To {to}</span>
+        </div>
+        {sentAt && <span className="shrink-0 text-[10px] text-muted-foreground">{formatReplyTime(sentAt)}</span>}
+      </div>
+      <div className="text-xs font-semibold text-foreground">{subject}</div>
+      <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{body}</div>
+    </div>
+  );
+}
+
 function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candidateName: string }) {
+  const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["email-replies", leadId],
     queryFn: () => api.getConversationByLead(leadId, "EMAIL"),
@@ -517,9 +540,42 @@ function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candid
   const replies: ApiConversationMessage[] = (data?.messages ?? []).filter(
     (m) => m.sender === "THEM"
   );
+  const conversationId = data?.conversation?.id;
+
+  // One reply composer open at a time (matches how Gmail itself behaves,
+  // and avoids two FAQ-check calls racing for the same setDraft).
+  const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
+  const [replyDraft, setReplyDraft] = useState("");
+  const [isCheckingFaqForReply, setIsCheckingFaqForReply] = useState(false);
+  const [isSendingReply, setIsSendingReply] = useState(false);
+
+  async function openReplyBox(reply: ApiConversationMessage) {
+    setActiveReplyId(reply.id);
+    setReplyDraft("");
+    // Opening a specific reply's box makes the intent unambiguous (unlike
+    // the header's manual "Check FAQ", which only ever guesses at the
+    // latest message) -- auto-run the check against exactly this reply.
+    await checkFaqAndAutofill(reply.text, setIsCheckingFaqForReply, setReplyDraft);
+  }
+
+  async function sendReply() {
+    if (!conversationId || !replyDraft.trim()) return;
+    setIsSendingReply(true);
+    try {
+      await api.sendConversationMessage(conversationId, replyDraft.trim());
+      await queryClient.invalidateQueries({ queryKey: ["email-replies", leadId] });
+      toast.success("Reply sent");
+      setActiveReplyId(null);
+      setReplyDraft("");
+    } catch (err: any) {
+      toast.error(err.message || "Failed to send reply");
+    } finally {
+      setIsSendingReply(false);
+    }
+  }
 
   return (
-    <div className="mt-4 border-t border-border pt-3">
+    <div>
       <div className="flex items-center gap-2 mb-2">
         <div className="rounded-md bg-blue-500/10 p-1">
           <Mail className="h-3.5 w-3.5 text-blue-500" />
@@ -547,24 +603,68 @@ function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candid
           <div className="text-[10px] text-muted-foreground/60">Replies will appear here automatically.</div>
         </div>
       ) : (
-        <div className="max-h-[240px] overflow-y-auto space-y-2 pr-1">
+        // Flows straight into the panel's single outer scroll -- no nested
+        // capped scroll region here anymore.
+        <div className="space-y-2">
           {replies.map((reply) => (
-            <div
-              key={reply.id}
-              className="rounded-xl border border-border/60 bg-blue-500/5 p-3 space-y-1.5 transition-colors hover:bg-blue-500/10"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <div className="h-5 w-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[9px] font-bold">
-                    {candidateName.slice(0, 1).toUpperCase()}
+            <div key={reply.id} className="space-y-1.5">
+              <div className="rounded-xl border border-border/60 bg-blue-500/5 p-3 space-y-1.5 transition-colors hover:bg-blue-500/10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-5 w-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[9px] font-bold">
+                      {candidateName.slice(0, 1).toUpperCase()}
+                    </div>
+                    <span className="text-[11px] font-semibold text-foreground">{candidateName}</span>
                   </div>
-                  <span className="text-[11px] font-semibold text-foreground">{candidateName}</span>
+                  <span className="text-[10px] text-muted-foreground">{formatReplyTime(reply.sentAt)}</span>
                 </div>
-                <span className="text-[10px] text-muted-foreground">{formatReplyTime(reply.sentAt)}</span>
+                <div className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap pl-6">
+                  {reply.text}
+                </div>
+                <div className="pl-6">
+                  <button
+                    onClick={() => (activeReplyId === reply.id ? setActiveReplyId(null) : openReplyBox(reply))}
+                    className="text-[11px] font-medium text-primary hover:underline"
+                  >
+                    {activeReplyId === reply.id ? "Cancel" : "Reply to this message"}
+                  </button>
+                </div>
               </div>
-              <div className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap pl-6">
-                {reply.text}
-              </div>
+
+              {activeReplyId === reply.id && (
+                <div className="pl-6 space-y-1.5">
+                  <div className="relative">
+                    <Textarea
+                      value={replyDraft}
+                      onChange={(e) => setReplyDraft(e.target.value)}
+                      placeholder={isCheckingFaqForReply ? "Checking FAQ for a matching answer…" : "Type your reply…"}
+                      className="min-h-[100px] font-sans text-xs leading-relaxed"
+                      disabled={isCheckingFaqForReply}
+                    />
+                    {isCheckingFaqForReply && (
+                      <Loader2 className="absolute right-2 top-2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <button
+                      onClick={() => checkFaqAndAutofill(reply.text, setIsCheckingFaqForReply, setReplyDraft)}
+                      disabled={isCheckingFaqForReply}
+                      className="text-[11px] text-cyan-500 hover:underline flex items-center gap-1"
+                    >
+                      <MessageCircleQuestion className="h-3 w-3" /> Re-check FAQ
+                    </button>
+                    <Button
+                      size="sm"
+                      onClick={sendReply}
+                      disabled={isSendingReply || !replyDraft.trim() || !conversationId}
+                      className="h-7 text-xs bg-primary text-primary-foreground gap-1.5"
+                    >
+                      {isSendingReply ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                      {isSendingReply ? "Sending…" : "Send reply"}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
