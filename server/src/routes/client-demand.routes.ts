@@ -16,12 +16,20 @@ const serviceSchema = z.object({
   needed: z.number().int().min(0),
 });
 
+// z.string().datetime() requires a full "2026-01-01T00:00:00Z"-style
+// timestamp -- rejects the plain "2026-01-01" an <input type="date">
+// actually sends, which is what every client of this route uses. Accept
+// anything Date can parse, matching what the handlers already do with it
+// (new Date(parsed.deadline)) instead of requiring a format nothing sends.
+const flexibleDate = z.string().refine((v) => !isNaN(new Date(v).getTime()), { message: "Invalid date" });
+
 const createDemandSchema = z.object({
   clientName: z.string().min(1).max(160),
+  projectName: z.string().optional(),
   language: z.string().min(1),
   services: z.array(serviceSchema).min(1),
   priority: z.enum(PRIORITIES),
-  deadline: z.string().datetime().optional(),
+  deadline: flexibleDate.optional(),
   contactName: z.string().optional(),
   contactEmail: z.string().email().optional(),
   notes: z.string().optional(),
@@ -72,6 +80,7 @@ clientDemandRouter.post(
         data: {
           clientId: client.id,
           language: parsed.language,
+          projectName: parsed.projectName,
           headcountNeeded,
           filled: 0,
           gap: headcountNeeded,
@@ -144,7 +153,7 @@ clientDemandRouter.patch(
   asyncHandler(async (req: Request, res: Response) => {
     const patchSchema = z.object({
       priority: z.enum(PRIORITIES).optional(),
-      deadline: z.string().datetime().optional().nullable(),
+      deadline: flexibleDate.optional().nullable(),
       contactName: z.string().optional().nullable(),
       contactEmail: z.string().email().optional().nullable(),
       notes: z.string().optional().nullable(),
