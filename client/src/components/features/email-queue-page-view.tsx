@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search, Mail, MessageCircle, MessageCircleQuestion } from "lucide-react";
+import { Sparkles, Send, RefreshCw, Save, CircleDot, CheckCircle2, Loader2, Wand2, Plus, Search, Mail, MessageCircleQuestion } from "lucide-react";
 import { useAiToolsEnabled } from "@/hooks/use-ai-tools";
 import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
@@ -375,7 +375,7 @@ export function EmailQueuePageView() {
         </div>
 
         {selected && (
-          <div className="flex h-full flex-col">
+          <div className="flex h-full min-h-0 flex-col">
             <div className="border-b border-border p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -421,12 +421,9 @@ export function EmailQueuePageView() {
                 SENT gets a Gmail-style read-only view (replies first, per
                 the ask); anything still being drafted keeps the editable
                 form exactly as before. */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
               {selected.status === "SENT" ? (
-                <>
-                  <EmailRepliesSection leadId={selected.leadId} candidateName={candidateName(selected)} />
-                  <SentMessageSummary to={to} subject={subject} body={body} sentAt={selected.sentAt} />
-                </>
+                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={to} subject={subject} body={body} sentAt={selected.sentAt} />
               ) : (
                 <div className="space-y-3">
                   <div>
@@ -516,23 +513,20 @@ function formatReplyTime(iso: string | null): string {
   return date.toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-function SentMessageSummary({ to, subject, body, sentAt }: { to: string; subject: string; body: string; sentAt: string | null }) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-muted/10 p-3 space-y-1.5">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0">
-          <Send className="h-3 w-3 shrink-0" />
-          <span className="truncate">To {to}</span>
-        </div>
-        {sentAt && <span className="shrink-0 text-[10px] text-muted-foreground">{formatReplyTime(sentAt)}</span>}
-      </div>
-      <div className="text-xs font-semibold text-foreground">{subject}</div>
-      <div className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{body}</div>
-    </div>
-  );
-}
+type ThreadMessage = {
+  id: string;
+  sender: "ME" | "THEM";
+  text: string;
+  sentAt: string;
+};
 
-function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candidateName: string }) {
+// Gmail-style collapsed thread: the sent message and every reply render as
+// one chronological list, collapsed to a one-line preview by default with
+// only the newest message expanded -- matching how Gmail itself collapses
+// everything but the latest message in a thread. Click any row to toggle it.
+function EmailThread({
+  leadId, candidateName, to, subject, body, sentAt,
+}: { leadId: string; candidateName: string; to: string; subject: string; body: string; sentAt: string | null }) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["email-replies", leadId],
@@ -541,10 +535,30 @@ function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candid
     enabled: !!leadId,
   });
 
-  const replies: ApiConversationMessage[] = (data?.messages ?? []).filter(
-    (m) => m.sender === "THEM"
-  );
+  const replies: ApiConversationMessage[] = (data?.messages ?? []).filter((m) => m.sender === "THEM");
   const conversationId = data?.conversation?.id;
+
+  const messages: ThreadMessage[] = [
+    { id: "sent", sender: "ME" as const, text: body, sentAt: sentAt || new Date(0).toISOString() },
+    ...replies.map((r) => ({ id: r.id, sender: "THEM" as const, text: r.text, sentAt: r.sentAt })),
+  ].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+
+  const latestId = messages[messages.length - 1]?.id;
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(latestId ? [latestId] : []));
+  // Keep the newest message expanded as new replies arrive, without
+  // re-collapsing anything the recruiter already opened themselves.
+  useEffect(() => {
+    if (latestId) setExpandedIds((prev) => (prev.has(latestId) ? prev : new Set(prev).add(latestId)));
+  }, [latestId]);
+
+  function toggle(id: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   // One reply composer open at a time (matches how Gmail itself behaves,
   // and avoids two FAQ-check calls racing for the same setDraft).
@@ -553,13 +567,13 @@ function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candid
   const [isCheckingFaqForReply, setIsCheckingFaqForReply] = useState(false);
   const [isSendingReply, setIsSendingReply] = useState(false);
 
-  async function openReplyBox(reply: ApiConversationMessage) {
-    setActiveReplyId(reply.id);
+  async function openReplyBox(message: ThreadMessage) {
+    setActiveReplyId(message.id);
     setReplyDraft("");
     // Opening a specific reply's box makes the intent unambiguous (unlike
     // the header's manual "Check FAQ", which only ever guesses at the
     // latest message) -- auto-run the check against exactly this reply.
-    await checkFaqAndAutofill(reply.text, setIsCheckingFaqForReply, setReplyDraft);
+    await checkFaqAndAutofill(message.text, setIsCheckingFaqForReply, setReplyDraft);
   }
 
   async function sendReply() {
@@ -590,92 +604,107 @@ function EmailRepliesSection({ leadId, candidateName }: { leadId: string; candid
           <Mail className="h-3.5 w-3.5 text-blue-500" />
         </div>
         <span className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
-          Received Replies
+          Conversation
         </span>
         {replies.length > 0 && (
           <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-blue-500/10 text-blue-500 border-0">
-            {replies.length}
+            {replies.length} {replies.length === 1 ? "reply" : "replies"}
           </Badge>
         )}
       </div>
 
       {isLoading ? (
         <div className="flex items-center gap-2 text-xs text-muted-foreground py-3">
-          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading replies…
-        </div>
-      ) : replies.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-6 text-center space-y-1.5">
-          <div className="h-10 w-10 rounded-full bg-muted/30 border border-border/40 flex items-center justify-center text-muted-foreground/40">
-            <MessageCircle className="h-5 w-5 stroke-[1.5]" />
-          </div>
-          <div className="text-xs text-muted-foreground">No replies received yet.</div>
-          <div className="text-[10px] text-muted-foreground/60">Replies will appear here automatically.</div>
+          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Loading conversation…
         </div>
       ) : (
-        // Flows straight into the panel's single outer scroll -- no nested
-        // capped scroll region here anymore.
-        <div className="space-y-2">
-          {replies.map((reply) => (
-            <div key={reply.id} className="space-y-1.5">
-              <div className="rounded-xl border border-border/60 bg-blue-500/5 p-3 space-y-1.5 transition-colors hover:bg-blue-500/10">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <div className="h-5 w-5 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-[9px] font-bold">
-                      {candidateName.slice(0, 1).toUpperCase()}
+        <div className="space-y-1.5">
+          {messages.map((m) => {
+            const expanded = expandedIds.has(m.id);
+            const isMe = m.sender === "ME";
+            const name = isMe ? "You" : candidateName;
+            return (
+              <div key={m.id}>
+                <button
+                  type="button"
+                  onClick={() => toggle(m.id)}
+                  className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                    isMe ? "border-border/60 bg-muted/10 hover:bg-muted/20" : "border-border/60 bg-blue-500/5 hover:bg-blue-500/10"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <div className={`h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-[9px] font-bold ${
+                        isMe ? "bg-muted text-muted-foreground" : "bg-blue-500/20 text-blue-500"
+                      }`}>
+                        {name.slice(0, 1).toUpperCase()}
+                      </div>
+                      <span className="shrink-0 text-[11px] font-semibold text-foreground">{name}</span>
+                      {!expanded && (
+                        <span className="truncate text-[11px] text-muted-foreground/70">
+                          — {m.text.replace(/\s+/g, " ").trim() || (isMe ? `To ${to}` : "")}
+                        </span>
+                      )}
                     </div>
-                    <span className="text-[11px] font-semibold text-foreground">{candidateName}</span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">{formatReplyTime(m.sentAt)}</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground">{formatReplyTime(reply.sentAt)}</span>
-                </div>
-                <div className="text-xs text-foreground/90 leading-relaxed whitespace-pre-wrap pl-6">
-                  {reply.text}
-                </div>
-                <div className="pl-6">
-                  <button
-                    onClick={() => (activeReplyId === reply.id ? setActiveReplyId(null) : openReplyBox(reply))}
-                    className="text-[11px] font-medium text-primary hover:underline"
-                  >
-                    {activeReplyId === reply.id ? "Cancel" : "Reply to this message"}
-                  </button>
-                </div>
-              </div>
+                  {expanded && (
+                    <div className="mt-1.5 pl-6">
+                      {isMe && subject && <div className="mb-1 text-xs font-semibold text-foreground">{subject}</div>}
+                      {isMe && <div className="mb-1 text-[11px] text-muted-foreground">To {to}</div>}
+                      <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">{m.text}</div>
+                    </div>
+                  )}
+                </button>
 
-              {activeReplyId === reply.id && (
-                <div className="pl-6 space-y-1.5">
-                  <div className="relative">
-                    <Textarea
-                      value={replyDraft}
-                      onChange={(e) => setReplyDraft(e.target.value)}
-                      placeholder={isCheckingFaqForReply ? "Checking FAQ for a matching answer…" : "Type your reply…"}
-                      className="min-h-[100px] font-sans text-xs leading-relaxed"
-                      disabled={isCheckingFaqForReply}
-                    />
-                    {isCheckingFaqForReply && (
-                      <Loader2 className="absolute right-2 top-2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                {expanded && !isMe && (
+                  <div className="pl-6 pt-1.5">
+                    <button
+                      onClick={() => (activeReplyId === m.id ? setActiveReplyId(null) : openReplyBox(m))}
+                      className="text-[11px] font-medium text-primary hover:underline"
+                    >
+                      {activeReplyId === m.id ? "Cancel" : "Reply to this message"}
+                    </button>
+
+                    {activeReplyId === m.id && (
+                      <div className="mt-1.5 space-y-1.5">
+                        <div className="relative">
+                          <Textarea
+                            value={replyDraft}
+                            onChange={(e) => setReplyDraft(e.target.value)}
+                            placeholder={isCheckingFaqForReply ? "Checking FAQ for a matching answer…" : "Type your reply…"}
+                            className="min-h-[100px] font-sans text-xs leading-relaxed"
+                            disabled={isCheckingFaqForReply}
+                          />
+                          {isCheckingFaqForReply && (
+                            <Loader2 className="absolute right-2 top-2 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <button
+                            onClick={() => checkFaqAndAutofill(m.text, setIsCheckingFaqForReply, setReplyDraft)}
+                            disabled={isCheckingFaqForReply}
+                            className="text-[11px] text-cyan-500 hover:underline flex items-center gap-1"
+                          >
+                            <MessageCircleQuestion className="h-3 w-3" /> Re-check FAQ
+                          </button>
+                          <Button
+                            size="sm"
+                            onClick={sendReply}
+                            disabled={isSendingReply || !replyDraft.trim() || !conversationId}
+                            className="h-7 text-xs bg-primary text-primary-foreground gap-1.5"
+                          >
+                            {isSendingReply ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                            {isSendingReply ? "Sending…" : "Send reply"}
+                          </Button>
+                        </div>
+                      </div>
                     )}
                   </div>
-                  <div className="flex items-center justify-between">
-                    <button
-                      onClick={() => checkFaqAndAutofill(reply.text, setIsCheckingFaqForReply, setReplyDraft)}
-                      disabled={isCheckingFaqForReply}
-                      className="text-[11px] text-cyan-500 hover:underline flex items-center gap-1"
-                    >
-                      <MessageCircleQuestion className="h-3 w-3" /> Re-check FAQ
-                    </button>
-                    <Button
-                      size="sm"
-                      onClick={sendReply}
-                      disabled={isSendingReply || !replyDraft.trim() || !conversationId}
-                      className="h-7 text-xs bg-primary text-primary-foreground gap-1.5"
-                    >
-                      {isSendingReply ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
-                      {isSendingReply ? "Sending…" : "Send reply"}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
