@@ -200,9 +200,14 @@ export function ClientDemandDialog() {
   const [languageBlocks, setLanguageBlocks] = useState<LanguageBlock[]>([]);
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: usersData } = useQuery({ queryKey: ["users", "all"], queryFn: () => api.getUsers() });
-  const allUsers = usersData?.users ?? [];
-  const recruiters = allUsers.filter((u) => u.role === "RECRUITER" || u.role === "CONTRACTOR");
+  // api.getUsers requires an explicit role (the server itself rejects a
+  // request with none) -- fetch both rosters this dialog needs in parallel
+  // rather than the single argument-less call this used to make, which was
+  // silently failing server-side validation and leaving the dropdown empty.
+  const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
+  const { data: contractorsData } = useQuery({ queryKey: ["users", "CONTRACTOR"], queryFn: () => api.getUsers("CONTRACTOR") });
+  const allUsers = [...(recruitersData?.users ?? []), ...(contractorsData?.users ?? [])];
+  const recruiters = allUsers;
 
   const createInitialLanguageBlock = (): LanguageBlock => {
     const defaultLang = "Hindi";
@@ -400,7 +405,7 @@ export function ClientDemandDialog() {
       queryClient.invalidateQueries({ queryKey: ["clients"] });
       queryClient.invalidateQueries({ queryKey: ["requirements"] });
       queryClient.invalidateQueries({ queryKey: ["client-demands"] });
-      queryClient.invalidateQueries({ queryKey: ["users", "all"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
 
       toast.success(`Client demand created for ${trimmedClient}! Added ${totalRequirements} requirements.`);
       reset();

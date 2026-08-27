@@ -293,7 +293,7 @@ export const api = {
   },
 
   async createClientDemand(input: {
-    clientName: string; language: string; services: Array<{ service: string; needed: number }>;
+    clientName: string; projectName?: string; language: string; services: Array<{ service: string; needed: number }>;
     priority: string; deadline?: string; contactName?: string; contactEmail?: string; notes?: string;
   }) {
     return request<{ clientDemand: ApiClientDemand; requirements: ApiRequirement[] }>(
