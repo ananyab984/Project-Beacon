@@ -1,10 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import {
-  outreachBatch,
-  profileCompleteness,
-  teamKpis,
-} from "@/lib/g3-mock";
+import { teamKpis } from "@/lib/g3-mock";
 import { api } from "@/lib/api";
 import { FEATURES } from "@/lib/feature-flags";
 import {
@@ -19,7 +15,7 @@ import {
   Gauge,
 } from "lucide-react";
 import { KpiTile, ScoreRing } from "@/components/features/kpi";
-import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
+import { DateRangeSelect, useDateRange } from "@/components/features/date-range-toggle";
 
 export const Route = createFileRoute("/owner/")({
   head: () => ({
@@ -35,9 +31,12 @@ export const Route = createFileRoute("/owner/")({
 });
 
 function Overview() {
-  // teamKpis()/outreachBatch/profileCompleteness have no real backend aggregate
-  // endpoint yet (no team-wide KPI rollup was built) -- left on mock data for
-  // now rather than fabricating a fake real-looking number.
+  // The 4 sub-KPI tiles below (SLA adherence, Pipeline health, Client
+  // satisfaction, Response rate) don't correspond to any metric that exists
+  // in the real scoring rubric (scoring.job.ts) -- left on mock data
+  // deliberately, per explicit decision, rather than inventing a mapping.
+  // The overall team score DOES have a real source now (see teamAvgScore
+  // below) and no longer reads from this mock object.
   const team = teamKpis();
   const { data: demandsData } = useQuery({ queryKey: ["client-demands"], queryFn: api.getClientDemands });
   const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
@@ -45,7 +44,15 @@ function Overview() {
   const clientDemands = demandsData?.clientDemands ?? [];
   const recruiterCount = recruitersData?.users.length ?? 0;
   const escalationsList = escalationsData?.escalations ?? [];
-  const { scale, label: rangeLabel } = useDateRange();
+  const { range, label: rangeLabel } = useDateRange();
+  const { data: funnelData } = useQuery({
+    queryKey: ["outreach-funnel", range],
+    queryFn: () => api.getOutreachFunnel(range),
+  });
+  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0 };
+  const { data: dataHealth } = useQuery({ queryKey: ["data-health"], queryFn: api.getDataHealth });
+  const { data: analytics } = useQuery({ queryKey: ["reports-analytics", range], queryFn: () => api.getReportsAnalytics(range) });
+  const teamAvgScore = analytics?.summary.teamAvgScore ?? team.overall_score;
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Good Morning Ethan Hero Header Block */}
@@ -61,7 +68,7 @@ function Overview() {
       </section>
 
       {/* Data Health — AI/enrichment surface */}
-      {FEATURES.ai && (
+      {FEATURES.ai && dataHealth && (
         <section className="rounded-2xl border border-border bg-card p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
@@ -72,27 +79,23 @@ function Overview() {
             </div>
             <div className="text-right">
               <div className="text-2xl font-semibold tabular-nums text-accent">
-                {Math.round(profileCompleteness.after_enrichment * 100)}%
+                {Math.round(dataHealth.enrichedPct * 100)}%
               </div>
               <div className="text-[10px] text-muted-foreground">
-                from {Math.round(profileCompleteness.before_enrichment * 100)}% pre-enrichment
+                fully enriched, of {dataHealth.total} lead{dataHealth.total === 1 ? "" : "s"}
               </div>
             </div>
           </div>
           <div className="mt-4 relative h-2 overflow-hidden rounded-full bg-muted">
             <div
-              className="absolute inset-y-0 left-0 bg-muted-foreground/40"
-              style={{ width: `${profileCompleteness.before_enrichment * 100}%` }}
-            />
-            <div
               className="absolute inset-y-0 left-0 bg-accent"
-              style={{ width: `${profileCompleteness.after_enrichment * 100}%`, mixBlendMode: "multiply" }}
+              style={{ width: `${dataHealth.enrichedPct * 100}%` }}
             />
           </div>
           <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <HealthTile label="Verified email" value={profileCompleteness.verified_email_pct} />
-            <HealthTile label="Confirmed language pair" value={profileCompleteness.confirmed_language_pair_pct} />
-            <HealthTile label="Experience data" value={profileCompleteness.experience_data_pct} />
+            <HealthTile label="Verified email" value={dataHealth.verifiedEmailPct} />
+            <HealthTile label="Confirmed language pair" value={dataHealth.confirmedLanguagePairPct} />
+            <HealthTile label="Experience data" value={dataHealth.experienceDataPct} />
           </div>
         </section>
       )}
@@ -113,31 +116,11 @@ function Overview() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <OutreachBlock
-            icon={Mail}
-            label="Contacted"
-            value={scaleValue(outreachBatch.contacted, scale)}
-            tone="primary"
-          />
-          <OutreachBlock
-            icon={MailOpen}
-            label="Awaiting Reply"
-            value={scaleValue(outreachBatch.awaiting_reply, scale)}
-            tone="muted"
-          />
-          <OutreachBlock
-            icon={MessageSquare}
-            label="Replied"
-            value={scaleValue(outreachBatch.replied, scale)}
-            tone="accent"
-          />
-          <OutreachBlock
-            icon={Handshake}
-            label="In Negotiation"
-            value={scaleValue(outreachBatch.in_negotiation, scale)}
-            tone="warning"
-          />
-          <OutreachBlock icon={ShieldOff} label="DNC" value={scaleValue(outreachBatch.dnc, scale)} tone="destructive" />
+          <OutreachBlock icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" />
+          <OutreachBlock icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" />
+          <OutreachBlock icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" />
+          <OutreachBlock icon={Handshake} label="In Negotiation" value={funnel.in_negotiation} tone="warning" />
+          <OutreachBlock icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" />
         </div>
       </section>
 
@@ -153,7 +136,7 @@ function Overview() {
               <div className="mt-0.5 text-sm font-semibold">Evaluation framework · {rangeLabel.toLowerCase()}</div>
             </div>
           </div>
-          <ScoreRing score={team.overall_score} size={72} label="Team score" />
+          <ScoreRing score={teamAvgScore} size={72} label="Team score" />
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
           <KpiTile label="SLA adherence" value={team.sla_adherence} unit="pct" trend={+3} />

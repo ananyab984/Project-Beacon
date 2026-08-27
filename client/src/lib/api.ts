@@ -482,6 +482,18 @@ export const api = {
     return request(`/api/reports/outreach-funnel?range=${range}`);
   },
 
+  /** Real lead-data completeness -- replaces the hardcoded-zero g3-mock
+   *  profileCompleteness object the owner dashboard used to read. */
+  async getDataHealth(): Promise<{
+    total: number;
+    enrichedPct: number;
+    verifiedEmailPct: number;
+    confirmedLanguagePairPct: number;
+    experienceDataPct: number;
+  }> {
+    return request("/api/reports/data-health");
+  },
+
   async getRecentReports(): Promise<{ reports: ApiRecentReport[] }> {
     return request<{ reports: ApiRecentReport[] }>("/api/reports/recent");
   },

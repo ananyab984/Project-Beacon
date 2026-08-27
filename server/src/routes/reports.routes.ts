@@ -201,6 +201,37 @@ reportsRouter.get(
   })
 );
 
+// GET /api/reports/data-health — owner-wide lead-data completeness, replacing
+// the hardcoded-zero g3-mock profileCompleteness object. Deliberately no
+// "before enrichment" baseline -- that would require a snapshot of each
+// lead's fields prior to enrichment overwriting them, which nothing
+// captures today; fabricating one would be worse than not showing it.
+reportsRouter.get(
+  "/data-health",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (_req: Request, res: Response) => {
+    const total = await prisma.lead.count();
+    if (total === 0) {
+      return res.json({ total: 0, enrichedPct: 0, verifiedEmailPct: 0, confirmedLanguagePairPct: 0, experienceDataPct: 0 });
+    }
+
+    const [enriched, verifiedEmail, confirmedLanguagePair, experienceData] = await Promise.all([
+      prisma.lead.count({ where: { enrichmentStatus: "COMPLETE" } }),
+      prisma.lead.count({ where: { email: { not: null } } }),
+      prisma.lead.count({ where: { AND: [{ sourceLanguage: { not: null } }, { targetLanguage: { not: null } }] } }),
+      prisma.lead.count({ where: { yearsOfExperience: { not: null } } }),
+    ]);
+
+    return res.json({
+      total,
+      enrichedPct: enriched / total,
+      verifiedEmailPct: verifiedEmail / total,
+      confirmedLanguagePairPct: confirmedLanguagePair / total,
+      experienceDataPct: experienceData / total,
+    });
+  })
+);
+
 // GET /api/reports/recent — list of persistent audit reports & exports
 reportsRouter.get(
   "/recent",
