@@ -48,6 +48,10 @@ export function EmailQueuePageView() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["email-queue"],
     queryFn: api.getEmailQueue,
+    // Poll so a lead that just replied actually climbs to the top of the
+    // list on its own, same cadence as EmailRepliesSection's own poll for
+    // the currently-open thread.
+    refetchInterval: 15_000,
   });
   const emailQueue = data?.items ?? [];
 
