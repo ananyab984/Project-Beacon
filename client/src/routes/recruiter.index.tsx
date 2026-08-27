@@ -2,8 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle, Clock } from "lucide-react";
-import { outreachBatch } from "@/lib/g3-mock";
-import { DateRangeSelect, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
+import { DateRangeSelect, useDateRange } from "@/components/features/date-range-toggle";
 import { useMemo } from "react";
 
 export const Route = createFileRoute("/recruiter/")({
@@ -20,11 +19,22 @@ function DashboardPage() {
   const mine = myLeadsData?.leads ?? [];
   const emailQueueCount = emailQueueData?.items.length ?? 0;
   const dueAlerts = escalationsData?.escalations ?? [];
-  const { scale, label: rangeLabel } = useDateRange();
+  const { range, label: rangeLabel } = useDateRange();
+  const { data: funnelData } = useQuery({
+    queryKey: ["outreach-funnel", range],
+    queryFn: () => api.getOutreachFunnel(range),
+  });
+  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0 };
 
   // leadsOnboardedCount() was a hardcoded mock constant (124) with no real
   // backing -- compute the real count from the recruiter's own leads instead.
   const onboardedCount = mine.filter((l) => l.stage === "ONBOARDED").length;
+
+  // Same definition already used (and working correctly) on the Leads page's
+  // own on-hold banner (recruiter.leads.tsx's onHoldCount) -- this dashboard
+  // banner used to just say "3" as literal JSX text with no query behind it
+  // at all, regardless of how many leads actually needed review.
+  const onHoldCount = mine.filter((l) => l.enrichmentStatus !== "COMPLETE" && l.enrichmentStatus !== "IN_PROGRESS").length;
 
   const activities = mine.slice(0, 6).map((l) => ({
     id: l.id,
@@ -49,11 +59,11 @@ function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <BatchTile icon={Mail} label="Contacted" value={scaleValue(outreachBatch.contacted, scale)} tone="primary" />
-          <BatchTile icon={MailOpen} label="Awaiting Reply" value={scaleValue(outreachBatch.awaiting_reply, scale)} tone="muted" />
-          <BatchTile icon={MessageSquare} label="Replied" value={scaleValue(outreachBatch.replied, scale)} tone="accent" />
-          <BatchTile icon={Handshake} label="Negotiation" value={scaleValue(outreachBatch.in_negotiation, scale)} tone="warning" />
-          <BatchTile icon={ShieldOff} label="DNC" value={scaleValue(outreachBatch.dnc, scale)} tone="destructive" />
+          <BatchTile icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" />
+          <BatchTile icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" />
+          <BatchTile icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" />
+          <BatchTile icon={Handshake} label="Negotiation" value={funnel.in_negotiation} tone="warning" />
+          <BatchTile icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" />
         </div>
       </section>
 
@@ -96,34 +106,38 @@ function DashboardPage() {
         </section>
       )}
 
-      {/* Recruiter Notifications for On Hold Leads */}
-      <section className="rounded-2xl border border-warning/40 bg-warning/5 p-5 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-warning/15 text-warning font-bold shrink-0">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-warning">
-                Action Required · Manual Enrichment
+      {/* Recruiter Notifications for On Hold Leads -- hidden entirely when
+          there's genuinely nothing to review, same gating as the Leads
+          page's own version of this banner. */}
+      {onHoldCount > 0 && (
+        <section className="rounded-2xl border border-warning/40 bg-warning/5 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="grid h-10 w-10 place-items-center rounded-xl bg-warning/15 text-warning font-bold shrink-0">
+                <AlertTriangle className="h-5 w-5" />
               </div>
-              <h2 className="mt-0.5 text-base font-semibold text-foreground">
-                3 leads require manual enrichment review
-              </h2>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Automated scrape incomplete. Please review and update missing details so leads can move to Global Leads.
-              </p>
+              <div>
+                <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest text-warning">
+                  Action Required · Manual Enrichment
+                </div>
+                <h2 className="mt-0.5 text-base font-semibold text-foreground">
+                  {onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment review
+                </h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Automated scrape incomplete. Please review and update missing details so leads can move to Global Leads.
+                </p>
+              </div>
             </div>
+            <Link
+              to="/recruiter/leads"
+              search={{ scope: "mine" }}
+              className="rounded-lg bg-warning px-4 py-2 text-xs font-semibold text-warning-foreground hover:bg-warning/90 transition-colors shrink-0"
+            >
+              Review On Hold Leads
+            </Link>
           </div>
-          <Link
-            to="/recruiter/leads"
-            search={{ scope: "mine" }}
-            className="rounded-lg bg-warning px-4 py-2 text-xs font-semibold text-warning-foreground hover:bg-warning/90 transition-colors shrink-0"
-          >
-            Review On Hold Leads
-          </Link>
-        </div>
-      </section>
+        </section>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2">
         <MetricCard label="Leads Onboarded" value={onboardedCount} delta="" tone="positive" />

@@ -469,6 +469,19 @@ export const api = {
     return request<ApiReportsAnalytics>(`/api/reports/analytics?range=${range}`);
   },
 
+  /** Real Contacted/Awaiting Reply/Replied/Negotiation/DNC counts -- replaces
+   *  the hardcoded-zero g3-mock outreachBatch both dashboards used to read. */
+  async getOutreachFunnel(range: string = "30d"): Promise<{
+    range: string;
+    contacted: number;
+    awaiting_reply: number;
+    replied: number;
+    in_negotiation: number;
+    dnc: number;
+  }> {
+    return request(`/api/reports/outreach-funnel?range=${range}`);
+  },
+
   async getRecentReports(): Promise<{ reports: ApiRecentReport[] }> {
     return request<{ reports: ApiRecentReport[] }>("/api/reports/recent");
   },

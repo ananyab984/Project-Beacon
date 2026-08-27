@@ -17,6 +17,11 @@ function getSinceDate(range: string): Date {
       return new Date(now - 90 * 86400_000);
     case "ytd":
       return new Date(new Date().getFullYear(), 0, 1);
+    // Client's date-range picker (date-range-toggle.tsx) uses "1y" as its
+    // key, not "ytd" -- previously unhandled here, silently falling back to
+    // the 30d default whenever someone picked "Last year".
+    case "1y":
+      return new Date(now - 365 * 86400_000);
     case "30d":
     default:
       return new Date(now - 30 * 86400_000);
@@ -133,6 +138,65 @@ reportsRouter.get(
       },
       languageBreakdown,
       recruiterThroughput,
+    });
+  })
+);
+
+// GET /api/reports/outreach-funnel?range=30d — real Contacted/Awaiting Reply/
+// Replied/Negotiation/DNC counts, replacing the hardcoded-zero g3-mock
+// outreachBatch object both dashboards used to read from. Recruiters see
+// only their own; owners see the whole org (same pattern as /analytics).
+reportsRouter.get(
+  "/outreach-funnel",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const range = (req.query.range as string) || "30d";
+    const since = getSinceDate(range);
+    const isOwner = req.user!.role.toLowerCase() === "owner";
+
+    const interactionWhere: any = { occurredAt: { gte: since } };
+    if (!isOwner) interactionWhere.recruiterId = req.user!.id;
+
+    // Same lead-ownership definition GET /api/leads/mine already uses.
+    const leadWhere: any = isOwner
+      ? {}
+      : {
+          OR: [
+            { assignedRecruiterId: req.user!.id },
+            { claimedByRecruiterId: req.user!.id },
+            { createdByRecruiterId: req.user!.id },
+          ],
+        };
+
+    const [outboundEvents, inboundEvents, inNegotiation, dnc] = await Promise.all([
+      prisma.interactionEvent.findMany({
+        where: { ...interactionWhere, direction: "OUTBOUND" },
+        select: { leadId: true },
+        distinct: ["leadId"],
+      }),
+      prisma.interactionEvent.findMany({
+        where: { ...interactionWhere, direction: "INBOUND" },
+        select: { leadId: true },
+        distinct: ["leadId"],
+      }),
+      prisma.lead.count({ where: { ...leadWhere, stage: "NEGOTIATING" } }),
+      // `flags` is the denormalized LeadFlagEvent cache (see schema.prisma) --
+      // already trusted directly elsewhere in the app (e.g. the ON_HOLD
+      // checks in recruiter.leads.tsx), not re-derived from the event log here.
+      prisma.lead.count({ where: { ...leadWhere, flags: { has: "DNC" } } }),
+    ]);
+
+    const repliedLeadIds = new Set(inboundEvents.map((e) => e.leadId));
+    const contacted = outboundEvents.length;
+    const awaitingReply = outboundEvents.filter((e) => !repliedLeadIds.has(e.leadId)).length;
+
+    return res.json({
+      range,
+      contacted,
+      awaiting_reply: awaitingReply,
+      replied: repliedLeadIds.size,
+      in_negotiation: inNegotiation,
+      dnc,
     });
   })
 );
