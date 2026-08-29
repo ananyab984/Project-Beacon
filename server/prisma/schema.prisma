@@ -3,10 +3,22 @@
 
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-generator erd{ 
-    provider = "prisma-erd-generator" 
-    output = "./ERD.pdf" 
-}
+
+// The `erd` generator (prisma-erd-generator, renders ERD.pdf) used to live
+// here, wired into the same `prisma generate` every deploy runs. That's
+// what broke the NODE_ENV=production deploy on 2026-08-29: the generator
+// binary wasn't resolvable in that build environment, and Prisma aborts
+// the ENTIRE generate step (including the actual @prisma/client the app
+// needs to run) the moment any one generator fails -- a documentation
+// diagram nobody needs at runtime took the whole deploy down with it.
+// ERD.pdf is a committed, manually-regenerated doc artifact, not a build
+// output anything depends on. To regenerate it locally: temporarily paste
+// this block back in, run `npx prisma generate`, then revert this file
+// and commit just the updated PDF.
+// generator erd {
+//   provider = "prisma-erd-generator"
+//   output   = "./ERD.pdf"
+// }
 
 generator client {
   provider = "prisma-client-js"
