@@ -5,7 +5,7 @@ import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
-import { ApiError } from "../lib/apiError";
+import { ApiError, toApiError } from "../lib/apiError";
 import { UnipileService } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
@@ -15,17 +15,6 @@ export const conversationRouter = Router();
 
 conversationRouter.use(authenticateJwt);
 conversationRouter.use(requireRole("owner", "recruiter", "contractor"));
-
-// UnipileService throws either a plain {statusCode, code, message} object or a
-// generic Error -- never an ApiError -- so normalize before it reaches the
-// central errorHandler (same pattern as email-queue.routes.ts / outreach.routes.ts).
-function toApiError(err: any): ApiError {
-  if (err instanceof ApiError) return err;
-  const status = err?.statusCode || 500;
-  const code = err?.code || "SEND_FAILED";
-  const message = err?.message || "Failed to send message";
-  return new ApiError(status, code, message);
-}
 
 // GET /api/conversations — recruiter sees only their own; owner sees all.
 conversationRouter.get(

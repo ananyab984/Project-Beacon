@@ -4,7 +4,7 @@ import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
-import { ApiError } from "../lib/apiError";
+import { ApiError, toApiError } from "../lib/apiError";
 import { UnipileService } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
@@ -16,19 +16,6 @@ emailQueueRouter.use(authenticateJwt);
 emailQueueRouter.use(requireRole("owner", "recruiter", "contractor"));
 
 const CHANNELS = ["LINKEDIN", "EMAIL"] as const;
-
-// UnipileService (and outreach.routes.ts, which calls the same methods) throws
-// either a plain {statusCode, code, message} object or a generic Error --
-// never an ApiError. Normalize to ApiError so the central errorHandler
-// produces the same {error, message} shape outreach.routes.ts's own catch
-// block does, instead of falling through to a generic 500.
-function toApiError(err: any): ApiError {
-  if (err instanceof ApiError) return err;
-  const status = err?.statusCode || 500;
-  const code = err?.code || "SEND_FAILED";
-  const message = err?.message || "Failed to send outreach message";
-  return new ApiError(status, code, message);
-}
 
 // GET /api/email-queue — the recruiter's own queue
 emailQueueRouter.get(

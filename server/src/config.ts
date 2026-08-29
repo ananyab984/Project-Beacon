@@ -39,7 +39,15 @@ export const config = {
   refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET || "super_secret_jwt_refresh_key_global3_2026",
   refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d",
   unipileDsn: process.env.UNIPILE_DSN || "api25.unipile.com:15598",
-  unipileApiKey: process.env.UNIPILE_API_KEY || "",
+  // Was `process.env.UNIPILE_API_KEY || ""` -- silently empty if unset,
+  // unlike every other Unipile secret in this file. That let a missing key
+  // reach production undetected: every Unipile call sent an empty API key,
+  // Unipile correctly rejected it with its own 401, and that confusing raw
+  // upstream error surfaced to recruiters as an unexplained failure on the
+  // Send button, with nothing pointing at the actual missing variable. Now
+  // fails loudly at boot instead, matching unipileWebhookSecret/
+  // unipileWebhookPathToken below.
+  unipileApiKey: requireEnv("UNIPILE_API_KEY"),
   unipileWebhookSecret: requireEnv("UNIPILE_WEBHOOK_SECRET"),
   unipileWebhookPathToken: requireEnv("UNIPILE_WEBHOOK_PATH_TOKEN"),
   // Same two-factor defense as Unipile's webhook (opaque path token + secret

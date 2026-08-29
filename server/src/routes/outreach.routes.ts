@@ -3,6 +3,7 @@ import { UnipileService } from "../services/unipile.service";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { prisma } from "../prisma";
+import { toApiError } from "../lib/apiError";
 
 export const outreachRouter = Router();
 
@@ -54,8 +55,7 @@ outreachRouter.post("/send", authenticateJwt, requireRole("owner", "recruiter", 
       result,
     });
   } catch (err: any) {
-    const status = err.statusCode || 500;
-    const code = err.code || "SEND_FAILED";
-    return res.status(status).json({ error: code, message: err.message || "Failed to send outreach message" });
+    const apiErr = toApiError(err);
+    return res.status(apiErr.statusCode).json({ error: apiErr.code, message: apiErr.message });
   }
 });
