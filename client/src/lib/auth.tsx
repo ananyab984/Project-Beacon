@@ -39,6 +39,22 @@ function toError(message: string, extra?: { code?: string; status?: number; emai
   return err;
 }
 
+// Neon Auth is an external service this app doesn't control -- when it's
+// slow/cold, sign-in was hanging on "Signing in..." for 45-60s with no
+// feedback. This doesn't fix that latency (can't, it's not our service),
+// it just stops the button from hanging indefinitely: past this timeout,
+// fail with a clear message instead of leaving the recruiter staring at a
+// spinner with no idea whether anything is happening.
+const SIGN_IN_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(toError(message, { code: "SIGN_IN_TIMEOUT" })), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer)) as Promise<T>;
+}
+
 async function fetchAppProfile(token: string): Promise<AuthUser | "NO_PROFILE" | null> {
   const res = await fetch(`${API_BASE_URL}/me`, { headers: { Authorization: `Bearer ${token}` } });
   const data = await res.json().catch(() => ({}));
@@ -153,14 +169,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await authClient.signIn.email({ email, password });
+    const { error } = await withTimeout(
+      authClient.signIn.email({ email, password }),
+      SIGN_IN_TIMEOUT_MS,
+      "Sign-in is taking longer than expected. Check your connection and try again."
+    );
     if (error) {
       // Better Auth's email/password plugin returns this code when "Verify
       // at Sign-up" is enabled and the account hasn't verified yet.
       throw toError(error.message || "Invalid email or password", { code: error.code, status: error.status, email });
     }
 
-    const resolution = await resolveProfile();
+    const resolution = await withTimeout(
+      resolveProfile(),
+      SIGN_IN_TIMEOUT_MS,
+      "Signed in, but finishing setup is taking longer than expected. Try again in a moment."
+    );
     if (resolution.status === "ok") {
       // Discard anything cached under the previous identity (this tab's own
       // sign-out already clears it, but a session expiring and a different
