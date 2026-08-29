@@ -104,7 +104,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
       profile_link: profileLink.trim() || undefined,
       source_language: sourceLang.trim() || undefined,
       target_language: targetLang.trim() || undefined,
-      services: services.length > 0 ? services : ["Subtitling"],
+      services,
       years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : undefined,
       vendor_experience: notes.trim() || undefined,
       enrichment_status: "complete",

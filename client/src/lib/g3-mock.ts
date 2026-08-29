@@ -897,9 +897,12 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
     const language = langIdx >= 0 && row[langIdx] ? row[langIdx].trim() : "";
     const sourceLanguage = sourceLangIdx >= 0 && row[sourceLangIdx] ? row[sourceLangIdx].trim() : "English";
     const rawServices = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx].trim() : "";
+    // No fake fallback -- a CSV row with no Services column must stay
+    // genuinely empty, not a guessed default the drafting prompt would
+    // later treat as a verified fact about this candidate's real background.
     const services = rawServices
       ? rawServices.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean)
-      : ["Subtitling"];
+      : [];
     const exp = expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined;
     const vendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx].trim() : undefined;
     const rawSource = sourceIdx >= 0 && row[sourceIdx] ? row[sourceIdx].trim() : "";
@@ -932,7 +935,7 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
       language: language || "English",
       source_language: sourceLanguage,
       target_language: language || "English",
-      services: services.length > 0 ? services : ["Subtitling"],
+      services,
       stage: "New",
       availability: "Available Now",
       flags: hasContact ? [] : ["On Hold"],

@@ -94,7 +94,7 @@ export function ContractorAddLeadDialog({
     source_language: "English",
     target_language: "German",
     secondary_languages: "French",
-    services: "Dubbing",
+    services: "",
   });
   const [customService, setCustomService] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -165,9 +165,12 @@ export function ContractorAddLeadDialog({
 
     const trimmed = values.full_name.trim();
     const resolvedService = values.services === "Custom" ? customService.trim() : values.services;
+    // No fake fallback here -- an unselected service must stay genuinely
+    // empty, not a guessed default the drafting prompt would later treat
+    // as a verified fact about this candidate's real background.
     const services = resolvedService
       ? resolvedService.split(",").map((s) => s.trim()).filter(Boolean)
-      : ["Subtitling"];
+      : [];
 
     // Earlier UX hint only — the backend itself also flags duplicates on
     // create, so we never block submission on this check.
