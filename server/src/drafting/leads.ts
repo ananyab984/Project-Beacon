@@ -243,6 +243,34 @@ export class Lead {
     return hasRealName && hasDetails;
   }
 
+  /** True if at least one of this.services is corroborated by the lead's OWN
+   * scraped signals (current_title, headline, about_snippet, tools/certs,
+   * recent experience) -- not just the target service tag we're recruiting
+   * them for. `services` is set at lead-creation time to say what Global3
+   * wants to recruit this person FOR; it is not itself evidence of the
+   * person's actual background, and the draft prompt has no other signal
+   * to tell those apart. Fails OPEN (returns true) when there's simply no
+   * real profile data yet to check against -- this only catches the case
+   * where we DO know their real background and it doesn't match, not thin
+   * profiles we haven't enriched yet. */
+  private hasServiceCorroboration(): boolean {
+    if (!this.services.length) return true;
+    const haystack = [
+      this.currentTitle,
+      this.headline,
+      this.aboutSnippet,
+      this.toolsSoftware.join(" "),
+      this.certifications.join(" "),
+      ...this.experience.map((e) => (e && typeof e === "object" && !Array.isArray(e) ? formatRole(e) : "")),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    if (!haystack) return true;
+    const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return this.services.some((s) => new RegExp(`\\b${escapeRegExp(s.toLowerCase())}\\b`).test(haystack));
+  }
+
   /** The ONLY facts the model is allowed to use, as a flat dict. */
   groundingFacts(): Record<string, string> {
     const facts: Record<string, string> = { first_name: this.firstName };
@@ -251,7 +279,13 @@ export class Lead {
     if (this.targetLanguage) facts.target_language = this.targetLanguage;
     if (this.sourceLanguage) facts.source_language = this.sourceLanguage;
     if (this.secondaryLanguages.length) facts.secondary_languages = this.secondaryLanguages.join(", ");
-    if (this.services.length) facts.services = this.services.join(", ");
+    // Only claim services as a fact about THEM when their own real profile
+    // signals actually back it up -- otherwise this is just our internal
+    // recruiting target for this lead, not something to tell them we
+    // "noticed." Omitting it here (rather than a new prompt rule) means the
+    // model falls back to whatever else is real (current_title, tools,
+    // etc.) via the existing "if absent, don't mention it" rule below.
+    if (this.services.length && this.hasServiceCorroboration()) facts.services = this.services.join(", ");
     if (this.yearsOfExp !== null) facts.years_of_experience = `${this.yearsOfExp} years`;
     if (this.vendorExperience) facts.current_role_or_company = this.vendorExperience;
     if (this.currentTitle) facts.current_title = this.currentTitle;
