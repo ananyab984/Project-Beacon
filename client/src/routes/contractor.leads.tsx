@@ -100,7 +100,7 @@ function MyLeadsPage() {
         language: enrichRaw.targetLanguage ?? enrichRaw.sourceLanguage ?? "",
         source_language: enrichRaw.sourceLanguage,
         target_language: enrichRaw.targetLanguage,
-        services: enrichRaw.services?.length ? enrichRaw.services : ["Subtitling"],
+        services: enrichRaw.services ?? [],
         years_experience: enrichRaw.yearsOfExperience,
         vendor_experience: enrichRaw.vendorExperience,
       }
