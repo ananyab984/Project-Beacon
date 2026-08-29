@@ -25,6 +25,9 @@ function resolveEnv(name: string, fallback: string, requireInProduction = false)
 }
 
 const isProduction = (process.env.NODE_ENV || "").trim().toLowerCase() === "production";
+// Computed once, up front, so keepaliveUrl can reuse it below without
+// re-resolving (and re-validating) the same variable twice.
+const appBaseUrl = resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction);
 
 export const config = {
   port: parseInt(process.env.PORT || "5001", 10),
@@ -44,7 +47,7 @@ export const config = {
   // the same "don't trust the URL alone" posture.
   clayWebhookSecret: requireEnv("CLAY_WEBHOOK_SECRET"),
   clayWebhookPathToken: requireEnv("CLAY_WEBHOOK_PATH_TOKEN"),
-  appBaseUrl: resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction),
+  appBaseUrl,
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
@@ -62,7 +65,14 @@ export const config = {
   maxRetries: parseInt(process.env.MAX_RETRIES || "4", 10),
   retryBackoffBase: parseFloat(process.env.RETRY_BACKOFF_BASE || "2.0"),
   keepaliveEnabled: (process.env.KEEPALIVE_ENABLED || (isProduction ? "true" : "false")).trim().toLowerCase() !== "false",
-  keepaliveUrl: resolveEnv("KEEPALIVE_URL", resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction), isProduction),
+  // Keeping this service alive means pinging THIS service -- appBaseUrl is
+  // already required-and-validated in production two lines up, so there's
+  // no real config it could be missing that requiring a second, separate
+  // KEEPALIVE_URL would catch. That redundant requirement is what broke a
+  // production deploy on 2026-08-29 for no actual safety benefit -- allow
+  // overriding it explicitly (e.g. a distinct external uptime-ping URL) but
+  // never require it on top of appBaseUrl.
+  keepaliveUrl: resolveEnv("KEEPALIVE_URL", appBaseUrl, false),
   keepaliveIntervalMs: parseInt(process.env.KEEPALIVE_INTERVAL_MS || "600000", 10),
 
   // Credentials, sessions, and email verification all live in Neon Auth now
