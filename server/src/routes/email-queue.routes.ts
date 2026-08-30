@@ -84,11 +84,11 @@ emailQueueRouter.post(
   })
 );
 
-// PATCH /api/email-queue/:id — partial update (autosave of subject/body)
+// PATCH /api/email-queue/:id — partial update (autosave of subject/body/to)
 emailQueueRouter.patch(
   "/:id",
   asyncHandler(async (req: Request, res: Response) => {
-    const schema = z.object({ subject: z.string().optional(), body: z.string().optional() });
+    const schema = z.object({ subject: z.string().optional(), body: z.string().optional(), to: z.string().optional() });
     const patch = schema.parse(req.body);
 
     // Ownership check folded into the lookup itself: a not-found row and a
@@ -199,13 +199,14 @@ emailQueueRouter.post(
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
 
+    let target: string;
     try {
       if (channel === "LINKEDIN") {
-        const target = to || item.lead.profileLink;
+        target = to || item.lead.profileLink || "";
         if (!target) throw new ApiError(400, "MISSING_LINKEDIN_PROFILE", "Lead has no LinkedIn profile link");
         await UnipileService.sendLinkedInMessage(req.user!.id, item.leadId, target, body, accountId);
       } else {
-        const target = to || item.lead.email;
+        target = to || item.lead.email || "";
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
         await UnipileService.sendEmail(req.user!.id, item.leadId, target, subject || item.subject, body, accountId);
       }
@@ -218,6 +219,10 @@ emailQueueRouter.post(
       data: {
         subject: subject || item.subject,
         body,
+        // The address actually used to send -- not re-derived from
+        // lead.email afterward, which can drift from what this send
+        // genuinely went to (an override, or a later enrichment correction).
+        to: target,
         status: "SENT",
         sentAt: new Date(),
         sentChannel: channel,
@@ -254,11 +259,14 @@ emailQueueRouter.post(
         // (this queue's primary channel) when the lead has a profile link,
         // falling back to email.
         let sentChannel: "LINKEDIN" | "EMAIL";
+        let target: string;
         if (item.lead.profileLink) {
-          await UnipileService.sendLinkedInMessage(req.user!.id, item.leadId, item.lead.profileLink, item.body);
+          target = item.lead.profileLink;
+          await UnipileService.sendLinkedInMessage(req.user!.id, item.leadId, target, item.body);
           sentChannel = "LINKEDIN";
         } else if (item.lead.email) {
-          await UnipileService.sendEmail(req.user!.id, item.leadId, item.lead.email, item.subject, item.body);
+          target = item.lead.email;
+          await UnipileService.sendEmail(req.user!.id, item.leadId, target, item.subject, item.body);
           sentChannel = "EMAIL";
         } else {
           results.push({ id, success: false, error: "NO_CONTACT_TARGET" });
@@ -267,7 +275,7 @@ emailQueueRouter.post(
 
         await prisma.emailQueueItem.update({
           where: { id: item.id },
-          data: { status: "SENT", sentAt: new Date(), sentChannel },
+          data: { status: "SENT", sentAt: new Date(), sentChannel, to: target },
         });
         results.push({ id, success: true });
       } catch (err: any) {

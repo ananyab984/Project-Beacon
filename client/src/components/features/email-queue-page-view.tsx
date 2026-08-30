@@ -114,7 +114,6 @@ export function EmailQueuePageView() {
   const [selectAccountDialogOpen, setSelectAccountDialogOpen] = useState(false);
   const [targetChannelAccounts, setTargetChannelAccounts] = useState<any[]>([]);
   const [targetChannel, setTargetChannel] = useState<"EMAIL" | "LINKEDIN">("EMAIL");
-  const prevCandidateEmailRef = useRef<string>("");
 
   async function initiateSend() {
     if (!selected) return;
@@ -182,26 +181,20 @@ export function EmailQueuePageView() {
     const e = emailQueue.find((x) => x.id === id);
     setBody(e?.body || "");
     setSubject(e?.subject || (e ? `Global3 Outreach · Freelance Partnership (${candidateName(e)})` : ""));
-    const nextEmail = e ? candidateEmail(e) : "";
-    setTo(nextEmail);
-    prevCandidateEmailRef.current = nextEmail;
+    setTo(e ? e.to || candidateEmail(e) : "");
     setSaveState("idle");
     setSavedAt(null);
   }
 
+  // `to` is authoritative once saved/sent (persisted on the item itself --
+  // survives a later enrichment correction or unrelated re-render without
+  // being silently replaced). Only a fresh item with no saved override yet
+  // tracks the lead's live email, so a correction still reaches it before
+  // anyone's touched the field.
   useEffect(() => {
-    if (!selected) return;
-    const nextEmail = candidateEmail(selected);
-    setTo((current) => {
-      const prevEmail = prevCandidateEmailRef.current;
-      if (!current.trim() || current === prevEmail) {
-        prevCandidateEmailRef.current = nextEmail;
-        return nextEmail;
-      }
-      prevCandidateEmailRef.current = nextEmail;
-      return current;
-    });
-  }, [selected?.id, selected?.body, selected?.subject, selected?.lead?.email, selected?.lead?.fullName, selected?.lead?.displayName, selected?.candidateName]);
+    if (!selected || selected.to) return;
+    setTo(candidateEmail(selected));
+  }, [selected?.id, selected?.to, selected?.lead?.email, selected?.lead?.fullName, selected?.lead?.displayName, selected?.candidateName]);
 
   async function handleAddLeadToQueue(leadId: string) {
     setAddingLeadId(leadId);
@@ -211,9 +204,7 @@ export function EmailQueuePageView() {
       setSelectedId(item.id);
       setBody(item.body);
       setSubject(item.subject);
-      const nextEmail = item.lead?.email || "";
-      setTo(nextEmail);
-      prevCandidateEmailRef.current = nextEmail;
+      setTo(item.to || item.lead?.email || "");
       toast.success(`Added ${item.candidateName} to Email Queue!`);
     } catch (err: any) {
       toast.error(err.message || "Failed to add lead to queue");
@@ -259,7 +250,7 @@ export function EmailQueuePageView() {
     if (!selected) return;
     setSaveState("saving");
     try {
-      await api.updateEmailQueueItem(selected.id, { subject, body });
+      await api.updateEmailQueueItem(selected.id, { subject, body, to });
       setSaveState("saved");
       setSavedAt(new Date());
       queryClient.invalidateQueries({ queryKey: ["email-queue"] });

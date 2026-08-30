@@ -866,6 +866,12 @@ model EmailQueueItem {
   candidateName String           @map("candidate_name")
   candidateRole String?          @map("candidate_role")
   status        EmailQueueStatus @default(AI_DRAFTED)
+  // The recipient address for this draft/send -- distinct from lead.email,
+  // which can drift after enrichment corrects it or a recruiter overrides
+  // the target address before sending. Null until the recruiter edits the
+  // To field or the item is sent; the client falls back to lead.email
+  // until then so this stays optional rather than requiring a backfill.
+  to            String?          @map("to_email")
   subject       String
   body          String
   aiGenerated   Boolean          @default(false) @map("ai_generated")

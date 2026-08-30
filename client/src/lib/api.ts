@@ -337,7 +337,7 @@ export const api = {
     return request("/api/email-queue", { method: "POST", body: JSON.stringify({ leadId }) });
   },
 
-  async updateEmailQueueItem(id: string, patch: { subject?: string; body?: string }) {
+  async updateEmailQueueItem(id: string, patch: { subject?: string; body?: string; to?: string }) {
     return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
   },
 
