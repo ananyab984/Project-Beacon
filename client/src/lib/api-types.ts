@@ -171,6 +171,11 @@ export interface ApiEmailQueueItem {
   candidateName: string;
   candidateRole: string | null;
   status: EmailQueueStatus;
+  // The recipient address actually used for this draft/send -- distinct
+  // from lead.email, which can drift after enrichment corrects it or a
+  // recruiter overrides the target before sending. Null until either
+  // happens; falls back to lead.email until then.
+  to: string | null;
   subject: string;
   body: string;
   aiGenerated: boolean;
