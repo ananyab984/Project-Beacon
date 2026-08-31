@@ -74,6 +74,37 @@ function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS
   return `${cut.trimEnd()}${ellipsis}`;
 }
 
+// Gmail/Apple Mail/Outlook all prefix a reply's quoted history with a
+// recognizable header line, then the previous message body. Confirmed live:
+// Unipile's `body_plain` does NOT strip this -- a real inbound reply's
+// body_plain still contained the full "On <date> <name> wrote: > ..." chain
+// (Unipile's docs never actually guarantee body_plain excludes quoting,
+// despite this file's earlier comment assuming otherwise). Unipile exposes
+// no field/parameter/webhook setting to suppress quoted history, so this has
+// to be cut server-side -- cut everything from the first recognized header
+// onward so only the new reply text is stored.
+const QUOTE_HEADER_PATTERNS: RegExp[] = [
+  // Gmail / Apple Mail: "On Wed, 26 Aug 2026, 4:39 pm Ananth Ram <x@y.com> wrote:"
+  /^On .{0,120}wrote:\s*$/m,
+  // Outlook plaintext divider
+  /^-{2,}\s*Original Message\s*-{2,}$/im,
+  // Outlook plaintext header block
+  /^From:\s.+\r?\nSent:\s.+\r?\nTo:\s.+\r?\n(Cc:\s.+\r?\n)?Subject:\s.+$/im,
+];
+
+export function stripQuotedReplyHistory(text: string): string {
+  let cutIndex = text.length;
+  for (const pattern of QUOTE_HEADER_PATTERNS) {
+    const match = pattern.exec(text);
+    if (match && match.index < cutIndex) cutIndex = match.index;
+  }
+  const stripped = text.slice(0, cutIndex).trim();
+  // A message that's entirely a forwarded quote (no new text above the
+  // header) would otherwise disappear -- fall back to the untouched
+  // original rather than storing an empty reply.
+  return stripped || text.trim();
+}
+
 export class UnipileService {
   private static getUnipileBaseUrl(): string {
     let dsn = (config.unipileDsn || "api25.unipile.com:15598").trim();
@@ -968,9 +999,10 @@ export class UnipileService {
       });
 
       // Prefer body_plain for email -- body/body.body is the raw HTML including
-      // the quoted-reply chain and a 1x1 tracking pixel <img>, body_plain is
-      // the clean plaintext Unipile already extracts.
-      const messageText = body.message || body.text || body.body_plain || body.body || "";
+      // a 1x1 tracking pixel <img>. body_plain is still the raw quoted-reply
+      // chain, though (see stripQuotedReplyHistory) -- it's just plaintext,
+      // not "new text only".
+      const messageText = stripQuotedReplyHistory(body.message || body.text || body.body_plain || body.body || "");
       const externalMsgId = body.message_id || body.id || null;
 
       // --- InboundMessage table insert (idempotency via unipile_message_id) ---
