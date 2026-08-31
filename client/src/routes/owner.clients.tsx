@@ -29,6 +29,11 @@ export const Route = createFileRoute("/owner/clients")({
       { name: "description", content: "Tabular client requirement management with dynamic recruiter assignments." },
     ],
   }),
+  // Lets the global search (⌘K) deep-link here with a query already applied
+  // -- same pattern owner.leads.tsx uses.
+  validateSearch: (s: Record<string, unknown>): { q?: string } => ({
+    q: typeof s.q === "string" ? s.q : undefined,
+  }),
   component: ClientsPage,
 });
 
@@ -46,7 +51,7 @@ function titleCase(s: string): string {
 function ClientsPage() {
   const queryClient = useQueryClient();
 
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(Route.useSearch().q ?? "");
   const [selectedClient, setSelectedClient] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
