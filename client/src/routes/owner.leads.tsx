@@ -24,6 +24,13 @@ export const Route = createFileRoute("/owner/leads")({
       { name: "description", content: "CRM-style lead management: search, filter, sort, bulk actions." },
     ],
   }),
+  // Lets the global search (⌘K) deep-link here with a query already applied,
+  // e.g. selecting a lead result navigates to /owner/leads?q=<name> instead
+  // of landing on an unfiltered list -- same pattern recruiter.leads.tsx
+  // already uses for its `scope` param.
+  validateSearch: (s: Record<string, unknown>): { q?: string } => ({
+    q: typeof s.q === "string" ? s.q : undefined,
+  }),
   component: LeadsPage,
 });
 
@@ -63,7 +70,7 @@ type SortKey = "lead" | "language" | "country" | "stage" | "recruiter" | "activi
 
 function LeadsPage() {
   const queryClient = useQueryClient();
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(Route.useSearch().q ?? "");
   const [lang, setLang] = useState("all");
   const [country, setCountry] = useState("all");
   const [service, setService] = useState("all");
