@@ -11,29 +11,16 @@ import { toast } from "sonner";
 import { GoogleSheetsSyncSection } from "@/components/features/google-sheets-sync-section";
 import { api } from "@/lib/api";
 import type { ApiUser } from "@/lib/api-types";
+import { STANDARD_LANGUAGES as STANDARD_LANGUAGES_BASE } from "@/lib/languages";
 
 const EVENT = "g3:open-client-demand";
 export const openClientDemand = () => window.dispatchEvent(new Event(EVENT));
 
-const STANDARD_LANGUAGES = [
-  // Region 1 — East and South Asia
-  "Bengali", "Cantonese", "Chinese (Simplified)", "Chinese (Traditional)", "Gujarati",
-  "Hindi", "Indonesian", "Japanese", "Kannada", "Korean", "Malay", "Malayalam", "Marathi",
-  "Odia", "Punjabi", "Tamil", "Telugu", "Thai", "Urdu", "Vietnamese",
-  // Region 2 — Finno-Ugric, Slavic & Turkic
-  "Bulgarian", "Croatian", "Czech", "Finnish", "Hungarian", "Kazakh", "Polish",
-  "Russian", "Slovak", "Slovenian", "Turkish", "Ukrainian",
-  // Region 3 — Germanic Languages
-  "Danish", "Dutch", "German", "Icelandic", "Norwegian", "Swedish",
-  // Region 4 — Hellenic & Semitic
-  "Arabic", "Greek", "Hebrew",
-  // Region 5 — Romance Languages
-  "Castilian Spanish", "Catalan", "French (Canadian)", "French (Parisian)", "French",
-  "Italian", "Portuguese (Brazilian)", "Portuguese (Portugal)", "Romanian", "Spanish (Latin America)", "Spanish (LatAm)",
-  // Region 6 — Other / English
-  "English", "English (AUS)", "English (Canada)", "English (UK)",
-  "Custom..."
-];
+// This dialog alone offers a "Custom..." escape hatch (see the free-text
+// input it reveals below) -- appended here rather than baked into the
+// shared list so the other consumers of STANDARD_LANGUAGES don't get an
+// option they have no UI to handle.
+const STANDARD_LANGUAGES = [...STANDARD_LANGUAGES_BASE, "Custom..."];
 
 export const STANDARD_SERVICES = [
   "Dubbing",

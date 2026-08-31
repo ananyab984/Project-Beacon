@@ -10,6 +10,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ApiLead, LeadSource } from "@/lib/api-types";
 import { parseCsvLeads } from "@/lib/g3-mock";
+import { STANDARD_LANGUAGES as LANGUAGES } from "@/lib/languages";
 
 const SOURCES = [
   "LinkedIn",
@@ -33,25 +34,6 @@ function mapToLeadSource(raw: string | undefined | null): LeadSource {
   const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
   return hit ?? "LINKEDIN";
 }
-
-const LANGUAGES = [
-  // Region 1 — East and South Asia
-  "Bengali", "Cantonese", "Chinese (Simplified)", "Chinese (Traditional)", "Gujarati",
-  "Hindi", "Indonesian", "Japanese", "Kannada", "Korean", "Malay", "Malayalam", "Marathi",
-  "Odia", "Punjabi", "Tamil", "Telugu", "Thai", "Urdu", "Vietnamese",
-  // Region 2 — Finno-Ugric, Slavic & Turkic
-  "Bulgarian", "Croatian", "Czech", "Finnish", "Hungarian", "Kazakh", "Polish",
-  "Russian", "Slovak", "Slovenian", "Turkish", "Ukrainian",
-  // Region 3 — Germanic Languages
-  "Danish", "Dutch", "German", "Icelandic", "Norwegian", "Swedish",
-  // Region 4 — Hellenic & Semitic
-  "Arabic", "Greek", "Hebrew",
-  // Region 5 — Romance Languages
-  "Castilian Spanish", "Catalan", "French (Canadian)", "French (Parisian)", "French",
-  "Italian", "Portuguese (Brazilian)", "Portuguese (Portugal)", "Romanian", "Spanish (Latin America)", "Spanish (LatAm)",
-  // Region 6 — Other / English
-  "English", "English (AUS)", "English (Canada)", "English (UK)",
-];
 
 const SERVICES = [
   "Subtitling",
