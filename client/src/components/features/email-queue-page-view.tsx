@@ -531,13 +531,22 @@ function EmailThread({
     enabled: !!leadId,
   });
 
-  const replies: ApiConversationMessage[] = (data?.messages ?? []).filter((m) => m.sender === "THEM");
+  const allMessages: ApiConversationMessage[] = data?.messages ?? [];
+  const replies: ApiConversationMessage[] = allMessages.filter((m) => m.sender === "THEM");
   const conversationId = data?.conversation?.id;
 
-  const messages: ThreadMessage[] = [
-    { id: "sent", sender: "ME" as const, text: body, sentAt: sentAt || new Date(0).toISOString() },
-    ...replies.map((r) => ({ id: r.id, sender: "THEM" as const, text: r.text, sentAt: r.sentAt })),
-  ].sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
+  // Every real send (the original cold-outreach email AND every later reply)
+  // already lands in allMessages via syncToConversation -- rendering it
+  // directly, both ME and THEM, is what keeps every reply visible instead of
+  // only ever showing one hardcoded "sent" bubble frozen at the original
+  // send. Fall back to the EmailQueueItem's own snapshot only for the rare
+  // case where the Conversation row itself doesn't exist yet (e.g. a send
+  // that hasn't finished syncing), so something still renders.
+  const messages: ThreadMessage[] = (
+    allMessages.length > 0
+      ? allMessages.map((m) => ({ id: m.id, sender: m.sender, text: m.text, sentAt: m.sentAt }))
+      : [{ id: "sent", sender: "ME" as const, text: body, sentAt: sentAt || new Date(0).toISOString() }]
+  ).sort((a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime());
 
   const latestId = messages[messages.length - 1]?.id;
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => new Set(latestId ? [latestId] : []));
