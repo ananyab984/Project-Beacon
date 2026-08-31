@@ -27,7 +27,17 @@ export function toApiError(err: any): ApiError {
   if (err instanceof ApiError) return err;
   const upstreamStatus = err?.response?.status ?? err?.status;
   if (upstreamStatus) {
-    const detail = err?.response?.data?.message || err?.response?.data?.error;
+    // Unipile's error body shape isn't consistent across endpoints -- a 422
+    // from /emails was confirmed live to carry none of `message`/`error`,
+    // leaving the toast with no detail at all beyond the bare status code.
+    // Check every shape Unipile is known to use before giving up on a detail.
+    const data = err?.response?.data;
+    const detail =
+      data?.message ||
+      data?.error ||
+      data?.detail ||
+      data?.title ||
+      (Array.isArray(data?.errors) ? data.errors.map((e: any) => e?.detail || e?.message || e).join("; ") : null);
     return new ApiError(
       502,
       "UPSTREAM_SEND_FAILED",

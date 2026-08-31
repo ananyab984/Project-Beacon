@@ -1010,7 +1010,18 @@ export class UnipileService {
       // chain, though (see stripQuotedReplyHistory) -- it's just plaintext,
       // not "new text only".
       const messageText = stripQuotedReplyHistory(body.message || body.text || body.body_plain || body.body || "");
-      const externalMsgId = body.message_id || body.id || null;
+      // Unipile overloads `message_id` differently per channel: for LinkedIn
+      // it's Unipile's own native message id (safe to reuse as-is), but for
+      // email it's the raw RFC822 `Message-ID:` header (e.g.
+      // "<abc@mail.gmail.com>") -- confirmed live against a real mail_received
+      // payload, which carries Unipile's actual native id under `email_id`
+      // instead. Storing the RFC822 header as externalMessageId silently
+      // broke replies: sendEmail forwards it straight through as `reply_to`,
+      // and Unipile 422s because that's not an id in its own id space.
+      const externalMsgId =
+        inboundChannel === InboundChannel.EMAIL
+          ? body.email_id || body.message_id || body.id || null
+          : body.message_id || body.id || null;
 
       // --- InboundMessage table insert (idempotency via unipile_message_id) ---
       if (externalMsgId) {
