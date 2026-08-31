@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { parseCsvLeads } from "@/lib/g3-mock";
+import * as XLSX from "xlsx";
+import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import { api } from "@/lib/api";
 import type { ApiLead, ApiUser, LeadSource, LeadStage } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
@@ -288,7 +289,7 @@ function LeadsPage() {
             <ViewTab active={mode === "table"} onClick={() => setMode("table")} label="Table" icon={Table2} />
             <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
           </div>
-          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
+          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} onSheetImportComplete={invalidateLeads} />
         </div>
       </div>
 
@@ -645,39 +646,97 @@ function sortVal(l: ApiLead, k: SortKey): string | number {
   }
 }
 
-function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
+/** Shared by both the CSV and XLSX branches -- maps parseCsvLeads'/
+ * mapRowsToLeads' intermediate Lead shape into the bulk-create request shape. */
+function toBulkRows(parsed: any[]): Array<Partial<ApiLead> & { fullName: string; source: string }> {
+  return parsed.map((l: any) => ({
+    fullName: l.display_name ?? l.masked_label,
+    source: mapToLeadSource(l.source),
+    services: l.services,
+    country: l.country || undefined,
+    profileLink: l.profile_link || undefined,
+    sourceLanguage: l.source_language || "English",
+    targetLanguage: l.target_language || l.language || "English",
+    email: l.email || undefined,
+    contactNumber: l.phone || undefined,
+    yearsOfExperience: l.years_experience || undefined,
+    vendorExperience: l.vendor_experience || undefined,
+  }));
+}
+
+function BulkUploadDialog({
+  onSubmitRows,
+  onSheetImportComplete,
+}: {
+  onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void;
+  onSheetImportComplete: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [sheetUrl, setSheetUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const sheetImportMutation = useMutation({
+    mutationFn: (url: string) => api.importLeadsFromSheet(url),
+    onSuccess: (res) => {
+      if (res.results.length === 0) {
+        toast.info(res.message || "No matching rows found in that sheet.");
+        return;
+      }
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      toast.success(`Imported ${succeeded} of ${res.results.length} rows from Google Sheet`);
+      onSheetImportComplete();
+      setSheetUrl("");
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to import from Google Sheet"),
+  });
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isExcel = /\.xlsx?$/i.test(file.name);
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = (event.target?.result as string) || "";
-      const parsed = parseCsvLeads(text);
+
+    const finish = (parsed: ReturnType<typeof parseCsvLeads>, headersMatched: boolean) => {
       if (parsed.length > 0) {
-        const rows = parsed.map((l: any) => ({
-          fullName: l.display_name ?? l.masked_label,
-          source: mapToLeadSource(l.source),
-          services: l.services,
-          country: l.country || undefined,
-          profileLink: l.profile_link || undefined,
-          sourceLanguage: l.source_language || "English",
-          targetLanguage: l.target_language || l.language || "English",
-          email: l.email || undefined,
-          contactNumber: l.phone || undefined,
-          yearsOfExperience: l.years_experience || undefined,
-          vendorExperience: l.vendor_experience || undefined,
-        }));
-        onSubmitRows(rows);
+        onSubmitRows(toBulkRows(parsed));
         toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
         setOpen(false);
+      } else if (headersMatched) {
+        toast.info(`Uploaded ${file.name}, but every row was missing a Name -- nothing to import.`);
       } else {
-        toast.info(`Uploaded ${file.name}. Ensure file contains Name, Email, Language, or Service headers.`);
+        toast.info(`Uploaded ${file.name}. Ensure the file has a Name, Email, Language, or Service column header.`);
       }
     };
-    reader.readAsText(file);
+
+    if (isExcel) {
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          // header: 1 -> array-of-arrays (header row + data rows), the same
+          // shape parseCsvLeads already tokenizes CSV text into -- lets both
+          // formats share mapRowsToLeads instead of drifting apart. Cell
+          // values coerced to strings since numeric-looking cells (e.g.
+          // phone numbers, years of experience) come back as `number`.
+          const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          const stringRows = rows.map((row) => row.map((cell) => String(cell ?? "")));
+          const parsed = mapRowsToLeads(stringRows);
+          finish(parsed, stringRows.length > 1);
+        } catch (err: any) {
+          toast.error(`Could not read ${file.name} as an Excel file: ${err?.message || "unknown error"}`);
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (event) => {
+        const text = (event.target?.result as string) || "";
+        const parsed = parseCsvLeads(text);
+        finish(parsed, text.split(/\r?\n/).filter((l) => l.trim()).length > 1);
+      };
+      reader.readAsText(file);
+    }
   };
 
   return (
@@ -690,7 +749,7 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Bulk Upload Leads</DialogTitle>
-          <DialogDescription>Upload a CSV or Excel sheet with candidate info to create leads in bulk.</DialogDescription>
+          <DialogDescription>Upload a CSV or Excel sheet, or import from a public Google Sheet.</DialogDescription>
         </DialogHeader>
         <label className="cursor-pointer block border-2 border-dashed border-border rounded-xl p-8 text-center space-y-2 hover:border-primary/50 transition-colors">
           <input ref={fileInputRef} type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
@@ -698,6 +757,28 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
           <div className="text-xs font-semibold">Click to select or drop CSV/XLSX file here</div>
           <div className="text-[11px] text-muted-foreground">Supported fields: name, email, language, country, services, source</div>
         </label>
+        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
+          <div className="h-px flex-1 bg-border" /> or <div className="h-px flex-1 bg-border" />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-[11px] font-medium text-muted-foreground">Import from Google Sheet</label>
+          <div className="flex gap-2">
+            <Input
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              placeholder="Paste a public Google Sheet URL…"
+              className="h-9 text-xs"
+            />
+            <Button
+              size="sm"
+              disabled={!sheetUrl.trim() || sheetImportMutation.isPending}
+              onClick={() => sheetImportMutation.mutate(sheetUrl.trim())}
+            >
+              {sheetImportMutation.isPending ? "Importing…" : "Import"}
+            </Button>
+          </div>
+          <div className="text-[11px] text-muted-foreground">Sheet must be shared as "Anyone with the link can view."</div>
+        </div>
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
         </DialogFooter>

@@ -844,31 +844,46 @@ export function parseCsvClientDemands(csvText: string): Omit<ClientDemand, "id">
   return result;
 }
 
+function parseCsvRow(line: string): string[] {
+  const res: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      inQuotes = !inQuotes;
+    } else if (c === "," && !inQuotes) {
+      res.push(cur.trim());
+      cur = "";
+    } else {
+      cur += c;
+    }
+  }
+  res.push(cur.trim());
+  return res;
+}
+
 /** Helper: Parse CSV/Excel sheet text content into Lead objects. */
 export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
   const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length <= 1) return [];
+  return mapRowsToLeads(lines.map(parseCsvRow));
+}
 
-  const parseRow = (line: string): string[] => {
-    const res: string[] = [];
-    let cur = "";
-    let inQuotes = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') {
-        inQuotes = !inQuotes;
-      } else if (c === "," && !inQuotes) {
-        res.push(cur.trim());
-        cur = "";
-      } else {
-        cur += c;
-      }
-    }
-    res.push(cur.trim());
-    return res;
-  };
-
-  const headers = parseRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+/**
+ * Maps already-tokenized rows (first row = headers, same shape XLSX.utils
+ * .sheet_to_json(sheet, {header: 1}) produces) into Lead objects -- the
+ * header-keyword-matching logic used to only exist inside parseCsvLeads,
+ * which meant it only ever worked for genuine CSV text; a .xlsx/.xls file
+ * read via reader.readAsText() produces garbled binary noise, not delimited
+ * text, so XLSX uploads always fell through to 0 parsed rows. Extracting
+ * this as its own function lets the XLSX branch (which parses via the
+ * `xlsx` package into the same string[][] shape) reuse identical field
+ * mapping instead of XLSX and CSV silently drifting apart.
+ */
+export function mapRowsToLeads(rows: string[][]): Omit<Lead, "id">[] {
+  if (rows.length <= 1) return [];
+  const headers = rows[0].map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
   const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
 
   const nameIdx = findIdx(["fullname", "name", "candidate", "candidatename", "lead", "leadname"]);
@@ -885,9 +900,9 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
 
   const result: Array<Omit<Lead, "id"> & { email?: string; phone?: string; profile_link?: string }> = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const row = parseRow(lines[i]);
-    if (row.length < 2) continue;
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 2) continue;
 
     const name = nameIdx >= 0 && row[nameIdx] ? row[nameIdx].trim() : "";
     const email = emailIdx >= 0 && row[emailIdx] ? row[emailIdx].trim() : "";
