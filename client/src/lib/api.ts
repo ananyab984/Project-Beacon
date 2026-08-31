@@ -118,6 +118,13 @@ export const api = {
     );
   },
 
+  async importLeadsFromSheet(sheetUrl: string) {
+    return request<{ results: Array<{ index: number; status: string; leadId?: string; message?: string }>; message?: string }>(
+      "/api/leads/import-from-sheet",
+      { method: "POST", body: JSON.stringify({ sheetUrl }) }
+    );
+  },
+
   async checkBulkDuplicateLeads(leads: Array<{ fullName?: string; email?: string; contactNumber?: string; profileLink?: string }>) {
     return request<{
       hasDuplicates: boolean;

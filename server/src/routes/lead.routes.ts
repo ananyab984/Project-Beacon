@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import axios from "axios";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole, Role } from "../middleware/rbac";
@@ -9,6 +10,7 @@ import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from ".
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
+import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 
 export const leadRouter = Router();
 
@@ -17,6 +19,64 @@ leadRouter.use(authenticateJwt);
 const LEAD_SOURCES = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"] as const;
 const LEAD_STAGES = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"] as const;
 const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
+
+/** Best-effort mapping of a free-text/legacy source string to the LeadSource
+ * enum -- same fallback rule the client's per-dialog copies of this already
+ * use (mapToLeadSource in add-lead-dialog.tsx etc.): default to LINKEDIN
+ * when nothing recognizable is found. */
+function mapToLeadSource(raw: string | undefined | null): (typeof LEAD_SOURCES)[number] {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  return LEAD_SOURCES.find((s) => s === upper || upper.includes(s)) ?? "LINKEDIN";
+}
+
+/** Same header-keyword matching as the client's parseCsvLeads
+ * (client/src/lib/g3-mock.ts) -- kept in sync deliberately (see
+ * normalizeServices.ts's comment) since this is a second, server-side entry
+ * point (Google Sheet import) into the same "raw rows -> Lead fields"
+ * mapping the client does for CSV/XLSX uploads. */
+export function mapSheetRowsToLeads(rows: string[][]): z.infer<typeof createLeadSchema>[] {
+  if (rows.length <= 1) return [];
+  const headers = rows[0].map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
+  const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+
+  const nameIdx = findIdx(["fullname", "name", "candidate", "candidatename", "lead", "leadname"]);
+  const emailIdx = findIdx(["email", "mail", "contactemail", "emailaddress", "emailid"]);
+  const phoneIdx = findIdx(["contact", "contactnumber", "phone", "phonenumber", "mobile", "whatsapp", "tel", "cell"]);
+  const profileIdx = findIdx(["profilelink", "linkedin", "linkedinurl", "link", "url", "profile", "social", "prozlink"]);
+  const countryIdx = findIdx(["country", "location", "residence", "nation", "region", "city", "state"]);
+  const langIdx = findIdx(["targetlanguage", "targetlang", "target_language", "language", "lang", "tolanguage"]);
+  const sourceLangIdx = findIdx(["sourcelanguage", "srclang", "source_language", "fromlanguage"]);
+  const serviceIdx = findIdx(["services", "service", "role", "specialization", "skills"]);
+  const expIdx = findIdx(["yearsofexperience", "experience", "years", "exp", "yoexp", "yearsofexp"]);
+  const vendorIdx = findIdx(["vendorexperience", "vendor", "clients", "history"]);
+  const sourceIdx = findIdx(["source", "channel", "platform", "origin"]);
+
+  const out: z.infer<typeof createLeadSchema>[] = [];
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || row.length < 2) continue;
+    const fullName = (nameIdx >= 0 && row[nameIdx] ? row[nameIdx] : "").trim();
+    if (!fullName) continue; // fullName is required by createLeadSchema -- skip rows with no name rather than fail the whole import
+
+    const rawServices = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "";
+    const parsed = createLeadSchema.safeParse({
+      fullName,
+      source: mapToLeadSource(sourceIdx >= 0 ? row[sourceIdx] : undefined),
+      services: rawServices ? normalizeServices(rawServices) : [],
+      country: countryIdx >= 0 ? row[countryIdx] || undefined : undefined,
+      profileLink: profileIdx >= 0 ? row[profileIdx] || undefined : undefined,
+      sourceLanguage: (sourceLangIdx >= 0 ? row[sourceLangIdx] : "") || "English",
+      targetLanguage: (langIdx >= 0 ? row[langIdx] : "") || "English",
+      email: emailIdx >= 0 ? row[emailIdx] || undefined : undefined,
+      contactNumber: phoneIdx >= 0 ? row[phoneIdx] || undefined : undefined,
+      yearsOfExperience: expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined,
+      vendorExperience: vendorIdx >= 0 ? row[vendorIdx] || undefined : undefined,
+    });
+    if (parsed.success) out.push(parsed.data);
+  }
+  return out;
+}
 
 const createLeadSchema = z.object({
   firstName: z.string().max(80).optional(),
@@ -364,16 +424,17 @@ leadRouter.post(
   })
 );
 
-// POST /api/leads/bulk — CSV bulk upload; each row is duplicate-checked independently
-leadRouter.post(
-  "/bulk",
-  requireRole("owner", "recruiter", "contractor"),
-  asyncHandler(async (req: Request, res: Response) => {
-    const rows = z.array(createLeadSchema).max(2000).parse(req.body?.leads ?? []);
-    const skipDuplicates = req.body?.skipDuplicates === true;
-    const role = req.user!.role.toLowerCase() as Role;
-    const results: Array<{ index: number; status: "accepted" | "duplicate" | "skipped" | "error"; leadId?: string; message?: string }> = [];
-    const seenInBatch = new Set<string>();
+type BulkRow = z.infer<typeof createLeadSchema>;
+type BulkResult = { index: number; status: "accepted" | "duplicate" | "skipped" | "error"; leadId?: string; message?: string };
+
+// Shared by POST /api/leads/bulk (CSV/XLSX upload, already-parsed rows in the
+// request body) and POST /api/leads/import-from-sheet (rows parsed
+// server-side from a fetched Google Sheet) -- same duplicate-checking,
+// creation, and enrichment-trigger logic either way, so the two ingestion
+// paths can't silently diverge in behavior.
+async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role): Promise<BulkResult[]> {
+  const results: BulkResult[] = [];
+  const seenInBatch = new Set<string>();
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -428,10 +489,10 @@ leadRouter.post(
             emailVerified: !!row.email,
             enrichmentStatus: hasContact ? "IN_PROGRESS" : "PENDING",
             flags: hasContact ? [] : ["ON_HOLD"],
-            createdByContractorId: role === "contractor" ? req.user!.id : undefined,
-            createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
+            createdByContractorId: role === "contractor" ? userId : undefined,
+            createdByRecruiterId: role !== "contractor" ? userId : undefined,
             isSelfSourced: role !== "contractor",
-            assignedRecruiterId: row.assignedRecruiterId ?? (role === "recruiter" ? req.user!.id : undefined),
+            assignedRecruiterId: row.assignedRecruiterId ?? (role === "recruiter" ? userId : undefined),
             assignedAt: row.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
             dupFlagged: false,
             dupFlaggedField: undefined,
@@ -444,7 +505,7 @@ leadRouter.post(
           await prisma.emailQueueItem.create({
             data: {
               leadId: lead.id,
-              recruiterId: req.user!.id,
+              recruiterId: userId,
               candidateName: lead.fullName || "Candidate",
               candidateRole: candidateRoleOf(row.services, row.targetLanguage),
               status: "REVIEW_NEEDED",
@@ -460,7 +521,7 @@ leadRouter.post(
             await prisma.conversation.create({
               data: {
                 leadId: lead.id,
-                recruiterId: req.user!.id,
+                recruiterId: userId,
                 candidateName: lead.fullName || "Candidate",
                 candidateRole: candidateRoleOf(row.services, row.targetLanguage),
                 channel: "LINKEDIN",
@@ -478,6 +539,58 @@ leadRouter.post(
         results.push({ index: i, status: "error", message: err.message });
       }
     }
+  return results;
+}
+
+// POST /api/leads/bulk — CSV/XLSX bulk upload; each row is duplicate-checked independently
+leadRouter.post(
+  "/bulk",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const rows = z.array(createLeadSchema).max(2000).parse(req.body?.leads ?? []);
+    const role = req.user!.role.toLowerCase() as Role;
+    const results = await createLeadsFromRows(rows, req.user!.id, role);
+    return res.status(201).json({ results });
+  })
+);
+
+// POST /api/leads/import-from-sheet — same ingestion as /bulk, but the rows
+// come from fetching a public Google Sheet server-side (mirroring
+// sheet-sync.routes.ts's Client Demand importer) instead of a client-parsed
+// file, so Leads gets the same Google Sheets import path Client Demand
+// already has.
+leadRouter.post(
+  "/import-from-sheet",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { sheetUrl } = z.object({ sheetUrl: z.string().url() }).parse(req.body);
+
+    const { csvUrl } = convertGoogleSheetUrlToCsv(sheetUrl);
+    if (!csvUrl) throw new ApiError(400, "INVALID_SHEET_URL", "Could not convert Google Sheet URL to CSV export format.");
+
+    let csvData: string;
+    try {
+      const response = await axios.get(csvUrl, {
+        timeout: 15000,
+        headers: { Accept: "text/csv, text/plain, */*" },
+        maxRedirects: 5,
+      });
+      csvData = String(response.data);
+      if (csvData.includes("<!DOCTYPE html") || csvData.includes("<html")) {
+        throw new Error("Google Sheet returned an HTML sign-in page. Please make the sheet public with 'Anyone with the link can view'.");
+      }
+    } catch (err: any) {
+      throw new ApiError(400, "SHEET_FETCH_FAILED", err?.message || "Failed to fetch CSV from Google Sheet. Ensure the sheet is accessible.");
+    }
+
+    const sheetRows = parseCsvRows(csvData);
+    const leadRows = mapSheetRowsToLeads(sheetRows);
+    if (leadRows.length === 0) {
+      return res.status(200).json({ results: [], message: "Sheet was fetched successfully, but no rows matched a Name/Email/Language/Service header." });
+    }
+
+    const role = req.user!.role.toLowerCase() as Role;
+    const results = await createLeadsFromRows(leadRows, req.user!.id, role);
     return res.status(201).json({ results });
   })
 );
