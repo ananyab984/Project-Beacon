@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import type { ApiLead, LeadSource } from "@/lib/api-types";
 import { parseCsvLeads } from "@/lib/g3-mock";
 import { STANDARD_LANGUAGES as LANGUAGES } from "@/lib/languages";
+import { STANDARD_SERVICES as SERVICES } from "@/lib/services";
 
 const SOURCES = [
   "LinkedIn",
@@ -34,22 +35,6 @@ function mapToLeadSource(raw: string | undefined | null): LeadSource {
   const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
   return hit ?? "LINKEDIN";
 }
-
-const SERVICES = [
-  "Subtitling",
-  "Dubbing",
-  "Translation",
-  "Voice Over",
-  "SDH (Subtitles for Deaf & Hard of Hearing)",
-  "Audio Description (AD)",
-  "Localization QA",
-  "AI Post-editing",
-  "Transcreation",
-  "Quality Control",
-  "Interpretation",
-  "Transcription",
-  "Closed Captioning",
-];
 
 export function ContractorAddLeadDialog({
   open: controlledOpen,

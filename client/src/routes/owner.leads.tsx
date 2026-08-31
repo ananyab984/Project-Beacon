@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
+import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/owner/leads")({
   head: () => ({
@@ -118,10 +119,11 @@ function LeadsPage() {
     () => Array.from(new Set(optionLeads.map((l) => l.targetLanguage).filter((v): v is string => !!v))),
     [optionLeads],
   );
-  const services = useMemo(
-    () => Array.from(new Set(optionLeads.flatMap((l) => l.services))),
-    [optionLeads],
-  );
+  // Sourced from the canonical list, not derived from raw Lead.services --
+  // that free-text data used to surface every typo/case-variant/concatenated
+  // value ever ingested as its own filter option (e.g. "Sub:Dubbing:Audio
+  // Description" as one entry). A fixed, canonical list can't drift that way.
+  const services = STANDARD_SERVICES;
   const countries = useMemo(
     () => Array.from(new Set(optionLeads.map((l) => l.country).filter((v): v is string => !!v))),
     [optionLeads],

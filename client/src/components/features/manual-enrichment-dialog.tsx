@@ -7,6 +7,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2, Sparkles, UserCheck } from "lucide-react";
 import { toast } from "sonner";
+import { STANDARD_SERVICES } from "@/lib/services";
+
+// Curated quick-pick subset (not the full canonical list -- this is a
+// compact toggle row, not a dropdown) filtered from the single source of
+// truth so these buttons can't drift into non-canonical spellings like the
+// "Voiceover"/"QA" labels this used to hardcode.
+const QUICK_SERVICES = STANDARD_SERVICES.filter((s) =>
+  ["Subtitling", "Dubbing", "Voice Over", "Translation", "Quality Control", "Audio Description", "SDH"].includes(s)
+);
 
 export interface LeadForEnrichment {
   id: string;
@@ -194,7 +203,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
           <div>
             <Label className="text-[11px] text-muted-foreground mb-1.5 block">Services Offered</Label>
             <div className="flex flex-wrap gap-1.5">
-              {["Subtitling", "Dubbing", "Voiceover", "Translation", "QA", "Audio Description", "SDH"].map((s) => {
+              {QUICK_SERVICES.map((s) => {
                 const sel = isServiceSelected(s);
                 return (
                   <button

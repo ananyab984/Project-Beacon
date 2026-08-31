@@ -8,6 +8,7 @@ import { ApiError } from "../lib/apiError";
 import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from "../services/lead.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
+import { normalizeServices } from "../lib/normalizeServices";
 
 export const leadRouter = Router();
 
@@ -28,7 +29,12 @@ const createLeadSchema = z.object({
   }).optional(),
   country: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   source: z.enum(LEAD_SOURCES),
-  services: z.array(z.string()).default([]),
+  // Applies to every path that uses this schema -- both single manual
+  // create and bulk CSV/XLSX/Google Sheet import (POST /api/leads/bulk
+  // parses each row through this same schema) -- so a raw value like
+  // "Sub:Dubbing:Audio Description" from an import file gets normalized to
+  // canonical services at the one place all lead creation funnels through.
+  services: z.array(z.string()).default([]).transform((arr) => normalizeServices(arr)),
   sourceLanguage: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   targetLanguage: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   secondaryLanguages: z.array(z.string()).default([]),
