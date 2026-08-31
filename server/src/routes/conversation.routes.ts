@@ -241,15 +241,32 @@ conversationRouter.post(
       } else {
         const target = to || conversation.lead.email;
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
-        // Conversation has no subject of its own -- reuse whatever this
-        // recruiter's most recent EmailQueueItem for this lead sent, same
-        // pattern as the original cold-outreach subject, prefixed "Re:"
-        // like any real reply (unless it already is one).
-        const latestQueueItem = await prisma.emailQueueItem.findFirst({
-          where: { leadId: conversation.leadId, recruiterId: conversation.recruiterId },
-          orderBy: { receivedAt: "desc" },
-        });
-        const originalSubject = latestQueueItem?.subject || conversation.candidateName;
+        // Unipile validates a threaded reply's subject against the real
+        // thread it's attached to via reply_to, rejecting a mismatch with
+        // "The reply subject is invalid" -- confirmed live. EmailQueueItem's
+        // subject is NOT a reliable source for that: it can be silently
+        // regenerated after the original send (generate-draft has no guard
+        // against re-running on an already-sent item), drifting away from
+        // the subject actually delivered. The one place the real subject is
+        // always available is the inbound webhook event for the specific
+        // message being replied to -- prefer that, and only fall back to
+        // the queue item's guess when there's no prior thread to match
+        // (i.e. replyToMessageId wasn't supplied).
+        let originalSubject: string | null = null;
+        if (replyToMessageId) {
+          const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
+            where: { eventType: "mail_received", payload: { path: ["email_id"], equals: replyToMessageId } },
+            orderBy: { processedAt: "desc" },
+          });
+          originalSubject = (webhookEvent?.payload as any)?.subject || null;
+        }
+        if (!originalSubject) {
+          const latestQueueItem = await prisma.emailQueueItem.findFirst({
+            where: { leadId: conversation.leadId, recruiterId: conversation.recruiterId },
+            orderBy: { receivedAt: "desc" },
+          });
+          originalSubject = latestQueueItem?.subject || conversation.candidateName;
+        }
         const replySubject = /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
         await UnipileService.sendEmail(
           req.user!.id,

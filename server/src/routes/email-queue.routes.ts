@@ -120,6 +120,19 @@ emailQueueRouter.post(
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
 
+    // Regenerating after send overwrites subject/body with a fresh draft
+    // while the real email already went out with the old ones -- the queue
+    // item's stored subject then silently drifts from the actual thread
+    // subject Unipile is tracking, and any later reply's Re: subject built
+    // from it gets rejected by Unipile as not matching the real thread.
+    if (item.status === "SENT") {
+      throw new ApiError(
+        409,
+        "ALREADY_SENT",
+        "This email was already sent -- its subject and body can no longer be regenerated."
+      );
+    }
+
     // A recruiter typing an address into the TO field is a legitimate way to
     // supply an email the enrichment pipeline never found -- previously this
     // never reached generate-draft at all (only /send read it), so it could
