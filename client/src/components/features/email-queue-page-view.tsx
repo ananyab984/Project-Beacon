@@ -366,7 +366,7 @@ export function EmailQueuePageView() {
         </div>
 
         {selected && (
-          <div className="flex h-full min-h-0 flex-col">
+          <div className="flex h-full min-h-0 min-w-0 flex-col">
             <div className="border-b border-border p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -412,9 +412,14 @@ export function EmailQueuePageView() {
                 SENT gets a Gmail-style read-only view (replies first, per
                 the ask); anything still being drafted keeps the editable
                 form exactly as before. */}
-            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 min-h-0 min-w-0 overflow-y-auto p-4 space-y-4">
               {selected.status === "SENT" ? (
-                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={to} subject={subject} body={body} sentAt={selected.sentAt} />
+                // Read straight off `selected` (the server record of what was
+                // actually sent), never the editable draft state (`to`/
+                // `subject`/`body` above) -- those track the in-progress
+                // compose box, which can point at a different address than
+                // whatever this item was actually dispatched to.
+                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={selected.to || candidateEmail(selected)} subject={selected.subject} body={selected.body} sentAt={selected.sentAt} />
               ) : (
                 <div className="space-y-3">
                   <div>
@@ -623,8 +628,8 @@ function EmailThread({
                     isMe ? "border-border/60 bg-muted/10 hover:bg-muted/20" : "border-border/60 bg-blue-500/5 hover:bg-blue-500/10"
                   }`}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex min-w-0 items-center gap-1.5">
+                  <div className="flex min-w-0 items-center justify-between gap-2">
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5">
                       <div className={`h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-[9px] font-bold ${
                         isMe ? "bg-muted text-muted-foreground" : "bg-blue-500/20 text-blue-500"
                       }`}>
@@ -632,7 +637,7 @@ function EmailThread({
                       </div>
                       <span className="shrink-0 text-[11px] font-semibold text-foreground">{name}</span>
                       {!expanded && (
-                        <span className="truncate text-[11px] text-muted-foreground/70">
+                        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground/70">
                           — {m.text.replace(/\s+/g, " ").trim() || (isMe ? `To ${to}` : "")}
                         </span>
                       )}

@@ -85,7 +85,14 @@ function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS
 // onward so only the new reply text is stored.
 const QUOTE_HEADER_PATTERNS: RegExp[] = [
   // Gmail / Apple Mail: "On Wed, 26 Aug 2026, 4:39 pm Ananth Ram <x@y.com> wrote:"
-  /^On .{0,120}wrote:\s*$/m,
+  // Plaintext mail hard-wraps long lines (commonly the "<name@domain.com>"
+  // part), so the header can span two physical lines -- confirmed live, a
+  // real reply's "On ... wrote:" line broke right after "<" and the old
+  // `.{0,120}` (which can't cross a newline) missed it entirely, leaving the
+  // whole quoted chain unstripped. [\s\S] matches across the line break;
+  // the lazy quantifier plus the 200-char cap keeps it from ever eating past
+  // the next actual "wrote:".
+  /^On [\s\S]{0,200}?wrote:[ \t]*$/m,
   // Outlook plaintext divider
   /^-{2,}\s*Original Message\s*-{2,}$/im,
   // Outlook plaintext header block
