@@ -14,6 +14,7 @@ import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
+import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/recruiter/leads")({
   head: () => ({
@@ -140,7 +141,9 @@ function LeadsPage() {
     () => Array.from(new Set(globalLeads.map((l) => l.targetLanguage).filter((v): v is string => !!v))),
     [globalLeads],
   );
-  const services = useMemo(() => Array.from(new Set(globalLeads.flatMap((l) => l.services))), [globalLeads]);
+  // Sourced from the canonical list, not derived from raw Lead.services --
+  // see owner.leads.tsx for why (redundant/garbled values otherwise).
+  const services = STANDARD_SERVICES;
   const countries = useMemo(
     () => Array.from(new Set(globalLeads.map((l) => l.country).filter((v): v is string => !!v))),
     [globalLeads],

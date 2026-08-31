@@ -12,6 +12,7 @@ import { GoogleSheetsSyncSection } from "@/components/features/google-sheets-syn
 import { api } from "@/lib/api";
 import type { ApiUser } from "@/lib/api-types";
 import { STANDARD_LANGUAGES as STANDARD_LANGUAGES_BASE } from "@/lib/languages";
+import { STANDARD_SERVICES as STANDARD_SERVICES_BASE } from "@/lib/services";
 
 const EVENT = "g3:open-client-demand";
 export const openClientDemand = () => window.dispatchEvent(new Event(EVENT));
@@ -22,24 +23,8 @@ export const openClientDemand = () => window.dispatchEvent(new Event(EVENT));
 // option they have no UI to handle.
 const STANDARD_LANGUAGES = [...STANDARD_LANGUAGES_BASE, "Custom..."];
 
-export const STANDARD_SERVICES = [
-  "Dubbing",
-  "Subtitling",
-  "Audio Description",
-  "SDH",
-  "CC",
-  "Conform",
-  "Prelude",
-  "Scripting",
-  "Translation",
-  "Voice Over",
-  "Localization QA",
-  "AI Post-editing",
-  "Quality Control",
-  "Interpretation",
-  "Transcription",
-  "Custom..."
-];
+// Same "Custom..." pattern as STANDARD_LANGUAGES above.
+export const STANDARD_SERVICES = [...STANDARD_SERVICES_BASE, "Custom..."];
 
 export const CONTENT_TYPES = [
   "Feature Film",

@@ -2,6 +2,7 @@ import axios from "axios";
 import { prisma } from "../prisma";
 import { config } from "../config";
 import { candidateRoleOf } from "../lib/messageTemplates";
+import { normalizeServices } from "../lib/normalizeServices";
 
 function splitToArray(val: unknown): string[] | undefined {
   if (typeof val !== "string" || !val.trim()) return undefined;
@@ -100,7 +101,12 @@ export async function enrichLeadById(leadId: string) {
       const resolvedName = String(el.Full_Name || el.First_Name || "").trim();
       if (resolvedName) enrichedDisplayName = resolvedName;
 
-      if (el.Services) enrichedServices = splitToArray(el.Services) ?? enrichedServices;
+      // normalizeServices both splits (on any of , ; / : | -- not just
+      // commas) and maps known variants/case-differences onto the canonical
+      // service list, so a raw scraped value like "Sub:Dubbing:Audio
+      // Description" becomes ["Subtitling","Dubbing","Audio Description"]
+      // instead of surviving as one colon-delimited garbage string.
+      if (el.Services) enrichedServices = normalizeServices(el.Services) ?? enrichedServices;
       if (el.Source_Language) enrichedSourceLanguage = el.Source_Language;
       if (el.Target_Language) enrichedTargetLanguage = el.Target_Language;
       if (el.Secondary_Languages) enrichedSecondaryLanguages = splitToArray(el.Secondary_Languages) ?? enrichedSecondaryLanguages;
