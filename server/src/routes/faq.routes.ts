@@ -5,7 +5,8 @@ import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { prisma } from "../prisma";
-import { generateFaqReply, generateFaqKeywords } from "../drafting/draftGenerator";
+import { generateFaqReply, generateFaqKeywords, generateFaqReplyWithContext } from "../drafting/draftGenerator";
+import { semanticFaqSearch, detectLanguage, type SemanticFaqMatch } from "../lib/semanticFaqSearch";
 import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
 import { extractQuestions, extractKeywords, deduplicateMatches } from "../lib/questionExtractor";
@@ -116,9 +117,93 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
     const matchedFaqs = Array.from(deduped.values());
     const unansweredQuestions = allMatches.filter((m) => !m.faqId).map((m) => m.originalQuestion);
 
-    // No matches at all
+    // No exact matches - try semantic fallback
     if (matchedFaqs.length === 0) {
-      return res.json({ match: "none", answers: [], unansweredQuestions });
+      console.log(`[FAQ] No exact matches found. Attempting semantic fallback...`);
+
+      // Check language
+      const language = await detectLanguage(leadMessage);
+      if (language !== "en") {
+        console.log(`[FAQ] Non-English question detected (${language}). Skipping semantic fallback.`);
+        return res.json({
+          match: "none",
+          answers: [],
+          unansweredQuestions: [leadMessage],
+        });
+      }
+
+      // Try semantic search
+      const existingMatchIds = new Set<string>();
+      const draftingConfig = loadDraftingConfig();
+      const client = new ClaudeClient(draftingConfig);
+
+      const semanticMatches = await semanticFaqSearch(client, leadMessage, existingMatchIds);
+
+      if (semanticMatches.length > 0) {
+        console.log(`[FAQ] Semantic fallback found ${semanticMatches.length} matches`);
+
+        // Convert semantic matches to FAQ format
+        const semanticFaqs = semanticMatches.map((m) => ({
+          question: m.question,
+          answer: m.answer,
+        }));
+
+        // Generate response from semantic FAQs
+        let phrased;
+        try {
+          const conversationHistory = req.body.conversationHistory || [];
+          const includeContext = req.body.includeConversationContext === true;
+
+          if (includeContext && conversationHistory.length > 0) {
+            phrased = await generateFaqReplyWithContext(
+              client,
+              draftingConfig,
+              leadMessage,
+              semanticFaqs,
+              conversationHistory,
+              []
+            );
+          } else {
+            phrased = await generateFaqReply(
+              client,
+              draftingConfig,
+              leadMessage,
+              semanticFaqs,
+              []
+            );
+          }
+
+          if (!phrased || typeof phrased.body !== "string" || !phrased.body.trim()) {
+            throw new Error("FAQ reply generation returned an unexpected response shape");
+          }
+
+          // Calculate average confidence
+          const avgConfidence = semanticMatches.reduce((sum, m) => sum + m.confidence, 0) / semanticMatches.length;
+
+          return res.json({
+            match: "semantic",
+            answer: phrased.body,
+            answers: semanticFaqs.map((f) => ({ topic: f.question, answer: f.answer })),
+            unansweredQuestions: [],
+            semanticMetadata: {
+              method: "semantic_fallback",
+              confidence: avgConfidence,
+              relatedFaqIds: semanticMatches.map((m) => m.faqId),
+              explanations: semanticMatches.map((m) => m.explanation),
+            },
+          });
+        } catch (err: any) {
+          console.error(`[FAQ] Semantic reply generation failed:`, err.message);
+          // Fall through to "none" case
+        }
+      }
+
+      // No semantic matches or generation failed - return "none"
+      return res.json({
+        match: "none",
+        answers: [],
+        unansweredQuestions: [leadMessage],
+      });
     }
 
     // Generate combined response using Claude

@@ -277,6 +277,95 @@ Keep it concise (1-2 paragraphs), but make every sentence count with clarity and
   };
 }
 
+/** Generate FAQ reply with optional conversation context for personalization */
+export async function generateFaqReplyWithContext(
+  client: ClaudeClient,
+  cfg: DraftingConfig,
+  leadMessage: string,
+  faqs: Array<{ question: string; answer: string }>,
+  conversationHistory?: Array<{ role: "user" | "assistant"; text: string }>,
+  unansweredQuestions?: string[]
+): Promise<FaqReply> {
+  const system = `You are a professional, knowledgeable support representative responding to candidate inquiries.
+Your task is to answer candidate questions in a sophisticated, well-articulated way, drawing from the provided FAQ answers.
+
+CRITICAL GROUNDING REQUIREMENT:
+- You MUST use the provided FAQ answers as your source material
+- The FAQ content is your primary source of truth
+- Conversation context is ONLY for tone/personalization, never for facts
+- Do not invent or assume information not in the FAQs
+- Never say "I don't have information" or refuse when FAQ is provided
+
+CONTEXT USAGE:
+- Use conversation context ONLY to match tone and style
+- Remain factually grounded in FAQ data
+- If FAQ doesn't cover a topic, acknowledge it briefly but don't hallucinate
+
+SOPHISTICATION REQUIREMENT: Rephrase FAQ content professionally:
+- Adapt phrasing to their specific questions
+- Match the tone of the ongoing conversation
+- Use sophisticated vocabulary and sentence structure
+- Sound like a knowledgeable person, not a script
+- Keep responses concise but complete
+
+RESPONSE RULE: Your response must always provide a substantive answer grounded in the FAQs.`;
+
+  const faqText = faqs
+    .map((f, i) => `FAQ ${i + 1}:\nQuestion: ${f.question}\nAnswer: ${f.answer}`)
+    .join("\n\n");
+
+  const unansweredText =
+    unansweredQuestions && unansweredQuestions.length > 0
+      ? `\n\nQuestions without FAQ coverage:\n${unansweredQuestions.map((q) => `- ${q}`).join("\n")}\n(Acknowledge these briefly but note manual follow-up required)`
+      : "";
+
+  // Extract intent from recent messages without exposing raw text (PII protection)
+  let contextBlock = "";
+  if (conversationHistory && conversationHistory.length > 0) {
+    const recentMessages = conversationHistory.slice(-2); // Last 2 messages only
+    const intentSummary = recentMessages
+      .map((m) => {
+        // Summarize intent without exposing full text
+        const text = m.text.toLowerCase();
+        let intent = "providing information";
+        if (text.includes("question") || text.includes("ask")) intent = "asking a question";
+        if (text.includes("concern") || text.includes("worried")) intent = "expressing concern";
+        if (text.includes("clarif")) intent = "asking for clarification";
+        return `${m.role}: ${intent}`;
+      })
+      .join("\n");
+
+    contextBlock = `\n\nConversation context (tone reference only):\n${intentSummary}\n\nMaintain this conversational tone while staying grounded in FAQ facts.`;
+  }
+
+  const user = `Candidate's current message: "${leadMessage}"
+
+${faqText}${unansweredText}${contextBlock}
+
+Provide a single, flowing response that:
+1. Addresses all questions you have FAQ answers for
+2. Uses professional language matching the conversation tone
+3. Acknowledges any unanswered questions briefly
+4. Is grounded entirely in the provided FAQs
+5. Feels natural and personalized, not scripted
+
+Keep it concise (2-3 paragraphs) but make every sentence count.`;
+
+  const completion = await client.chat(system, user, {
+    model: cfg.genModel,
+    temperature: 0.3,
+    maxTokens: 400,
+  });
+
+  return {
+    body: completion.text.trim(),
+    model: completion.model,
+    latency_ms: completion.latency_ms,
+    prompt_tokens: completion.prompt_tokens,
+    completion_tokens: completion.completion_tokens,
+  };
+}
+
 /** Extract 3-5 short semantic keywords from an FAQ question + answer, for storing
  * in `faqEntry.tags` so newly created FAQs are searchable without manual tagging.
  * Low temperature keeps the extraction stable across repeat calls. */

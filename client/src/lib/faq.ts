@@ -12,7 +12,11 @@ import { api } from "@/lib/api";
 export async function checkFaqAndAutofill(
   message: string | undefined | null,
   setLoading: (loading: boolean) => void,
-  setDraft: (draft: string) => void
+  setDraft: (draft: string) => void,
+  options?: {
+    conversationHistory?: Array<{ role: "user" | "assistant"; text: string }>;
+    includeConversationContext?: boolean;
+  }
 ): Promise<void> {
   if (!message || !message.trim()) {
     toast.error("No reply from the candidate yet to check");
@@ -21,17 +25,40 @@ export async function checkFaqAndAutofill(
 
   setLoading(true);
   try {
-    const result = await api.checkFaq(message);
+    const result = await api.checkFaq(message, {
+      conversationHistory: options?.conversationHistory,
+      includeConversationContext: options?.includeConversationContext || false,
+    });
 
     // Guard against hallucinated refusals: detect strong refusal patterns
-    // (not just hedging language which is acceptable)
-    const isRefusal = result.answer && /^(i'm unable|unable to answer|i don't have information|no information available|i cannot provide|not available to|unfortunately i|i regret to inform)/i.test(result.answer);
+    // Also check semantic metadata confidence
+    const isRefusal = result.answer && (
+      /^(i'm unable|unable to answer|i don't have information|no information available|i cannot provide|not available to|unfortunately i|i regret to inform)/i.test(result.answer) ||
+      (result.semanticMetadata?.confidence !== undefined && result.semanticMetadata.confidence < 0.50)
+    );
 
     if (result.match === "none") {
       // No matches for any questions
       toast.info("No confident FAQ match for this reply");
+    } else if (result.match === "semantic" && result.answer && !isRefusal) {
+      // Semantic match: similar FAQ found
+      setDraft(result.answer);
+
+      const confidence = result.semanticMetadata?.confidence || 0;
+      const confidenceLabel = confidence > 0.80 ? "high confidence" : "moderate confidence";
+
+      toast.success(`Similar FAQ found (${confidenceLabel}) — suggested response added`);
+
+      if (result.answers && result.answers.length > 0) {
+        const topicsList = result.answers
+          .slice(0, 2)
+          .map((a) => `"${a.topic.substring(0, 40)}${a.topic.length > 40 ? "..." : ""}"`)
+          .join(", ");
+        const moreText = result.answers.length > 2 ? ` (+${result.answers.length - 2} more)` : "";
+        toast.info(`Based on: ${topicsList}${moreText}`);
+      }
     } else if ((result.match === "full" || result.match === "partial") && result.answer && !isRefusal) {
-      // Full or partial match: autofill the draft
+      // Full or partial exact match: autofill the draft
       setDraft(result.answer);
 
       if (result.match === "full") {

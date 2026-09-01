@@ -87,11 +87,17 @@ export interface UpdateFaqInput {
 }
 
 export interface FaqCheckResponse {
-  match: "full" | "partial" | "none";
+  match: "full" | "partial" | "semantic" | "none";
   answer?: string;
   answers?: Array<{ topic: string; answer: string }>;
   matchedQuestion?: string;
   unansweredQuestions: string[];
+  semanticMetadata?: {
+    method: "semantic_fallback";
+    confidence: number; // 0-1
+    relatedFaqIds: string[];
+    explanations: string[];
+  };
 }
 
 export const api = {
@@ -520,8 +526,21 @@ export const api = {
   // -------------------- FAQ --------------------
 
   /** Check a lead's message against the FAQ table (button-triggered, multi-question support) */
-  async checkFaq(leadMessage: string): Promise<FaqCheckResponse> {
-    return request<FaqCheckResponse>("/api/faq/check", { method: "POST", body: JSON.stringify({ leadMessage }) });
+  async checkFaq(
+    leadMessage: string,
+    options?: {
+      conversationHistory?: Array<{ role: "user" | "assistant"; text: string }>;
+      includeConversationContext?: boolean;
+    }
+  ): Promise<FaqCheckResponse> {
+    return request<FaqCheckResponse>("/api/faq/check", {
+      method: "POST",
+      body: JSON.stringify({
+        leadMessage,
+        conversationHistory: options?.conversationHistory,
+        includeConversationContext: options?.includeConversationContext || false,
+      }),
+    });
   },
 
   /** List all FAQ entries */
