@@ -1,11 +1,13 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
-import { LayoutGrid, Building2, Users, ContactRound, HelpCircle, Settings, Sparkles, BarChart3, Plus, Mail, MessagesSquare } from "lucide-react";
+import { useState } from "react";
+import { LayoutGrid, Building2, Users, ContactRound, HelpCircle, Settings, Sparkles, BarChart3, Plus, Mail, MessagesSquare, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { EscalationsBell } from "@/components/features/escalations";
 import { ClientDemandDialog, openClientDemand } from "@/components/features/client-demand-dialog";
 import { GlobalSearchDialog } from "@/components/features/global-search-dialog";
 import { RoleGuard } from "@/components/features/role-guard";
+import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
 import { useAiFeature } from "@/lib/feature-flags";
 
 export const Route = createFileRoute("/owner")({
@@ -38,6 +40,7 @@ function useNav(): NavItem[] {
 
 function OwnerLayout() {
   const nav = useNav();
+  const [connectOpen, setConnectOpen] = useState(false);
 
   return (
     <AppShell
@@ -51,6 +54,14 @@ function OwnerLayout() {
           <GlobalSearchDialog />
           <Button
             size="sm"
+            variant="outline"
+            onClick={() => setConnectOpen(true)}
+            className="text-xs font-medium gap-1.5 border-border"
+          >
+            <Link2 className="h-3.5 w-3.5 text-primary" /> Connect Accounts
+          </Button>
+          <Button
+            size="sm"
             onClick={openClientDemand}
             className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
           >
@@ -59,7 +70,12 @@ function OwnerLayout() {
           <EscalationsBell />
         </>
       }
-      afterContent={<ClientDemandDialog />}
+      afterContent={
+        <>
+          <ClientDemandDialog />
+          <ConnectAccountDialog open={connectOpen} onOpenChange={setConnectOpen} />
+        </>
+      }
     >
       <Outlet />
     </AppShell>

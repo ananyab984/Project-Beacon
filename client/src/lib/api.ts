@@ -382,8 +382,8 @@ export const api = {
 
   // -------------------- conversations --------------------
 
-  async getConversations(): Promise<{ conversations: ApiConversation[] }> {
-    return request("/api/conversations");
+  async getConversations(opts: { scope?: "own" } = {}): Promise<{ conversations: ApiConversation[] }> {
+    return request(`/api/conversations${qs(opts)}`);
   },
 
   async getConversation(id: string): Promise<{ conversation: ApiConversation }> {

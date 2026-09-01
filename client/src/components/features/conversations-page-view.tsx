@@ -57,8 +57,13 @@ function getDefaultDraft(name: string, role?: string | null): string {
 export function ConversationsPageView() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
-    queryKey: ["conversations"],
-    queryFn: api.getConversations,
+    // Self-serve outreach view -- always "my own" conversations, even for an
+    // owner (who'd otherwise default to seeing every recruiter's threads,
+    // the aggregate view performance-page-view.tsx needs but this page
+    // doesn't). Distinct query key from plain ["conversations"] so this
+    // scoped fetch never shares a cache entry with that unscoped one.
+    queryKey: ["conversations", "own"],
+    queryFn: () => api.getConversations({ scope: "own" }),
     refetchInterval: 10_000, // Poll every 10s for new inbound messages
   });
   const conversations = data?.conversations ?? [];
