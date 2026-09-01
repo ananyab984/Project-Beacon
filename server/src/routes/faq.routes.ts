@@ -16,8 +16,9 @@ faqRouter.use(authenticateJwt);
 
 // POST /api/faq/check — button-triggered: takes the lead's latest reply text,
 // extracts individual questions, and looks them up against faq_entries via
-// ranked full-text + trigram + tag match. Combines matching answers into one
-// response and flags unanswered questions. Returns match: "full"|"partial"|"none".
+// ranked full-text + trigram + tag match. Loosened thresholds for multilingual
+// leads (non-native English, minimal punctuation). Combines matching answers
+// into one response and flags unanswered questions. Returns match: "full"|"partial"|"none".
 faqRouter.post("/check", async (req: Request, res: Response) => {
   try {
     const { leadMessage } = req.body || {};
@@ -60,8 +61,9 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       `;
 
       const top = matches[0];
-      // Tag matches bypass strict threshold; non-tag matches need both rank >= 0.3 AND sim >= 0.4
-      if (top && (top.tag_match === 1 || (top.rank >= 0.3 && top.sim >= 0.4))) {
+      // Loosened thresholds for multilingual leads (non-native English, no punctuation)
+      // Tag matches always pass; non-tag matches use OR logic to catch more variations
+      if (top && (top.tag_match === 1 || top.rank >= 0.2 || top.sim >= 0.3)) {
         allMatches.push({
           originalQuestion: question,
           faqId: top.id,
