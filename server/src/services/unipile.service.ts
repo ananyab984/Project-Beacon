@@ -3,6 +3,7 @@ import FormData from "form-data";
 import crypto from "crypto";
 import { config } from "../config";
 import { prisma } from "../prisma";
+import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import {
   AccountStatus,
   UnipileProvider,
@@ -504,12 +505,22 @@ export class UnipileService {
     const unipileBaseUrl = this.getUnipileBaseUrl();
     const headers = this.getUnipileHeaders();
 
-    // Step 1: Profile lookup
+    // Step 1: Profile lookup -- read-only, safe to retry on transient
+    // failure. The invite/DM/invite-fallback sends below are deliberately
+    // NOT wrapped in the same retry: each already falls through to the next
+    // strategy on failure (its own cascade), and layering a full 4-retry/
+    // ~15s cycle under each branch would turn one slow send into a 45s+
+    // hang before even reaching the final fallback, plus risks a duplicate
+    // send on a non-idempotent write if a "failed" request actually landed
+    // upstream. Retrying the read-only lookup carries neither risk.
     let userProfile: any = null;
     try {
-      const profileRes = await axios.get(
-        `${unipileBaseUrl}/users/${encodeURIComponent(cleanIdentifier)}?account_id=${account_id}`,
-        { headers }
+      const profileRes = await retryWithBackoff(
+        () =>
+          axios.get(`${unipileBaseUrl}/users/${encodeURIComponent(cleanIdentifier)}?account_id=${account_id}`, {
+            headers,
+          }),
+        { isRetryable: isRetryableByDefault }
       );
       userProfile = profileRes.data;
     } catch (err: any) {
@@ -692,9 +703,15 @@ export class UnipileService {
       payload.reply_to = replyToMessageId;
     }
 
-    const response = await axios.post(`${unipileBaseUrl}/emails`, payload, {
-      headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
-    });
+    // Single write, no fallback cascade (unlike sendLinkedInMessage above) --
+    // safe to retry the whole call on a transient failure.
+    const response = await retryWithBackoff(
+      () =>
+        axios.post(`${unipileBaseUrl}/emails`, payload, {
+          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+        }),
+      { isRetryable: isRetryableByDefault }
+    );
 
     const externalMessageId = response.data.tracking_id || response.data.id || `mail_${Date.now()}`;
     // Best-effort: capture the real email thread id if Unipile's send
