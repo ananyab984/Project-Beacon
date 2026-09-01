@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { parseCsvLeads } from "@/lib/g3-mock";
+import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
+import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
@@ -218,8 +219,24 @@ function LeadsPage() {
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
       const duplicates = res.results.filter((r) => r.status === "duplicate").length;
-      if (duplicates > 0) {
-        toast.info(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}. ${duplicates} duplicate(s) were excluded.`);
+      const errors = res.results.filter((r) => r.status === "error").length;
+      // Zero leads actually created must never read as a success toast --
+      // this used to only branch on `duplicates > 0`, so 0 succeeded + 0
+      // duplicates (e.g. every row failing validation) fell through to
+      // toast.success("Imported 0 unique leads."), which reads as "added"
+      // when nothing was.
+      if (succeeded === 0) {
+        toast.error(
+          errors > 0
+            ? `No leads imported — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
+            : `No leads imported — all ${duplicates} row(s) were duplicates.`
+        );
+      } else if (duplicates > 0 || errors > 0) {
+        toast.info(
+          `Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
+            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
+            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
+        );
       } else {
         toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
       }
@@ -836,10 +853,10 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
   function submit() {
     if (!file) { toast.error("Choose a CSV or Excel file first"); return; }
     const currentFile = file;
+    const isExcel = /\.xlsx?$/i.test(currentFile.name);
     const reader = new FileReader();
-    reader.onload = async (event) => {
-      const text = (event.target?.result as string) || "";
-      const parsed = parseCsvLeads(text);
+
+    const finish = async (parsed: ReturnType<typeof parseCsvLeads>) => {
       if (parsed.length === 0) {
         toast.info(`Uploaded ${currentFile.name}. Ensure sheet contains Name, Email, Language, or Service headers.`);
         return;
@@ -900,7 +917,33 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
         setCheckingDuplicates(false);
       }
     };
-    reader.readAsText(file);
+
+    if (isExcel) {
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          // A .xlsx/.xls file is a binary zip archive -- reading it with
+          // readAsText() (as this used to, unconditionally) produces garbled
+          // binary noise in every field instead of delimited text. Decode it
+          // properly with the `xlsx` package into the same header-row +
+          // data-rows shape parseCsvLeads tokenizes CSV text into.
+          const rawRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          const stringRows = rawRows.map((row) => row.map((cell) => String(cell ?? "")));
+          finish(mapRowsToLeads(stringRows));
+        } catch (err: any) {
+          toast.error(`Could not read ${currentFile.name} as an Excel file: ${err?.message || "unknown error"}`);
+        }
+      };
+      reader.readAsArrayBuffer(currentFile);
+    } else {
+      reader.onload = (event) => {
+        const text = (event.target?.result as string) || "";
+        finish(parseCsvLeads(text));
+      };
+      reader.readAsText(currentFile);
+    }
   }
 
   function importSkippingDuplicates() {

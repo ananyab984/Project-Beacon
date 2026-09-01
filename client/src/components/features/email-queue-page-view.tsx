@@ -630,10 +630,12 @@ function EmailThread({
             const name = isMe ? "You" : candidateName;
             return (
               <div key={m.id}>
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   onClick={() => toggle(m.id)}
-                  className={`w-full rounded-xl border p-3 text-left transition-colors ${
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(m.id); } }}
+                  className={`w-full cursor-pointer rounded-xl border p-3 text-left transition-colors ${
                     isMe ? "border-border/60 bg-muted/10 hover:bg-muted/20" : "border-border/60 bg-blue-500/5 hover:bg-blue-500/10"
                   }`}
                 >
@@ -654,13 +656,17 @@ function EmailThread({
                     <span className="shrink-0 text-[10px] text-muted-foreground">{formatReplyTime(m.sentAt)}</span>
                   </div>
                   {expanded && (
-                    <div className="mt-1.5 pl-6">
-                      {isMe && subject && <div className="mb-1 text-xs font-semibold text-foreground">{subject}</div>}
-                      {isMe && <div className="mb-1 text-[11px] text-muted-foreground">To {to}</div>}
-                      <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">{m.text}</div>
+                    // Stop the toggle click from swallowing a text selection
+                    // (mouseup after a drag-to-select still bubbles as a
+                    // click) -- and keep this text out of a native <button>,
+                    // which browsers make unselectable/uncopyable by default.
+                    <div className="mt-1.5 pl-6" onClick={(e) => e.stopPropagation()}>
+                      {isMe && subject && <div className="mb-1 text-xs font-semibold text-foreground select-text">{subject}</div>}
+                      {isMe && <div className="mb-1 text-[11px] text-muted-foreground select-text">To {to}</div>}
+                      <div className="select-text whitespace-pre-wrap text-xs leading-relaxed text-foreground/90">{m.text}</div>
                     </div>
                   )}
-                </button>
+                </div>
 
                 {expanded && !isMe && (
                   <div className="pl-6 pt-1.5">
