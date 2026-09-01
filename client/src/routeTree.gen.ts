@@ -30,6 +30,8 @@ import { Route as OnboardingConnectRouteImport } from './routes/onboarding.conne
 import { Route as OwnerIndexRouteImport } from './routes/owner.index'
 import { Route as OwnerAssignmentConfigRouteImport } from './routes/owner.assignment-config'
 import { Route as OwnerClientsRouteImport } from './routes/owner.clients'
+import { Route as OwnerConversationsRouteImport } from './routes/owner.conversations'
+import { Route as OwnerEmailQueueRouteImport } from './routes/owner.email-queue'
 import { Route as OwnerFaqsRouteImport } from './routes/owner.faqs'
 import { Route as OwnerLeadsRouteImport } from './routes/owner.leads'
 import { Route as OwnerPipelinesRouteImport } from './routes/owner.pipelines'
@@ -151,6 +153,16 @@ const OwnerClientsRoute = OwnerClientsRouteImport.update({
   path: '/clients',
   getParentRoute: () => OwnerRoute,
 } as any)
+const OwnerConversationsRoute = OwnerConversationsRouteImport.update({
+  id: '/conversations',
+  path: '/conversations',
+  getParentRoute: () => OwnerRoute,
+} as any)
+const OwnerEmailQueueRoute = OwnerEmailQueueRouteImport.update({
+  id: '/email-queue',
+  path: '/email-queue',
+  getParentRoute: () => OwnerRoute,
+} as any)
 const OwnerFaqsRoute = OwnerFaqsRouteImport.update({
   id: '/faqs',
   path: '/faqs',
@@ -248,6 +260,8 @@ export interface FileRoutesByFullPath {
   '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
+  '/owner/conversations': typeof OwnerConversationsRoute
+  '/owner/email-queue': typeof OwnerEmailQueueRoute
   '/owner/faqs': typeof OwnerFaqsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
@@ -283,6 +297,8 @@ export interface FileRoutesByTo {
   '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
+  '/owner/conversations': typeof OwnerConversationsRoute
+  '/owner/email-queue': typeof OwnerEmailQueueRoute
   '/owner/faqs': typeof OwnerFaqsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
@@ -322,6 +338,8 @@ export interface FileRoutesById {
   '/onboarding/connect': typeof OnboardingConnectRoute
   '/owner/assignment-config': typeof OwnerAssignmentConfigRoute
   '/owner/clients': typeof OwnerClientsRoute
+  '/owner/conversations': typeof OwnerConversationsRoute
+  '/owner/email-queue': typeof OwnerEmailQueueRoute
   '/owner/faqs': typeof OwnerFaqsRoute
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
@@ -362,6 +380,8 @@ export interface FileRouteTypes {
     | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
+    | '/owner/conversations'
+    | '/owner/email-queue'
     | '/owner/faqs'
     | '/owner/leads'
     | '/owner/pipelines'
@@ -397,6 +417,8 @@ export interface FileRouteTypes {
     | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
+    | '/owner/conversations'
+    | '/owner/email-queue'
     | '/owner/faqs'
     | '/owner/leads'
     | '/owner/pipelines'
@@ -435,6 +457,8 @@ export interface FileRouteTypes {
     | '/onboarding/connect'
     | '/owner/assignment-config'
     | '/owner/clients'
+    | '/owner/conversations'
+    | '/owner/email-queue'
     | '/owner/faqs'
     | '/owner/leads'
     | '/owner/pipelines'
@@ -617,6 +641,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerClientsRouteImport
       parentRoute: typeof OwnerRoute
     }
+    '/owner/conversations': {
+      id: '/owner/conversations'
+      path: '/conversations'
+      fullPath: '/owner/conversations'
+      preLoaderRoute: typeof OwnerConversationsRouteImport
+      parentRoute: typeof OwnerRoute
+    }
+    '/owner/email-queue': {
+      id: '/owner/email-queue'
+      path: '/email-queue'
+      fullPath: '/owner/email-queue'
+      preLoaderRoute: typeof OwnerEmailQueueRouteImport
+      parentRoute: typeof OwnerRoute
+    }
     '/owner/faqs': {
       id: '/owner/faqs'
       path: '/faqs'
@@ -752,6 +790,8 @@ const ContractorRouteWithChildren = ContractorRoute._addFileChildren(
 interface OwnerRouteChildren {
   OwnerAssignmentConfigRoute: typeof OwnerAssignmentConfigRoute
   OwnerClientsRoute: typeof OwnerClientsRoute
+  OwnerConversationsRoute: typeof OwnerConversationsRoute
+  OwnerEmailQueueRoute: typeof OwnerEmailQueueRoute
   OwnerFaqsRoute: typeof OwnerFaqsRoute
   OwnerLeadsRoute: typeof OwnerLeadsRoute
   OwnerPipelinesRoute: typeof OwnerPipelinesRoute
@@ -765,6 +805,8 @@ interface OwnerRouteChildren {
 const OwnerRouteChildren: OwnerRouteChildren = {
   OwnerAssignmentConfigRoute: OwnerAssignmentConfigRoute,
   OwnerClientsRoute: OwnerClientsRoute,
+  OwnerConversationsRoute: OwnerConversationsRoute,
+  OwnerEmailQueueRoute: OwnerEmailQueueRoute,
   OwnerFaqsRoute: OwnerFaqsRoute,
   OwnerLeadsRoute: OwnerLeadsRoute,
   OwnerPipelinesRoute: OwnerPipelinesRoute,
