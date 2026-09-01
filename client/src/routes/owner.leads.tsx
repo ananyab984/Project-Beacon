@@ -231,7 +231,12 @@ function LeadsPage() {
     mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
-      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
+      if (duplicates > 0) {
+        toast.info(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}. ${duplicates} duplicate(s) were excluded.`);
+      } else {
+        toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
+      }
       invalidateLeads();
     },
     onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
@@ -682,6 +687,20 @@ function BulkUploadDialog({
   const [sheetUrl, setSheetUrl] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Same precheck pattern as add-lead-dialog.tsx / contractor-add-lead-dialog.tsx's
+  // "Add a Lead" bulk upload -- this dialog just never had it, so duplicates
+  // silently landed in the plain "Imported X of Y rows" toast with no way to
+  // tell how many of the difference was duplicates vs. some other failure.
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
+    fileName: string;
+    duplicateCount: number;
+    duplicateNames: string[];
+    totalCount: number;
+    newCount: number;
+    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+  } | null>(null);
+
   const sheetImportMutation = useMutation({
     mutationFn: (url: string) => api.importLeadsFromSheet(url),
     onSuccess: (res) => {
@@ -703,16 +722,59 @@ function BulkUploadDialog({
     if (!file) return;
     const isExcel = /\.xlsx?$/i.test(file.name);
     const reader = new FileReader();
+    setDuplicateCheckResult(null);
 
-    const finish = (parsed: ReturnType<typeof parseCsvLeads>, headersMatched: boolean) => {
-      if (parsed.length > 0) {
-        onSubmitRows(toBulkRows(parsed));
+    const finish = async (parsed: ReturnType<typeof parseCsvLeads>, headersMatched: boolean) => {
+      if (parsed.length === 0) {
+        if (headersMatched) {
+          toast.info(`Uploaded ${file.name}, but every row was missing a Name -- nothing to import.`);
+        } else {
+          toast.info(`Uploaded ${file.name}. Ensure the file has a Name, Email, Language, or Service column header.`);
+        }
+        return;
+      }
+
+      const rows = toBulkRows(parsed);
+      setCheckingDuplicates(true);
+      try {
+        const dupRes = await api.checkBulkDuplicateLeads(
+          rows.map((r) => ({
+            fullName: r.fullName,
+            email: r.email ?? undefined,
+            contactNumber: r.contactNumber ?? undefined,
+            profileLink: r.profileLink ?? undefined,
+          }))
+        );
+        if (dupRes.hasDuplicates) {
+          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "…" : "");
+          toast.error(
+            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or import the rest.`,
+            { duration: 6000 }
+          );
+          setDuplicateCheckResult({
+            fileName: file.name,
+            duplicateCount: dupRes.duplicateCount,
+            duplicateNames: dupRes.duplicateNames,
+            totalCount: dupRes.totalCount,
+            newCount: dupRes.newCount,
+            rows,
+          });
+        } else {
+          onSubmitRows(rows);
+          toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
+          setOpen(false);
+        }
+      } catch {
+        // Precheck is a non-blocking convenience -- if it fails (network
+        // glitch), fall back to the plain import rather than blocking the
+        // recruiter entirely; /api/leads/bulk still does its own real
+        // duplicate check server-side either way.
+        onSubmitRows(rows);
         toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
         setOpen(false);
-      } else if (headersMatched) {
-        toast.info(`Uploaded ${file.name}, but every row was missing a Name -- nothing to import.`);
-      } else {
-        toast.info(`Uploaded ${file.name}. Ensure the file has a Name, Email, Language, or Service column header.`);
+      } finally {
+        setCheckingDuplicates(false);
+        e.target.value = "";
       }
     };
 
@@ -746,6 +808,14 @@ function BulkUploadDialog({
     }
   };
 
+  const handleImportSkippingDuplicates = () => {
+    if (!duplicateCheckResult) return;
+    onSubmitRows(duplicateCheckResult.rows);
+    toast.success(`Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`);
+    setDuplicateCheckResult(null);
+    setOpen(false);
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -758,10 +828,46 @@ function BulkUploadDialog({
           <DialogTitle>Bulk Upload Leads</DialogTitle>
           <DialogDescription>Upload a CSV or Excel sheet, or import from a public Google Sheet.</DialogDescription>
         </DialogHeader>
+
+        {duplicateCheckResult && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
+                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
+                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
+            </div>
+            <p className="text-xs text-foreground leading-relaxed">
+              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
+              <span className="font-semibold text-destructive ml-1">{duplicateCheckResult.duplicateNames.join(", ")}</span>
+              . You can upload another file or import only the <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
+            </p>
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              <label className="cursor-pointer">
+                <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+                <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors border border-border">
+                  <Upload className="h-3.5 w-3.5" /> Upload Another File
+                </div>
+              </label>
+              {duplicateCheckResult.newCount > 0 && (
+                <Button type="button" size="sm" onClick={handleImportSkippingDuplicates} className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5">
+                  Import {duplicateCheckResult.newCount} New Lead{duplicateCheckResult.newCount === 1 ? "" : "s"} Only
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={() => setDuplicateCheckResult(null)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
         <label className="cursor-pointer block border-2 border-dashed border-border rounded-xl p-8 text-center space-y-2 hover:border-primary/50 transition-colors">
           <input ref={fileInputRef} type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
           <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
-          <div className="text-xs font-semibold">Click to select or drop CSV/XLSX file here</div>
+          <div className="text-xs font-semibold">
+            {checkingDuplicates ? "Checking for database duplicates…" : "Click to select or drop CSV/XLSX file here"}
+          </div>
           <div className="text-[11px] text-muted-foreground">Supported fields: name, email, language, country, services, source</div>
         </label>
         <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
