@@ -17,16 +17,14 @@ emailQueueRouter.use(requireRole("owner", "recruiter", "contractor"));
 
 const CHANNELS = ["LINKEDIN", "EMAIL"] as const;
 
-// GET /api/email-queue — recruiter sees only their own; owner sees all
-// (same visibility rule as GET /api/conversations).
+// GET /api/email-queue — the recruiter's own queue (every role, owner
+// included, sees only what they personally added/were assigned -- this is a
+// self-serve outreach tool, not a cross-recruiter monitoring view).
 emailQueueRouter.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
-    const role = req.user!.role.toLowerCase();
-    const where = role === "owner" ? {} : { recruiterId: req.user!.id };
-
     const items = await prisma.emailQueueItem.findMany({
-      where,
+      where: { recruiterId: req.user!.id },
       include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
     });
 
@@ -35,7 +33,7 @@ emailQueueRouter.get(
     // otherwise a lead that just replied stays wherever it was originally
     // added instead of surfacing to the top like an inbox does.
     const conversations = await prisma.conversation.findMany({
-      where: { leadId: { in: items.map((i) => i.leadId) }, ...(role === "owner" ? {} : { recruiterId: req.user!.id }), channel: "EMAIL" },
+      where: { leadId: { in: items.map((i) => i.leadId) }, recruiterId: req.user!.id, channel: "EMAIL" },
       select: { leadId: true, lastMessageAt: true },
     });
     const lastMessageByLead = new Map(conversations.map((c) => [c.leadId, c.lastMessageAt]));
@@ -95,14 +93,11 @@ emailQueueRouter.patch(
     const schema = z.object({ subject: z.string().optional(), body: z.string().optional(), to: z.string().optional() });
     const patch = schema.parse(req.body);
 
-    // Owner can edit any recruiter's item (same monitoring/oversight rule as
-    // conversation.routes.ts's reply endpoint) -- everyone else is folded
-    // into the lookup itself: a not-found row and a not-owned row both 404
-    // identically, so we never leak whether some other recruiter's item
-    // exists at this id.
-    const role = req.user!.role.toLowerCase();
+    // Ownership check folded into the lookup itself: a not-found row and a
+    // not-owned row both 404 identically, so we never leak whether some other
+    // recruiter's item exists at this id.
     const existing = await prisma.emailQueueItem.findFirst({
-      where: { id: req.params.id, ...(role === "owner" ? {} : { recruiterId: req.user!.id }) },
+      where: { id: req.params.id, recruiterId: req.user!.id },
     });
     if (!existing) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
 
@@ -121,9 +116,8 @@ emailQueueRouter.patch(
 emailQueueRouter.post(
   "/:id/generate-draft",
   asyncHandler(async (req: Request, res: Response) => {
-    const role = req.user!.role.toLowerCase();
     const item = await prisma.emailQueueItem.findFirst({
-      where: { id: req.params.id, ...(role === "owner" ? {} : { recruiterId: req.user!.id }) },
+      where: { id: req.params.id, recruiterId: req.user!.id },
       include: { lead: true },
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
@@ -214,9 +208,8 @@ emailQueueRouter.post(
     });
     const { to, subject, body, channel, accountId } = schema.parse(req.body);
 
-    const role = req.user!.role.toLowerCase();
     const item = await prisma.emailQueueItem.findFirst({
-      where: { id: req.params.id, ...(role === "owner" ? {} : { recruiterId: req.user!.id }) },
+      where: { id: req.params.id, recruiterId: req.user!.id },
       include: { lead: true },
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
@@ -264,13 +257,12 @@ emailQueueRouter.post(
     const schema = z.object({ ids: z.array(z.string().uuid()).min(1).max(200) });
     const { ids } = schema.parse(req.body);
 
-    const role = req.user!.role.toLowerCase();
     const results: Array<{ id: string; success: boolean; error?: string }> = [];
 
     for (const id of ids) {
       try {
         const item = await prisma.emailQueueItem.findFirst({
-          where: { id, ...(role === "owner" ? {} : { recruiterId: req.user!.id }) },
+          where: { id, recruiterId: req.user!.id },
           include: { lead: true },
         });
         if (!item) {

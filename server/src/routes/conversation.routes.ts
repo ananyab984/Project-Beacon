@@ -16,12 +16,17 @@ export const conversationRouter = Router();
 conversationRouter.use(authenticateJwt);
 conversationRouter.use(requireRole("owner", "recruiter", "contractor"));
 
-// GET /api/conversations — recruiter sees only their own; owner sees all.
+// GET /api/conversations — recruiter sees only their own; owner sees all by
+// default (used by the recruiter-performance evaluation view, which needs
+// the aggregate across every recruiter) unless ?scope=own is passed, which
+// the Owner Console's own Conversations page (a self-serve outreach tool,
+// not a monitoring dashboard) uses to see only what it added/sent itself.
 conversationRouter.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
     const role = req.user!.role.toLowerCase();
-    const where = role === "owner" ? {} : { recruiterId: req.user!.id };
+    const wantsOwn = req.query.scope === "own";
+    const where = role === "owner" && !wantsOwn ? {} : { recruiterId: req.user!.id };
 
     const conversations = await prisma.conversation.findMany({
       where,
