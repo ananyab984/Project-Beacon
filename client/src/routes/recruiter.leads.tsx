@@ -217,7 +217,12 @@ function LeadsPage() {
     mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
-      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
+      if (duplicates > 0) {
+        toast.info(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}. ${duplicates} duplicate(s) were excluded.`);
+      } else {
+        toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
+      }
       invalidateLeads();
     },
     onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
@@ -800,6 +805,19 @@ function FilterSelect({
 function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
+  // Same precheck pattern as add-lead-dialog.tsx's "Add a Lead" bulk upload
+  // -- this dialog never had it, so duplicates silently landed inside the
+  // plain "Imported X of Y rows" toast with no way to tell how many of the
+  // difference was duplicates vs. some other failure.
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
+    fileName: string;
+    duplicateCount: number;
+    duplicateNames: string[];
+    totalCount: number;
+    newCount: number;
+    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+  } | null>(null);
 
   function downloadTemplate() {
     const headers = [
@@ -817,33 +835,81 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
 
   function submit() {
     if (!file) { toast.error("Choose a CSV or Excel file first"); return; }
+    const currentFile = file;
     const reader = new FileReader();
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const text = (event.target?.result as string) || "";
       const parsed = parseCsvLeads(text);
-      if (parsed.length > 0) {
-        const rows = parsed.map((l: any) => ({
-          fullName: l.display_name ?? l.masked_label,
-          source: mapToLeadSource(l.source),
-          services: l.services,
-          country: l.country || undefined,
-          profileLink: l.profile_link || undefined,
-          sourceLanguage: l.source_language || "English",
-          targetLanguage: l.target_language || l.language || "English",
-          email: l.email || undefined,
-          contactNumber: l.phone || undefined,
-          yearsOfExperience: l.years_experience || undefined,
-          vendorExperience: l.vendor_experience || undefined,
-        }));
+      if (parsed.length === 0) {
+        toast.info(`Uploaded ${currentFile.name}. Ensure sheet contains Name, Email, Language, or Service headers.`);
+        return;
+      }
+
+      const rows = parsed.map((l: any) => ({
+        fullName: l.display_name ?? l.masked_label,
+        source: mapToLeadSource(l.source),
+        services: l.services,
+        country: l.country || undefined,
+        profileLink: l.profile_link || undefined,
+        sourceLanguage: l.source_language || "English",
+        targetLanguage: l.target_language || l.language || "English",
+        email: l.email || undefined,
+        contactNumber: l.phone || undefined,
+        yearsOfExperience: l.years_experience || undefined,
+        vendorExperience: l.vendor_experience || undefined,
+      }));
+
+      setCheckingDuplicates(true);
+      try {
+        const dupRes = await api.checkBulkDuplicateLeads(
+          rows.map((r) => ({
+            fullName: r.fullName,
+            email: r.email ?? undefined,
+            contactNumber: r.contactNumber ?? undefined,
+            profileLink: r.profileLink ?? undefined,
+          }))
+        );
+        if (dupRes.hasDuplicates) {
+          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "…" : "");
+          toast.error(
+            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or import the rest.`,
+            { duration: 6000 }
+          );
+          setDuplicateCheckResult({
+            fileName: currentFile.name,
+            duplicateCount: dupRes.duplicateCount,
+            duplicateNames: dupRes.duplicateNames,
+            totalCount: dupRes.totalCount,
+            newCount: dupRes.newCount,
+            rows,
+          });
+        } else {
+          onSubmitRows(rows);
+          toast.success(`Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`);
+          setOpen(false);
+          setFile(null);
+        }
+      } catch {
+        // Precheck is a non-blocking convenience -- /api/leads/bulk still
+        // does its own real duplicate check server-side either way.
         onSubmitRows(rows);
-        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
+        toast.success(`Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`);
         setOpen(false);
         setFile(null);
-      } else {
-        toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Service headers.`);
+      } finally {
+        setCheckingDuplicates(false);
       }
     };
     reader.readAsText(file);
+  }
+
+  function importSkippingDuplicates() {
+    if (!duplicateCheckResult) return;
+    onSubmitRows(duplicateCheckResult.rows);
+    toast.success(`Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`);
+    setDuplicateCheckResult(null);
+    setOpen(false);
+    setFile(null);
   }
 
   return (
@@ -860,6 +926,32 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
             Upload a CSV or Excel file matching the SEARCH schema. Duplicates are auto-flagged.
           </DialogDescription>
         </DialogHeader>
+        {duplicateCheckResult && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
+                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
+                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
+            </div>
+            <p className="text-xs text-foreground leading-relaxed">
+              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
+              <span className="font-semibold text-destructive ml-1">{duplicateCheckResult.duplicateNames.join(", ")}</span>
+              . You can upload another file or import only the <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
+            </p>
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              {duplicateCheckResult.newCount > 0 && (
+                <Button type="button" size="sm" onClick={importSkippingDuplicates} className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5">
+                  Import {duplicateCheckResult.newCount} New Lead{duplicateCheckResult.newCount === 1 ? "" : "s"} Only
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={() => setDuplicateCheckResult(null)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="space-y-4">
           <button
             onClick={downloadTemplate}
@@ -873,7 +965,7 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setDuplicateCheckResult(null); }}
               className="mt-1 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
             />
             {file && <div className="mt-1 text-[11px] text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</div>}
@@ -881,7 +973,9 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
         </div>
         <DialogFooter>
           <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button size="sm" onClick={submit}>Upload</Button>
+          <Button size="sm" onClick={submit} disabled={checkingDuplicates}>
+            {checkingDuplicates ? "Checking for duplicates…" : "Upload"}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
