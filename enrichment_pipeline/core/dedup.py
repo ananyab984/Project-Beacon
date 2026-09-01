@@ -54,18 +54,6 @@ class DuplicateCandidate(TypedDict):
     resolution: Dict[str, Any]
 
 
-# Sentinel/placeholder strings confirmed present in real tracker data
-# (ProZ_Enrichment_Test_Cases_Formatted.xlsx uses the literal
-# "[Missing Input]" for every unfilled field) meaning "this was never
-# actually filled in," not a real value. Treating these as real data was a
-# live bug: two genuinely unrelated leads that both simply lack an email
-# would exact-match against each other at 100% confidence with zero AI
-# review, purely because they share the same placeholder text -- confirmed
-# live with real fixture-shaped data ("Jens Burgert" vs "Maria Rossi", both
-# Email_Address="[Missing Input]", flagged as an exact duplicate).
-_PLACEHOLDER_VALUES = {"[missing input]", "n/a", "na", "tbd", "unknown", "none"}
-
-
 def _strip_accents(s: str) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", s) if not unicodedata.combining(c))
 
@@ -74,25 +62,12 @@ def _normalize_text(v: Any) -> str:
     return re.sub(r"\s+", " ", _strip_accents(str(v)).strip().casefold())
 
 
-def _clean_text_field(v: Any) -> str:
-    """Normalized text, or "" if the value is empty OR a known placeholder
-    sentinel -- callers must treat "" identically to "field was never
-    provided" (no exact-match, no blocking-prefix credit)."""
-    if is_empty_value(v):
-        return ""
-    normalized = _normalize_text(v)
-    return "" if normalized in _PLACEHOLDER_VALUES else normalized
-
-
 def _normalize_email(v: Any) -> str:
-    return _clean_text_field(v)
+    return _normalize_text(v) if not is_empty_value(v) else ""
 
 
 def _normalize_phone(v: Any) -> str:
-    if is_empty_value(v):
-        return ""
-    digits = re.sub(r"[^\d]", "", str(v))
-    return digits
+    return re.sub(r"[^\d]", "", str(v)) if not is_empty_value(v) else ""
 
 
 def _email_username(v: Any) -> str:
@@ -105,8 +80,8 @@ def _name_tokens(lead: Dict[str, Any]) -> Tuple[str, str]:
     13-field schema, so last name is derived from the last token of Full_Name -- fine for
     blocking (a coarse, high-recall step), not precise enough to persist or trust alone.
     """
-    first = _clean_text_field(lead.get("First_Name"))
-    full = _clean_text_field(lead.get("Full_Name"))
+    first = _normalize_text(lead.get("First_Name")) if not is_empty_value(lead.get("First_Name")) else ""
+    full = _normalize_text(lead.get("Full_Name")) if not is_empty_value(lead.get("Full_Name")) else ""
     full_parts = full.split()
     if not first and full_parts:
         first = full_parts[0]
@@ -116,8 +91,8 @@ def _name_tokens(lead: Dict[str, Any]) -> Tuple[str, str]:
 
 def _name_similarity(lead_a: Dict[str, Any], lead_b: Dict[str, Any]) -> float:
     """Accent/case/whitespace-insensitive full-name similarity, tolerant of token reordering."""
-    a = _clean_text_field(lead_a.get("Full_Name"))
-    b = _clean_text_field(lead_b.get("Full_Name"))
+    a = _normalize_text(lead_a.get("Full_Name")) if not is_empty_value(lead_a.get("Full_Name")) else ""
+    b = _normalize_text(lead_b.get("Full_Name")) if not is_empty_value(lead_b.get("Full_Name")) else ""
     if not a or not b:
         return 0.0
     direct = difflib.SequenceMatcher(None, a, b).ratio()

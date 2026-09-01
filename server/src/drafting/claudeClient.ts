@@ -3,21 +3,17 @@
  * per this project's claude-api skill (the Python original used raw REST via
  * `requests`, so this is the one deliberate deviation from 1:1 porting).
  *
- * Retries now go through the shared retryWithBackoff utility (1s/2s/4s/8s,
- * 4 retries after the initial attempt) instead of this class's own inline
- * loop -- note this is a deliberate correction, not just a refactor: the
- * old inline formula (`retryBackoffBase ** (attempt + 1)`, capped at
- * `maxRetries` total attempts including the first) produced 4s/8s/16s
- * delays over only 4 total attempts, not the 1s/2s/4s/8s-over-5-attempts
- * contract every other retrying call in this server now follows. Layering
- * the SDK's own built-in retry underneath would still compound with this
- * loop, so the SDK client keeps maxRetries: 0 -- retryWithBackoff is the
- * only retry authority.
+ * The retry loop is kept as its own explicit outer loop (matching Python's
+ * flat max_retries/backoff design exactly) rather than layering the SDK's
+ * own built-in retry underneath it -- the two would compound (SDK retries a
+ * single call, this loop retries the whole call+parse), producing far more
+ * attempts than the four the service is configured for. The SDK client is
+ * constructed with maxRetries: 0 so this loop is the only retry authority,
+ * same as the original.
  */
 
 import Anthropic from "@anthropic-ai/sdk";
 import type { DraftingConfig } from "./config";
-import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 
 export class ClaudeError extends Error {}
 
@@ -108,40 +104,39 @@ export class ClaudeClient {
       (body as any).temperature = temperature;
     }
 
-    try {
-      return await retryWithBackoff(
-        async () => {
-          const started = Date.now();
-          const response = await this.client.messages.create(body);
-          const latencyMs = Date.now() - started;
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= this.cfg.maxRetries; attempt++) {
+      const started = Date.now();
+      try {
+        const response = await this.client.messages.create(body);
+        const latencyMs = Date.now() - started;
 
-          let text = response.content
-            .filter((b): b is Anthropic.TextBlock => b.type === "text")
-            .map((b) => b.text)
-            .join("");
-          if (jsonMode) {
-            text = extractJsonText(text);
-          }
-
-          return {
-            text,
-            model: response.model,
-            prompt_tokens: response.usage?.input_tokens ?? null,
-            completion_tokens: response.usage?.output_tokens ?? null,
-            latency_ms: latencyMs,
-          };
-        },
-        {
-          isRetryable: isRetryableByDefault,
-          onRetry: (err, attempt, delayMs) => {
-            console.warn(
-              `[claudeClient] Claude call failed (attempt ${attempt + 1}/5): ${(err as any)?.message || err} — retrying in ${(delayMs / 1000).toFixed(1)}s`
-            );
-          },
+        let text = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === "text")
+          .map((b) => b.text)
+          .join("");
+        if (jsonMode) {
+          text = extractJsonText(text);
         }
-      );
-    } catch (err: any) {
-      throw new ClaudeError(`Claude call failed after retries: ${err?.cause?.message ?? err?.message ?? err}`);
+
+        return {
+          text,
+          model: response.model,
+          prompt_tokens: response.usage?.input_tokens ?? null,
+          completion_tokens: response.usage?.output_tokens ?? null,
+          latency_ms: latencyMs,
+        };
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt >= this.cfg.maxRetries) break;
+        const delaySeconds = Math.pow(this.cfg.retryBackoffBase, attempt + 1);
+        console.warn(
+          `[claudeClient] Claude call failed (attempt ${attempt}/${this.cfg.maxRetries}): ${err?.message || err} — retrying in ${delaySeconds.toFixed(1)}s`
+        );
+        await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+      }
     }
+
+    throw new ClaudeError(`Claude call failed after ${this.cfg.maxRetries} attempts: ${(lastErr as any)?.message || lastErr}`);
   }
 }
