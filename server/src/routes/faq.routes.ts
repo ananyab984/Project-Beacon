@@ -26,11 +26,15 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "MISSING_LEAD_MESSAGE", message: "leadMessage is required" });
     }
 
+    console.log(`[FAQ] Incoming check request with message: "${leadMessage.substring(0, 100)}..."`);
+
     // Extract individual questions from the lead message (max 5)
     const extractedQuestions = extractQuestions(leadMessage);
+    console.log(`[FAQ] Extracted ${extractedQuestions.length} questions`);
 
     // Also extract FAQ keywords for better coverage of run-on sentences
     const extractedKeywords = extractKeywords(leadMessage);
+    console.log(`[FAQ] Extracted ${extractedKeywords.length} keywords: [${extractedKeywords.join(", ")}]`);
 
     // Search each question independently
     const allMatches: Array<{
@@ -47,26 +51,32 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
     const searchTerms = [...extractedQuestions, ...extractedKeywords];
 
     for (const question of searchTerms) {
-      const matches = await prisma.$queryRaw<
-        Array<{ id: string; question: string; answer: string; rank: number; sim: number; tag_match: number }>
-      >`
-        SELECT id, question, answer,
-          ts_rank(search_vector, plainto_tsquery('english', ${question})) AS rank,
-          similarity(question, ${question}) AS sim,
-          CASE
-            WHEN array_to_string(tags, ' ') ILIKE '%' || ${question} || '%' THEN 1
-            ELSE 0
-          END AS tag_match
-        FROM faq_entries
-        WHERE is_active = true
-          AND (search_vector @@ plainto_tsquery('english', ${question})
-               OR similarity(question, ${question}) > 0.25
-               OR array_to_string(tags, ' ') ILIKE '%' || ${question} || '%')
-        ORDER BY tag_match DESC, rank DESC, sim DESC
-        LIMIT 1
-      `;
+      try {
+        const matches = await prisma.$queryRaw<
+          Array<{ id: string; question: string; answer: string; rank: number; sim: number; tag_match: number }>
+        >`
+          SELECT id, question, answer,
+            COALESCE(ts_rank(search_vector, plainto_tsquery('english', ${question})), 0) AS rank,
+            COALESCE(similarity(question, ${question}), 0) AS sim,
+            CASE
+              WHEN array_to_string(tags, ' ') ILIKE '%' || ${question} || '%' THEN 1
+              ELSE 0
+            END AS tag_match
+          FROM faq_entries
+          WHERE is_active = true
+            AND (search_vector @@ plainto_tsquery('english', ${question})
+                 OR similarity(question, ${question}) > 0.25
+                 OR array_to_string(tags, ' ') ILIKE '%' || ${question} || '%')
+          ORDER BY tag_match DESC, rank DESC, sim DESC
+          LIMIT 1
+        `;
 
-      const top = matches[0];
+        const top = matches[0];
+
+        // Log for debugging if query returns no results
+        if (!top) {
+          console.warn(`[FAQ] No match found for term: "${question}"`);
+        }
       // Stricter thresholds: tag match always passes, but non-tag matches need higher scores
       // For short keywords (rates, pmt, etc): tag_match=1 required OR (rank >= 0.3 AND sim >= 0.35)
       // For longer questions: more lenient (rank >= 0.2 OR sim >= 0.3) works
@@ -87,11 +97,19 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
           sim: top.sim,
           tag_match: top.tag_match,
         });
-      } else {
-        // No match for this question
+        } else {
+          // No match for this question
+          allMatches.push({ originalQuestion: question });
+        }
+      } catch (err: any) {
+        console.error(`[FAQ] Database query failed for term "${question}":`, err.message);
+        // Treat query errors as no match (don't crash the request)
         allMatches.push({ originalQuestion: question });
       }
     }
+
+    // Log search results for debugging
+    console.log(`[FAQ] Search completed: ${searchTerms.length} terms, ${allMatches.filter(m => m.faqId).length} matches found`);
 
     // Deduplicate: same FAQ matching multiple questions shows only once
     const deduped = deduplicateMatches(allMatches);
