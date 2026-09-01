@@ -547,9 +547,34 @@ leadRouter.post(
   "/bulk",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const rows = z.array(createLeadSchema).max(2000).parse(req.body?.leads ?? []);
+    const rawRows = z.array(z.unknown()).max(2000).parse(req.body?.leads ?? []);
     const role = req.user!.role.toLowerCase() as Role;
-    const results = await createLeadsFromRows(rows, req.user!.id, role);
+
+    // Validate every row independently -- one malformed row (e.g. a garbled
+    // email from a bad file parse) must not sink the whole batch. This used
+    // to be a single z.array(createLeadSchema).parse() over all rows, so one
+    // invalid row threw one aggregated ZodError and silently discarded every
+    // valid row alongside it instead of importing what it could.
+    const results: BulkResult[] = new Array(rawRows.length);
+    const validRows: { originalIndex: number; row: BulkRow }[] = [];
+    rawRows.forEach((raw, index) => {
+      const parsed = createLeadSchema.safeParse(raw);
+      if (parsed.success) {
+        validRows.push({ originalIndex: index, row: parsed.data });
+      } else {
+        results[index] = {
+          index,
+          status: "error",
+          message: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "),
+        };
+      }
+    });
+
+    const createdResults = await createLeadsFromRows(validRows.map((v) => v.row), req.user!.id, role);
+    createdResults.forEach((r, i) => {
+      results[validRows[i].originalIndex] = { ...r, index: validRows[i].originalIndex };
+    });
+
     return res.status(201).json({ results });
   })
 );

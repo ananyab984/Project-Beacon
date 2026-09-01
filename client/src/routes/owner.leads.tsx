@@ -232,8 +232,24 @@ function LeadsPage() {
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
       const duplicates = res.results.filter((r) => r.status === "duplicate").length;
-      if (duplicates > 0) {
-        toast.info(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}. ${duplicates} duplicate(s) were excluded.`);
+      const errors = res.results.filter((r) => r.status === "error").length;
+      // Zero leads actually created must never read as a success toast --
+      // this used to only branch on `duplicates > 0`, so 0 succeeded + 0
+      // duplicates (e.g. every row failing validation) fell through to
+      // toast.success("Imported 0 unique leads."), which reads as "added"
+      // when nothing was.
+      if (succeeded === 0) {
+        toast.error(
+          errors > 0
+            ? `No leads imported — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
+            : `No leads imported — all ${duplicates} row(s) were duplicates.`
+        );
+      } else if (duplicates > 0 || errors > 0) {
+        toast.info(
+          `Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
+            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
+            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
+        );
       } else {
         toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
       }

@@ -9,9 +9,10 @@ import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ApiLead, LeadSource } from "@/lib/api-types";
-import { parseCsvLeads } from "@/lib/g3-mock";
+import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import { STANDARD_LANGUAGES as LANGUAGES } from "@/lib/languages";
 import { STANDARD_SERVICES as SERVICES } from "@/lib/services";
+import * as XLSX from "xlsx";
 
 const SOURCES = [
   "LinkedIn",
@@ -51,7 +52,7 @@ export function ContractorAddLeadDialog({
   const setOpen = controlledSetOpen ?? setInternalOpen;
   const [values, setValues] = useState({
     first_name: "",
-    full_name: "",
+    last_name: "",
     country_of_residence: "Germany",
     source: "LinkedIn",
     profile_link: "",
@@ -85,7 +86,27 @@ export function ContractorAddLeadDialog({
     mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
-      toast.success(`Imported ${succeeded} of ${res.results.length} rows`);
+      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
+      const errors = res.results.filter((r) => r.status === "error").length;
+      // A batch that produced zero real leads must never read as success --
+      // this used to always call toast.success regardless of outcome, so
+      // e.g. "Imported 0 of 12 rows" (all duplicates or all invalid) still
+      // showed a green success toast.
+      if (succeeded === 0) {
+        toast.error(
+          errors > 0
+            ? `No leads submitted — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
+            : `No leads submitted — all ${duplicates} row(s) were duplicates.`
+        );
+      } else if (duplicates > 0 || errors > 0) {
+        toast.info(
+          `Submitted ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
+            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
+            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
+        );
+      } else {
+        toast.success(`Submitted ${succeeded} of ${res.results.length} rows`);
+      }
       invalidateLeads();
       setOpen(false);
     },
@@ -100,7 +121,7 @@ export function ContractorAddLeadDialog({
 
   function validate() {
     const next: Record<string, string> = {};
-    if (!values.full_name.trim()) next.full_name = "Full name is required";
+    if (!values.last_name.trim()) next.last_name = "Last name is required";
     if (!values.source) next.source = "Source is required";
     if (values.services === "Custom" && !customService.trim()) {
       next.services = "Please enter custom service name";
@@ -115,12 +136,13 @@ export function ContractorAddLeadDialog({
   async function onCheck() {
     if (!validate()) return;
     try {
+      const fullName = [values.first_name.trim(), values.last_name.trim()].filter(Boolean).join(" ");
       const res = await api.checkDuplicateLead({
         email: values.email_address || undefined,
         contactNumber: values.contact_number || undefined,
-        fullName: values.full_name.trim(),
+        fullName,
       });
-      setDup({ checked: true, hit: res.isDuplicate, matchName: res.isDuplicate ? values.full_name.trim() : undefined });
+      setDup({ checked: true, hit: res.isDuplicate, matchName: res.isDuplicate ? fullName : undefined });
     } catch (err: any) {
       toast.error(err?.message ?? "Duplicate check failed");
     }
@@ -130,7 +152,7 @@ export function ContractorAddLeadDialog({
     e.preventDefault();
     if (!validate()) return;
 
-    const trimmed = values.full_name.trim();
+    const trimmed = [values.first_name.trim(), values.last_name.trim()].filter(Boolean).join(" ");
     const resolvedService = values.services === "Custom" ? customService.trim() : values.services;
     // No fake fallback here -- an unselected service must stay genuinely
     // empty, not a guessed default the drafting prompt would later treat
@@ -182,69 +204,97 @@ export function ContractorAddLeadDialog({
   } | null>(null);
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const isExcel = /\.xlsx?$/i.test(file.name);
     const reader = new FileReader();
-    reader.onload = async (event) => {
-      const text = (event.target?.result as string) || "";
-      const parsed = parseCsvLeads(text);
-      if (parsed.length > 0) {
-        const rows = parsed.map((l) => ({
-          fullName: l.display_name ?? l.masked_label,
-          source: mapToLeadSource(l.source),
-          services: l.services,
-          targetLanguage: l.language,
-          email: l.email || undefined,
-          contactNumber: l.phone || undefined,
-        }));
 
-        setCheckingDuplicates(true);
-        try {
-          const dupRes = await api.checkBulkDuplicateLeads(
-            rows.map((r) => ({ fullName: r.fullName, email: r.email, contactNumber: r.contactNumber }))
-          );
-
-          if (dupRes.hasDuplicates) {
-            const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "..." : "");
-            toast.error(
-              `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or skip duplicates.`,
-              { duration: 6000 }
-            );
-            setDuplicateCheckResult({
-              fileName: file.name,
-              duplicateCount: dupRes.duplicateCount,
-              duplicateNames: dupRes.duplicateNames,
-              totalCount: dupRes.totalCount,
-              newCount: dupRes.newCount,
-              rows,
-            });
-          } else {
-            bulkCreateMutation.mutate(rows);
-            toast.success(`Uploaded ${file.name}. Submitting ${parsed.length} candidate leads…`);
-            setDuplicateCheckResult(null);
-          }
-        } catch {
-          bulkCreateMutation.mutate(rows);
-        } finally {
-          setCheckingDuplicates(false);
-          e.target.value = "";
-        }
-      } else {
+    const finish = async (parsed: ReturnType<typeof parseCsvLeads>) => {
+      if (parsed.length === 0) {
         toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Services columns.`);
+        e.target.value = "";
+        return;
+      }
+
+      const rows = parsed.map((l) => ({
+        fullName: l.display_name ?? l.masked_label,
+        source: mapToLeadSource(l.source),
+        services: l.services,
+        targetLanguage: l.language,
+        email: l.email || undefined,
+        contactNumber: l.phone || undefined,
+      }));
+
+      setCheckingDuplicates(true);
+      try {
+        const dupRes = await api.checkBulkDuplicateLeads(
+          rows.map((r) => ({ fullName: r.fullName, email: r.email, contactNumber: r.contactNumber }))
+        );
+
+        if (dupRes.hasDuplicates) {
+          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "..." : "");
+          toast.error(
+            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or skip duplicates.`,
+            { duration: 6000 }
+          );
+          setDuplicateCheckResult({
+            fileName: file.name,
+            duplicateCount: dupRes.duplicateCount,
+            duplicateNames: dupRes.duplicateNames,
+            totalCount: dupRes.totalCount,
+            newCount: dupRes.newCount,
+            rows,
+          });
+        } else {
+          bulkCreateMutation.mutate(rows);
+          toast.success(`Uploaded ${file.name}. Submitting ${parsed.length} candidate leads…`);
+          setDuplicateCheckResult(null);
+        }
+      } catch {
+        bulkCreateMutation.mutate(rows);
+      } finally {
+        setCheckingDuplicates(false);
         e.target.value = "";
       }
     };
-    reader.readAsText(file);
+
+    if (isExcel) {
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          // See add-lead-dialog.tsx's identical fix -- reading a binary
+          // .xlsx/.xls file with readAsText() produces garbled noise in
+          // every field, not delimited text, which is why every row's email
+          // used to fail validation regardless of the sheet's real content.
+          const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          const stringRows = rows.map((row) => row.map((cell) => String(cell ?? "")));
+          finish(mapRowsToLeads(stringRows));
+        } catch (err: any) {
+          toast.error(`Could not read ${file.name} as an Excel file: ${err?.message || "unknown error"}`);
+          e.target.value = "";
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (event) => {
+        const text = (event.target?.result as string) || "";
+        finish(parseCsvLeads(text));
+      };
+      reader.readAsText(file);
+    }
   };
 
   const handleImportSkippingDuplicates = () => {
     if (!duplicateCheckResult) return;
+    // The mutation-level onSuccess above reports the real, server-verified
+    // outcome (including a "0 succeeded" case) -- avoid repeating a
+    // pre-check-numbers toast here that could say "Submitted N" even when
+    // the server rejected those rows.
     bulkCreateMutation.mutate(duplicateCheckResult.rows, {
-      onSuccess: () => {
-        toast.success(`Submitted ${duplicateCheckResult.newCount} new leads (skipped ${duplicateCheckResult.duplicateCount} existing duplicates).`);
-        setDuplicateCheckResult(null);
-      },
+      onSuccess: () => setDuplicateCheckResult(null),
     });
   };
 
@@ -352,8 +402,8 @@ export function ContractorAddLeadDialog({
             <Input value={values.first_name} onChange={(e) => set("first_name", e.target.value)} placeholder="Alex" />
           </Field>
 
-          <Field label="Full Name *" error={errors.full_name}>
-            <Input value={values.full_name} onChange={(e) => set("full_name", e.target.value)} placeholder="Alex Chen" />
+          <Field label="Last Name *" error={errors.last_name}>
+            <Input value={values.last_name} onChange={(e) => set("last_name", e.target.value)} placeholder="Chen" />
           </Field>
 
           <Field label="Country of Residence" error={errors.country_of_residence}>
