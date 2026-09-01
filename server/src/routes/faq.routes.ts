@@ -8,17 +8,16 @@ import { prisma } from "../prisma";
 import { generateFaqReply, generateFaqKeywords } from "../drafting/draftGenerator";
 import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
+import { extractQuestions, deduplicateMatches } from "../lib/questionExtractor";
 
 export const faqRouter = Router();
 
 faqRouter.use(authenticateJwt);
 
-// POST /api/faq/check — button-triggered: takes the lead's latest reply text
-// and looks it up against faq_entries via ranked full-text + trigram + tag match
-// (structured lookup, not vector RAG). Only if the match clears a confidence
-// floor does it call the drafting service to phrase the matched answer;
-// otherwise it returns match:false. Never auto-sends -- the frontend only
-// autofills the compose box, which still requires a human Send click.
+// POST /api/faq/check — button-triggered: takes the lead's latest reply text,
+// extracts individual questions, and looks them up against faq_entries via
+// ranked full-text + trigram + tag match. Combines matching answers into one
+// response and flags unanswered questions. Returns match: "full"|"partial"|"none".
 faqRouter.post("/check", async (req: Request, res: Response) => {
   try {
     const { leadMessage } = req.body || {};
@@ -26,38 +25,74 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "MISSING_LEAD_MESSAGE", message: "leadMessage is required" });
     }
 
-    const matches = await prisma.$queryRaw<
-      Array<{ id: string; question: string; answer: string; rank: number; sim: number; tag_match: number }>
-    >`
-      SELECT id, question, answer,
-        ts_rank(search_vector, plainto_tsquery('english', ${leadMessage})) AS rank,
-        similarity(question, ${leadMessage}) AS sim,
-        CASE
-          WHEN array_to_string(tags, ' ') ILIKE '%' || ${leadMessage} || '%' THEN 1
-          ELSE 0
-        END AS tag_match
-      FROM faq_entries
-      WHERE is_active = true
-        AND (search_vector @@ plainto_tsquery('english', ${leadMessage})
-             OR similarity(question, ${leadMessage}) > 0.25
-             OR array_to_string(tags, ' ') ILIKE '%' || ${leadMessage} || '%')
-      ORDER BY tag_match DESC, rank DESC, sim DESC
-      LIMIT 1
-    `;
+    // Extract individual questions from the lead message (max 5)
+    const extractedQuestions = extractQuestions(leadMessage);
 
-    const top = matches[0];
-    // Tag matches bypass the strict threshold: direct keyword hits are trusted.
-    // For non-tag matches, both rank >= 0.3 AND similarity >= 0.4 must be met
-    // to prevent loose matches like "contract" matching unrelated FAQs.
-    if (!top || (top.tag_match === 0 && (top.rank < 0.3 || top.sim < 0.4))) {
-      return res.json({ match: false });
+    // Search each question independently
+    const allMatches: Array<{
+      originalQuestion: string;
+      faqId?: string;
+      question?: string;
+      answer?: string;
+      rank?: number;
+      sim?: number;
+      tag_match?: number;
+    }> = [];
+
+    for (const question of extractedQuestions) {
+      const matches = await prisma.$queryRaw<
+        Array<{ id: string; question: string; answer: string; rank: number; sim: number; tag_match: number }>
+      >`
+        SELECT id, question, answer,
+          ts_rank(search_vector, plainto_tsquery('english', ${question})) AS rank,
+          similarity(question, ${question}) AS sim,
+          CASE
+            WHEN array_to_string(tags, ' ') ILIKE '%' || ${question} || '%' THEN 1
+            ELSE 0
+          END AS tag_match
+        FROM faq_entries
+        WHERE is_active = true
+          AND (search_vector @@ plainto_tsquery('english', ${question})
+               OR similarity(question, ${question}) > 0.25
+               OR array_to_string(tags, ' ') ILIKE '%' || ${question} || '%')
+        ORDER BY tag_match DESC, rank DESC, sim DESC
+        LIMIT 1
+      `;
+
+      const top = matches[0];
+      // Tag matches bypass strict threshold; non-tag matches need both rank >= 0.3 AND sim >= 0.4
+      if (top && (top.tag_match === 1 || (top.rank >= 0.3 && top.sim >= 0.4))) {
+        allMatches.push({
+          originalQuestion: question,
+          faqId: top.id,
+          question: top.question,
+          answer: top.answer,
+          rank: top.rank,
+          sim: top.sim,
+          tag_match: top.tag_match,
+        });
+      } else {
+        // No match for this question
+        allMatches.push({ originalQuestion: question });
+      }
     }
 
+    // Deduplicate: same FAQ matching multiple questions shows only once
+    const deduped = deduplicateMatches(allMatches);
+    const matchedFaqs = Array.from(deduped.values());
+    const unansweredQuestions = allMatches.filter((m) => !m.faqId).map((m) => m.originalQuestion);
+
+    // No matches at all
+    if (matchedFaqs.length === 0) {
+      return res.json({ match: "none", answers: [], unansweredQuestions });
+    }
+
+    // Generate combined response using Claude
     let phrased;
     try {
       const draftingConfig = loadDraftingConfig();
       const client = new ClaudeClient(draftingConfig);
-      phrased = await generateFaqReply(client, draftingConfig, leadMessage, top.question, top.answer);
+      phrased = await generateFaqReply(client, draftingConfig, leadMessage, matchedFaqs, unansweredQuestions);
       if (!phrased || typeof phrased.body !== "string" || !phrased.body.trim()) {
         throw new Error("FAQ reply generation returned an unexpected response shape");
       }
@@ -68,7 +103,13 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       });
     }
 
-    return res.json({ match: true, answer: phrased.body, matchedQuestion: top.question });
+    const matchType = unansweredQuestions.length === 0 ? "full" : "partial";
+    return res.json({
+      match: matchType,
+      answer: phrased.body,
+      answers: matchedFaqs.map((f) => ({ topic: f.question, answer: f.answer })),
+      unansweredQuestions,
+    });
   } catch (err: any) {
     const status = err.statusCode || 500;
     const code = err.code || "FAQ_CHECK_FAILED";

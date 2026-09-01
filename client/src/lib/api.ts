@@ -86,6 +86,14 @@ export interface UpdateFaqInput {
   isActive?: boolean;
 }
 
+export interface FaqCheckResponse {
+  match: "full" | "partial" | "none";
+  answer?: string;
+  answers?: Array<{ topic: string; answer: string }>;
+  matchedQuestion?: string;
+  unansweredQuestions: string[];
+}
+
 export const api = {
   // -------------------- leads --------------------
 
@@ -470,9 +478,9 @@ export const api = {
 
   // -------------------- FAQ --------------------
 
-  /** Check a lead's message against the FAQ table (button-triggered, structured lookup) */
-  async checkFaq(leadMessage: string): Promise<{ match: boolean; answer?: string; matchedQuestion?: string }> {
-    return request("/api/faq/check", { method: "POST", body: JSON.stringify({ leadMessage }) });
+  /** Check a lead's message against the FAQ table (button-triggered, multi-question support) */
+  async checkFaq(leadMessage: string): Promise<FaqCheckResponse> {
+    return request<FaqCheckResponse>("/api/faq/check", { method: "POST", body: JSON.stringify({ leadMessage }) });
   },
 
   /** List all FAQ entries */

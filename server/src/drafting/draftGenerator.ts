@@ -199,24 +199,55 @@ export async function generateFaqReply(
   client: ClaudeClient,
   cfg: DraftingConfig,
   leadMessage: string,
-  faqQuestion: string,
-  faqAnswer: string
+  faqQuestionOrFaqs: string | Array<{ question: string; answer: string }>,
+  faqAnswerOrUnanswered?: string | string[]
 ): Promise<FaqReply> {
+  // Support both single FAQ (legacy) and multiple FAQs (multi-question)
+  const isMultipleFaqs = Array.isArray(faqQuestionOrFaqs);
+
   const system = `You are a professional, knowledgeable support representative responding to candidate inquiries.
-Your task is to answer the candidate's question in a sophisticated, well-articulated way, drawing from the FAQ answer provided.
+Your task is to answer candidate questions in a sophisticated, well-articulated way, drawing from the provided FAQ answers.
 
-GROUNDING REQUIREMENT: All core information must be grounded in the FAQ answer. Do not invent facts, timelines, rates, or policy details not present in the FAQ.
+GROUNDING REQUIREMENT: All core information must be grounded in the provided FAQ answers. Do not invent facts, timelines, rates, or policy details not present in the FAQs.
 
-SOPHISTICATION REQUIREMENT: Rephrase and contextualize the FAQ answer to directly address the candidate's specific question. Use clear, professional language. Avoid sounding like copy-paste FAQ text. Instead:
-- Adapt your phrasing to their specific question or concern
+SOPHISTICATION REQUIREMENT: Rephrase and contextualize the FAQ answers to directly address the candidate's specific questions. Use clear, professional language. Avoid sounding like copy-paste FAQ text. Instead:
+- Adapt your phrasing to their specific questions or concerns
 - Use sophisticated vocabulary and sentence structure
 - Add relevant context or emphasis where appropriate
 - Break up dense information into digestible points
 - Sound like a knowledgeable person, not a script
 
+${isMultipleFaqs ? "MULTI-QUESTION: The candidate asked multiple questions. Answer all that you have FAQ information for in a single, flowing response. For questions without FAQ info, acknowledge them briefly and note they'll require manual follow-up." : ""}
+
 Your response should feel personalized and thoughtful, while remaining 100% factually grounded in the FAQ content.`;
 
-  const user = `Candidate's question: "${leadMessage}"
+  let user: string;
+
+  if (isMultipleFaqs) {
+    const faqs = faqQuestionOrFaqs as Array<{ question: string; answer: string }>;
+    const unanswered = (faqAnswerOrUnanswered as string[]) || [];
+
+    const faqText = faqs
+      .map((f, i) => `FAQ ${i + 1}:\nQuestion: ${f.question}\nAnswer: ${f.answer}`)
+      .join("\n\n");
+
+    const unansweredText =
+      unanswered.length > 0
+        ? `\n\nQuestions without FAQ coverage (acknowledge but note manual follow-up required):\n${unanswered.map((q) => `- ${q}`).join("\n")}`
+        : "";
+
+    user = `Candidate's message: "${leadMessage}"
+
+${faqText}${unansweredText}
+
+Provide a single, flowing response that addresses all the questions you have FAQ answers for.
+Use professional language, avoid sounding like a script, and acknowledge any unanswered questions briefly.
+Keep it concise (2-3 paragraphs), but make every sentence count with clarity and professionalism.`;
+  } else {
+    const faqQuestion = faqQuestionOrFaqs as string;
+    const faqAnswer = faqAnswerOrUnanswered as string;
+
+    user = `Candidate's question: "${leadMessage}"
 
 FAQ entry:
 Question: ${faqQuestion}
@@ -225,6 +256,7 @@ Answer: ${faqAnswer}
 Provide a sophisticated, well-articulated response to their specific question using the FAQ answer as your source material.
 Adapt your phrasing to their question, use professional language, and avoid sounding like a generic copy-paste.
 Keep it concise (1-2 paragraphs), but make every sentence count with clarity and professionalism.`;
+  }
 
   const completion = await client.chat(system, user, {
     model: cfg.genModel,

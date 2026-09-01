@@ -5,9 +5,9 @@ import { api } from "@/lib/api";
  * Shared "Check FAQ" flow used by the LinkedIn conversation compose box and the
  * email queue compose box.
  *
- * Runs the candidate's latest message through the structured FAQ lookup and,
- * on a confident match, auto-fills the compose draft. Never auto-sends -- the
- * recruiter still has to press Send.
+ * Handles multi-question detection: extracts individual questions, searches each,
+ * and returns combined draft for answered questions + notification for unanswered ones.
+ * Never auto-sends -- the recruiter still has to press Send.
  */
 export async function checkFaqAndAutofill(
   message: string | undefined | null,
@@ -22,13 +22,41 @@ export async function checkFaqAndAutofill(
   setLoading(true);
   try {
     const result = await api.checkFaq(message);
+
     // Guard against hallucinated refusals: detect "I don't have", "unable to answer",
     // "not available" patterns that indicate the model refused instead of grounding.
     const isRefusal = result.answer && /unable|don't (have|know)|no information|not available/i.test(result.answer);
 
-    if (result.match && result.answer && !isRefusal) {
+    if (result.match === "none") {
+      // No matches for any questions
+      toast.info("No confident FAQ match for this reply");
+    } else if ((result.match === "full" || result.match === "partial") && result.answer && !isRefusal) {
+      // Full or partial match: autofill the draft
       setDraft(result.answer);
-      toast.success(`FAQ match found: "${result.matchedQuestion}"`);
+
+      if (result.match === "full") {
+        toast.success("FAQ match found — draft auto-filled");
+      } else {
+        // Partial match: some questions answered, some need manual entry
+        const unansweredCount = result.unansweredQuestions?.length || 0;
+        toast.success(
+          `FAQ match found for ${result.answers?.length || 0} question${(result.answers?.length || 0) !== 1 ? "s" : ""}. ` +
+            `${unansweredCount} question${unansweredCount !== 1 ? "s" : ""} require${unansweredCount !== 1 ? "" : "s"} manual entry.`
+        );
+
+        // Show which questions need manual entry
+        if (unansweredCount > 0) {
+          const questionsList = result.unansweredQuestions
+            .slice(0, 2)
+            .map((q) => `"${q.substring(0, 50)}${q.length > 50 ? "..." : ""}"`)
+            .join(", ");
+          const moreText = unansweredCount > 2 ? ` (+${unansweredCount - 2} more)` : "";
+          toast.info(`Questions to answer manually: ${questionsList}${moreText}`);
+        }
+      }
+    } else if (result.answer && isRefusal) {
+      // Model hallucinated a refusal instead of grounding
+      toast.info("No confident FAQ match for this reply (model refusal detected)");
     } else {
       toast.info("No confident FAQ match for this reply");
     }
