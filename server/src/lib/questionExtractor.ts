@@ -1,3 +1,27 @@
+/** FAQ-related keywords to extract from messages.
+ * Covers common recruiter/lead questions: rates, payment, training, location, etc. */
+const FAQ_KEYWORDS = [
+  "rates",
+  "payment",
+  "salary",
+  "pay",
+  "pmt",
+  "training",
+  "onboarding",
+  "schedule",
+  "timeline",
+  "duration",
+  "onsite",
+  "remote",
+  "location",
+  "contract",
+  "terms",
+  "cycle",
+  "benefits",
+  "job type",
+  "work type",
+];
+
 /** Extract individual questions from a lead's message.
  * Handles various formats: punctuation, typos, run-on sentences.
  * Caps at 5 questions to avoid processing rants. */
@@ -15,6 +39,20 @@ export function extractQuestions(message: string): string[] {
   const questions = sentences.slice(0, 5);
 
   return questions.length > 0 ? questions : [message.trim()];
+}
+
+/** Extract FAQ-specific keywords from a message.
+ * Helps catch keywords buried in run-on sentences.
+ * Example: "tell me the rates" → ["rates"] */
+export function extractKeywords(message: string): string[] {
+  if (!message || typeof message !== "string") return [];
+
+  const lowerMessage = message.toLowerCase();
+  const foundKeywords = FAQ_KEYWORDS.filter((keyword) =>
+    lowerMessage.includes(keyword.toLowerCase())
+  );
+
+  return [...new Set(foundKeywords)];
 }
 
 /** Deduplicate FAQ results: if same FAQ matches multiple questions, keep only one.

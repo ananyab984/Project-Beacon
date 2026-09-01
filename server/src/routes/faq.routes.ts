@@ -8,7 +8,7 @@ import { prisma } from "../prisma";
 import { generateFaqReply, generateFaqKeywords } from "../drafting/draftGenerator";
 import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
-import { extractQuestions, deduplicateMatches } from "../lib/questionExtractor";
+import { extractQuestions, extractKeywords, deduplicateMatches } from "../lib/questionExtractor";
 
 export const faqRouter = Router();
 
@@ -29,6 +29,9 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
     // Extract individual questions from the lead message (max 5)
     const extractedQuestions = extractQuestions(leadMessage);
 
+    // Also extract FAQ keywords for better coverage of run-on sentences
+    const extractedKeywords = extractKeywords(leadMessage);
+
     // Search each question independently
     const allMatches: Array<{
       originalQuestion: string;
@@ -40,7 +43,10 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       tag_match?: number;
     }> = [];
 
-    for (const question of extractedQuestions) {
+    // Combine questions and keywords for searching
+    const searchTerms = [...extractedQuestions, ...extractedKeywords];
+
+    for (const question of searchTerms) {
       const matches = await prisma.$queryRaw<
         Array<{ id: string; question: string; answer: string; rank: number; sim: number; tag_match: number }>
       >`

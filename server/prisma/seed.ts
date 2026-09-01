@@ -120,7 +120,7 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
     category: "Voice Artists",
     question: "You indicated that a \"larger payment\" would be offered if the project moves forward, but I need to understand what that means in concrete terms.",
     answer: "We can share rates after an NDA is signed (but before any recording is commissioned). If a customer wants to use your voice for a dubbing or VO project, you are presented with a new agreement for that customer/use case. If you agree with the terms and want your voice to be used for that project, you will be compensated for that project. If you don't agree with the terms for that project, then you can simply say \"No, thank you\" and your voice won't be used.",
-    tags: ["rates", "payment", "compensation"],
+    tags: ["rates", "payment", "compensation", "salary", "pmt", "pay"],
   },
   {
     id: "faq_voice_royalties_notification",
@@ -205,14 +205,14 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
     category: "Billing and Payment",
     question: "What are the payment terms? (excluding voice actors)",
     answer: "The payment terms are in your contract (Exhibit A) - Net30. That is: 30 days from the end of the month in which the services were provided. We would need your invoice before the 5th of the following month so we can process the payment on a timely basis.",
-    tags: ["payment", "terms", "net30"],
+    tags: ["payment", "terms", "net30", "pmt", "pay"],
   },
   {
     id: "faq_payment_methods",
     category: "Billing and Payment",
     question: "What payment methods do you accept, and who covers transfer fees?",
     answer: "We accept the following payment methods: • WISE (preferred) – Global3 covers all transfer fees • PayPal – You can choose to cover the fee or we can split it. Payment Terms: Net 30 (invoices are paid within 30 days of submission)",
-    tags: ["payment", "methods", "transfer"],
+    tags: ["payment", "methods", "transfer", "pmt", "pay"],
   },
   // Onboarding Queries
   {
@@ -248,14 +248,14 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
     category: "Onboarding Queries",
     question: "How and when do I get paid?",
     answer: "Payment terms are Net 30. Invoices are submitted monthly by the 5th via this form: https://tally.so/r/w842z5",
-    tags: ["payment", "timing", "invoice"],
+    tags: ["payment", "timing", "invoice", "pmt", "pay"],
   },
   {
     id: "faq_payment_methods_support",
     category: "Onboarding Queries",
     question: "What payment methods do you support?",
     answer: "WISE is preferred (G3 covers the transfer fees); PayPal is also accepted.",
-    tags: ["payment", "methods", "support"],
+    tags: ["payment", "methods", "support", "pmt", "pay"],
   },
   {
     id: "faq_training_required",
@@ -311,7 +311,7 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
     category: "Onboarding Queries",
     question: "What are the standard rates for my language and service type?",
     answer: "Rates vary by language, service type, and project complexity. Here are some examples: • Subtitle Creation: varies per RTM • Subtitle QC: varies per RTM • Dubbing Adaptation (Lip-sync): varies per RTM • Dubbing QC: varies per RTM. Note: For linguists with exceptional experience and specialized skills, we do consider premium rates on a case-by-case basis. Specific rates for your language pair will be communicated during project assignment.",
-    tags: ["rates", "pricing", "language"],
+    tags: ["rates", "pricing", "language", "salary", "pmt"],
   },
   {
     id: "faq_voice_training_ai",
@@ -340,7 +340,7 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
     category: "Voice Cloning Training",
     question: "Is the $500 payment meant to cover both the training and the creation of one voice model only, or does it also include the second model?",
     answer: "Training + 1st voice model is $500. The second voice model will be an additional $500.",
-    tags: ["payment", "rate", "voice model"],
+    tags: ["payment", "rate", "voice model", "pmt", "pay"],
   },
   {
     id: "faq_voice_training_audio_material",
@@ -375,7 +375,7 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
     category: "Voice Cloning Training",
     question: "Will the QC tasks be paid per hour or per runtime minute?",
     answer: "The rates will be confirmed next week.",
-    tags: ["qc", "rate", "payment"],
+    tags: ["qc", "rate", "payment", "pmt", "pay"],
   },
   {
     id: "faq_voice_training_availability",
