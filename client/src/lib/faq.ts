@@ -23,9 +23,9 @@ export async function checkFaqAndAutofill(
   try {
     const result = await api.checkFaq(message);
 
-    // Guard against hallucinated refusals: detect "I don't have", "unable to answer",
-    // "not available" patterns that indicate the model refused instead of grounding.
-    const isRefusal = result.answer && /unable|don't (have|know)|no information|not available/i.test(result.answer);
+    // Guard against hallucinated refusals: detect strong refusal patterns
+    // (not just hedging language which is acceptable)
+    const isRefusal = result.answer && /^(i'm unable|unable to answer|i don't have information|no information available|i cannot provide|not available to|unfortunately i|i regret to inform)/i.test(result.answer);
 
     if (result.match === "none") {
       // No matches for any questions

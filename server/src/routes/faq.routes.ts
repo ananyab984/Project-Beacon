@@ -67,9 +67,17 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       `;
 
       const top = matches[0];
-      // Loosened thresholds for multilingual leads (non-native English, no punctuation)
-      // Tag matches always pass; non-tag matches use OR logic to catch more variations
-      if (top && (top.tag_match === 1 || top.rank >= 0.2 || top.sim >= 0.3)) {
+      // Stricter thresholds: tag match always passes, but non-tag matches need higher scores
+      // For short keywords (rates, pmt, etc): tag_match=1 required OR (rank >= 0.3 AND sim >= 0.35)
+      // For longer questions: more lenient (rank >= 0.2 OR sim >= 0.3) works
+      const isShortKeyword = question.length <= 10;
+      const passesThreshold = top && (
+        top.tag_match === 1 || // Tag match always passes
+        (!isShortKeyword && (top.rank >= 0.2 || top.sim >= 0.3)) || // Longer: OR logic
+        (isShortKeyword && top.rank >= 0.3 && top.sim >= 0.35) // Short: AND logic (stricter)
+      );
+
+      if (passesThreshold) {
         allMatches.push({
           originalQuestion: question,
           faqId: top.id,
