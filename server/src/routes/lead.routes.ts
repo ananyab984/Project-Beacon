@@ -691,11 +691,21 @@ leadRouter.patch(
     const hasContact = !!(patch.email || patch.contactNumber || patch.profileLink || existing.email || existing.contactNumber || existing.profileLink);
     const shouldStayComplete =
       existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE" || hasContact;
+
+    // A caller sending `flags` intends to ADD to the lead's flags (e.g.
+    // stacking WATCHING onto a lead already flagged DNC), not replace the
+    // whole array -- merge with the existing flags instead of overwriting
+    // them. Previously this only fell back to existing.flags when patch.flags
+    // was entirely absent, so any provided flags array silently clobbered
+    // (dropped) whatever flags -- including DNC -- were already set.
+    if (patch.flags) {
+      patch.flags = Array.from(new Set([...existing.flags, ...patch.flags]));
+    }
+
     if (shouldStayComplete) {
       patch.identityResolved = true;
       patch.enrichmentStatus = "COMPLETE";
-      const nextFlags = Array.from(new Set([...(patch.flags ?? existing.flags)].filter((f) => f !== "ON_HOLD")));
-      patch.flags = nextFlags;
+      patch.flags = Array.from(new Set((patch.flags ?? existing.flags).filter((f) => f !== "ON_HOLD")));
     }
 
     if (patch.stage && patch.stage !== existing.stage) {

@@ -143,7 +143,13 @@ export function SearchLeadDialog({
                   <Button
                     size="sm"
                     disabled={loadingId === l.id}
-                    onClick={() => handlePick(l)}
+                    // handlePick's own caller (onSelectLead) is responsible for
+                    // surfacing a user-facing error (e.g. a toast) before it
+                    // rejects -- this catch only prevents that expected
+                    // rejection from also becoming an unhandled promise
+                    // rejection, since nothing else here awaits this click's
+                    // returned promise.
+                    onClick={() => handlePick(l).catch(() => {})}
                     className="ml-3 h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1 shrink-0"
                   >
                     {loadingId === l.id ? (
