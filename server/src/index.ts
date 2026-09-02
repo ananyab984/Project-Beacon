@@ -7,6 +7,7 @@ import { authRouter } from "./routes/auth.routes";
 import { leadRouter } from "./routes/lead.routes";
 import { unipileRouter } from "./routes/unipile.routes";
 import { webhooksRouter } from "./routes/webhooks.routes";
+import { onboardingShortLinkRouter } from "./routes/onboardingShortLink.routes";
 import { outreachRouter } from "./routes/outreach.routes";
 import { userRouter } from "./routes/user.routes";
 import { clientRouter } from "./routes/client.routes";
@@ -65,6 +66,12 @@ app.use(express.json());
 app.use(cookieParser());
 
 // Health Check
+// Root-level, not /api-prefixed -- same precedent as /health below. Kept
+// short deliberately (a "URL shortener" link): the candidate-facing
+// outreach message embeds "{appBaseUrl}/g/{token}" in place of the old
+// static, unpersonalized apply_url.
+app.use("/g", onboardingShortLinkRouter);
+
 app.get("/health", (req, res) => {
   res.json({ status: "healthy", service: "global3-server", version: "1.0.0" });
 });

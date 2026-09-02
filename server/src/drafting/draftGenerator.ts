@@ -14,6 +14,7 @@ import { ClaudeClient } from "./claudeClient";
 import type { DraftingConfig } from "./config";
 import { Lead } from "./leads";
 import { BRAND, buildEmailPrompt, buildLinkedinPrompt, RateMatch } from "./promptBuilder";
+import { buildShortApplyUrl } from "../lib/onboarding/shortLink";
 
 export interface Draft {
   channel: "email" | "linkedin";
@@ -56,12 +57,23 @@ function hasSpecificFact(body: string, facts: string[]): boolean {
  * LinkedIn connection notes are hard-capped at 200 characters -- only the
  * apply link is enforced there, since it's the one actual call to action;
  * the separate "Visit: site" line email gets would otherwise burn chars that
- * should go to the lead's actual enriched facts (e.g. years of experience). */
-function ensureLinks(body: string, channel: string): string {
+ * should go to the lead's actual enriched facts (e.g. years of experience).
+ *
+ * The prompt (promptBuilder.ts) still tells Claude the apply portal is
+ * BRAND.apply_url -- that canonical text is left alone rather than
+ * reshaping the carefully-tuned prompt around a "short link" concept. This
+ * function is the one place the static URL, if the model wrote it out,
+ * gets swapped for this specific lead's personalized short link
+ * ("{appBaseUrl}/g/{token}", see lib/onboarding/shortLink.ts) before the
+ * text ever reaches the candidate -- or appended if the model omitted it
+ * entirely. */
+function ensureLinks(body: string, channel: string, applyUrl: string): string {
   let text = body;
-  if (!text.includes(BRAND.apply_url) && !text.includes("app.global3.io/apply")) {
+  if (text.includes(BRAND.apply_url)) {
+    text = text.split(BRAND.apply_url).join(applyUrl);
+  } else if (!text.includes(applyUrl)) {
     const sep = channel === "linkedin" ? " " : "\n\n";
-    text += `${sep}Apply here: ${BRAND.apply_url}`;
+    text += `${sep}Apply here: ${applyUrl}`;
   }
   if (channel !== "linkedin" && !text.includes(BRAND.site)) {
     text += `\n\nVisit: ${BRAND.site}`;
@@ -92,6 +104,7 @@ export async function generateEmail(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
+  leadId: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -121,7 +134,7 @@ export async function generateEmail(
   }
 
   const subject = (data.subject || `Freelance partnership with ${BRAND.company}`).trim();
-  const body = ensureLinks((data.body || "").trim(), "email");
+  const body = ensureLinks((data.body || "").trim(), "email", buildShortApplyUrl(leadId));
   return {
     channel: "email",
     lead,
@@ -141,6 +154,7 @@ export async function generateLinkedin(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
+  leadId: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -169,7 +183,7 @@ export async function generateLinkedin(
     }
   }
 
-  const body = ensureLinks((data.body || "").trim(), "linkedin");
+  const body = ensureLinks((data.body || "").trim(), "linkedin", buildShortApplyUrl(leadId));
   return {
     channel: "linkedin",
     lead,

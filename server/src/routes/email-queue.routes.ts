@@ -156,7 +156,9 @@ emailQueueRouter.post(
       // no DRAFTING_SERVICE_URL to misconfigure.
       const result = await getDraftingOrchestrator().processDraft(
         buildDraftLeadPayload(item.lead, effectiveEmail),
-        "email"
+        "email",
+        false,
+        item.lead.id
       );
       draft = { subject: result.subject, body: result.body };
       // INELIGIBLE means the pipeline correctly refused to draft anything

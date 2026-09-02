@@ -1,8 +1,44 @@
 # Onboarding pre-fill link + submission webhook
 
-Implements the `buildApplyUrl(lead)` link generator and the
+Implements the `buildApplyUrl(lead)` link generator, the
 `/api/webhooks/onboarding-complete/:token` receiver for `app.global3.io`'s
-linguist onboarding form, per the confirmed contract with G3's tech team.
+linguist onboarding form (per the confirmed contract with G3's tech team),
+and a short-link redirector (`GET /g/:token`) that replaced the old static,
+unpersonalized apply link previously embedded in drafting service
+messages.
+
+## The short link (`shortLink.ts`, `GET /g/:token`)
+
+The full personalized apply URL runs 400-500+ characters once all the
+query params (including the embedded `callback_url`) are in it -- too long
+and too PII-revealing (the candidate's own name/email visible in the raw
+URL) to put directly into an outreach email or LinkedIn note. Outreach
+messages now embed `buildShortApplyUrl(lead.id)` instead --
+`{appBaseUrl}/g/{token}`, ~22 extra characters on top of the base URL.
+
+No database table backing this: the full apply URL is entirely
+reconstructible from `lead.id` alone (`buildApplyUrl` is a pure function of
+the lead's current data), so the "short code" is just a reversible, compact
+encoding of that same UUID. `GET /g/:token` decodes it, re-fetches the lead
+fresh, and 302-redirects to the freshly-built full URL -- which also means
+the link a candidate actually clicks always reflects the lead's CURRENT
+data, never a stale snapshot from whenever the message was drafted. Since
+`lead.id` is already a UUIDv4 (122 bits of randomness) and this endpoint is
+read-only (never a state change), no additional signature is needed here
+the way `callbackToken.ts`'s per-lead HMAC is needed for the
+state-changing webhook.
+
+Wired into every place that used to embed the static `apply_url`:
+`draftGenerator.ts`'s `ensureLinks()` guardrail (the AI-generated draft
+path -- substitutes this lead's short link for any literal mention of the
+canonical `BRAND.apply_url` the prompt described, or appends it if the
+model omitted a link entirely), `lib/messageTemplates.ts`'s
+`buildLinkedInDraft` (currently unused/dead code, kept consistent anyway),
+and `lead.routes.ts`'s auto-updated email-queue template. `processDraft()`
+now takes the real lead id as an explicit fourth parameter (like
+`channel`), rather than adding it to the ported `Lead` class/record shape,
+which mirror `drafting_service`'s Python types and never carried our
+database id.
 
 ## The one decision this needed a call on (now resolved)
 

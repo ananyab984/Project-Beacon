@@ -180,7 +180,12 @@ conversationRouter.post(
       // shares the exact same payload builder (and gets Clay's richer
       // data) as the email route. Drafting runs in-process (server/src/drafting/)
       // -- no network hop, no DRAFTING_SERVICE_URL to misconfigure.
-      const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin");
+      const result = await getDraftingOrchestrator().processDraft(
+        buildDraftLeadPayload(conversation.lead),
+        "linkedin",
+        false,
+        conversation.lead.id
+      );
       draft = { subject: result.subject, body: result.body };
       if (result.verdict === "INELIGIBLE" || !draft.body.trim()) {
         const reason = result.flags[0] || "missing required lead data";

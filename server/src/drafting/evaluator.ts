@@ -16,6 +16,7 @@
 import { fleschKincaidGrade, fleschReadingEase } from "./readability";
 import type { Draft } from "./draftGenerator";
 import { BRAND } from "./promptBuilder";
+import { config } from "../config";
 
 // Common cold-outreach spam-trigger words (deliverability signal)
 const SPAM_WORDS = [
@@ -171,7 +172,13 @@ export function evaluate(draft: Draft): Evaluation {
 
   // 3. Required elements -------------------------------------------------
   const greetsName = body.toLowerCase().slice(0, 60).includes(lead.firstName.toLowerCase());
-  const hasApply = body.includes(BRAND.apply_url) || body.includes("app.global3.io/apply");
+  // draftGenerator.ts's ensureLinks() swaps the canonical BRAND.apply_url
+  // (what the prompt describes) for this lead's personalized short link
+  // ("{appBaseUrl}/g/{token}") before the draft is finalized -- checking
+  // for our own base URL here keeps this "has an apply link" gate accurate
+  // post-substitution, while still recognizing the raw static URL too in
+  // case ensureLinks ever falls through to it.
+  const hasApply = body.includes(BRAND.apply_url) || body.includes("app.global3.io/apply") || body.includes(config.appBaseUrl);
   const hasSite = body.includes(BRAND.site);
   const hasCta = CTA_VERBS.some((v) => body.toLowerCase().includes(v));
   let reqOk: boolean;

@@ -46,7 +46,14 @@ export class DraftingOrchestrator {
   async processDraft(
     leadRecord: Record<string, any>,
     channel: string = "email",
-    manualOverride = false
+    manualOverride = false,
+    // Our own database id for this lead -- kept as a separate top-level
+    // parameter (like `channel`) rather than added to leadRecord/the Lead
+    // class, which are a direct port of drafting_service's Python types and
+    // never carried our id. Required (not optional) so a caller can't
+    // silently omit it and fall back to the old static, unpersonalized
+    // apply_url -- see ensureLinks() in draftGenerator.ts.
+    leadId: string
   ): Promise<PipelineDraftResult> {
     const startTime = Date.now();
     const draftId = `draft_${randomBytes(4).toString("hex")}`;
@@ -101,8 +108,8 @@ export class DraftingOrchestrator {
 
     const draft: Draft =
       channel === "email"
-        ? await generateEmail(this.client, this.config, lead, rateMatch, rateFlag)
-        : await generateLinkedin(this.client, this.config, lead, rateMatch, rateFlag);
+        ? await generateEmail(this.client, this.config, lead, leadId, rateMatch, rateFlag)
+        : await generateLinkedin(this.client, this.config, lead, leadId, rateMatch, rateFlag);
 
     // Stage 4: Programmatic Rule Evaluation (evaluator.ts)
     const ev = evaluate(draft);

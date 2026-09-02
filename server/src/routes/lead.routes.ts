@@ -10,6 +10,7 @@ import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from ".
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
+import { buildShortApplyUrl } from "../lib/onboarding/shortLink";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 
 export const leadRouter = Router();
@@ -848,7 +849,10 @@ leadRouter.patch(
         }
 
         const newSubject = `Global3 Outreach · Freelance Partnership (${candidateName})`;
-        const newBody = `Hi ${firstName},\n\nI hope this email finds you well.\n\nI'm reaching out from the Resource Management team at Global3. We recently reviewed your profile${enrichNote} and believe your expertise would be a strong asset to our current and upcoming project pipelines.\n\nWe are actively looking to connect with talented freelance ${language} linguists who value long-term, meaningful collaboration over one-off tasks.\n\nAt Global3, we pride ourselves on building lasting partnerships with our global network of professionals. You can find more details about our mission and the scope of our work at global3.io.\n\nIf you are open to exploring a partnership, please submit your application through our portal so we can align your profile with relevant opportunities: https://app.global3.io/apply\n\nShould you have any questions before applying, please feel free to reach out to us at resources@global3.io. We're happy to provide more information.\n\nBest regards,\nResources Team`;
+        // Personalized short link, not the old static/unpersonalized
+        // apply_url -- see lib/onboarding/shortLink.ts.
+        const applyUrl = buildShortApplyUrl(updated.id);
+        const newBody = `Hi ${firstName},\n\nI hope this email finds you well.\n\nI'm reaching out from the Resource Management team at Global3. We recently reviewed your profile${enrichNote} and believe your expertise would be a strong asset to our current and upcoming project pipelines.\n\nWe are actively looking to connect with talented freelance ${language} linguists who value long-term, meaningful collaboration over one-off tasks.\n\nAt Global3, we pride ourselves on building lasting partnerships with our global network of professionals. You can find more details about our mission and the scope of our work at global3.io.\n\nIf you are open to exploring a partnership, please submit your application through our portal so we can align your profile with relevant opportunities: ${applyUrl}\n\nShould you have any questions before applying, please feel free to reach out to us at resources@global3.io. We're happy to provide more information.\n\nBest regards,\nResources Team`;
 
         await prisma.emailQueueItem.update({
           where: { id: item.id },

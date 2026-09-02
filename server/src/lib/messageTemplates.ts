@@ -1,3 +1,5 @@
+import { buildShortApplyUrl } from "./onboarding/shortLink";
+
 /** Name/language helpers shared by the app's draft-related code. Every
  *  EmailQueueItem/Conversation now starts with an empty body/subject --
  *  the only thing that ever fills one in is the real AI-personalized draft
@@ -32,6 +34,7 @@ export function candidateRoleOf(services: string[] | null | undefined, targetLan
 }
 
 interface NameAndLanguageLead {
+  id: string;
   fullName: string | null;
   firstName: string | null;
   displayName?: string | null;
@@ -49,6 +52,8 @@ export function buildLinkedInDraft(lead: NameAndLanguageLead): { body: string } 
       `Hi ${name},\n\n` +
       `We're urgently looking for a ${rolePhrase} to join us at Global3. ` +
       `For more information about our team and services, please visit global3.io.\n\n` +
-      `If you're interested in this opportunity, you can apply through our application form here: https://app.global3.io/apply`,
+      // Personalized short link, not the old static/unpersonalized apply_url
+      // -- see lib/onboarding/shortLink.ts.
+      `If you're interested in this opportunity, you can apply through our application form here: ${buildShortApplyUrl(lead.id)}`,
   };
 }
