@@ -90,6 +90,37 @@ export const config = {
   // this one needs to be readable from plain Node.
   neonAuthUrl: requireEnv("NEON_AUTH_URL"),
 
+  // Public onboarding form G3's own tech team owns/operates (app.global3.io)
+  // -- confirmed contract: query params first_name, last_name, email,
+  // address_country, source_language, target_language, service,
+  // years_of_experience, vendor_experience, linkedin, callback_url.
+  // Defaults to a guaranteed-unreachable ".invalid" domain (reserved by
+  // RFC 2606 to never resolve) everywhere except production, so no
+  // automated test, CI run, or default dev session can ever reach the real
+  // domain -- only an explicit G3_APPLY_BASE_URL set in a real production
+  // environment points at it. Never hardcode the real URL as a fallback here.
+  g3ApplyBaseUrl: resolveEnv("G3_APPLY_BASE_URL", "https://mock-g3-apply.invalid/apply", isProduction),
+
+  // Two-factor defense for the onboarding webhook receiver (G3's apply form
+  // calling us back), same posture as UNIPILE_WEBHOOK_SECRET/
+  // UNIPILE_WEBHOOK_PATH_TOKEN below -- except their form calls
+  // callback_url exactly as we hand it to them, with no custom header
+  // support on their side, so both factors have to live in the URL itself:
+  // an opaque path token (like Unipile's) plus a per-lead HMAC signature
+  // over lead_id, so a leaked/observed callback URL for one lead can never
+  // be replayed against a different lead_id.
+  onboardingWebhookPathToken: requireEnv("ONBOARDING_WEBHOOK_PATH_TOKEN"),
+  onboardingWebhookSecret: requireEnv("ONBOARDING_WEBHOOK_SECRET"),
+
+  // Kill switch for a real outbound call to app.global3.io (an apply link
+  // that actually points at their live domain, or a supervised live
+  // webhook test). Same posture as unipileLiveSendsEnabled below: blocked
+  // everywhere except production by default, only opted into for a
+  // deliberate, supervised manual-verification window
+  // (G3_APPLY_ALLOW_LIVE=true) -- never a standing default, never something
+  // a test or dev script reaches for automatically.
+  g3ApplyLiveEnabled: isProduction || (process.env.G3_APPLY_ALLOW_LIVE || "").trim().toLowerCase() === "true",
+
   // Kill switch for real outbound Unipile sends (an actual email/LinkedIn
   // message dispatched to a real third party's real inbox). Defaults to
   // BLOCKED everywhere except production: an incident where a live test

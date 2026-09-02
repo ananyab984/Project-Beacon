@@ -142,6 +142,103 @@ export async function claimLead(leadId: string, recruiterId: string) {
   return prisma.lead.findUnique({ where: { id: leadId } });
 }
 
+/**
+ * Marks a lead ONBOARDED from a system/webhook trigger, not the
+ * authenticated PATCH /:id route -- so there's no logged-in recruiter to
+ * attribute the StageHistory row to. Falls back to the lead's own
+ * assigned/creating recruiter; if neither is on file, the state change
+ * still happens but the StageHistory audit row is skipped (StageHistory
+ * .changedByRecruiterId is NOT NULL) rather than blocking the transition
+ * entirely or inventing an attribution.
+ *
+ * Deliberately a standalone function, not a shared extraction from
+ * lead.routes.ts's PATCH handler: that route's ONBOARDED branch is
+ * higher-traffic, already-proven code serving every stage transition in
+ * the product today, and reshaping it to accommodate this new,
+ * webhook-only path isn't worth the regression risk. The Requirement/
+ * ClientDemand headcount sync below intentionally mirrors that branch's
+ * logic (see lead.routes.ts's PATCH /:id, the `patch.stage === "ONBOARDED"`
+ * block) -- keep the two in sync by hand if either changes.
+ */
+export async function markLeadOnboarded(
+  leadId: string,
+  opts: { changedByRecruiterId?: string | null } = {}
+) {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+  if (lead.stage === "ONBOARDED") {
+    return { lead, alreadyOnboarded: true, stageHistorySkipped: false };
+  }
+
+  const attributedTo = opts.changedByRecruiterId ?? lead.assignedRecruiterId ?? lead.createdByRecruiterId ?? null;
+  let stageHistorySkipped = false;
+
+  if (attributedTo) {
+    await prisma.stageHistory.create({
+      data: {
+        leadId: lead.id,
+        fromStage: lead.stage,
+        toStage: "ONBOARDED",
+        changedByRecruiterId: attributedTo,
+      },
+    });
+  } else {
+    stageHistorySkipped = true;
+    console.warn(
+      `[lead.service] Skipping StageHistory row for lead ${lead.id}'s ONBOARDED transition -- no assigned or creating recruiter on file to attribute it to.`
+    );
+  }
+
+  const updated = await prisma.lead.update({
+    where: { id: lead.id },
+    data: { stage: "ONBOARDED", lastActivityAt: new Date() },
+  });
+
+  const language = updated.targetLanguage || updated.sourceLanguage;
+  if (language) {
+    const matchingReq = await prisma.requirement.findFirst({
+      where: {
+        language: { contains: language, mode: "insensitive" },
+        status: { in: ["ACTIVE", "UNASSIGNED"] },
+        gap: { gt: 0 },
+      },
+      orderBy: { priority: "desc" },
+    });
+
+    if (matchingReq) {
+      const newFilled = matchingReq.filled + 1;
+      const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
+      await prisma.requirement.update({
+        where: { id: matchingReq.id },
+        data: {
+          filled: newFilled,
+          gap: newGap,
+          status: newGap === 0 ? "FULFILLED" : matchingReq.status,
+        },
+      });
+
+      const matchingDemand = await prisma.clientDemand.findFirst({
+        where: {
+          clientId: matchingReq.clientId,
+          language: { contains: language, mode: "insensitive" },
+          gap: { gt: 0 },
+        },
+      });
+      if (matchingDemand) {
+        const dFilled = matchingDemand.filled + 1;
+        const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
+        await prisma.clientDemand.update({
+          where: { id: matchingDemand.id },
+          data: { filled: dFilled, gap: dGap },
+        });
+      }
+    }
+  }
+
+  return { lead: updated, alreadyOnboarded: false, stageHistorySkipped };
+}
+
 export function buildLeadWhere(params: {
   q?: string;
   stage?: string;
