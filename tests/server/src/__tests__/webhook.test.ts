@@ -11,9 +11,9 @@
  * Run: cd server && npx ts-node src/__tests__/webhook.test.ts
  */
 
-import { prisma } from "../prisma";
-import { UnipileService } from "../services/unipile.service";
-import { config } from "../config";
+import { prisma } from "@server-root/prisma";
+import { UnipileService } from "@server/services/unipile.service";
+import { config } from "@server/config";
 
 const VALID_TOKEN = config.unipileWebhookPathToken;
 const VALID_SECRET = config.unipileWebhookSecret;

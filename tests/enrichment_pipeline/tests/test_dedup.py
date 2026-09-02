@@ -7,7 +7,7 @@ import os
 import sys
 
 # Add parent directory to path so imports resolve
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))), "enrichment_pipeline"))
 
 from config import Config, load_config
 from core.dedup import find_duplicate_candidates
