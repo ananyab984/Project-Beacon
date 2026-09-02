@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { config } from "../config";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { normalizeServices } from "../lib/normalizeServices";
+import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 
 function splitToArray(val: unknown): string[] | undefined {
   if (typeof val !== "string" || !val.trim()) return undefined;
@@ -29,38 +30,57 @@ export async function enrichLeadById(leadId: string) {
       data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
     });
 
-    const { data } = await axios.post(
-      `${config.enrichmentServiceUrl}/enrich`,
-      {
-        // Send everything we already have, not just email/name -- the
-        // pipeline's own "never overwrite existing data" + critical-field
-        // audit only work correctly if it can see the lead's real current
-        // state, not a partial view of it.
-        First_Name: lead.firstName,
-        Full_Name: lead.fullName,
-        Country_of_Residence: lead.country,
-        Email_Address: lead.email,
-        Contact_Number: lead.contactNumber,
-        Profile_Link: lead.profileLink,
-        Services: lead.services.join(", "),
-        Source_Language: lead.sourceLanguage,
-        Target_Language: lead.targetLanguage,
-        Secondary_Languages: lead.secondaryLanguages.join(", "),
-        Years_of_Exp: lead.yearsOfExperience ? lead.yearsOfExperience.toNumber() : undefined,
-        Vendor_Experience: lead.vendorExperience,
-        Source: lead.source || "LinkedIn",
-        Headline: lead.headline,
-        About_Snippet: lead.aboutSnippet,
-        Current_Title: lead.currentTitle,
-        Tools_Software: lead.toolsSoftware.join(", "),
-        Certifications: lead.certifications.join(", "),
-        // Round-trips what was already resolved (and by what source) on a
-        // prior run, so the pipeline doesn't re-spend an LLM call
-        // re-verifying something already settled -- see orchestrator.py's
-        // `_unverified()`.
-        Field_Sources: lead.fieldSources ?? undefined,
-      },
-      { timeout: 30_000 }
+    // Timeout raised from 30s to 70s: the pipeline now enforces its own 60s
+    // cumulative cap across every platform/waterfall-step/retry it tries
+    // internally (see orchestrator.py) and returns a normal 200 response
+    // with `timed_out: true` when it hits that cap, rather than hanging --
+    // a 30s axios timeout would abort the request before Python ever gets
+    // the chance to respond gracefully, turning a clean "on hold" signal
+    // into an ambiguous connection-timeout error instead.
+    //
+    // Retrying the whole call here (rather than just erroring out to the
+    // existing PENDING-revert-and-repoll fallback) is safe specifically
+    // because this runs fire-and-forget in the background (setImmediate at
+    // every call site, never blocking an HTTP response) -- a `timed_out:
+    // true` body is a normal 200 and never reaches this retry logic at all;
+    // only genuine connectivity failures (service unreachable, Node's own
+    // timeout firing) do.
+    const { data } = await retryWithBackoff(
+      () =>
+        axios.post(
+          `${config.enrichmentServiceUrl}/enrich`,
+          {
+            // Send everything we already have, not just email/name -- the
+            // pipeline's own "never overwrite existing data" + critical-field
+            // audit only work correctly if it can see the lead's real current
+            // state, not a partial view of it.
+            First_Name: lead.firstName,
+            Full_Name: lead.fullName,
+            Country_of_Residence: lead.country,
+            Email_Address: lead.email,
+            Contact_Number: lead.contactNumber,
+            Profile_Link: lead.profileLink,
+            Services: lead.services.join(", "),
+            Source_Language: lead.sourceLanguage,
+            Target_Language: lead.targetLanguage,
+            Secondary_Languages: lead.secondaryLanguages.join(", "),
+            Years_of_Exp: lead.yearsOfExperience ? lead.yearsOfExperience.toNumber() : undefined,
+            Vendor_Experience: lead.vendorExperience,
+            Source: lead.source || "LinkedIn",
+            Headline: lead.headline,
+            About_Snippet: lead.aboutSnippet,
+            Current_Title: lead.currentTitle,
+            Tools_Software: lead.toolsSoftware.join(", "),
+            Certifications: lead.certifications.join(", "),
+            // Round-trips what was already resolved (and by what source) on a
+            // prior run, so the pipeline doesn't re-spend an LLM call
+            // re-verifying something already settled -- see orchestrator.py's
+            // `_unverified()`.
+            Field_Sources: lead.fieldSources ?? undefined,
+          },
+          { timeout: 70_000 }
+        ),
+      { isRetryable: isRetryableByDefault }
     );
 
     let enrichedEmail = lead.email;

@@ -240,6 +240,22 @@ export function EmailQueuePageView() {
     }
   }
 
+  // saveDraft is a plain closure over subject/body/to state, redefined every
+  // render. markDirty() fires in the same synchronous event handler as the
+  // setSubject/setBody/setTo call that triggered it -- React hasn't
+  // committed that state update yet, so the `saveDraft` captured by
+  // window.setTimeout still closes over the value from *before* this
+  // keystroke. Left as a plain closure, the debounced autosave 1500ms later
+  // would silently drop whatever was typed in that final keystroke. These
+  // refs are kept current via the effects below (which do run before the
+  // 1500ms timer fires) so saveDraft always reads the latest value instead.
+  const subjectRef = useRef(subject);
+  const bodyRef = useRef(body);
+  const toRef = useRef(to);
+  useEffect(() => { subjectRef.current = subject; }, [subject]);
+  useEffect(() => { bodyRef.current = body; }, [body]);
+  useEffect(() => { toRef.current = to; }, [to]);
+
   function markDirty() {
     setSaveState("dirty");
     if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
@@ -250,7 +266,7 @@ export function EmailQueuePageView() {
     if (!selected) return;
     setSaveState("saving");
     try {
-      await api.updateEmailQueueItem(selected.id, { subject, body, to });
+      await api.updateEmailQueueItem(selected.id, { subject: subjectRef.current, body: bodyRef.current, to: toRef.current });
       setSaveState("saved");
       setSavedAt(new Date());
       queryClient.invalidateQueries({ queryKey: ["email-queue"] });

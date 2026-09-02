@@ -502,6 +502,23 @@ export function ClientDemandDialog() {
                             <SelectItem value="custom"><span className="flex items-center gap-1.5 text-primary font-semibold"><UserPlus className="h-3 w-3" /> + Custom / Add New...</span></SelectItem>
                           </SelectContent>
                         </Select>
+                        {block.assignedRecruiterId === "custom" && (
+                          <div className="space-y-1.5 pt-1">
+                            <Input
+                              value={block.customRecruiterName || ""}
+                              onChange={(e) => updateLanguageBlock(block.id, { customRecruiterName: e.target.value })}
+                              placeholder="New recruiter name…"
+                              className="h-7 text-[11px] bg-background"
+                            />
+                            <Input
+                              type="email"
+                              value={block.customRecruiterEmail || ""}
+                              onChange={(e) => updateLanguageBlock(block.id, { customRecruiterEmail: e.target.value })}
+                              placeholder="New recruiter email…"
+                              className="h-7 text-[11px] bg-background"
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="space-y-2">
