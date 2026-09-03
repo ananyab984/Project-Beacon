@@ -99,6 +99,19 @@ enum FlagAction {
   REMOVED
 }
 
+/// Why a lead currently carries the ON_HOLD flag -- independent of, and
+/// purely descriptive alongside, that flag. MANUAL: a recruiter's own
+/// toggle, cleared only by that same toggle. TIMEOUT/SYSTEM_ERROR: the
+/// enrichment waterfall didn't conclude (hit its 60s cumulative cap, or
+/// crashed) -- both auto-clear the next time a re-enrichment run concludes
+/// cleanly. Never set based on field count/data quality -- see enrichment
+/// job comments.
+enum OnHoldReason {
+  MANUAL
+  TIMEOUT
+  SYSTEM_ERROR
+}
+
 /// Repo (recruiter-mock.ts RecruiterLeadStatus) ships only PENDING/COMPLETE
 /// today ("SEARCH fields filled by recruiter; ENRICHMENT fields filled by
 /// background job"). IN_PROGRESS and FLAGGED_REVIEW are kept because the G3
@@ -361,6 +374,10 @@ model Lead {
   dupFlaggedField String? @map("dup_flagged_field") // "full_name" | "profile_link" | "email_address"
 
   enrichmentStatus    EnrichmentStatus @default(PENDING) @map("enrichment_status")
+  // Purely descriptive of *why* the ON_HOLD flag (in `flags` below) is
+  // currently set -- never drives ON_HOLD by itself. Cleared (set back to
+  // null) whenever ON_HOLD is removed, by whichever path removes it.
+  onHoldReason        OnHoldReason?    @map("on_hold_reason")
   // Stamped the moment a run actually starts (enrichLeadById), used only to
   // detect a stalled run (see stallOverdueEnrichments) -- deliberately its
   // own field rather than a generic @updatedAt, since Lead has none and a

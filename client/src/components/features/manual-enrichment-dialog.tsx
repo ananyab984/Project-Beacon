@@ -38,7 +38,7 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lead: LeadForEnrichment | null;
-  onMarkEnriched: (id: string, updatedData: Partial<LeadForEnrichment>) => void;
+  onMarkEnriched: (id: string, updatedData: Partial<LeadForEnrichment>) => Promise<unknown>;
 }
 
 export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriched }: Props) {
@@ -52,7 +52,14 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
   const [services, setServices] = useState<string[]>([]);
   const [yearsExp, setYearsExp] = useState<string>("");
   const [notes, setNotes] = useState("");
+  const [saving, setSaving] = useState(false);
 
+  // Keyed on lead?.id, not the `lead` object itself -- the parent route
+  // rebuilds `enrichLead` as a fresh object on every render (not memoized),
+  // so keying this on the object reference re-ran on every background
+  // refetch while the dialog was open, wiping whatever the recruiter had
+  // typed but not yet saved. Keying on id means this only re-syncs when a
+  // genuinely different lead is opened.
   useEffect(() => {
     if (lead) {
       setName(lead.name || "");
@@ -66,7 +73,8 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
       setYearsExp(lead.years_experience != null ? String(lead.years_experience) : "");
       setNotes(lead.vendor_experience || "");
     }
-  }, [lead]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lead?.id]);
 
   if (!lead) return null;
 
@@ -84,43 +92,54 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
     return services.some((x) => x.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(x.toLowerCase()));
   };
 
-  const handleSaveOnly = () => {
-    const parsedYears = yearsExp.trim() === "" ? undefined : Number(yearsExp);
-    onMarkEnriched(lead.id, {
+  // `null` for a cleared field (recruiter deleted what was there), not
+  // `undefined` -- JSON.stringify drops `undefined` keys entirely, which was
+  // the actual "I can't clear a wrong value" bug: the key never reached the
+  // server at all, so the old value silently survived forever.
+  function buildPatch(status: "complete" | "pending"): Partial<LeadForEnrichment> {
+    const parsedYears = yearsExp.trim() === "" ? null : Number(yearsExp);
+    return {
       name,
-      email: email.trim() || undefined,
-      phone: phone.trim() || undefined,
-      country: country.trim() || undefined,
-      profile_link: profileLink.trim() || undefined,
-      source_language: sourceLang.trim() || undefined,
-      target_language: targetLang.trim() || undefined,
+      email: email.trim() || null,
+      phone: phone.trim() || null,
+      country: country.trim() || null,
+      profile_link: profileLink.trim() || null,
+      source_language: sourceLang.trim() || null,
+      target_language: targetLang.trim() || null,
       services,
-      years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : undefined,
-      vendor_experience: notes.trim() || undefined,
-      enrichment_status: hasContact ? "complete" : "pending",
-    });
-    toast.success("Draft changes saved.");
-    onOpenChange(false);
-  };
+      years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : null,
+      vendor_experience: notes.trim() || null,
+      enrichment_status: status,
+    };
+  }
 
-  const handleMarkEnriched = () => {
-    const parsedYears = yearsExp.trim() === "" ? undefined : Number(yearsExp);
-    onMarkEnriched(lead.id, {
-      name,
-      email: email.trim() || undefined,
-      phone: phone.trim() || undefined,
-      country: country.trim() || undefined,
-      profile_link: profileLink.trim() || undefined,
-      source_language: sourceLang.trim() || undefined,
-      target_language: targetLang.trim() || undefined,
-      services,
-      years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : undefined,
-      vendor_experience: notes.trim() || undefined,
-      enrichment_status: "complete",
-    });
-    toast.success(`Lead marked as Enriched! ${name} has been promoted.`);
-    onOpenChange(false);
-  };
+  async function handleSaveOnly() {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      await onMarkEnriched(lead.id, buildPatch(hasContact ? "complete" : "pending"));
+      toast.success("Draft changes saved.");
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to save changes -- your edits are still here, try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleMarkEnriched() {
+    if (!lead) return;
+    setSaving(true);
+    try {
+      await onMarkEnriched(lead.id, buildPatch("complete"));
+      toast.success(`Lead marked as Enriched! ${name} has been promoted.`);
+      onOpenChange(false);
+    } catch (err: any) {
+      toast.error(err?.message ?? "Failed to save changes -- your edits are still here, try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -237,10 +256,10 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
         </div>
 
         <DialogFooter className="gap-2">
-          <Button variant="outline" size="sm" onClick={handleSaveOnly} className="text-xs">
+          <Button variant="outline" size="sm" onClick={handleSaveOnly} disabled={saving} className="text-xs">
             Save Draft
           </Button>
-          <Button size="sm" onClick={handleMarkEnriched} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs gap-1.5">
+          <Button size="sm" onClick={handleMarkEnriched} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs gap-1.5">
             <UserCheck className="h-3.5 w-3.5" />
             Mark as Enriched
           </Button>

@@ -193,10 +193,12 @@ function LeadsPage() {
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   }
 
+  // Error feedback is handled by the two dialogs that use this (both now
+  // await mutateAsync and show their own contextual error) -- no onError
+  // toast here to avoid double-toasting the same failure.
   const enrichMutation = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
     onSuccess: () => invalidateLeads(),
-    onError: (err: any) => toast.error(err?.message ?? "Failed to update lead"),
   });
 
   const stageMutation = useMutation({
@@ -213,6 +215,20 @@ function LeadsPage() {
       toast.success("Queued for re-enrichment");
     },
     onError: (err: any) => toast.error(err?.message ?? "Failed to retry enrichment"),
+  });
+
+  // Manual On Hold toggle -- reuses the existing (previously unused) flags
+  // endpoints, same as DNC/Watching/High Priority. Independent of field
+  // count and of enrichmentStatus.
+  const holdMutation = useMutation({
+    mutationFn: (id: string) => api.addLeadFlag(id, "ON_HOLD"),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to put lead on hold"),
+  });
+  const unholdMutation = useMutation({
+    mutationFn: (id: string) => api.removeLeadFlag(id, "ON_HOLD"),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to take lead off hold"),
   });
 
   const assignMutation = useMutation({
@@ -275,13 +291,17 @@ function LeadsPage() {
       }
     : null;
 
+  // Returns the mutation promise -- the dialog itself now awaits this and
+  // only closes/toasts on success. No longer strips ON_HOLD here either -- a
+  // manual field edit must not auto-clear it as a side effect (On Hold is
+  // now driven only by the waterfall's own conclusion state or the
+  // recruiter's explicit toggle).
   const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
-    const currentFlags = enrichRaw?.flags ?? [];
-    enrichMutation.mutate({
+    const shouldMarkComplete = updated.enrichment_status === "complete";
+    return enrichMutation.mutateAsync({
       id,
       patch: {
-        identityResolved: true,
-        enrichmentStatus: "COMPLETE",
+        ...(shouldMarkComplete ? { identityResolved: true, enrichmentStatus: "COMPLETE" } : {}),
         displayName: updated.name,
         services: updated.services,
         sourceLanguage: updated.source_language,
@@ -292,11 +312,8 @@ function LeadsPage() {
         vendorExperience: updated.vendor_experience,
         contactNumber: updated.phone,
         email: updated.email,
-        flags: currentFlags.filter((f) => f !== "ON_HOLD"),
       },
     });
-    setEnrichRaw(null);
-    toast.success("Lead marked as Enriched & Email Queue updated!");
   };
 
   return (
@@ -430,18 +447,13 @@ function LeadsPage() {
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
                 const isEnriched = l.enrichmentStatus === "COMPLETE";
-                // See recruiter.leads.tsx for why this reads `flags` rather
-                // than inferring "On Hold" from enrichmentStatus alone -- a
-                // lead awaiting Clay's async webhook reply was being shown
-                // as stuck the instant it actually started enriching.
-                const isOnHold = !isEnriched && (l.flags ?? []).includes("ON_HOLD");
-                // Without this, a STALLED lead (enrichment run that timed out
-                // -- see stallOverdueEnrichments in enrichment.job.ts) fell
-                // into isPending here and rendered as plain "Enriching…"
-                // forever, indistinguishable from one genuinely still
-                // running -- the owner view never had a way to tell.
-                const isStalled = !isEnriched && l.enrichmentStatus === "STALLED";
-                const isPending = !isEnriched && !isOnHold && !isStalled;
+                // On Hold is an overlay independent of completion -- see
+                // recruiter.leads.tsx for the full reasoning. Checked before
+                // isEnriched, not gated by !isEnriched.
+                const isOnHold = (l.flags ?? []).includes("ON_HOLD");
+                const isPending = !isEnriched && !isOnHold && l.enrichmentStatus !== "STALLED";
+                const canRetry = isOnHold && l.onHoldReason !== "MANUAL";
+                const fieldCount = l.enrichedFieldCount ?? 0;
                 return (
                   <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
                     <td className="px-4 py-3">
@@ -453,36 +465,59 @@ function LeadsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {isEnriched ? (
-                        <button
-                          onClick={() => setDetailsLead(l)}
-                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
-                        >
-                          {!l.email && !l.contactNumber && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
+                      {isOnHold ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => setEnrichRaw(l)}
+                            className="font-semibold text-xs text-warning hover:underline cursor-pointer"
+                          >
+                            On Hold ({fieldCount})
+                          </button>
+                          {canRetry && (
+                            <button
+                              onClick={() => retryEnrichmentMutation.mutate(l.id)}
+                              disabled={retryEnrichmentMutation.isPending}
+                              className="text-xs text-destructive hover:underline cursor-pointer disabled:opacity-50"
+                              title="Enrichment didn't conclude -- click to retry"
+                            >
+                              · Retry
+                            </button>
                           )}
-                          Enriched
-                        </button>
+                          <button
+                            onClick={() => unholdMutation.mutate(l.id)}
+                            disabled={unholdMutation.isPending}
+                            className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50"
+                            title="Take this lead off hold"
+                          >
+                            · Resume
+                          </button>
+                        </div>
+                      ) : isEnriched ? (
+                        <div className="inline-flex items-center gap-1.5">
+                          <button
+                            onClick={() => setDetailsLead(l)}
+                            className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
+                          >
+                            {!l.email && !l.contactNumber && (
+                              <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
+                            )}
+                            Enriched ({fieldCount})
+                          </button>
+                          <button
+                            onClick={() => holdMutation.mutate(l.id)}
+                            disabled={holdMutation.isPending}
+                            className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50"
+                            title="Put this lead on hold"
+                          >
+                            · Hold
+                          </button>
+                        </div>
                       ) : isPending ? (
                         <span className="font-semibold text-xs text-amber-400">
                           Enriching…
                         </span>
-                      ) : isStalled ? (
-                        <button
-                          onClick={() => retryEnrichmentMutation.mutate(l.id)}
-                          disabled={retryEnrichmentMutation.isPending}
-                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-destructive hover:underline cursor-pointer disabled:opacity-50"
-                          title="Enrichment didn't finish in time -- click to retry"
-                        >
-                          Stalled · Retry
-                        </button>
                       ) : (
-                        <button
-                          onClick={() => setEnrichRaw(l)}
-                          className="font-semibold text-xs text-warning hover:underline cursor-pointer"
-                        >
-                          On Hold
-                        </button>
+                        <span className="font-semibold text-xs text-muted-foreground">Pending</span>
                       )}
                     </td>
                     <td className="px-4 py-3">
@@ -547,7 +582,7 @@ function LeadsPage() {
         open={!!detailsLead}
         onOpenChange={(o) => !o && setDetailsLead(null)}
         lead={detailsLead}
-        onSave={(id, patch) => enrichMutation.mutate({ id, patch })}
+        onSave={(id, patch) => enrichMutation.mutateAsync({ id, patch })}
       />
 
       {/* Assign picker */}

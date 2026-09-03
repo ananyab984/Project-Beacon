@@ -15,6 +15,11 @@ export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
 export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
 export type EnrichmentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
 export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
+/** Why the ON_HOLD flag is currently set -- purely descriptive, doesn't
+ * drive ON_HOLD by itself. MANUAL only clears via the flags toggle;
+ * TIMEOUT/SYSTEM_ERROR auto-clear the next time a re-enrichment run
+ * concludes cleanly. */
+export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
 export interface ApiLead {
   id: string;
@@ -28,6 +33,7 @@ export interface ApiLead {
   dupFlagged: boolean;
   dupFlaggedField: string | null;
   enrichmentStatus: EnrichmentStatus;
+  onHoldReason: OnHoldReason | null;
   promotedToGlobalAt: string | null;
   justEnrichedUntil: string | null;
   stage: LeadStage;
@@ -60,8 +66,12 @@ export interface ApiLead {
   currentTitle: string | null;
   toolsSoftware: string[];
   certifications: string[];
-  /** Per-field provenance: "brightdata" | "tavily" | "llm_fallback" | "clay" | "existing" */
+  /** Per-field provenance: "brightdata" | "tavily" | "llm_fallback" | "clay" | "existing" | "manual" */
   fieldSources: Record<string, string> | null;
+  /** How many of the 15 canonical enrichment fields are currently non-empty
+   * -- computed fresh server-side on every read, not stored. Powers the
+   * "Enriched (n)"/"On Hold (n)" status display. */
+  enrichedFieldCount: number;
   /** Full-fidelity Clay enrichment: { experience, education, languages, courses, projects, currentExperience } */
   clayData: Record<string, any> | null;
   availability: Availability;

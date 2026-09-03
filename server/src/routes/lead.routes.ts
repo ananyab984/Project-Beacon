@@ -1,15 +1,17 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import axios from "axios";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
+import { fetchCsv } from "../lib/fetchCsv";
 import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from "../services/lead.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
+import { MANUAL_FIELD_SOURCE_KEYS } from "../lib/manualFieldSources";
+import { withEnrichedFieldCount } from "../lib/enrichmentCount";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 
 export const leadRouter = Router();
@@ -151,7 +153,7 @@ leadRouter.get(
 
     const hasMore = leads.length > limit;
     const page = hasMore ? leads.slice(0, limit) : leads;
-    return res.json({ leads: page, nextCursor: hasMore ? page[page.length - 1].id : null });
+    return res.json({ leads: page.map(withEnrichedFieldCount), nextCursor: hasMore ? page[page.length - 1].id : null });
   })
 );
 
@@ -175,7 +177,7 @@ leadRouter.get(
           };
 
     const leads = await prisma.lead.findMany({ where, orderBy: { createdAt: "desc" } });
-    return res.json({ leads });
+    return res.json({ leads: leads.map(withEnrichedFieldCount) });
   })
 );
 
@@ -335,7 +337,7 @@ leadRouter.get(
     }
 
     const timeline = await getLeadTimeline(lead.id);
-    return res.json({ lead, timeline });
+    return res.json({ lead: withEnrichedFieldCount(lead), timeline });
   })
 );
 
@@ -420,7 +422,7 @@ leadRouter.post(
       enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
     });
 
-    return res.status(201).json({ lead, duplicateWarning: dup.isDuplicate ? dup : null });
+    return res.status(201).json({ lead: withEnrichedFieldCount(lead), duplicateWarning: dup.isDuplicate ? dup : null });
   })
 );
 
@@ -595,15 +597,7 @@ leadRouter.post(
 
     let csvData: string;
     try {
-      const response = await axios.get(csvUrl, {
-        timeout: 15000,
-        headers: { Accept: "text/csv, text/plain, */*" },
-        maxRedirects: 5,
-      });
-      csvData = String(response.data);
-      if (csvData.includes("<!DOCTYPE html") || csvData.includes("<html")) {
-        throw new Error("Google Sheet returned an HTML sign-in page. Please make the sheet public with 'Anyone with the link can view'.");
-      }
+      csvData = await fetchCsv(csvUrl);
     } catch (err: any) {
       throw new ApiError(400, "SHEET_FETCH_FAILED", err?.message || "Failed to fetch CSV from Google Sheet. Ensure the sheet is accessible.");
     }
@@ -663,23 +657,29 @@ leadRouter.patch(
       throw new ApiError(403, "FORBIDDEN", "Contractors can only edit their own submitted leads");
     }
 
+    // Nullable: an explicitly-sent `null` means "clear this field," an
+    // omitted key means "don't touch it" -- distinct signals a plain
+    // `.optional()` string can't carry, since JSON.stringify drops
+    // `undefined` keys entirely (a client sending `value || undefined` for a
+    // cleared field silently never reaches here at all, which was the actual
+    // "can't clear a manually-entered field" bug).
     const schema = z.object({
-      displayName: z.string().max(160).optional(),
+      displayName: z.string().max(160).nullable().optional(),
       identityResolved: z.boolean().optional(),
       enrichmentStatus: z.enum(["PENDING", "IN_PROGRESS", "COMPLETE", "FLAGGED_REVIEW"]).optional(),
       flags: z.array(z.enum(LEAD_FLAGS)).optional(),
       services: z.array(z.string()).optional(),
-      sourceLanguage: z.string().optional(),
-      targetLanguage: z.string().optional(),
-      country: z.string().optional(),
-      profileLink: z.string().optional(),
-      email: z.string().trim().transform((val) => (val === "" ? undefined : val)).refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
-      contactNumber: z.string().optional(),
-      yearsOfExperience: z.number().optional(),
-      vendorExperience: z.string().optional(),
-      headline: z.string().optional(),
-      currentTitle: z.string().optional(),
-      aboutSnippet: z.string().optional(),
+      sourceLanguage: z.string().nullable().optional(),
+      targetLanguage: z.string().nullable().optional(),
+      country: z.string().nullable().optional(),
+      profileLink: z.string().nullable().optional(),
+      email: z.string().trim().transform((val) => (val === "" ? null : val)).nullable().refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
+      contactNumber: z.string().nullable().optional(),
+      yearsOfExperience: z.number().nullable().optional(),
+      vendorExperience: z.string().nullable().optional(),
+      headline: z.string().nullable().optional(),
+      currentTitle: z.string().nullable().optional(),
+      aboutSnippet: z.string().nullable().optional(),
       toolsSoftware: z.array(z.string()).optional(),
       certifications: z.array(z.string()).optional(),
       priority: z.enum(["P0", "P1", "P2", "P3"]).optional(),
@@ -688,9 +688,21 @@ leadRouter.patch(
     });
     const patch = schema.parse(req.body);
 
-    const hasContact = !!(patch.email || patch.contactNumber || patch.profileLink || existing.email || existing.contactNumber || existing.profileLink);
-    const shouldStayComplete =
-      existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE" || hasContact;
+    const existingFieldSources = ((existing.fieldSources as Record<string, string> | null) ?? {}) as Record<string, string>;
+    const nextFieldSources = { ...existingFieldSources };
+    for (const [patchKey, canonicalKey] of Object.entries(MANUAL_FIELD_SOURCE_KEYS)) {
+      if (!(patchKey in req.body)) continue; // key wasn't part of this request at all
+      const val = (patch as any)[patchKey];
+      const isCleared = val == null || (Array.isArray(val) && val.length === 0);
+      if (isCleared) {
+        // Recruiter explicitly cleared their own manual entry -- the field
+        // is fair game for auto-enrichment again, not still "protected".
+        delete nextFieldSources[canonicalKey];
+      } else {
+        nextFieldSources[canonicalKey] = "manual";
+      }
+    }
+    (patch as any).fieldSources = nextFieldSources;
 
     // A caller sending `flags` intends to ADD to the lead's flags (e.g.
     // stacking WATCHING onto a lead already flagged DNC), not replace the
@@ -702,10 +714,19 @@ leadRouter.patch(
       patch.flags = Array.from(new Set([...existing.flags, ...patch.flags]));
     }
 
+    const hasContact = !!(patch.email || patch.contactNumber || patch.profileLink || existing.email || existing.contactNumber || existing.profileLink);
+    const shouldStayComplete =
+      existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE" || hasContact;
+
     if (shouldStayComplete) {
       patch.identityResolved = true;
       patch.enrichmentStatus = "COMPLETE";
-      patch.flags = Array.from(new Set((patch.flags ?? existing.flags).filter((f) => f !== "ON_HOLD")));
+      // NOTE: this used to also strip ON_HOLD here -- removed. On Hold is now
+      // driven only by the waterfall's own conclusion state or the
+      // recruiter's explicit toggle (POST/DELETE /:id/flags); a manual field
+      // edit that happens to include contact info must not silently clear it
+      // as a side effect (this was itself an instance of the exact bug this
+      // rework closes).
     }
 
     if (patch.stage && patch.stage !== existing.stage) {
@@ -862,7 +883,7 @@ leadRouter.patch(
       }
     }
 
-    return res.json({ lead: updated });
+    return res.json({ lead: withEnrichedFieldCount(updated) });
   })
 );
 
@@ -872,7 +893,7 @@ leadRouter.post(
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
     const lead = await claimLead(req.params.id, req.user!.id);
-    return res.json({ lead });
+    return res.json({ lead: lead ? withEnrichedFieldCount(lead) : null });
   })
 );
 
@@ -898,8 +919,14 @@ leadRouter.post(
       },
     });
     const flags = Array.from(new Set([...lead.flags, flag]));
-    const updated = await prisma.lead.update({ where: { id: lead.id }, data: { flags } });
-    return res.status(201).json({ lead: updated });
+    // A recruiter adding ON_HOLD through this endpoint is, by definition, the
+    // manual case -- system-driven ON_HOLD (waterfall timeout/crash) is set
+    // directly by enrichLeadById/stallOverdueEnrichments, never through here.
+    const updated = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { flags, ...(flag === "ON_HOLD" ? { onHoldReason: "MANUAL" as const } : {}) },
+    });
+    return res.status(201).json({ lead: withEnrichedFieldCount(updated) });
   })
 );
 
@@ -918,8 +945,14 @@ leadRouter.delete(
       data: { leadId: lead.id, flag: flag as any, action: "REMOVED", setByRecruiterId: req.user!.id },
     });
     const flags = lead.flags.filter((f) => f !== flag);
-    const updated = await prisma.lead.update({ where: { id: lead.id }, data: { flags } });
-    return res.json({ lead: updated });
+    // Clearing ON_HOLD always clears its reason too, regardless of what that
+    // reason was -- "coming off On Hold is its own explicit action," and
+    // this endpoint is exactly that action for any of the three reasons.
+    const updated = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { flags, ...(flag === "ON_HOLD" ? { onHoldReason: null } : {}) },
+    });
+    return res.json({ lead: withEnrichedFieldCount(updated) });
   })
 );
 
@@ -955,12 +988,14 @@ leadRouter.post(
   })
 );
 
-// POST /api/leads/:id/retry-enrichment — recover a STALLED lead (or retry
-// any other non-running lead) by handing it back to the normal PENDING
-// queue, which pollPendingEnrichment picks up on its next 3-minute pass.
-// Deliberately does not call enrichLeadById directly here -- routing every
-// retry through the same poll path a fresh lead takes means there's exactly
-// one code path that can ever set IN_PROGRESS, not two.
+// POST /api/leads/:id/retry-enrichment — human-triggered retry for a lead On
+// Hold because the waterfall didn't conclude (STALLED/TIMEOUT/SYSTEM_ERROR;
+// never shown in the UI for MANUAL, whose only exit is the flags toggle).
+// Hands it back to the normal PENDING queue, which pollPendingEnrichment
+// picks up on its next pass. Deliberately does not call enrichLeadById
+// directly here -- routing every retry through the same poll path a fresh
+// lead takes means there's exactly one code path that can ever set
+// IN_PROGRESS, not two.
 leadRouter.post(
   "/:id/retry-enrichment",
   requireRole("owner", "recruiter"),
@@ -972,11 +1007,16 @@ leadRouter.post(
       throw new ApiError(409, "ALREADY_RUNNING", "This lead's enrichment is still actively running");
     }
 
+    // Must also clear ON_HOLD/onHoldReason, not just flip enrichmentStatus
+    // back to PENDING -- pollPendingEnrichment now excludes any ON_HOLD lead
+    // from its query regardless of enrichmentStatus (Part 4), so setting
+    // PENDING alone would silently leave this lead un-retried forever.
+    const flags = lead.flags.filter((f) => f !== "ON_HOLD");
     const updated = await prisma.lead.update({
       where: { id: lead.id },
-      data: { enrichmentStatus: "PENDING" },
+      data: { enrichmentStatus: "PENDING", flags, onHoldReason: null },
     });
-    return res.json({ lead: updated });
+    return res.json({ lead: withEnrichedFieldCount(updated) });
   })
 );
 
