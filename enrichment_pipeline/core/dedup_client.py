@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from config import Config
 from core.dedup_prompts import build_dedup_system_prompt, build_dedup_user_content
+from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -31,6 +31,7 @@ class DedupGroqClient:
                 "Content-Type": "application/json",
             }
         )
+        self._policy = RetryPolicy(retries=config.max_retries)
 
     def find_matches(self, tested_lead: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Ask the model whether `tested_lead` is the same person as any of `candidates`.
@@ -51,38 +52,46 @@ class DedupGroqClient:
 
         log.info("Dedup Groq request START model=%s candidates=%d", self.config.groq_model, len(candidates))
 
-        for attempt in range(1, self.config.max_retries + 1):
-            try:
-                resp = self.session.post(
-                    self.config.groq_base_url,
-                    json=body,
-                    timeout=self.config.request_timeout,
-                )
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    log.warning(
-                        "Dedup Groq request retryable status=%s attempt=%d/%d",
-                        resp.status_code, attempt, self.config.max_retries,
-                    )
-                    if attempt >= self.config.max_retries:
-                        raise DedupGroqError(
-                            f"Dedup Groq call failed after {self.config.max_retries} attempts: "
-                            f"HTTP {resp.status_code}: {resp.text[:200]}"
-                        )
-                    time.sleep(self.config.retry_backoff_base ** attempt)
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                content = data["choices"][0]["message"]["content"]
-                result = json.loads(content)
-                if not isinstance(result, dict) or "matches" not in result:
-                    raise ValueError(f"Response missing 'matches' key: {content[:200]!r}")
-                log.info("Dedup Groq request SUCCESS matches=%d", len(result.get("matches") or []))
-                return result
-            except DedupGroqError:
-                raise
-            except Exception as exc:
-                if attempt >= self.config.max_retries:
-                    raise DedupGroqError(f"Dedup Groq call failed after {self.config.max_retries} attempts: {exc}") from exc
-                time.sleep(self.config.retry_backoff_base ** attempt)
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Dedup Groq request retryable failure attempt=%d/%d, retrying in %.1fs (%s)",
+                attempt + 1, self.config.max_retries, delay, exc,
+            )
 
-        raise DedupGroqError("Dedup Groq call failed")
+        try:
+            return retry_with_backoff(lambda: self._request_once(body), policy=self._policy, on_retry=on_retry)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, DedupGroqError):
+                raise cause from exc
+            raise DedupGroqError(f"Dedup Groq call failed after retries: {cause if cause else exc}") from exc
+
+    def _request_once(self, body: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            resp = self.session.post(
+                self.config.groq_base_url,
+                json=body,
+                timeout=self.config.request_timeout,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+        except requests.exceptions.RequestException as exc:
+            raise TransientError(f"Network error: {exc}") from exc
+
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise TransientError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code)
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as exc:
+            raise DedupGroqError(f"Dedup Groq call failed: HTTP {resp.status_code}: {resp.text[:200]}") from exc
+
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"]
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise TransientError(f"Malformed JSON in Groq response: {exc}") from exc
+        if not isinstance(result, dict) or "matches" not in result:
+            raise TransientError(f"Response missing 'matches' key: {content[:200]!r}")
+        log.info("Dedup Groq request SUCCESS matches=%d", len(result.get("matches") or []))
+        return result

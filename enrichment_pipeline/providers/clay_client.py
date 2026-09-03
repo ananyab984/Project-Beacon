@@ -11,12 +11,12 @@ result is pending; the orchestrator does not, and must not, block waiting for it
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, Optional
 
 import requests
 
 from config import Config
+from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -31,16 +31,6 @@ class ClayError(Exception):
         self.status_code = status_code
 
 
-class TransientError(Exception):
-    """Internal signal for retryable HTTP errors (429, 5xx, timeouts)."""
-
-    def __init__(self, message: str, status_code: Optional[int] = None, retry_after: Optional[float] = None):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
-        self.retry_after = retry_after
-
-
 class ClayClient:
     """Client for Clay's inbound webhook -- dispatch only, no response data."""
 
@@ -48,6 +38,7 @@ class ClayClient:
         self.config = config
         self.session = session or requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
+        self._policy = RetryPolicy(retries=config.max_retries)
 
     def dispatch_lead(self, lead: Dict[str, Any], correlation_id: str) -> None:
         """POST a lead into Clay's inbound webhook.
@@ -69,27 +60,20 @@ class ClayClient:
             "Source": lead.get("Source") or "",
         }
 
-        last_error: Optional[ClayError] = None
-        for attempt in range(self.config.max_retries + 1):
-            if attempt > 0:
-                delay = self.config.retry_backoff_base ** attempt
-                log.warning("Retry %d/%d dispatching lead %s to Clay after %.1fs",
-                            attempt, self.config.max_retries, correlation_id, delay)
-                time.sleep(delay)
-            try:
-                self._post_once(payload)
-                log.info("Dispatched lead %s to Clay (Bright Data returned nothing)", correlation_id)
-                return
-            except TransientError as exc:
-                last_error = ClayError(exc.message, status_code=exc.status_code)
-                if exc.retry_after:
-                    time.sleep(exc.retry_after)
-                continue
-            except ClayError as exc:
-                raise exc
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Retry %d/%d dispatching lead %s to Clay after %.1fs (%s)",
+                attempt + 1, self.config.max_retries, correlation_id, delay, exc,
+            )
 
-        assert last_error is not None
-        raise last_error
+        try:
+            retry_with_backoff(lambda: self._post_once(payload), policy=self._policy, on_retry=on_retry)
+            log.info("Dispatched lead %s to Clay (Bright Data returned nothing)", correlation_id)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, ClayError):
+                raise cause from exc
+            raise ClayError(str(cause) if cause else str(exc)) from exc
 
     def _post_once(self, payload: Dict[str, Any]) -> None:
         try:

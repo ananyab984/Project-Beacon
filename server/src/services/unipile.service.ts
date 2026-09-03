@@ -266,9 +266,17 @@ export class UnipileService {
     };
 
     const targetUrl = `${unipileBaseUrl}/hosted/accounts/link`;
-    const response = await axios.post(targetUrl, payload, {
-      headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
-    });
+    // Minting a link session isn't safe to auto-retry (a second mint on top
+    // of a first that actually succeeded server-side just orphans a session)
+    // -- bound with a deadline only, no retry.
+    const response = await retryWithBackoff(
+      (signal) =>
+        axios.post(targetUrl, payload, {
+          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+          signal,
+        }),
+      { retries: 0, deadlineMs: 15000 }
+    );
 
     return { url: response.data.url, nonce };
   }
@@ -326,10 +334,15 @@ export class UnipileService {
   static async getUserConnectedAccounts(userId: string) {
     try {
       const unipileBaseUrl = this.getUnipileBaseUrl();
-      const response = await axios.get(`${unipileBaseUrl}/accounts`, {
-        headers: this.getUnipileHeaders(),
-        timeout: 4000,
-      });
+      const response = await retryWithBackoff(
+        (signal) =>
+          axios.get(`${unipileBaseUrl}/accounts`, {
+            headers: this.getUnipileHeaders(),
+            timeout: 4000,
+            signal,
+          }),
+        { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
+      );
       const items = response.data?.items || response.data || [];
       if (Array.isArray(items) && items.length > 0) {
         for (const item of items) {
@@ -443,22 +456,36 @@ export class UnipileService {
       throw { statusCode: 404, message: "Connected account not found for this user" };
     }
 
+    // Deliberately falls through to the local DISCONNECTED update even if the
+    // remote delete ultimately fails after retries -- a user must always be
+    // able to disconnect locally, even during a Unipile outage. The failure
+    // is still surfaced structurally (below) rather than only logged, so it
+    // isn't silently swallowed.
+    let remoteDeleteError: string | undefined;
     try {
       const unipileBaseUrl = this.getUnipileBaseUrl();
-      await axios.delete(`${unipileBaseUrl}/accounts/${unipileAccountId}`, {
-        headers: this.getUnipileHeaders(),
-      });
+      await retryWithBackoff(
+        (signal) =>
+          axios.delete(`${unipileBaseUrl}/accounts/${unipileAccountId}`, {
+            headers: this.getUnipileHeaders(),
+            signal,
+          }),
+        { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
+      );
     } catch (err: any) {
-      console.warn("Unipile delete account API warning:", err?.response?.data || err.message);
+      remoteDeleteError = err?.response?.data?.message || err?.message || String(err);
+      console.warn("Unipile delete account API warning:", remoteDeleteError);
     }
 
-    return prisma.connectedAccount.update({
+    const updated = await prisma.connectedAccount.update({
       where: { unipileAccountId },
       data: {
         status: AccountStatus.DISCONNECTED,
         statusMessage: "Disconnected by user",
       },
     });
+
+    return remoteDeleteError ? { ...updated, remoteDeleteFailed: true, remoteDeleteError } : updated;
   }
 
   /**
@@ -516,11 +543,12 @@ export class UnipileService {
     let userProfile: any = null;
     try {
       const profileRes = await retryWithBackoff(
-        () =>
+        (signal) =>
           axios.get(`${unipileBaseUrl}/users/${encodeURIComponent(cleanIdentifier)}?account_id=${account_id}`, {
             headers,
+            signal,
           }),
-        { isRetryable: isRetryableByDefault }
+        { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
       );
       userProfile = profileRes.data;
     } catch (err: any) {
@@ -536,14 +564,21 @@ export class UnipileService {
     // Step 2: 2nd/3rd degree -> Send Connection Invite with Note
     if (userProfile?.network_distance && userProfile.network_distance !== "FIRST_DEGREE") {
       try {
-        const inviteRes = await axios.post(
-          `${unipileBaseUrl}/users/invite`,
-          {
-            account_id,
-            provider_id: providerId,
-            message: truncateForInviteNote(text),
-          },
-          { headers: { ...headers, "Content-Type": "application/json" } }
+        // Bounded by a deadline only, deliberately not wrapped in the usual
+        // retry -- see the Step 1 comment above (real send, no fallback-safe
+        // way to auto-retry without risking a duplicate invite).
+        const inviteRes = await retryWithBackoff(
+          (signal) =>
+            axios.post(
+              `${unipileBaseUrl}/users/invite`,
+              {
+                account_id,
+                provider_id: providerId,
+                message: truncateForInviteNote(text),
+              },
+              { headers: { ...headers, "Content-Type": "application/json" }, signal }
+            ),
+          { retries: 0, deadlineMs: 15000 }
         );
         mode = "connection_invite";
         responseData = inviteRes.data;
@@ -575,7 +610,11 @@ export class UnipileService {
         form.append("text", text);
 
         const formHeaders = this.getUnipileHeaders(form.getHeaders() as Record<string, string>);
-        const chatRes = await axios.post(`${unipileBaseUrl}/chats`, form, { headers: formHeaders });
+        // Deadline only, no retry -- same reasoning as the invite send above.
+        const chatRes = await retryWithBackoff(
+          (signal) => axios.post(`${unipileBaseUrl}/chats`, form, { headers: formHeaders, signal }),
+          { retries: 0, deadlineMs: 15000 }
+        );
 
         mode = "direct_message";
         responseData = chatRes.data;
@@ -586,14 +625,19 @@ export class UnipileService {
       } catch (dmErr: any) {
         // Fallback: Connection request with note
         try {
-          const inviteRes = await axios.post(
-            `${unipileBaseUrl}/users/invite`,
-            {
-              account_id,
-              provider_id: providerId,
-              message: truncateForInviteNote(text),
-            },
-            { headers: { ...headers, "Content-Type": "application/json" } }
+          // Deadline only, no retry -- same reasoning as the two send sites above.
+          const inviteRes = await retryWithBackoff(
+            (signal) =>
+              axios.post(
+                `${unipileBaseUrl}/users/invite`,
+                {
+                  account_id,
+                  provider_id: providerId,
+                  message: truncateForInviteNote(text),
+                },
+                { headers: { ...headers, "Content-Type": "application/json" }, signal }
+              ),
+            { retries: 0, deadlineMs: 15000 }
           );
           mode = "connection_invite_fallback";
           responseData = inviteRes.data;
@@ -704,13 +748,19 @@ export class UnipileService {
     }
 
     // Single write, no fallback cascade (unlike sendLinkedInMessage above) --
-    // safe to retry the whole call on a transient failure.
+    // but still a real outbound email to a real lead, so treated the same as
+    // the LinkedIn invite/DM cascade: deadline-bounded, deliberately NOT
+    // retried. A prior version of this comment argued "no fallback cascade"
+    // made retrying safe, but that reasoning addressed a different risk
+    // (cascade-branch interaction) than the one that actually matters here --
+    // a retry after an ambiguous failure can duplicate a real send.
     const response = await retryWithBackoff(
-      () =>
+      (signal) =>
         axios.post(`${unipileBaseUrl}/emails`, payload, {
           headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+          signal,
         }),
-      { isRetryable: isRetryableByDefault }
+      { retries: 0, deadlineMs: 15000 }
     );
 
     const externalMessageId = response.data.tracking_id || response.data.id || `mail_${Date.now()}`;

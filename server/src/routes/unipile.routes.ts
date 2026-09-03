@@ -87,8 +87,14 @@ unipileRouter.delete("/accounts/:accountId", authenticateJwt, async (req: Reques
   try {
     const { accountId } = req.params;
     const userId = req.user!.id;
-    await UnipileService.disconnectAccount(userId, accountId);
-    return res.json({ success: true, message: "Account disconnected" });
+    const result: any = await UnipileService.disconnectAccount(userId, accountId);
+    return res.json({
+      success: true,
+      message: result?.remoteDeleteFailed
+        ? "Account disconnected locally; Unipile's own remote delete failed and may need manual cleanup"
+        : "Account disconnected",
+      remoteDeleteFailed: !!result?.remoteDeleteFailed,
+    });
   } catch (err: any) {
     return res.status(500).json({ error: "DISCONNECT_FAILED", message: err.message });
   }

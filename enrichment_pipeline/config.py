@@ -61,9 +61,15 @@ class Config:
     # provider choice from the rest of the pipeline, which runs on Claude.
     groq_model: str = "llama-3.3-70b-versatile"
 
-    request_timeout: int = 60
-    max_retries: int = 3
-    retry_backoff_base: float = 2.0
+    # Per-HTTP-request socket timeout (connect+read). Kept comfortably under
+    # the 15s wall-clock deadline enforced in core/resilience.py so it can
+    # still act as a real backstop rather than being dead weight -- that
+    # 15s ceiling always fires first otherwise, since it bounds the whole
+    # attempt+backoff sequence, not just one request.
+    request_timeout: int = 10
+    # Attempts AFTER the first (4 -> 5 total), matching the retry contract in
+    # server/src/lib/retryWithBackoff.ts for system-wide consistency.
+    max_retries: int = 4
     log_level: str = "INFO"
 
     # Duplicate/identity-resolution stage ("Danny M rule") -- pairs scoring >= this are
@@ -122,8 +128,8 @@ def load_config(require_keys: bool = False) -> Config:
         groq_api_key=groq_key,
         clay_webhook_url=clay_webhook_url,
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
-        request_timeout=int(os.getenv("REQUEST_TIMEOUT", "60")),
-        max_retries=int(os.getenv("MAX_RETRIES", "3")),
+        request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
+        max_retries=int(os.getenv("MAX_RETRIES", "4")),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         dedup_match_threshold=dedup_match_threshold,
         keepalive_enabled=keepalive_enabled,
