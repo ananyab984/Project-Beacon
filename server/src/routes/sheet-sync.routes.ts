@@ -1,11 +1,11 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import axios from "axios";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
+import { fetchCsv } from "../lib/fetchCsv";
 
 export const sheetSyncRouter = Router();
 
@@ -266,16 +266,7 @@ sheetSyncRouter.post(
 
     let csvData: string;
     try {
-      const response = await axios.get(csvUrl, {
-        timeout: 15000,
-        headers: { Accept: "text/csv, text/plain, */*" },
-        maxRedirects: 5,
-      });
-      csvData = String(response.data);
-
-      if (typeof csvData === "string" && (csvData.includes("<!DOCTYPE html") || csvData.includes("<html"))) {
-        throw new Error("Google Sheet returned an HTML sign-in page. Please make the sheet public with 'Anyone with the link can view'.");
-      }
+      csvData = await fetchCsv(csvUrl);
     } catch (err: any) {
       console.error("[sheet-sync] Fetch failed:", err?.message || err);
       return res.status(400).json({

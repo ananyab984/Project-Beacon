@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, Optional
 
 import requests
 
 from config import Config
+from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -22,16 +22,6 @@ class BrightDataError(Exception):
         self.status_code = status_code
 
 
-class TransientError(Exception):
-    """Internal signal for retryable HTTP errors (429, 5xx, timeouts)."""
-
-    def __init__(self, message: str, status_code: Optional[int] = None, retry_after: Optional[float] = None):
-        super().__init__(message)
-        self.message = message
-        self.status_code = status_code
-        self.retry_after = retry_after
-
-
 class BrightDataClient:
     """Client for POST /datasets/v3/scrape (LinkedIn profile scraping)."""
 
@@ -44,6 +34,7 @@ class BrightDataClient:
                 "Content-Type": "application/json",
             }
         )
+        self._policy = RetryPolicy(retries=config.max_retries)
 
     def scrape_profile(self, profile_url: str) -> Any:
         """Scrape a single LinkedIn profile URL with exponential backoff retries."""
@@ -53,32 +44,23 @@ class BrightDataClient:
         }
         body = [{"url": profile_url}]
 
-        last_error: Optional[BrightDataError] = None
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Retry %d/%d for Bright Data scrape of %s after %.1fs (%s)",
+                attempt + 1, self.config.max_retries, profile_url, delay, exc,
+            )
 
-        for attempt in range(self.config.max_retries + 1):
-            if attempt > 0:
-                delay = self.config.retry_backoff_base ** attempt
-                log.warning(
-                    "Retry %d/%d for Bright Data scrape of %s after %.1fs",
-                    attempt,
-                    self.config.max_retries,
-                    profile_url,
-                    delay,
-                )
-                time.sleep(delay)
-
-            try:
-                return self._request_once(profile_url, params, body)
-            except TransientError as exc:
-                last_error = BrightDataError(exc.message, status_code=exc.status_code)
-                if exc.retry_after:
-                    time.sleep(exc.retry_after)
-                continue
-            except BrightDataError as exc:
-                raise exc
-
-        assert last_error is not None
-        raise last_error
+        try:
+            return retry_with_backoff(
+                lambda: self._request_once(profile_url, params, body),
+                policy=self._policy,
+                on_retry=on_retry,
+            )
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, BrightDataError):
+                raise cause from exc
+            raise BrightDataError(str(cause) if cause else str(exc)) from exc
 
     def _request_once(self, url: str, params: Dict[str, str], body: list) -> Any:
         log.info("Bright Data API request START url=%s dataset_id=%s", url, self.config.dataset_id)

@@ -1,6 +1,8 @@
 import { prisma } from "../prisma";
 import { config } from "../config";
 import { candidateRoleOf } from "../lib/messageTemplates";
+import { isFieldManuallySet } from "../lib/manualFieldSources";
+import { computeOnHoldTransition } from "../lib/onHoldTransition";
 
 /** Clay's own field names for its "Enrich person" action (verified against
  * real captured payloads during the POC, not guessed) -- this is a
@@ -76,6 +78,16 @@ export class ClayService {
 
     const patch = mapClayEnrichment(rawEnrichment);
 
+    // A manually-entered field must never be silently overwritten by Clay's
+    // async result either -- this is a second re-enrichment path touching
+    // overlapping fields (aboutSnippet/headline/currentTitle/certifications/
+    // country/displayName), same risk enrichLeadById already guards against.
+    for (const key of Object.keys(patch)) {
+      if (isFieldManuallySet(lead.fieldSources as Record<string, string> | null, key)) {
+        delete patch[key];
+      }
+    }
+
     // `contact_details` is a TOP-LEVEL sibling of linkedin_enrichment in the
     // body (from the "Personal Email" finder column), not nested inside it --
     // was being silently dropped entirely. This is the one field that
@@ -98,15 +110,21 @@ export class ClayService {
       // PENDING with no automated step left to try.
       const fieldSources = { ...((lead.fieldSources as Record<string, string>) || {}) };
       fieldSources._clay_dispatch = "complete";
-      const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
-      const hasContact = !!(lead.email || lead.contactNumber);
+      // A normal, concluded outcome (Clay answered, just with nothing
+      // usable) -- never On Hold based on data quality.
+      const { flags, onHoldReason } = computeOnHoldTransition({
+        currentFlags: (lead.flags as string[]) || [],
+        currentOnHoldReason: lead.onHoldReason,
+        outcome: "concluded_normally",
+      });
       await prisma.lead.update({
         where: { id: lead.id },
         data: {
           fieldSources: fieldSources as any,
           identityResolved: true,
           enrichmentStatus: "COMPLETE",
-          flags: (hasContact ? currentFlags : Array.from(new Set([...currentFlags, "ON_HOLD"]))) as any,
+          flags: flags as any,
+          onHoldReason,
           promotedToGlobalAt: new Date(),
           justEnrichedUntil: new Date(Date.now() + 24 * 3600_000),
         },
@@ -128,11 +146,14 @@ export class ClayService {
     // (we're past the empty-response early-return above) IS that terminal
     // state: whatever it found is the maximum obtainable for this profile
     // automatically, so enrichmentStatus goes to COMPLETE unconditionally
-    // below. ON_HOLD stays a separate, reachability-specific signal:
-    // "enrichment is done, but we still have no contact info" -- not a
-    // progress indicator.
-    const hasContact = !!(patch.email || patch.contactNumber || lead.email || lead.contactNumber);
-    const currentFlags = ((lead.flags as string[]) || []).filter((f) => f !== "ON_HOLD");
+    // below. On Hold is now a separate signal driven only by the waterfall's
+    // conclusion state or the recruiter's manual toggle -- never by field
+    // count/contact presence.
+    const { flags, onHoldReason } = computeOnHoldTransition({
+      currentFlags: (lead.flags as string[]) || [],
+      currentOnHoldReason: lead.onHoldReason,
+      outcome: "concluded_normally",
+    });
 
     await prisma.lead.update({
       where: { id: lead.id },
@@ -149,7 +170,8 @@ export class ClayService {
         // contact info -- separate concept from "can we reach them yet".
         identityResolved: true,
         enrichmentStatus: "COMPLETE" as const,
-        flags: (hasContact ? currentFlags : Array.from(new Set([...currentFlags, "ON_HOLD"]))) as any,
+        flags: flags as any,
+        onHoldReason,
         promotedToGlobalAt: new Date(),
         justEnrichedUntil: new Date(Date.now() + 24 * 3600_000),
       },

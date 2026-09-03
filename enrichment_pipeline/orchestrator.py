@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from typing import Any, Dict, Optional, TypedDict
+from typing import Any, Dict, Literal, Optional, TypedDict
 
 from config import Config
 from core.field_audit import audit_lead_fields
@@ -48,6 +48,18 @@ OVERRIDE_ON_VERIFIED_FIELDS = {
 # about when still empty after Stage 3's deterministic parse.
 FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications"]
 
+# Lead-level cumulative budget across the WHOLE waterfall call sequence for
+# one lead -- real elapsed time via time.monotonic(), not a sum of each
+# step's own 15s deadline (core/resilience.py's RetryPolicy.deadline_seconds
+# already bounds each individual provider call; this is a separate,
+# outer safety net). Worst case today: LinkedIn's up-to-2 sequential
+# provider calls before Stage 4-6 (BrightData, Clay) + the LLM fallback call
+# itself = 3 x 15s = 45s; non-LinkedIn = 2 x 15s = 30s -- both comfortably
+# under this ceiling, so it's not expected to fire in the common case.
+LEAD_LEVEL_TIMEOUT_SECONDS = 60.0
+
+Conclusion = Literal["short_circuit_success", "exhausted_no_match", "timed_out"]
+
 
 class PipelineResult(TypedDict):
     lead: Dict[str, Any]
@@ -57,6 +69,13 @@ class PipelineResult(TypedDict):
     audit: Dict[str, Any]
     execution_time_ms: int
     logs: list[str]
+    # None while Clay's async dispatch is still pending (`_clay_dispatch ==
+    # "pending"`, see clay_awaiting below) -- that pass hasn't concluded one
+    # way or another yet, distinct from all three named states, and is
+    # already correctly handled by enrichment_status/field_sources alone
+    # (Node's enrichLeadById reads clay_awaiting from field_sources, not
+    # this). Populated for every other return path.
+    conclusion: Optional[Conclusion]
     # Set only when Bright Data returned nothing for a LinkedIn profile and
     # Clay's async fallback was dispatched. `correlation_id` is what
     # /api/webhooks/clay (Node) matches Clay's later result back to this
@@ -92,6 +111,179 @@ class EnrichmentOrchestrator:
             "generic_llm": GenericParser(),
         }
 
+    def _timed_out_result(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], start_time: float, stage: str
+    ) -> PipelineResult:
+        """Builds a terminal result for the 60s lead-level ceiling firing
+        before the waterfall could conclude either way -- distinct from
+        `exhausted_no_match` (every step ran to its own conclusion, this one
+        aborted mid-sequence) and from a genuine crash (this is a clean,
+        expected abort, not an unhandled exception)."""
+        msg = f"Lead-level {LEAD_LEVEL_TIMEOUT_SECONDS:.0f}s timeout hit before {stage} -- aborting waterfall run"
+        logs.append(msg)
+        log.warning(msg)
+        audit = audit_lead_fields(lead)
+        elapsed_ms = int((time.monotonic() - start_time) * 1000)
+        return {
+            "lead": lead,
+            "enrichment_status": "enrichment_partial",
+            "enrichment_percentage": audit["enrichment_percentage"],
+            "field_sources": field_sources,
+            "audit": audit,
+            "execution_time_ms": elapsed_ms,
+            "logs": logs,
+            "clay_fallback": None,
+            "raw_enrichment_data": None,
+            "conclusion": "timed_out",
+        }
+
+    def _run_linkedin_steps(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], profile_link: str
+    ) -> tuple[Any, str, Optional[Dict[str, Any]]]:
+        """LinkedIn waterfall, steps 1-2 of 3: Bright Data -> Clay. The only
+        method that ever references self.clay -- structurally, not just
+        behaviorally, the non-LinkedIn path below has no way to reach it."""
+        raw_scraped_data: Any = None
+        raw_source_text = ""
+
+        if profile_link and self.brightdata:
+            try:
+                raw_scraped_data = self.brightdata.scrape_profile(profile_link)
+                # json.dumps (not Python's str()) so the LLM fallback sees
+                # standard double-quoted JSON -- str() renders None/True as
+                # Python literals and adds repr noise that wastes the
+                # 8000-char budget extract_critical_fields truncates to.
+                raw_source_text = json.dumps(raw_scraped_data, ensure_ascii=False, default=str)
+            except BrightDataError as exc:
+                msg = f"Scraping warning (brightdata): {exc}"
+                logs.append(msg)
+                log.warning(msg)
+
+        if raw_scraped_data is not None:
+            self._merge_stage3_parsed(lead, field_sources, logs, "linkedin", "brightdata", raw_scraped_data)
+
+        post_stage3_audit = audit_lead_fields(lead)
+        logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")
+
+        # Stage 3.5: Clay fallback.
+        #
+        # BUG FIX (2026-08-26): went through two narrower gates before this
+        # (total-miss-only, then email-missing-only) -- explicitly corrected
+        # to fire for EVERY LinkedIn lead, unconditionally, once per lead.
+        # Clay isn't just a gap-filler for a missing field; it's a genuinely
+        # richer second enrichment pass (experience, education, courses,
+        # languages -- see core/leads.py's grounding_facts on the drafting
+        # side) that's worth having on every LinkedIn lead regardless of what
+        # Bright Data already found. Deliberately NOT gated on completeness
+        # (i.e. not skipped by a "short-circuit success" check) -- that would
+        # silently regress this exact, already-fixed-once bug. Gate is just:
+        # do we have a LinkedIn identifier Clay's Enrich Person action can
+        # use, and has this lead not already been through Clay before.
+        clay_fallback: Optional[Dict[str, Any]] = None
+        # Confirmed live against Clay's own dashboard (2026-08-26): dispatching
+        # a non-LinkedIn Profile_Link (ProZ/Bodalgo/personal-site URLs, even
+        # with a real Email included in the same payload) makes Clay's
+        # "Enrich person" waterfall action fail every row with "Invalid
+        # input: Invalid person identifier" -- it does not fall back to
+        # searching by email despite Email being sent as its own field. This
+        # table's Enrich Person step is LinkedIn-URL-only.
+        has_clay_identifier = bool(re.search(r"linkedin\.com/(in|sales)/", profile_link or "", re.IGNORECASE))
+        clay_dispatch_state = field_sources.get("_clay_dispatch")
+        already_dispatched = bool(clay_dispatch_state)
+
+        if not has_clay_identifier:
+            logs.append(
+                "Stage 3.5 skipped: this lead has no LinkedIn URL -- Clay's Enrich Person action "
+                "rejects everything else (ProZ/ATA/Bodalgo profile links, or an email alone) with "
+                "'Invalid person identifier', confirmed live 2026-08-26"
+            )
+        elif already_dispatched:
+            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": f"already_{clay_dispatch_state}"}
+            logs.append(f"Stage 3.5 skipped: Clay fallback already attempted for this lead (state={clay_dispatch_state!r}), not re-dispatching")
+        elif self.clay and profile_link:
+            try:
+                self.clay.dispatch_lead(lead, correlation_id=profile_link)
+                field_sources["_clay_dispatch"] = "pending"
+                clay_fallback = {"dispatched": True, "correlation_id": profile_link, "reason": "linkedin_lead"}
+                msg = f"Stage 3.5: dispatched to Clay (LinkedIn lead, brightdata scrape complete) -- async, result arrives via webhook"
+                logs.append(msg)
+                log.info("Lead %s: %s", lead.get("Full_Name") or profile_link, msg)
+            except ClayError as exc:
+                msg = f"Stage 3.5: Clay dispatch failed: {exc}"
+                logs.append(msg)
+                log.error(msg)
+        elif not self.clay:
+            logs.append("Stage 3.5 skipped: LinkedIn lead, but CLAY_WEBHOOK_URL not configured")
+        elif not profile_link:
+            logs.append("Stage 3.5 skipped: LinkedIn lead, but no Profile_Link to use as Clay's correlation id")
+
+        return raw_scraped_data, raw_source_text, clay_fallback
+
+    def _run_non_linkedin_steps(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+        profile_link: str, provider_type: str, parser_name: str,
+    ) -> tuple[Any, str, Optional[Dict[str, Any]]]:
+        """Non-LinkedIn waterfall, step 1 of 2: Tavily only. No reference to
+        self.clay anywhere in this method -- structurally impossible for a
+        non-LinkedIn lead to reach Clay, not merely gated by a URL check."""
+        raw_scraped_data: Any = None
+        raw_source_text = ""
+
+        if profile_link and self.tavily:
+            try:
+                if provider_type == "tavily_search":
+                    raw_scraped_data = self.tavily.search_snippets(f"site:proz.com {lead.get('Full_Name', '')}".strip(), include_domains=["proz.com"])
+                    raw_source_text = json.dumps(raw_scraped_data, ensure_ascii=False, default=str)
+                elif provider_type == "tavily_extract":
+                    raw_scraped_data = self.tavily.extract_url(profile_link)
+                    raw_source_text = raw_scraped_data.get("raw_content", "")
+            except TavilyError as exc:
+                msg = f"Scraping warning ({provider_type}): {exc}"
+                logs.append(msg)
+                log.warning(msg)
+
+        if raw_scraped_data is not None:
+            self._merge_stage3_parsed(lead, field_sources, logs, parser_name, "tavily", raw_scraped_data)
+
+        post_stage3_audit = audit_lead_fields(lead)
+        logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")
+
+        # No Clay step reachable from this path at all -- not behaviorally
+        # gated (as it effectively was before, via a URL regex any provider
+        # type could theoretically satisfy), but structurally: this method
+        # has no code path that calls self.clay, full stop.
+        return raw_scraped_data, raw_source_text, None
+
+    def _merge_stage3_parsed(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+        parser_name: str, source_label: str, raw_scraped_data: Any,
+    ) -> None:
+        """Shared Stage 3 merge rules (identical for both waterfall shapes):
+        NEVER overwrite existing data -- EXCEPT OVERRIDE_ON_VERIFIED_FIELDS."""
+        parser = self.parsers.get(parser_name, GenericParser())
+        profile_link = lead.get("Profile_Link", "")
+        stage3_parsed = parser.parse(profile_link, raw_scraped_data)
+
+        for k, v in stage3_parsed.items():
+            if is_empty_value(v):
+                continue
+            if k in OVERRIDE_ON_VERIFIED_FIELDS:
+                # Mark it verified even when the scraped value happens to
+                # match the manual one -- otherwise field_sources stays
+                # "existing" and Stage 4 would needlessly re-send an
+                # already-confirmed field to the LLM fallback.
+                if lead.get(k) != v:
+                    lead[k] = v
+                    field_sources[k] = source_label
+                    logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source_label}, verified profile overrides manual entry)")
+                else:
+                    field_sources[k] = source_label
+                    logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source_label}, confirmed matches manual entry)")
+            elif is_empty_value(lead.get(k)):
+                lead[k] = v
+                field_sources[k] = source_label
+                logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source_label})")
+
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
         lead = dict(lead_input)
@@ -118,126 +310,26 @@ class EnrichmentOrchestrator:
 
         logs.append(f"Stage 2 Router: Source={source_val!r} -> Provider={provider_type!r}, Parser={parser_name!r}")
 
-        # Stage 3: Scrape & Stage 3 Deterministic Parsing
-        raw_scraped_data: Any = None
-        raw_source_text: str = ""
+        if time.monotonic() - start_time >= LEAD_LEVEL_TIMEOUT_SECONDS:
+            return self._timed_out_result(lead, field_sources, logs, start_time, "Stage 3 (scrape)")
 
-        if profile_link:
-            try:
-                if provider_type == "brightdata" and self.brightdata:
-                    raw_scraped_data = self.brightdata.scrape_profile(profile_link)
-                    # json.dumps (not Python's str()) so the LLM fallback sees
-                    # standard double-quoted JSON -- str() renders None/True
-                    # as Python literals and adds repr noise that wastes the
-                    # 8000-char budget extract_critical_fields truncates to,
-                    # for no benefit to a model asked to find verbatim quotes.
-                    raw_source_text = json.dumps(raw_scraped_data, ensure_ascii=False, default=str)
-                elif provider_type == "tavily_search" and self.tavily:
-                    raw_scraped_data = self.tavily.search_snippets(f"site:proz.com {lead.get('Full_Name', '')}".strip(), include_domains=["proz.com"])
-                    raw_source_text = json.dumps(raw_scraped_data, ensure_ascii=False, default=str)
-                elif provider_type == "tavily_extract" and self.tavily:
-                    raw_scraped_data = self.tavily.extract_url(profile_link)
-                    raw_source_text = raw_scraped_data.get("raw_content", "")
-            except (BrightDataError, TavilyError) as exc:
-                msg = f"Scraping warning ({provider_type}): {exc}"
-                logs.append(msg)
-                log.warning(msg)
+        # Stage 3 + 3.5: two structurally distinct waterfall shapes --
+        # LinkedIn (Bright Data -> Clay, 3 steps incl. the shared LLM
+        # fallback below) vs every other platform (Tavily only, 2 steps).
+        # `_run_non_linkedin_steps` has no code path that can reach Clay at
+        # all, regardless of Profile_Link's contents -- not just gated by a
+        # URL check.
+        if provider_type == "brightdata":
+            raw_scraped_data, raw_source_text, clay_fallback = self._run_linkedin_steps(lead, field_sources, logs, profile_link)
+        else:
+            raw_scraped_data, raw_source_text, clay_fallback = self._run_non_linkedin_steps(
+                lead, field_sources, logs, profile_link, provider_type, parser_name
+            )
 
-        # Run parser if raw scraped data was obtained
-        stage3_parsed: Dict[str, Any] = {}
-        if raw_scraped_data is not None:
-            parser = self.parsers.get(parser_name, GenericParser())
-            stage3_parsed = parser.parse(profile_link, raw_scraped_data)
-
-            # Merge rules: NEVER overwrite existing data -- EXCEPT
-            # OVERRIDE_ON_VERIFIED_FIELDS (see module-level comment above).
-            # Everything else (contact fields) keeps the strict
-            # never-overwrite rule and is instead handled by the dedicated
-            # Stage 4-6 critical-field audit/fallback below.
-            for k, v in stage3_parsed.items():
-                if is_empty_value(v):
-                    continue
-                source = "brightdata" if provider_type == "brightdata" else "tavily"
-                if k in OVERRIDE_ON_VERIFIED_FIELDS:
-                    # Mark it verified even when the scraped value happens to
-                    # match the manual one -- otherwise field_sources stays
-                    # "existing" and Stage 4 would needlessly re-send an
-                    # already-confirmed field to the LLM fallback.
-                    if lead.get(k) != v:
-                        lead[k] = v
-                        field_sources[k] = source
-                        logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, verified profile overrides manual entry)")
-                    else:
-                        field_sources[k] = source
-                        logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source}, confirmed matches manual entry)")
-                elif is_empty_value(lead.get(k)):
-                    lead[k] = v
-                    field_sources[k] = source
-                    logs.append(f"Stage 3 Parsed: {k} = {v!r} (from {source})")
+        if time.monotonic() - start_time >= LEAD_LEVEL_TIMEOUT_SECONDS:
+            return self._timed_out_result(lead, field_sources, logs, start_time, "Stage 4-6 (LLM fallback)")
 
         post_stage3_audit = audit_lead_fields(lead)
-        logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")
-
-        # Stage 3.5: Clay fallback.
-        #
-        # BUG FIX (2026-08-26): went through two narrower gates before this
-        # (total-miss-only, then email-missing-only) -- explicitly corrected
-        # to fire for EVERY LinkedIn lead, unconditionally, once per lead.
-        # Clay isn't just a gap-filler for a missing field; it's a genuinely
-        # richer second enrichment pass (experience, education, courses,
-        # languages -- see core/leads.py's grounding_facts on the drafting
-        # side) that's worth having on every LinkedIn lead regardless of what
-        # Bright Data already found. Gate is now just: do we have a LinkedIn
-        # identifier Clay's Enrich Person action can use, and has this lead
-        # not already been through Clay before.
-        clay_fallback: Optional[Dict[str, Any]] = None
-        _CLAY_CAPABLE_PROVIDERS = {"brightdata", "tavily_search", "tavily_extract"}
-        # Confirmed live against Clay's own dashboard (2026-08-26): dispatching
-        # a non-LinkedIn Profile_Link (ProZ/Bodalgo/personal-site URLs, even
-        # with a real Email included in the same payload) makes Clay's
-        # "Enrich person" waterfall action fail every row with "Invalid
-        # input: Invalid person identifier" -- it does not fall back to
-        # searching by email despite Email being sent as its own field. This
-        # table's Enrich Person step is LinkedIn-URL-only. Gate dispatch
-        # strictly on a genuine LinkedIn/SalesNav URL until Clay is
-        # reconfigured (if ever) with an email-based enrichment path.
-        has_clay_identifier = bool(re.search(r"linkedin\.com/(in|sales)/", profile_link or "", re.IGNORECASE))
-        clay_worth_trying = provider_type in _CLAY_CAPABLE_PROVIDERS and has_clay_identifier
-        # A lead that's dispatched-but-not-yet-answered is still "PENDING"
-        # overall (no critical fields resolved), so the Node backend's
-        # pollPendingEnrichment() cron will call /enrich on it again every
-        # few minutes while it waits. Without this guard, every one of those
-        # polls would re-dispatch the SAME lead to Clay as a brand-new row.
-        # Checks for ANY prior attempt (pending/complete/failed), not just
-        # "pending" -- once Clay has resolved a lead, it's never re-tried.
-        clay_dispatch_state = field_sources.get("_clay_dispatch")
-        already_dispatched = bool(clay_dispatch_state)
-        if clay_worth_trying and already_dispatched:
-            clay_fallback = {"dispatched": False, "correlation_id": profile_link, "reason": f"already_{clay_dispatch_state}"}
-            logs.append(f"Stage 3.5 skipped: Clay fallback already attempted for this lead (state={clay_dispatch_state!r}), not re-dispatching")
-        elif clay_worth_trying:
-            if self.clay and profile_link:
-                try:
-                    self.clay.dispatch_lead(lead, correlation_id=profile_link)
-                    field_sources["_clay_dispatch"] = "pending"
-                    clay_fallback = {"dispatched": True, "correlation_id": profile_link, "reason": "linkedin_lead"}
-                    msg = f"Stage 3.5: dispatched to Clay (LinkedIn lead, {provider_type} scrape complete) -- async, result arrives via webhook"
-                    logs.append(msg)
-                    log.info("Lead %s: %s", lead.get("Full_Name") or profile_link, msg)
-                except ClayError as exc:
-                    msg = f"Stage 3.5: Clay dispatch failed: {exc}"
-                    logs.append(msg)
-                    log.error(msg)
-            elif not self.clay:
-                logs.append("Stage 3.5 skipped: LinkedIn lead, but CLAY_WEBHOOK_URL not configured")
-            elif not profile_link:
-                logs.append("Stage 3.5 skipped: LinkedIn lead, but no Profile_Link to use as Clay's correlation id")
-        elif provider_type in _CLAY_CAPABLE_PROVIDERS and not has_clay_identifier:
-            logs.append(
-                "Stage 3.5 skipped: this lead has no LinkedIn URL -- Clay's Enrich Person action "
-                "rejects everything else (ProZ/ATA/Bodalgo profile links, or an email alone) with "
-                "'Invalid person identifier', confirmed live 2026-08-26"
-            )
 
         # Stage 4: Critical Field Audit & LLM Bypass Guard
         missing_critical = post_stage3_audit["missing_critical_fields"]
@@ -275,13 +367,28 @@ class EnrichmentOrchestrator:
             msg = "Stage 4 skipped: Clay fallback is still awaiting its async result -- AI extraction only runs after Clay has had its chance (or Clay doesn't apply to this lead)."
             logs.append(msg)
             log.info(msg)
+            # Not one of the 3 named conclusion states -- this pass hasn't
+            # concluded either way yet, purely awaiting Clay's async webhook.
+            # enrichment_status/field_sources (clay_awaiting) already
+            # correctly represent this; nothing else reads `conclusion` when
+            # it's None.
+            conclusion: Optional[Conclusion] = None
         elif not fallback_targets:
             # ABSOLUTE RULE: nothing left to fill or verify -- BYPASS LLM STAGE ENTIRELY
             msg = "Stage 4 Bypass Guard: nothing left for the LLM to fill or verify! BYPASSING LLM FALLBACK ENTIRELY."
             logs.append(msg)
             log.info(msg)
+            conclusion = "short_circuit_success"
         else:
             # Stage 5 & 6: Targeted LLM Fallback & Verbatim Evidence Verification
+            # Every step that could run for this platform has now been
+            # attempted (scrape, Clay if applicable, LLM fallback below) --
+            # whatever this pass ends up with is a normal, concluded result,
+            # not a failure of the waterfall itself, whether the LLM call
+            # below succeeds, partially succeeds, or raises ClaudeError
+            # (itself only raised after core/resilience.py's own 5-attempt/
+            # 15s-deadline budget is exhausted).
+            conclusion = "exhausted_no_match"
             logs.append(f"Stage 4 Audit: Target fields {fallback_targets} -> Triggering Targeted LLM Fallback")
 
             if self.claude and raw_source_text:
@@ -338,4 +445,5 @@ class EnrichmentOrchestrator:
             "logs": logs,
             "clay_fallback": clay_fallback,
             "raw_enrichment_data": raw_scraped_data,
+            "conclusion": conclusion,
         }

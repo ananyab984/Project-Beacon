@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict, List, Optional
 
 import requests
 
 from config import Config
+from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -34,6 +34,7 @@ class TavilyClient:
                 "Content-Type": "application/json",
             }
         )
+        self._policy = RetryPolicy(retries=config.max_retries)
 
     def extract_url(self, url: str) -> Dict[str, Any]:
         """Extract public page markdown/HTML content via Tavily Extract API."""
@@ -43,37 +44,52 @@ class TavilyClient:
             "extract_depth": "advanced",
         }
 
-        for attempt in range(self.config.max_retries + 1):
-            if attempt > 0:
-                time.sleep(self.config.retry_backoff_base ** attempt)
-            try:
-                resp = self.session.post(
-                    self.config.tavily_extract_url,
-                    json=payload,
-                    timeout=self.config.request_timeout,
-                )
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Retry %d/%d for Tavily Extract of %s after %.1fs (%s)",
+                attempt + 1, self.config.max_retries, url, delay, exc,
+            )
 
-                # Extract raw_content from results list if available
-                results = data.get("results", [])
-                raw_content = ""
-                if results and isinstance(results, list):
-                    raw_content = results[0].get("raw_content") or results[0].get("content") or ""
+        try:
+            data = retry_with_backoff(lambda: self._extract_once(payload), policy=self._policy, on_retry=on_retry)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, TavilyError):
+                raise cause from exc
+            raise TavilyError(f"Tavily Extract failed for {url}: {cause if cause else exc}") from exc
 
-                log.info("Tavily Extract SUCCESS url=%s (content length=%d)", url, len(raw_content))
-                return {
-                    "url": url,
-                    "raw_content": raw_content,
-                    "tavily_raw": data,
-                }
-            except Exception as exc:
-                if attempt == self.config.max_retries:
-                    raise TavilyError(f"Tavily Extract failed for {url}: {exc}") from exc
+        results = data.get("results", [])
+        raw_content = ""
+        if results and isinstance(results, list):
+            raw_content = results[0].get("raw_content") or results[0].get("content") or ""
 
-        raise TavilyError(f"Tavily Extract exhausted retries for {url}")
+        log.info("Tavily Extract SUCCESS url=%s (content length=%d)", url, len(raw_content))
+        return {
+            "url": url,
+            "raw_content": raw_content,
+            "tavily_raw": data,
+        }
+
+    def _extract_once(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            resp = self.session.post(
+                self.config.tavily_extract_url,
+                json=payload,
+                timeout=self.config.request_timeout,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+        except requests.exceptions.RequestException as exc:
+            raise TransientError(f"Network error: {exc}") from exc
+
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise TransientError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code)
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as exc:
+            raise TavilyError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code) from exc
+
+        return resp.json()
 
     def search_snippets(self, query: str, include_domains: Optional[List[str]] = None) -> Dict[str, Any]:
         """Search public snippets via Tavily Search API (used for ProZ fallback)."""
@@ -86,33 +102,49 @@ class TavilyClient:
         if include_domains:
             payload["include_domains"] = include_domains
 
-        for attempt in range(self.config.max_retries + 1):
-            if attempt > 0:
-                time.sleep(self.config.retry_backoff_base ** attempt)
-            try:
-                resp = self.session.post(
-                    self.config.tavily_search_url,
-                    json=payload,
-                    timeout=self.config.request_timeout,
-                )
-                if resp.status_code == 429 or resp.status_code >= 500:
-                    continue
-                resp.raise_for_status()
-                data = resp.json()
-                results = data.get("results", [])
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Retry %d/%d for Tavily Search of %r after %.1fs (%s)",
+                attempt + 1, self.config.max_retries, query, delay, exc,
+            )
 
-                primary_snippet = results[0] if results else None
-                other_snippets = results[1:] if len(results) > 1 else []
+        try:
+            data = retry_with_backoff(lambda: self._search_once(payload), policy=self._policy, on_retry=on_retry)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, TavilyError):
+                raise cause from exc
+            raise TavilyError(f"Tavily Search failed for {query}: {cause if cause else exc}") from exc
 
-                log.info("Tavily Search SUCCESS query=%r found %d results", query, len(results))
-                return {
-                    "query": query,
-                    "primary_snippet": primary_snippet,
-                    "other_snippets": other_snippets,
-                    "tavily_raw": data,
-                }
-            except Exception as exc:
-                if attempt == self.config.max_retries:
-                    raise TavilyError(f"Tavily Search failed for {query}: {exc}") from exc
+        results = data.get("results", [])
+        primary_snippet = results[0] if results else None
+        other_snippets = results[1:] if len(results) > 1 else []
 
-        raise TavilyError(f"Tavily Search exhausted retries for {query}")
+        log.info("Tavily Search SUCCESS query=%r found %d results", query, len(results))
+        return {
+            "query": query,
+            "primary_snippet": primary_snippet,
+            "other_snippets": other_snippets,
+            "tavily_raw": data,
+        }
+
+    def _search_once(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            resp = self.session.post(
+                self.config.tavily_search_url,
+                json=payload,
+                timeout=self.config.request_timeout,
+            )
+        except requests.exceptions.Timeout as exc:
+            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+        except requests.exceptions.RequestException as exc:
+            raise TransientError(f"Network error: {exc}") from exc
+
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise TransientError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code)
+        try:
+            resp.raise_for_status()
+        except requests.exceptions.HTTPError as exc:
+            raise TavilyError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code) from exc
+
+        return resp.json()

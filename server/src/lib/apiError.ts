@@ -1,3 +1,5 @@
+import { RetryExhaustedError, DeadlineExceededError } from "./retryWithBackoff";
+
 /** Thrown by services/routes to produce a consistent {error, message} response
  *  via the central error middleware, instead of each route hand-rolling res.status(). */
 export class ApiError extends Error {
@@ -25,6 +27,22 @@ export class ApiError extends Error {
  * UNIPILE_API_KEY look like an expired login instead of what it actually was. */
 export function toApiError(err: any): ApiError {
   if (err instanceof ApiError) return err;
+
+  // Both wrap a real underlying failure in `.cause` -- unwrap and re-run this
+  // same logic on it so the upstream-status handling below still applies.
+  // Without this, every retry-exhausted or deadline-exceeded failure fell
+  // through to a generic 500, hiding the real upstream status (401/429/5xx)
+  // that caused every attempt to fail.
+  if (err instanceof RetryExhaustedError) {
+    return toApiError(err.cause);
+  }
+  if (err instanceof DeadlineExceededError) {
+    // No cause captured for a bare timeout (nothing was actually caught) --
+    // if one IS present, prefer surfacing that instead of a generic timeout.
+    if (err.cause) return toApiError(err.cause);
+    return new ApiError(504, "UPSTREAM_TIMEOUT", err.message);
+  }
+
   const upstreamStatus = err?.response?.status ?? err?.status;
   if (upstreamStatus) {
     // Unipile's error body shape isn't consistent across endpoints -- a 422

@@ -4,13 +4,14 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { toast } from "sonner";
 import type { ApiLead } from "@/lib/api-types";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   lead: ApiLead | null;
-  onSave: (id: string, patch: Partial<ApiLead>) => void;
+  onSave: (id: string, patch: Partial<ApiLead>) => Promise<unknown>;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -76,6 +77,7 @@ const FIELD_DEFS: Array<{ label: string; key: string; sourceKey: string; kind: F
  * straight from here instead of the "On Hold" manual-enrichment flow. */
 export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!lead) return;
@@ -102,24 +104,37 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave }: Pr
     setValues((v) => ({ ...v, [key]: val }));
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!lead) return;
     const patch: Partial<ApiLead> = {};
     for (const f of FIELD_DEFS) {
       const raw = (values[f.key] ?? "").trim();
       if (f.kind === "number") {
-        (patch as any)[f.key] = raw === "" ? undefined : Number(raw);
+        // `null` for a cleared field, not `undefined` -- JSON.stringify drops
+        // `undefined` keys entirely, which was the actual "can't clear a
+        // wrong value" bug: the key never reached the server, so the old
+        // value silently survived.
+        (patch as any)[f.key] = raw === "" ? null : Number(raw);
       } else if (f.kind === "list") {
         (patch as any)[f.key] = raw
           .split(",")
           .map((s) => s.trim())
           .filter(Boolean);
       } else {
-        (patch as any)[f.key] = raw || undefined;
+        (patch as any)[f.key] = raw || null;
       }
     }
-    onSave(lead.id, patch);
-    onOpenChange(false);
+    setSaving(true);
+    try {
+      await onSave(lead.id, patch);
+      onOpenChange(false);
+    } catch (err: any) {
+      // Keep the dialog open on failure -- previously this closed
+      // unconditionally, giving a false impression the save succeeded.
+      toast.error(err?.message ?? "Failed to save changes -- your edits are still here, try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -200,7 +215,7 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave }: Pr
         )}
 
         <DialogFooter>
-          <Button size="sm" onClick={handleSave}>Save</Button>
+          <Button size="sm" onClick={handleSave} disabled={saving}>Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

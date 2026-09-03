@@ -85,10 +85,11 @@ function MyLeadsPage() {
     setQ(""); setCountry("all"); setSource("all"); setStatus("all"); setPage(1);
   }
 
+  // Error feedback is handled by the dialog (awaits mutateAsync, shows its
+  // own contextual error) -- no onError toast here to avoid double-toasting.
   const enrichMutation = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads", "mine"] }),
-    onError: (err: any) => toast.error(err?.message ?? "Failed to update lead"),
   });
 
   const enrichLead: LeadForEnrichment | null = enrichRaw
@@ -97,6 +98,8 @@ function MyLeadsPage() {
         name: enrichRaw.fullName ?? enrichRaw.displayName ?? enrichRaw.maskedLabel ?? "",
         email: enrichRaw.email,
         phone: enrichRaw.contactNumber,
+        country: enrichRaw.country,
+        profile_link: enrichRaw.profileLink,
         language: enrichRaw.targetLanguage ?? enrichRaw.sourceLanguage ?? "",
         source_language: enrichRaw.sourceLanguage,
         target_language: enrichRaw.targetLanguage,
@@ -106,14 +109,24 @@ function MyLeadsPage() {
       }
     : null;
 
+  // Returns the mutation promise -- the dialog awaits this and only
+  // closes/toasts on success. Previously sent `fullName: updated.name`,
+  // which isn't in the PATCH /:id zod schema at all (no .strict(), so
+  // unknown keys are silently dropped) -- unlike recruiter/owner, which
+  // correctly map to `displayName`. Also previously omitted
+  // country/profileLink from the outgoing patch entirely, even though the
+  // dialog shows both.
   const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
-    enrichMutation.mutate({
+    const shouldMarkComplete = updated.enrichment_status === "complete";
+    return enrichMutation.mutateAsync({
       id,
       patch: {
-        identityResolved: true,
-        fullName: updated.name,
+        ...(shouldMarkComplete ? { identityResolved: true, enrichmentStatus: "COMPLETE" } : {}),
+        displayName: updated.name,
         email: updated.email,
         contactNumber: updated.phone,
+        country: updated.country,
+        profileLink: updated.profile_link,
         services: updated.services,
         sourceLanguage: updated.source_language,
         targetLanguage: updated.target_language,
@@ -121,7 +134,6 @@ function MyLeadsPage() {
         vendorExperience: updated.vendor_experience,
       },
     });
-    setEnrichRaw(null);
   };
 
   return (

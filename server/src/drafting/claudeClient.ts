@@ -110,9 +110,9 @@ export class ClaudeClient {
 
     try {
       return await retryWithBackoff(
-        async () => {
+        async (signal) => {
           const started = Date.now();
-          const response = await this.client.messages.create(body);
+          const response = await this.client.messages.create(body, { signal });
           const latencyMs = Date.now() - started;
 
           let text = response.content
@@ -133,6 +133,7 @@ export class ClaudeClient {
         },
         {
           isRetryable: isRetryableByDefault,
+          deadlineMs: 15000,
           onRetry: (err, attempt, delayMs) => {
             console.warn(
               `[claudeClient] Claude call failed (attempt ${attempt + 1}/5): ${(err as any)?.message || err} — retrying in ${(delayMs / 1000).toFixed(1)}s`
