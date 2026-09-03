@@ -338,8 +338,14 @@ export function ConversationsPageView() {
                   />
                 </div>
 
-                {/* Center Conversation Content */}
-                <div className="flex-1 min-h-0 space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
+                {/* Center Conversation Content -- min-h floor keeps this from
+                    being squeezed to a sliver by the header/composer above
+                    and below it on a normal viewport; thread-scrollbar makes
+                    the actual scrollbar visible/grabbable regardless of the
+                    viewer's OS/browser scrollbar settings (no custom
+                    scrollbar existed here before -- this was just the
+                    native, often near-invisible, one). */}
+                <div className="thread-scrollbar flex-1 min-h-[280px] space-y-3 overflow-y-auto p-4 flex flex-col justify-start">
                   {conv.messages.length === 0 ? (
                     <div className="flex h-full flex-col items-center justify-center p-4 text-center space-y-2 min-h-0">
                       <div className="h-12 w-12 rounded-full bg-muted/20 border border-border/40 flex items-center justify-center text-muted-foreground/50">
