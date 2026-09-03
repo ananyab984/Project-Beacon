@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { config } from "../config";
 import { prisma } from "../prisma";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
+import { markContactedOnFirstOutreach } from "../lib/leadStageTransitions";
 import {
   AccountStatus,
   UnipileProvider,
@@ -668,6 +669,7 @@ export class UnipileService {
 
     // Also sync to Conversation table
     await this.syncToConversation(leadId, userId, "LINKEDIN", text, externalMessageId, unipileChatId);
+    await markContactedOnFirstOutreach(leadId, userId);
 
     return {
       success: true,
@@ -788,6 +790,7 @@ export class UnipileService {
 
     // Also sync to Conversation table (same as LinkedIn's sendLinkedInMessage)
     await this.syncToConversation(leadId, userId, "EMAIL", body, externalMessageId, unipileThreadId);
+    await markContactedOnFirstOutreach(leadId, userId);
 
     return {
       success: true,
