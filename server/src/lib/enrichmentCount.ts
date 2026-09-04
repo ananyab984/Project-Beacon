@@ -1,19 +1,31 @@
 import type { Lead } from "@prisma/client";
 
 /**
- * How many of the 15 canonical enrichment fields are currently non-empty on
- * this lead -- computed fresh on every read, never stored, so a manual edit
- * (or a re-enrichment run) is reflected immediately with no separate
- * recompute step. Every field counts, no exclusions -- including `fullName`
- * (always set at creation, so every lead starts at n>=1; intentional, not a
- * bug) and `email`/`contactNumber` (a low count, including one from only
- * these two, is a normal "Enriched (n)" outcome now, not a failure signal).
+ * How many of the 11 genuinely enrichment-findable fields are currently
+ * non-empty on this lead -- computed fresh on every read, never stored, so a
+ * manual edit (or a re-enrichment run) is reflected immediately with no
+ * separate recompute step.
+ *
+ * Deliberately narrower than "every field on the lead": `profileLink`,
+ * `sourceLanguage`, `targetLanguage`, and `services` are excluded -- these
+ * are set at lead CREATION (recruiter input, or a CSV/sheet import, which
+ * even defaults sourceLanguage/targetLanguage to "English" when no value is
+ * found -- see mapSheetRowsToLeads in lead.routes.ts), not discovered BY
+ * enrichment. Including them made "Enriched (n)" show 6-8 for a lead the
+ * waterfall found *nothing* for, since those 4 fields (plus fullName, always
+ * required at creation) are populated on nearly every lead regardless of
+ * enrichment outcome -- the number looked like enrichment succeeded when it
+ * had completely failed. `fullName` still counts (it's the one creation-time
+ * field explicitly called out as always-in-scope), but the count is now
+ * dominated by fields enrichment (or manual entry standing in for it)
+ * actually has to find: email/contactNumber/country/yearsOfExperience/
+ * vendorExperience/headline/currentTitle/aboutSnippet/toolsSoftware/
+ * certifications. A total-failure lead now shows "Enriched (1)", not (6-8).
  */
 export function countPopulatedFields(lead: Pick<Lead,
-  | "fullName" | "email" | "contactNumber" | "country" | "profileLink"
-  | "sourceLanguage" | "targetLanguage" | "services" | "yearsOfExperience"
-  | "vendorExperience" | "headline" | "currentTitle" | "aboutSnippet"
-  | "toolsSoftware" | "certifications"
+  | "fullName" | "email" | "contactNumber" | "country"
+  | "yearsOfExperience" | "vendorExperience" | "headline" | "currentTitle"
+  | "aboutSnippet" | "toolsSoftware" | "certifications"
 >): number {
   const isNonEmpty = (v: unknown): boolean => {
     if (v == null) return false;
@@ -27,10 +39,6 @@ export function countPopulatedFields(lead: Pick<Lead,
     lead.email,
     lead.contactNumber,
     lead.country,
-    lead.profileLink,
-    lead.sourceLanguage,
-    lead.targetLanguage,
-    lead.services,
     lead.yearsOfExperience,
     lead.vendorExperience,
     lead.headline,
