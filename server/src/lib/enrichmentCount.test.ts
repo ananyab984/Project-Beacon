@@ -1,7 +1,8 @@
 /**
- * Unit tests for the live "Enriched (n)" field count -- every field counts,
- * no exclusions, including a low count from only email+contactNumber (no
- * longer a failure signal).
+ * Unit tests for the live "Enriched (n)" field count -- scoped to the 11
+ * genuinely enrichment-findable fields, excluding creation-time fields
+ * (profileLink/sourceLanguage/targetLanguage/services) that would otherwise
+ * inflate the count for a lead enrichment found nothing for.
  *
  * Run: cd server && npx ts-node src/lib/enrichmentCount.test.ts
  */
@@ -14,10 +15,6 @@ const EMPTY_LEAD = {
   email: null,
   contactNumber: null,
   country: null,
-  profileLink: null,
-  sourceLanguage: null,
-  targetLanguage: null,
-  services: [],
   yearsOfExperience: null,
   vendorExperience: null,
   headline: null,
@@ -31,16 +28,12 @@ function test1_allEmptyCountsZero() {
   assert.strictEqual(countPopulatedFields(EMPTY_LEAD as any), 0);
 }
 
-function test2_allFifteenPopulatedCountsFifteen() {
+function test2_allElevenPopulatedCountsEleven() {
   const lead = {
     fullName: "Jane Doe",
     email: "jane@example.com",
     contactNumber: "+1 555 0100",
     country: "Germany",
-    profileLink: "https://www.linkedin.com/in/janedoe",
-    sourceLanguage: "English",
-    targetLanguage: "German",
-    services: ["Subtitling"],
     yearsOfExperience: 5 as any,
     vendorExperience: "Netflix, Amazon",
     headline: "Senior Translator",
@@ -49,7 +42,7 @@ function test2_allFifteenPopulatedCountsFifteen() {
     toolsSoftware: ["Trados"],
     certifications: ["ATA Certified"],
   };
-  assert.strictEqual(countPopulatedFields(lead as any), 15);
+  assert.strictEqual(countPopulatedFields(lead as any), 11);
 }
 
 function test3_onlyEmailAndPhoneCountsTwo_notTreatedAsFailure() {
@@ -66,8 +59,8 @@ function test4_whitespaceOnlyStringDoesNotCount() {
 }
 
 function test5_emptyArrayDoesNotCountButNonEmptyDoes() {
-  const empty = { ...EMPTY_LEAD, services: [] };
-  const nonEmpty = { ...EMPTY_LEAD, services: ["Dubbing"] };
+  const empty = { ...EMPTY_LEAD, toolsSoftware: [] };
+  const nonEmpty = { ...EMPTY_LEAD, toolsSoftware: ["Trados"] };
   assert.strictEqual(countPopulatedFields(empty as any), 0);
   assert.strictEqual(countPopulatedFields(nonEmpty as any), 1);
 }
@@ -79,14 +72,36 @@ function test6_zeroYearsOfExperienceStillCounts() {
   assert.strictEqual(countPopulatedFields(lead as any), 1);
 }
 
+function test7_creationTimeFieldsDoNotInflateAFailedEnrichmentLead() {
+  // The actual bug this rework closes: a lead where enrichment found
+  // NOTHING, but profileLink/sourceLanguage/targetLanguage/services were set
+  // at creation (the last two sometimes defaulted to "English" by a CSV/
+  // sheet import, not real data) -- these must not count, so the lead shows
+  // "Enriched (1)" (just the name), not 6-8 misrepresenting real success.
+  const lead = {
+    ...EMPTY_LEAD,
+    fullName: "Jane Doe",
+    // These 4 fields are deliberately NOT part of the Pick<> this function
+    // accepts anymore -- simulating what a real Lead row would still have
+    // set even though they're excluded from counting (passed through `as
+    // any` below, since the function's own type no longer declares them).
+    profileLink: "https://www.linkedin.com/in/janedoe",
+    sourceLanguage: "English",
+    targetLanguage: "English",
+    services: ["Subtitling"],
+  };
+  assert.strictEqual(countPopulatedFields(lead as any), 1, "creation-time fields must not count toward enrichment success");
+}
+
 function main() {
   const tests = [
     test1_allEmptyCountsZero,
-    test2_allFifteenPopulatedCountsFifteen,
+    test2_allElevenPopulatedCountsEleven,
     test3_onlyEmailAndPhoneCountsTwo_notTreatedAsFailure,
     test4_whitespaceOnlyStringDoesNotCount,
     test5_emptyArrayDoesNotCountButNonEmptyDoes,
     test6_zeroYearsOfExperienceStillCounts,
+    test7_creationTimeFieldsDoNotInflateAFailedEnrichmentLead,
   ];
 
   let failed = 0;
