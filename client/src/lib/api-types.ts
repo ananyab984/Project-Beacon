@@ -66,14 +66,15 @@ export interface ApiLead {
   currentTitle: string | null;
   toolsSoftware: string[];
   certifications: string[];
-  /** Per-field provenance: "brightdata" | "tavily" | "llm_fallback" | "clay" | "existing" | "manual" */
+  /** Per-field provenance: "brightdata" | "tavily" | "parallel" | "llm_fallback" | "existing" | "manual" */
   fieldSources: Record<string, string> | null;
-  /** How many of the 15 canonical enrichment fields are currently non-empty
-   * -- computed fresh server-side on every read, not stored. Powers the
-   * "Enriched (n)"/"On Hold (n)" status display. */
+  /** How many of the ENRICHMENT_FIELD_TOTAL dialog fields enrichment (or a
+   * recruiter's manual stand-in) actually found -- fields the lead was
+   * imported with don't count. Computed fresh server-side on every read, not
+   * stored. Powers the "Enriched (n)"/"On Hold (n)" status display. */
   enrichedFieldCount: number;
-  /** Full-fidelity Clay enrichment: { experience, education, languages, courses, projects, currentExperience } */
-  clayData: Record<string, any> | null;
+  /** Full-fidelity Parallel enrichment: { experience, education, languages, certifications, ... } */
+  parallelData: Record<string, any> | null;
   availability: Availability;
   availabilityFromDate: string | null;
   createdAt: string;
@@ -348,3 +349,8 @@ export interface ApiRequestError extends Error {
   code?: string;
   status?: number;
 }
+
+/** Denominator of `enrichedFieldCount`: the fields the enrichment-details
+ *  dialog shows. Mirrors ENRICHMENT_COUNT_TOTAL in
+ *  server/src/lib/enrichmentCount.ts. */
+export const ENRICHMENT_FIELD_TOTAL = 10;

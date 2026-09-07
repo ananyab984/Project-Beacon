@@ -31,14 +31,26 @@ export async function enrichLeadById(leadId: string) {
       data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
     });
 
-    // Timeout raised from 30s to 70s: the pipeline enforces its own 60s
-    // cumulative cap across the whole waterfall call sequence (real elapsed
-    // time via time.monotonic() in orchestrator.py, layered on top of each
-    // individual provider call's own 15s deadline) and returns a normal 200
-    // response with `conclusion: "timed_out"` when it hits that cap, rather
-    // than hanging -- a 30s axios timeout would abort the request before
-    // Python ever gets the chance to respond gracefully, turning a clean
-    // "on hold" signal into an ambiguous connection-timeout error instead.
+    // Timeout raised again (400s -> 4000s): the pipeline enforces its own
+    // 3800s cumulative cap across the whole waterfall call sequence. Two
+    // successive guesses at Parallel's "typical" latency (150s, then 240s
+    // per-call; 350s, then... this) both still cut off calls that were
+    // genuinely succeeding server-side (confirmed live 2026-09-07: a real
+    // "core"-processor Task Run routinely takes ~150-170s, and our own
+    // guessed ceiling kept firing right as the real result was landing).
+    // Rather than guess a fourth number, enrichment_pipeline/providers/
+    // parallel_client.py now defers to the Parallel SDK's own well-engineered
+    // default (waits up to an hour for a task to actually finish) -- every
+    // timeout in this chain, including this one, is sized to never be the
+    // thing that cuts that off early. In practice, real calls still resolve
+    // in ~150-170s -- this ceiling only matters for a genuine outlier, not
+    // the expected case. Real elapsed time via time.monotonic() in
+    // orchestrator.py, layered on top of each individual provider call's own
+    // deadline) and returns a normal 200 response with `conclusion:
+    // "timed_out"` when it hits that cap, rather than hanging -- a shorter
+    // axios timeout would abort the request before Python ever gets the
+    // chance to respond gracefully, turning a clean "on hold" signal into an
+    // ambiguous connection-timeout error instead.
     //
     // Retrying the whole call here (rather than just erroring out to the
     // existing PENDING-revert-and-repoll fallback) is safe specifically
@@ -80,16 +92,28 @@ export async function enrichLeadById(leadId: string) {
             // `_unverified()`.
             Field_Sources: lead.fieldSources ?? undefined,
           },
-          { timeout: 70_000, signal }
+          { timeout: 4_000_000, signal }
         ),
       // A documented exception to the 15s ceiling used everywhere else: this
-      // call fans out to BrightData/Tavily/Clay/Claude inside the Python
+      // call fans out to BrightData/Tavily/Parallel/Claude inside the Python
       // pipeline (each individually bounded there), and the pipeline's own
-      // cumulative cap is 60s -- 70s/attempt already accounts for that. This
-      // deadline just replaces the previous *uncapped* worst case (5 x 70s +
-      // backoff sleep, ~365s) with an explicit, bounded one: enough for one
-      // full pipeline call plus headroom for a second attempt.
-      { isRetryable: isRetryableByDefault, deadlineMs: 90_000 }
+      // cumulative cap is 3800s (see orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS
+      // and config.py's parallel_deadline_seconds). 4000s/attempt stays above
+      // that 3800s cap so Python gets to respond gracefully instead of Node's
+      // own timeout firing first. Note this deadline still doesn't
+      // comfortably cover two full attempts back to back: 4200s total /
+      // 4000s per attempt is ~1.05 attempts, so worst case (Parallel runs
+      // close to its full allowed time) the first attempt consumes nearly
+      // the whole deadline, leaving only ~200s for a second attempt to even
+      // start -- nowhere near enough for it to finish, so it gets killed by
+      // the deadline mid-flight regardless of whether it was about to
+      // succeed. Effectively one real attempt plus a mostly-wasted partial
+      // second one, not two real tries -- an accepted tradeoff of Parallel's
+      // latency, not something solved here by adding new retry
+      // infrastructure. In practice, real Parallel calls resolve in
+      // ~150-170s, so this multi-thousand-second ceiling is a safety net for
+      // a genuine outlier, not the expected per-lead wait.
+      { isRetryable: isRetryableByDefault, deadlineMs: 4_200_000 }
     );
 
     let enrichedEmail = lead.email;
@@ -169,27 +193,37 @@ export async function enrichLeadById(leadId: string) {
 
     // "Enriched" means the pipeline has reached a TERMINAL state for this
     // lead, not "we have a way to contact them" -- those are two different
-    // questions now. `_clay_dispatch: "pending"` is the only thing that can
-    // still be running after this call returns (Clay resolves later via its
-    // own webhook); everything else in this pass (Bright Data/Tavily scrape,
-    // AI extraction) already finished synchronously. So: not still awaiting
-    // Clay AND not timed out == nothing further left for automation to do
-    // == Enriched, whatever that pass actually turned up.
-    const clayAwaiting = returnedFieldSources._clay_dispatch === "pending";
+    // questions now. Unlike Clay's old async dispatch (`_clay_dispatch:
+    // "pending"`, resolved later via its own webhook), Parallel's Stage 3.5
+    // call is synchronous -- it either ran to completion or was skipped/
+    // failed before this response was built, so there is no "still awaiting"
+    // state left to check here. Every stage in this pass (Bright Data/
+    // Tavily scrape, Parallel, AI extraction) has already concluded
+    // synchronously by the time this response arrives, so not timed out ==
+    // nothing further left for automation to do == Enriched, whatever that
+    // pass actually turned up.
     const conclusion = data?.conclusion as "short_circuit_success" | "exhausted_no_match" | "timed_out" | null | undefined;
-    const isComplete = !clayAwaiting && conclusion !== "timed_out";
+    const isComplete = conclusion !== "timed_out";
 
     // On Hold is now driven entirely by the waterfall's own conclusion state
     // or the recruiter's own manual toggle -- never by field count/contact
     // presence (that was the old, corrected behavior). See
     // computeOnHoldTransition for the shared rules (MANUAL never
-    // auto-clears, clayAwaiting leaves everything untouched).
+    // auto-clears).
     const { flags, onHoldReason } = computeOnHoldTransition({
       currentFlags: (lead.flags as string[]) || [],
       currentOnHoldReason: lead.onHoldReason,
-      stillInFlight: clayAwaiting,
       outcome: conclusion === "timed_out" ? "timed_out" : "concluded_normally",
     });
+
+    // Parallel's raw Task Run output (see orchestrator.py's parallel_fallback
+    // / providers/parallel_client.py's LeadProfile) -- stored verbatim,
+    // same "nothing dropped" principle Clay's old clayData followed, now
+    // arriving synchronously in this same response instead of via a
+    // separate webhook. `called: false` (skipped/already-ran) or a failed
+    // call carries no `data` key, so this only ever replaces parallelData
+    // with a genuine result, never clobbers a prior one with nothing.
+    const parallelResult = data?.parallel_fallback?.data as Record<string, any> | undefined;
 
     await prisma.lead.update({
       where: { id: lead.id },
@@ -211,12 +245,15 @@ export async function enrichLeadById(leadId: string) {
         certifications: enrichedCertifications,
         fieldSources: mergedFieldSources as any,
         // Complete raw Bright Data/Tavily payload, verbatim -- same
-        // "nothing dropped" principle as Clay's clayData. Bright Data
-        // returns a list, Tavily a dict -- shape varies by provider, so
-        // (unlike clayData, which is always one dict) this replaces rather
-        // than key-merges; a fresh non-empty scrape result is always the
-        // more current one anyway.
+        // "nothing dropped" principle as Parallel's parallelData below.
+        // Bright Data returns a list, Tavily a dict -- shape varies by
+        // provider, so (unlike parallelData, which is always one dict) this
+        // replaces rather than key-merges; a fresh non-empty scrape result
+        // is always the more current one anyway.
         rawScrapeData: (data?.raw_enrichment_data ?? lead.rawScrapeData) as any,
+        // Parallel's raw output, verbatim -- only replaces the prior value
+        // when this pass actually produced one (see parallelResult above).
+        parallelData: (parallelResult ?? lead.parallelData) as any,
         identityResolved: isComplete,
         enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
         flags: flags as any,

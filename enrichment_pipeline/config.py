@@ -44,10 +44,42 @@ class Config:
     tavily_api_key: str
     claude_api_key: str
     groq_api_key: str = ""
-    # Optional -- LinkedIn-only fallback (Stage 3.5). Leads route to Clay only
-    # when Bright Data returns nothing at all; if this is unset, that stage is
-    # a no-op rather than a hard failure, so Clay is never a required dependency.
-    clay_webhook_url: str = ""
+    # Optional -- Tier 2 enrichment (Stage 3.5), a synchronous Parallel Task
+    # Run call (replaces Clay's async webhook dispatch in this exact waterfall
+    # position). Runs for EVERY platform, not just LinkedIn: Clay's version of
+    # this stage was LinkedIn-gated because Clay rejected any other identifier,
+    # and Parallel has no such limitation (its PoC covered ProZ, Bodalgo,
+    # ATA/ATAA and Freelancer.com URLs). If this is unset, that stage is a
+    # no-op rather than a hard failure, so Parallel is never a required
+    # dependency -- same posture Clay had.
+    parallel_api_key: str = ""
+    # Confirm the exact processor tier name against Parallel's current docs
+    # before this ever goes live -- "core" is a placeholder default, inert
+    # while parallel_api_key is unset.
+    parallel_processor: str = "core"
+    # Whole retry+backoff sequence deadline for ONE Parallel call (see
+    # core/resilience.py's RetryPolicy -- this bounds retry_with_backoff's
+    # OUTER wait via Future.result(timeout=...), on top of whatever
+    # parallel_client.py's underlying SDK call itself does). Deliberately NOT
+    # tuned to a guessed "typical" Parallel latency anymore -- confirmed live
+    # (2026-09-07) that a real "core"-processor Task Run for a LinkedIn
+    # profile routinely takes ~150-170s, and TWO successive guesses at "long
+    # enough" (150s, then 240s) both still cut the call off right as the real
+    # result was landing server-side: the task was genuinely succeeding, our
+    # own client-side number just wasn't waiting for it. providers/
+    # parallel_client.py's `_run_once` now deliberately omits `timeout=` on
+    # the SDK call entirely, deferring to the SDK's own well-engineered
+    # default (`parallel.lib._time.DEFAULT_EXECUTE_TIMEOUT_SECONDS` = 3600s,
+    # genuinely polls for up to an hour) instead of re-guessing a shorter one
+    # -- this OUTER deadline must stay comfortably ABOVE that 3600s ceiling or
+    # it would just reintroduce the exact same bug one layer up (abandoning a
+    # thread that's still correctly waiting on a call that hasn't actually
+    # failed). Kept below orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS (3800s)
+    # with headroom for Bright Data (15s) + the LLM fallback (15s) in the same
+    # lead's pass: 3700s + 15s + 15s = 3730s worst case < 3800s ceiling. In
+    # practice, real calls still resolve in ~150-170s -- this ceiling only
+    # matters for a genuine outlier, not the expected case.
+    parallel_deadline_seconds: float = 3700.0
 
     brightdata_base_url: str = "https://api.brightdata.com/datasets/v3/scrape"
     tavily_extract_url: str = "https://api.tavily.com/extract"
@@ -94,7 +126,9 @@ def load_config(require_keys: bool = False) -> Config:
     tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
     claude_key = os.getenv("CLAUDE_API_KEY", "").strip()
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
-    clay_webhook_url = os.getenv("CLAY_WEBHOOK_URL", "").strip()
+    parallel_api_key = os.getenv("PARALLEL_API_KEY", "").strip()
+    parallel_processor = os.getenv("PARALLEL_PROCESSOR", "core").strip()
+    parallel_deadline_seconds = float(os.getenv("PARALLEL_DEADLINE_SECONDS", "3700.0"))
 
     if require_keys:
         missing = []
@@ -126,7 +160,9 @@ def load_config(require_keys: bool = False) -> Config:
         claude_api_key=claude_key,
         claude_model=_resolve_claude_model(os.getenv("CLAUDE_MODEL", "")),
         groq_api_key=groq_key,
-        clay_webhook_url=clay_webhook_url,
+        parallel_api_key=parallel_api_key,
+        parallel_processor=parallel_processor,
+        parallel_deadline_seconds=parallel_deadline_seconds,
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
         request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
         max_retries=int(os.getenv("MAX_RETRIES", "4")),

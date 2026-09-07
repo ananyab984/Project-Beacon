@@ -25,9 +25,10 @@ interface RawCapture {
   source_row_index: number;
 }
 
-// Mirrors clay.service.ts's mapClayEnrichment() so the reconstructed lead
-// record matches what would actually be stored on the Lead row after this
-// real webhook was processed.
+// Reconstructs the reconstructed lead record from a historical captured Clay
+// webhook payload (clay.service.ts's mapClayEnrichment(), which handled this
+// live, has since been removed along with Clay itself) -- kept only as
+// fixture data for this comparison script, not a live mapping path anymore.
 function buildLeadRecord(raw: Record<string, any>, profileLink: string, testEmail?: string) {
   const firstOf = (keys: string[]) => {
     for (const k of keys) {
@@ -45,11 +46,10 @@ function buildLeadRecord(raw: Record<string, any>, profileLink: string, testEmai
     Headline: raw.headline,
     Current_Title: raw.title,
     About_Snippet: raw.summary || raw.about,
-    Clay_Experience: firstOf(["experience", "pastRoles"]),
-    Clay_Education: firstOf(["education"]),
-    Clay_Languages: firstOf(["languages"]),
-    Clay_Courses: firstOf(["courses"]),
-    Clay_Full_Data: raw,
+    Parallel_Experience: firstOf(["experience", "pastRoles"]),
+    Parallel_Education: firstOf(["education"]),
+    Parallel_Languages: firstOf(["languages"]),
+    Parallel_Full_Data: raw,
   };
 }
 

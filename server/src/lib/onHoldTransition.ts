@@ -3,9 +3,12 @@ export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 export interface OnHoldTransitionInput {
   currentFlags: string[];
   currentOnHoldReason: OnHoldReason | null;
-  /** Still legitimately in-flight (Clay's async webhook still pending) --
-   *  leaves flags/onHoldReason completely untouched. Not a conclusion at
-   *  all, distinct from every other case below. */
+  /** Still legitimately in-flight -- leaves flags/onHoldReason completely
+   *  untouched. Not a conclusion at all, distinct from every other case
+   *  below. No current caller passes this (Parallel's Stage 3.5 call, like
+   *  every other stage, resolves synchronously within one /enrich response;
+   *  Clay's old async webhook was the one case that used to), kept as a
+   *  generic capability for any future genuinely-async stage. */
   stillInFlight?: boolean;
   /** What this pass concluded as. Required unless stillInFlight is true.
    *  "concluded_normally" covers both short_circuit_success and
@@ -21,8 +24,8 @@ export interface OnHoldTransitionResult {
 
 /**
  * Single source of truth for how every enrichment-conclusion call site
- * (enrichLeadById's success + catch paths, ClayService's two webhook
- * branches, stallOverdueEnrichments) transitions ON_HOLD/onHoldReason.
+ * (enrichLeadById's success + catch paths, stallOverdueEnrichments)
+ * transitions ON_HOLD/onHoldReason.
  *
  * A MANUAL hold is never auto-cleared or auto-downgraded by any of these --
  * only the recruiter's own explicit toggle (POST/DELETE /:id/flags) can.

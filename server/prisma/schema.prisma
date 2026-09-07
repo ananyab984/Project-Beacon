@@ -423,21 +423,24 @@ model Lead {
   toolsSoftware  String[] @default([]) @map("tools_software")
   certifications String[] @default([]) @map("certifications")
   // Which canonical enrichment fields were resolved, and by what source
-  // ("brightdata" | "tavily" | "llm_fallback" | "existing") -- round-tripped
-  // to the enrichment_pipeline on every enrichLeadById call so a repeat
-  // enrichment of the same lead doesn't re-spend an LLM call re-verifying
-  // something already settled.
+  // ("brightdata" | "tavily" | "parallel" | "llm_fallback" | "existing") --
+  // round-tripped to the enrichment_pipeline on every enrichLeadById call so
+  // a repeat enrichment of the same lead doesn't re-spend an LLM call
+  // re-verifying something already settled.
   fieldSources Json? @map("field_sources")
-  // Full-fidelity enrichment payload from Clay's "Enrich person" action --
-  // Experience, Education, Languages, Courses, Projects, etc. The thin
-  // canonical fields above (headline, aboutSnippet, ...) are a lossy summary
-  // of a subset of this; this column exists so drafting can ground on the
-  // richer material (specific past roles/companies/dates) that the thin
-  // fields alone can't carry.
-  clayData Json? @map("clay_data")
+  // Full-fidelity enrichment payload from Parallel's Task Run (Stage 3.5,
+  // LinkedIn-only) -- Experience, Education, Languages, Certifications, etc.
+  // The thin canonical fields above (headline, aboutSnippet, ...) are a
+  // lossy summary of a subset of this; this column exists so drafting can
+  // ground on the richer material (specific past roles/companies/dates)
+  // that the thin fields alone can't carry. Column retains its original
+  // "clay_data" name via @map (Parallel replaced Clay in this exact
+  // waterfall position; renaming just the Prisma-facing field avoids a
+  // migration for what's otherwise the same slot).
+  parallelData Json? @map("clay_data")
   // The complete raw Bright Data/Tavily scrape payload, verbatim -- same
-  // "nothing dropped" principle as clayData above, extended to the primary
-  // scrape source. Previously computed in orchestrator.py purely for
+  // "nothing dropped" principle as parallelData above, extended to the
+  // primary scrape source. Previously computed in orchestrator.py purely for
   // internal LLM-fallback verification and discarded before the response
   // was even built; now persisted so drafting can mine it too.
   rawScrapeData Json? @map("raw_scrape_data")

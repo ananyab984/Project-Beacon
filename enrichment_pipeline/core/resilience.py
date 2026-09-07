@@ -1,5 +1,5 @@
 """Shared synchronous retry/backoff + wall-clock-deadline utility for every
-external HTTP call in this pipeline (BrightData, Tavily, Clay, Claude
+external HTTP call in this pipeline (BrightData, Tavily, Parallel, Claude
 fallback, Groq dedup) -- mirrors server/src/lib/retryWithBackoff.ts's
 contract (5 total attempts, 1s/2s/4s/8s doubling) without needing async.
 
@@ -107,11 +107,20 @@ def retry_with_backoff(
     policy: RetryPolicy = RetryPolicy(),
     on_retry: Optional[Callable[[BaseException, int, float], None]] = None,
     on_exhausted: Optional[Callable[[Optional[BaseException]], None]] = None,
+    executor: Optional[ThreadPoolExecutor] = None,
 ) -> T:
     """Runs fn() with up to `policy.retries` retries (1s/2s/4s/8s doubling by
     default), bounded overall by `policy.deadline_seconds` measured from the
     first attempt -- not just summed sleep durations. A non-retryable error
-    (per `policy.is_retryable`) re-raises immediately, burning no attempt."""
+    (per `policy.is_retryable`) re-raises immediately, burning no attempt.
+
+    `executor` defaults to this module's shared `_executor` (every fast
+    provider -- BrightData, Tavily, Claude -- runs there). Pass a dedicated
+    pool instead for a call that runs much longer than the others (Parallel's
+    Task Run API, see providers/parallel_client.py) so it can never occupy
+    every slot of the shared pool and starve unrelated concurrent leads'
+    fast provider calls -- a bulkhead, not a new retry framework."""
+    exec_ = executor or _executor
     deadline = policy.now() + policy.deadline_seconds
     last_err: Optional[BaseException] = None
 
@@ -120,7 +129,7 @@ def retry_with_backoff(
         if remaining <= 0:
             break  # budget already gone -- don't start a new attempt
 
-        future = _executor.submit(fn)
+        future = exec_.submit(fn)
         try:
             return future.result(timeout=remaining)
         except FutureTimeoutError as exc:
