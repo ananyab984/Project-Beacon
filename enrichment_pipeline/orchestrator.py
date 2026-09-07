@@ -135,23 +135,59 @@ _NON_ENGLISH_MARKERS = frozenset(
         # Spanish / Portuguese
         "de", "la", "el", "los", "las", "con", "para", "por", "una", "como",
         "muy", "más", "también", "años", "voz", "trabajo", "em", "não", "uma",
+        "del", "su", "sus", "está", "años",
         # French
         "le", "les", "des", "une", "du", "au", "aux", "est", "sur", "avec",
-        "pour", "dans", "traduction", "ans",
+        "pour", "dans", "traduction", "traductrice", "traducteur", "ans", "et",
+        "à", "chez", "en", "formation", "expérience", "étudiante", "étudiant",
+        "lieu", "ses", "son",
         # German
         "und", "der", "die", "das", "den", "von", "mit", "für", "ich", "auch",
-        "sprachen", "jahre",
+        "sprachen", "jahre", "übersetzer", "übersetzerin",
         # Italian
         "il", "lo", "gli", "che", "con", "per", "sono", "anni", "voce",
+        "traduzione", "esperienza",
     }
 )
 
 
+def _payload_strings(value: Any) -> list[str]:
+    """Every human-readable string VALUE in a payload, keys excluded."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        out: list[str] = []
+        for key, v in value.items():
+            # Skip our own bookkeeping, and never count the preserved original
+            # (which is by definition non-English) when re-judging a payload.
+            if isinstance(key, str) and key.startswith("_"):
+                continue
+            out.extend(_payload_strings(v))
+        return out
+    if isinstance(value, list):
+        out = []
+        for v in value:
+            out.extend(_payload_strings(v))
+        return out
+    return []
+
+
 def _looks_non_english(payload: Any) -> bool:
-    """True if a payload's free text reads as something other than English."""
-    text = json.dumps(payload, ensure_ascii=False, default=str).lower()
+    """True if a payload's free text reads as something other than English.
+
+    Judges the VALUES only. A first version sniffed the whole JSON dump,
+    which counted the schema's own key names ("about_snippet",
+    "field_of_study", "school_name", "proficiency"...) as words -- all of
+    them English, all of them diluting the ratio. It worked on payloads whose
+    free text was long enough to outweigh them and quietly failed on shorter
+    ones: a real French lead ("Étudiante à Université Rennes 2 Traduction
+    EN—>FR", "Traductrice EN—>FR et ES—>FR · Expérience : Freelance") scored
+    under the threshold purely because her prose was brief and her
+    experience/education arrays contributed a pile of English keys.
+    """
+    text = " ".join(_payload_strings(payload)).lower()
     words = re.findall(r"[a-zà-öø-ÿ']+", text)
-    if len(words) < 12:
+    if len(words) < 8:
         # Too little text to judge; leave it alone rather than pay for a call.
         return False
     hits = sum(1 for w in words if w in _NON_ENGLISH_MARKERS)

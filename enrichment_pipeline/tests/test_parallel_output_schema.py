@@ -262,3 +262,52 @@ def test_forcing_is_scoped_to_the_translated_text_fields_only():
     # ...while fields outside that set keep the never-overwrite rule.
     assert result["lead"]["Contact_Number"] == "+34 600 000 000"
     assert result["lead"]["Vendor_Experience"] == "Some agency"
+
+
+def test_language_sniff_is_not_diluted_by_the_schemas_own_key_names():
+    """A first version sniffed the whole JSON dump, so the schema's key names
+    ("about_snippet", "field_of_study", "school_name", "proficiency") counted
+    as words -- all English, all diluting the ratio. It worked where the free
+    text was long enough to outweigh them and quietly failed where it wasn't.
+
+    This payload is the real French lead it failed on: brief prose, and
+    experience/education/languages arrays contributing a pile of English
+    keys. Her data stayed French through a full re-enrichment because of it.
+    """
+    maud = {
+        "country": "France",
+        "headline": "Étudiante à Université Rennes 2 Traduction EN—>FR et SP—>FR",
+        "about_snippet": "Traductrice EN—>FR et ES—>FR · Expérience : Freelance · Formation : Université Rennes 2 · Lieu : Le Rheu",
+        "current_title": "Traductrice",
+        "certifications": [],
+        "education": [{"school_name": "Université Rennes 2", "field_of_study": "Traduction", "degree": "Licence"}],
+        "experience": [{"company": "Freelance", "title": "Traductrice", "summary": "Traduction EN vers FR"}],
+        "languages": [{"language": "Anglais", "proficiency": "Courant"}],
+    }
+    assert _looks_non_english(maud)
+
+    # Same shape, same array keys, English content -- must stay untouched.
+    nadia = {
+        "country": "Portugal",
+        "headline": "EN,FR,ES>PT Translation & subtitling",
+        "about_snippet": "Native Portuguese speaker with over 15 years of experience in translating, "
+        "proofreading, transcreating, subtitling and editing in English, French and Spanish.",
+        "current_title": "Freelance translator and/or interpreter",
+        "certifications": [],
+        "education": [{"school_name": "University of Lisbon", "field_of_study": "Translation", "degree": "BA"}],
+        "experience": [{"company": "Freelance", "title": "Translator", "summary": "Translation and subtitling"}],
+        "languages": [{"language": "Portuguese", "proficiency": "Native"}],
+    }
+    assert not _looks_non_english(nadia)
+
+
+def test_preserved_original_does_not_retrigger_translation():
+    """`_original_language` is non-English by definition. Counting it would
+    make an already-translated payload look like it still needs translating,
+    on every subsequent pass."""
+    translated = {
+        "headline": "Warm, dynamic, impactful and personal.",
+        "about_snippet": "I have a somewhat raspy and personal voice with several registers.",
+        "_original_language": SPANISH,
+    }
+    assert not _looks_non_english(translated)
