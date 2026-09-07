@@ -5,3 +5,4 @@ fastapi>=0.100.0
 uvicorn>=0.22.0
 pydantic>=2.0.0
 openpyxl>=3.1.0
+parallel-web  # Tier 2 LinkedIn fallback SDK (imports as `parallel`); pin an exact version before deploying

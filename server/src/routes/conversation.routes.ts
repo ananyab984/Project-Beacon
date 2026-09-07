@@ -177,7 +177,7 @@ conversationRouter.post(
       // Previously omitted Headline/About_Snippet/Current_Title/
       // Tools_Software/Certifications entirely -- LinkedIn drafts were
       // personalizing on strictly less material than email drafts. Now
-      // shares the exact same payload builder (and gets Clay's richer
+      // shares the exact same payload builder (and gets Parallel's richer
       // data) as the email route. Drafting runs in-process (server/src/drafting/)
       // -- no network hop, no DRAFTING_SERVICE_URL to misconfigure.
       const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin");

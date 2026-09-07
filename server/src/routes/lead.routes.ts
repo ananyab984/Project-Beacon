@@ -10,7 +10,7 @@ import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from ".
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
-import { MANUAL_FIELD_SOURCE_KEYS } from "../lib/manualFieldSources";
+import { resolveManualFieldSources } from "../lib/manualFieldSources";
 import { withEnrichedFieldCount } from "../lib/enrichmentCount";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 
@@ -688,21 +688,7 @@ leadRouter.patch(
     });
     const patch = schema.parse(req.body);
 
-    const existingFieldSources = ((existing.fieldSources as Record<string, string> | null) ?? {}) as Record<string, string>;
-    const nextFieldSources = { ...existingFieldSources };
-    for (const [patchKey, canonicalKey] of Object.entries(MANUAL_FIELD_SOURCE_KEYS)) {
-      if (!(patchKey in req.body)) continue; // key wasn't part of this request at all
-      const val = (patch as any)[patchKey];
-      const isCleared = val == null || (Array.isArray(val) && val.length === 0);
-      if (isCleared) {
-        // Recruiter explicitly cleared their own manual entry -- the field
-        // is fair game for auto-enrichment again, not still "protected".
-        delete nextFieldSources[canonicalKey];
-      } else {
-        nextFieldSources[canonicalKey] = "manual";
-      }
-    }
-    (patch as any).fieldSources = nextFieldSources;
+    (patch as any).fieldSources = resolveManualFieldSources(existing as any, req.body, patch as any);
 
     // A caller sending `flags` intends to ADD to the lead's flags (e.g.
     // stacking WATCHING onto a lead already flagged DNC), not replace the
@@ -850,37 +836,37 @@ leadRouter.patch(
       }
     }
 
-    // Auto-update Email Queue items for this lead with corrected email & enriched portfolio details
+    // Keep each queued item's DISPLAY metadata in sync with the lead record --
+    // and nothing else.
+    //
+    // This block used to also overwrite `subject` and `body` with a
+    // hardcoded generic template, on every PATCH that touched any of the
+    // fields below. Three things were wrong with that:
+    //
+    //  - It bypassed the drafting pipeline entirely. The template it wrote is
+    //    the same boilerplate every lead got before drafting was
+    //    personalized, so a queue item silently reverted to unpersonalized
+    //    text whenever its lead was edited or re-enriched.
+    //  - It destroyed real work without asking. A recruiter's hand-typed
+    //    draft and an AI-generated one were both overwritten in place, with
+    //    no confirmation and no way back.
+    //  - It left a body present, so the compose pane's "Generate Draft"
+    //    button -- which only shows for an empty body -- never appeared. That
+    //    is the reported symptom: add a lead to the queue and find it already
+    //    holding a mail nobody drafted.
+    //
+    // A draft is now only ever written by an explicit "Generate Draft"
+    // (POST /api/email-queue/:id/generate-draft) or by the recruiter typing.
     if (patch.identityResolved || patch.email || patch.yearsOfExperience || patch.vendorExperience || patch.targetLanguage || patch.services || patch.sourceLanguage || patch.country) {
-      const items = await prisma.emailQueueItem.findMany({ where: { leadId: existing.id } });
-      for (const item of items) {
-        const candidateName = patch.displayName || updated.fullName || item.candidateName;
-        const firstName = candidateName.split(" ")[0] || candidateName;
-        const language = patch.targetLanguage || updated.targetLanguage || patch.sourceLanguage || updated.sourceLanguage || item.candidateRole || "Language";
-        const yearsOfExp = patch.yearsOfExperience ?? (updated.yearsOfExperience ? updated.yearsOfExperience.toNumber() : null);
-        const vendorExp = patch.vendorExperience ?? updated.vendorExperience;
-
-        let enrichNote = "";
-        if (yearsOfExp || vendorExp) {
-          const expText = yearsOfExp ? `${yearsOfExp} years of experience` : "";
-          const vendorText = vendorExp ? `working with ${vendorExp}` : "";
-          const combined = [expText, vendorText].filter(Boolean).join(" ");
-          if (combined) enrichNote = ` (including your ${combined})`;
-        }
-
-        const newSubject = `Global3 Outreach · Freelance Partnership (${candidateName})`;
-        const newBody = `Hi ${firstName},\n\nI hope this email finds you well.\n\nI'm reaching out from the Resource Management team at Global3. We recently reviewed your profile${enrichNote} and believe your expertise would be a strong asset to our current and upcoming project pipelines.\n\nWe are actively looking to connect with talented freelance ${language} linguists who value long-term, meaningful collaboration over one-off tasks.\n\nAt Global3, we pride ourselves on building lasting partnerships with our global network of professionals. You can find more details about our mission and the scope of our work at global3.io.\n\nIf you are open to exploring a partnership, please submit your application through our portal so we can align your profile with relevant opportunities: https://app.global3.io/apply\n\nShould you have any questions before applying, please feel free to reach out to us at resources@global3.io. We're happy to provide more information.\n\nBest regards,\nResources Team`;
-
-        await prisma.emailQueueItem.update({
-          where: { id: item.id },
-          data: {
-            subject: newSubject,
-            body: newBody,
-            candidateName,
-            candidateRole: language,
-          },
-        }).catch(() => null);
-      }
+      const candidateName = patch.displayName || updated.displayName || updated.fullName || undefined;
+      const candidateRole = candidateRoleOf(
+        patch.services ?? updated.services,
+        patch.targetLanguage ?? updated.targetLanguage
+      );
+      await prisma.emailQueueItem.updateMany({
+        where: { leadId: existing.id },
+        data: { candidateRole, ...(candidateName ? { candidateName } : {}) },
+      }).catch(() => null);
     }
 
     return res.json({ lead: withEnrichedFieldCount(updated) });

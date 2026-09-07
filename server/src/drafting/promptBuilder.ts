@@ -11,13 +11,14 @@
  * real leads); keep this file in sync by eye, not by re-deriving the rules. */
 
 import { Lead } from "./leads";
+import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 
-// Generous but bounded -- this is a raw JSON dump of everything Clay
+// Generous but bounded -- this is a raw JSON dump of everything Parallel
 // returned, not curated prose, so it can legitimately run a few KB for a
 // lead with a long work history. Capped so one unusually large profile
 // can't blow the request; groundingFacts() already carries the highest-
 // value specifics regardless, so truncation here only loses secondary detail.
-const MAX_CLAY_BLOCK_CHARS = 6000;
+const MAX_PARALLEL_BLOCK_CHARS = 6000;
 
 // --- Brand constants (single source of truth for every draft) --------------
 export const BRAND = {
@@ -29,7 +30,11 @@ export const BRAND = {
   team: "Resource Management team at Global3",
 };
 
-export const LINKEDIN_CHAR_TARGET = "STRICTLY under 200 characters total (LinkedIn connection note hard cap on free accounts)";
+/** Re-exported from lib/linkedinNoteCap so the prompt, the evaluator gate and
+ * unipile.service's send-time truncation all read the SAME number -- they
+ * previously held 200/300/200 and drafts shipped over the send limit. */
+export const LINKEDIN_NOTE_CHAR_CAP = LINKEDIN_NOTE_MAX_CHARS;
+export const LINKEDIN_CHAR_TARGET = `STRICTLY under ${LINKEDIN_NOTE_CHAR_CAP} characters total (the note is truncated at exactly this length before sending, and the apply URL sits at the end -- going over silently drops the call to action), and every character should be earning its place`;
 export const EMAIL_WORD_TARGET = "roughly 120-180 words";
 
 // --- Shared brand-voice + anti-hallucination rules --------------------------
@@ -50,15 +55,31 @@ STRICT RULES:
   Acme Inc" is FABRICATION even though both halves are individually true facts, because that
   exact pairing was never stated. If in doubt, keep facts in their own separate sentences
   rather than merging them into one claim.
-- HARD REQUIREMENT — specificity: if LEAD FACTS contains any concrete, named detail --
-  tools_software, certifications, current_title, headline, or a named company inside
-  current_role_or_company -- the opening MUST name at least one of them explicitly.
-  A draft that only paraphrases generically ("your experience in subtitling") when a
-  specific tool, employer, or certification is available in LEAD FACTS is NOT acceptable.
-  Weak (do not do this): "believe your background in subtitling would be a strong asset."
-  Strong (do this instead): "particularly your hands-on experience with OOONA and WinCaps
-  at Sfera Studios." Prefer the specific named fact over the generic category whenever
-  one is present.
+- HARD REQUIREMENT — specificity, TWO named details minimum: this draft must read like
+  someone actually sat and read this person's profile, not like a template with their
+  name pasted in. Name at least TWO DISTINCT concrete details drawn from different
+  categories below, whenever two are available anywhere in LEAD FACTS or the RAW PROFILE
+  DATA. Only drop to one (or zero) if the profile genuinely offers no more.
+    (a) a named employer, client, production, publication, or project they worked on
+    (b) a named tool or software they use (tools_software, or one named in a role excerpt)
+    (c) a named credential, certification, degree, or field of study
+    (d) a specific language pair or named specialism (e.g. "OC, CC, SDH subtitling",
+        "Marathi character dubbing", "English-to-Polish literary translation")
+    (e) a distinctive claim, number, or scale from a role excerpt ("800+ scripts",
+        "broadcast-ready to international standards", "4.8 Trustpilot rating")
+  Weak (NEVER do this): "your background in subtitling would be a strong asset."
+  Also weak (one detail, generic elsewhere): "your expertise in localization and QA."
+  Strong (do this): "your experience with English Subtitling (OC, CC, SDH) at Sfera
+  Studios, combined with your hands-on work in OOONA, WinCaps and EZTitles."
+- SIGNAL THAT THE PROFILE WAS ACTUALLY READ: open by referring to having looked at their
+  profile/work ("I came across your profile and was struck by...", "Reading through your
+  profile, your work on X stood out"), then immediately follow it with the specific
+  details above. The reader should be able to tell, from the details alone, that this
+  could not have been sent to anyone else.
+- NAME THE FIT, DON'T ASSERT IT GENERICALLY: say what specifically about their background
+  fits what specifically we need -- name the actual service/language pool they'd be
+  joining ("our freelance pool for English subtitling and editing work"), not "our
+  current and upcoming project pipelines" in the abstract.
 - recent_experience is the HIGHEST-VALUE source of specificity when present: each entry
   after the colon is a real excerpt from that person's own profile, and it names actual
   productions, clients, publications, technologies, ratings, or named projects -- not
@@ -96,46 +117,63 @@ STRICT RULES:
 - Return STRICT JSON only — no markdown, no commentary outside the JSON.`;
 
 // --- Approved reference templates (the pattern every draft must follow) -----
+// The shape every email follows. Deliberately written with the SPECIFICS in
+// square brackets rather than as finished generic prose: an earlier version
+// of this exemplar spelled out three fully-generic middle paragraphs ("We are
+// actively looking to connect with talented freelance linguists who value
+// long-term, meaningful collaboration...") and the model faithfully reproduced
+// them verbatim on every lead, so ~60% of each draft was identical across
+// leads and only one opening sentence was ever personalized. Every bracket
+// below is a slot the model MUST fill from this lead's own profile.
 const EMAIL_EXEMPLAR =
   "Hi [Name],\n\nI hope this email finds you well.\n\n" +
-  `I'm reaching out from the ${BRAND.team}. We recently reviewed your profile ` +
-  "and believe your background in [language/service] would be a strong asset to our current and upcoming " +
-  "project pipelines.\n\nWe are actively looking to connect with talented freelance " +
-  "linguists who value long-term, meaningful collaboration over one-off " +
-  `tasks. At ${BRAND.company}, we pride ourselves on building lasting partnerships ` +
-  `with our global network of professionals. You can find more details about our ` +
-  `mission and the scope of our work at ${BRAND.site}.\n\nIf you are open to ` +
-  `exploring a partnership, please submit your application through our portal so we ` +
-  `can align your profile with relevant opportunities: ${BRAND.apply_url}\n\n` +
-  `Should you have any questions before applying, feel free to reach out to us at ` +
-  `${BRAND.contact_email}.\n\n${BRAND.email_sign_off}`;
+  "I came across your profile and was impressed by [THEIR SPECIFIC BACKGROUND] — " +
+  "particularly [NAMED DETAIL #1: a named role/production/client, with the employer " +
+  "if the profile pairs them], combined with [NAMED DETAIL #2: named tools, a " +
+  "credential, a language pair, or a distinctive claim from their own profile].\n\n" +
+  `At ${BRAND.company}, we're building out our freelance pool for [THE SPECIFIC ` +
+  "SERVICE/LANGUAGE WORK THIS PERSON DOES], and [WHAT SPECIFICALLY ABOUT THEIR " +
+  "BACKGROUND FITS IT] stood out as a strong fit. We work on long-term partnerships " +
+  "rather than one-off tasks — more about our work at " +
+  `${BRAND.site}.\n\nIf you're open to exploring this, you can submit your profile ` +
+  `through our portal so we can match you to relevant projects: ${BRAND.apply_url}\n\n` +
+  `Any questions before applying, just reach us at ${BRAND.contact_email}.\n\n` +
+  `${BRAND.email_sign_off}`;
 
+// LinkedIn's note cap leaves room for roughly one specific detail, so the
+// pattern spends its characters there and keeps the brand wording as short as
+// it can -- see the priority list and the budget arithmetic in
+// buildLinkedinPrompt. An earlier, chattier closing ("We're building out our
+// freelance pool at Global3: ") ate ~45 characters and pushed notes 5-15 over
+// the send limit whenever the lead's named detail was itself long (a
+// certification title, say), which the send path then truncated -- dropping
+// the apply URL, i.e. the whole call to action.
 const LINKEDIN_EXEMPLAR =
-  "Hi [Name], noticed your [X yrs] in [language/service] -- we'd love to have you at " +
-  `${BRAND.company}. Apply here: ${BRAND.apply_url}`;
+  "Hi [Name], your [ONE HYPER-SPECIFIC DETAIL: a named employer/production, a named " +
+  `tool, or a named specialism] stood out — we'd love you in ${BRAND.company}'s linguist ` +
+  `pool. Apply: ${BRAND.apply_url}`;
 
 function dumpCapped(data: any): string {
   const dumped = JSON.stringify(data, null, 2);
-  if (dumped.length > MAX_CLAY_BLOCK_CHARS) {
-    return dumped.slice(0, MAX_CLAY_BLOCK_CHARS) + "\n... (truncated -- rely on LEAD FACTS above for anything cut off here)";
+  if (dumped.length > MAX_PARALLEL_BLOCK_CHARS) {
+    return dumped.slice(0, MAX_PARALLEL_BLOCK_CHARS) + "\n... (truncated -- rely on LEAD FACTS above for anything cut off here)";
   }
   return dumped;
 }
 
 /** Every raw enrichment payload this lead has, verbatim, labeled by source --
  * on top of the curated groundingFacts() above, not instead of it. Covers
- * BOTH Clay's "Enrich person" data and the primary scrape (Bright Data for
+ * BOTH Parallel's Task Run data and the primary scrape (Bright Data for
  * LinkedIn, Tavily for ProZ/ATA/etc.), so the model can mine anything not
- * explicitly modeled by the Lead class (connections, volunteering,
- * structured_location, a raw about/experience field the curated facts
- * summarized, etc.) rather than a code-level decision in advance about what
- * counts as relevant. Still governed by the same anti-fabrication rule in
- * VOICE_RULES -- only reference what's literally present here, never infer
- * or embellish. */
+ * explicitly modeled by the Lead class (a raw about/experience field the
+ * curated facts summarized, etc.) rather than a code-level decision in
+ * advance about what counts as relevant. Still governed by the same
+ * anti-fabrication rule in VOICE_RULES -- only reference what's literally
+ * present here, never infer or embellish. */
 function fullRawDataBlock(lead: Lead): string {
   const sections: string[] = [];
-  if (lead.clayFullData) {
-    sections.push(`--- From Clay ---\n${dumpCapped(lead.clayFullData)}`);
+  if (lead.parallelFullData) {
+    sections.push(`--- From Parallel ---\n${dumpCapped(lead.parallelFullData)}`);
   }
   if (lead.rawScrapeData) {
     sections.push(`--- From the primary scrape (Bright Data/Tavily) ---\n${dumpCapped(lead.rawScrapeData)}`);
@@ -189,23 +227,33 @@ RATE CONTEXT:
 ${rateBlock(rateMatch)}
 
 CHANNEL: Email (long-form, ${EMAIL_WORD_TARGET}).
-Must include: a personalized opening naturally referencing whichever LEAD FACTS are
-present (language, services, years of experience, current role/company -- only the
-ones actually listed above), ${BRAND.site}, the apply portal link ${BRAND.apply_url},
-the contact ${BRAND.contact_email}, and the sign-off "Resources Team". If LEAD FACTS
-contains a concrete named detail (tools_software, certifications, current_title,
-headline, or a company name), the opening must name at least one of them -- not only
-the broad service category.
+Must include: ${BRAND.site}, the apply portal link ${BRAND.apply_url}, the contact
+${BRAND.contact_email}, and the sign-off "Resources Team".
+Must ALSO include, per the specificity rule above: TWO distinct named details from
+this person's own profile (an employer/production/client, a named tool, a credential,
+a specific language pair or specialism, or a distinctive claim from a role excerpt),
+and an opening that makes clear their profile was actually read. Do not settle for the
+broad service category when a named detail is available anywhere in LEAD FACTS or the
+RAW PROFILE DATA below.
+AND, separately from those named details, weave in at least one of the lead's broad
+attributes that IS present in LEAD FACTS -- their language(s), service(s), country, or
+years of experience. The named details are what prove you read the profile; this is
+what anchors the message to the work we'd actually be offering them, and a draft
+carrying only named details and no attribute reads oddly disembodied.
 
-PATTERN TO FOLLOW (this is the approved structure -- match its shape, tone, links,
-and sign-off; personalize the opening sentence with the real LEAD FACTS instead of
-the bracketed placeholders):
+PATTERN TO FOLLOW (this is the approved structure -- match its shape, tone, links and
+sign-off. EVERY square-bracket slot is a slot you must fill with this lead's OWN
+specifics; do not carry any bracket text through literally, and do not replace a
+bracket with a generic phrase):
 ---
 ${EMAIL_EXEMPLAR}
 ---
 
 Return STRICT JSON exactly:
-{"subject": "<a specific, 2-6 word subject line>", "body": "<the email body>"}`;
+{"subject": "<subject line, MAX 8 words, naming the actual role/service and language
+where known -- e.g. \\"Freelance English Subtitling – Global3\\" or \\"Marathi Voice
+Over Partnership – Global3\\". Not a generic \\"Partnership Opportunity\\">",
+ "body": "<the email body>"}`;
   return [system, user];
 }
 
@@ -228,20 +276,37 @@ RATE CONTEXT:
 ${rateBlock(rateMatch)}
 
 CHANNEL: LinkedIn connection note (${LINKEDIN_CHAR_TARGET}).
-CRITICAL REQUIREMENT: Total text length MUST NOT EXCEED 200 CHARACTERS, including the
-apply link. No subject line.
+CRITICAL REQUIREMENT: Total text length MUST NOT EXCEED ${LINKEDIN_NOTE_CHAR_CAP} CHARACTERS,
+including the apply link. No subject line.
 
-PRIORITY (in order, given the tight character budget): 1) years of experience, if
-present, MUST be worked into the note (e.g. "10 yrs in Dubbing") even briefly -- this is
-the single most important fact to keep if something has to be cut for length; 2) if room
-remains, prefer naming ONE concrete, specific detail over a generic service category --
-in order of how compelling/personal they read: a named past employer/role from
-recent_experience (e.g. "your role at Absolute Translations" -- always one of THEIR
-past employers, never Global3 itself), a tool from tools_software, a
-certification, or current_title -- e.g. "10 yrs, incl. your role at [Company]" beats
-"10 yrs, OOONA-certified" beats "10 yrs in subtitling" when multiple fit; 3) generic
-service category last, only if there's still room. Prefer short numerals/abbreviations
-("10 yrs", "German dubbing") over full sentences to stay under the cap.
+DO THE ARITHMETIC BEFORE YOU WRITE -- "be brief" is not enough, and drafts keep
+landing 5-15 characters over:
+  - the apply URL alone is ${BRAND.apply_url.length} characters
+  - the closing that introduces it costs ~50 more (see the PATTERN below)
+  - that leaves you roughly ${LINKEDIN_NOTE_CHAR_CAP - BRAND.apply_url.length - 50} characters
+    -- about 18-20 words -- for the greeting and the specific detail COMBINED. If the
+    lead's named detail is itself long (a full certification title, say), the greeting
+    has to shrink to almost nothing: "Hi [Name], your [detail] stood out —" is enough.
+Draft it, then COUNT the characters of the whole thing including the URL. If it's over
+${LINKEDIN_NOTE_CHAR_CAP}, cut words and count again before answering. Cut in this order:
+the pleasantry, then the profile-read wording (shorten "I came across your profile and
+was impressed by" to just "your"), then the service category -- NEVER the named detail.
+
+PRIORITY (in order, given the tight character budget -- personalization outranks
+everything else here, because the ONLY reason this note gets a reply is the lead
+recognising that a real person read their actual profile):
+  1) ONE hyper-specific named detail is MANDATORY and is the last thing to cut: a named
+     employer/production/client from recent_experience (always one of THEIR employers,
+     never ${BRAND.company} itself), a named tool from tools_software, a named
+     credential, or a named specialism/language pair. e.g. "your OOONA subtitling
+     work", "your Marathi VO for Maruti Suzuki", "your OC/CC/SDH work at Sfera".
+  2) years of experience, if present and if room remains after (1) -- e.g. "10 yrs".
+  3) the broad service category LAST, and only if nothing more specific fit.
+A note that spends its characters on "10 yrs in subtitling" while a named tool or
+employer was available in LEAD FACTS is a FAILURE -- the specific detail is what earns
+the reply. Prefer short forms ("10 yrs", "EN>PL", "OOONA") to buy room for the
+specific detail. Signal you read the profile in as few words as possible ("came across
+your profile", "saw your work on X").
 
 PATTERN TO FOLLOW (this is the approved structure -- match its shape and links;
 personalize using the real LEAD FACTS instead of the bracketed placeholders,
@@ -251,6 +316,6 @@ ${LINKEDIN_EXEMPLAR}
 ---
 
 Return STRICT JSON exactly:
-{"body": "<the LinkedIn message, STRICTLY under 200 chars total>"}`;
+{"body": "<the LinkedIn message, STRICTLY under ${LINKEDIN_NOTE_CHAR_CAP} chars total>"}`;
   return [system, user];
 }

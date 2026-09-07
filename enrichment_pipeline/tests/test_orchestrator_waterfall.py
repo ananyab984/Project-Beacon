@@ -16,13 +16,13 @@ from config import Config
 from llm_fallback.client import ClaudeError
 from orchestrator import EnrichmentOrchestrator
 from providers.brightdata_client import BrightDataError
-from providers.clay_client import ClayError
+from providers.parallel_client import ParallelError  # noqa: F401  (constructed in the re-attempt tests)
 from providers.tavily_client import TavilyError
 
 
 def make_orchestrator() -> EnrichmentOrchestrator:
     # Empty keys -- __init__ skips constructing real clients; tests stub
-    # orch.brightdata/tavily/clay/claude directly, same pattern as
+    # orch.brightdata/tavily/parallel/claude directly, same pattern as
     # tests/test_dedup.py's StubDedupClient.
     cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="")
     return EnrichmentOrchestrator(cfg)
@@ -32,67 +32,114 @@ def stub(**methods):
     return type("Stub", (), {name: staticmethod(fn) for name, fn in methods.items()})()
 
 
-def test_linkedin_waterfall_falls_through_brightdata_clay_to_llm():
+def test_linkedin_waterfall_falls_through_brightdata_parallel_to_llm():
     orch = make_orchestrator()
-    calls = {"brightdata": 0, "clay": 0, "llm": 0}
+    calls = {"brightdata": 0, "parallel": 0, "llm": 0}
 
     def bd_scrape(url):
         calls["brightdata"] += 1
         raise BrightDataError("scrape failed")
 
-    def clay_dispatch(lead, correlation_id):
-        calls["clay"] += 1
-        raise ClayError("dispatch failed")
+    def parallel_enrich(lead, profile_link):
+        calls["parallel"] += 1
+        raise ParallelError("call failed")
 
     def llm_extract(system_prompt, raw_text):
         calls["llm"] += 1
         return {}
 
     orch.brightdata = stub(scrape_profile=bd_scrape)
-    orch.clay = stub(dispatch_lead=clay_dispatch)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
     orch.claude = stub(extract_critical_fields=llm_extract)
 
     lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
     result = orch.process_lead(lead)
 
     assert calls["brightdata"] == 1, "BrightData should have been tried first"
-    assert calls["clay"] == 1, "Clay should be tried after BrightData fails"
+    assert calls["parallel"] == 1, "Parallel should be tried after BrightData fails"
     # raw_source_text is empty since BrightData failed -- LLM fallback is
     # skipped for lack of source text, not called; this is existing,
     # unrelated behavior (LLM needs something to extract from).
     assert calls["llm"] == 0
     assert result["conclusion"] == "exhausted_no_match"
+    assert result["parallel_fallback"]["called"] is True
+    assert result["parallel_fallback"]["error"] == "call failed"
 
 
-def test_non_linkedin_waterfall_never_calls_clay_even_with_a_linkedin_shaped_url():
-    """Adversarial case: a non-LinkedIn-sourced lead whose Profile_Link
-    happens to look like a LinkedIn URL -- the OLD regex-only gate would
-    have dispatched this to Clay; the structural split must not, regardless
-    of what Profile_Link contains, since routing is by provider_type alone."""
+def test_parallel_not_re_called_once_already_settled_for_this_lead():
+    """A repeat process_lead pass for the same lead (the Node poller's normal
+    re-enrichment path) must not re-pay for a Parallel call that already
+    concluded on a prior pass -- covers both 'complete' and 'failed' terminal
+    states via known_field_sources["_parallel_fallback"], exactly as the Node
+    caller round-trips a lead's persisted field_sources on every re-enrichment
+    call (see orchestrator.py's `already_ran` check)."""
     orch = make_orchestrator()
-    calls = {"tavily": 0, "clay": 0}
+    calls = {"parallel": 0}
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or {})
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    result = orch.process_lead(lead, known_field_sources={"_parallel_fallback": "complete"})
+
+    assert calls["parallel"] == 0, "Parallel must not be re-called once this lead already has a concluded Stage 3.5 pass"
+    assert result["parallel_fallback"]["called"] is False
+    assert result["parallel_fallback"]["reason"] == "already_complete"
+
+
+def test_non_linkedin_waterfall_also_runs_parallel():
+    """Parallel is Tier 2 for EVERY platform, not just LinkedIn.
+
+    Clay's version of this stage was hard-gated to linkedin.com URLs because
+    Clay itself rejected any other identifier; Parallel has no such
+    limitation (its PoC covered ProZ/Bodalgo/ATA/Freelancer URLs), so
+    carrying that gate forward left non-LinkedIn leads permanently without
+    Tier 2 data and split enrichment provenance across the table. A
+    ProZ/Bodalgo lead must now get the same Tier 2 treatment as a LinkedIn
+    one, with Tavily rather than Bright Data as its Tier 1."""
+    orch = make_orchestrator()
+    calls = {"tavily": 0, "parallel": 0}
+    seen_url = {}
 
     def tavily_extract(url):
         calls["tavily"] += 1
         raise TavilyError("extract failed")
 
-    def clay_dispatch(lead, correlation_id):
-        calls["clay"] += 1
-        return None
+    def parallel_enrich(lead, profile_link):
+        calls["parallel"] += 1
+        seen_url["url"] = profile_link
+        return {"headline": "Voice-over artist", "country": "Spain"}
 
     orch.tavily = stub(extract_url=tavily_extract)
-    orch.clay = stub(dispatch_lead=clay_dispatch)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
 
     lead = {
         "Source": "ADA",  # routes to tavily_extract, per core/source_router.py
-        "Profile_Link": "https://www.linkedin.com/in/adversarial-case",
+        "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone",
         "Full_Name": "Jane Doe",
     }
     result = orch.process_lead(lead)
 
-    assert calls["tavily"] == 1
-    assert calls["clay"] == 0, "non-LinkedIn waterfall must never call Clay, regardless of Profile_Link's contents"
-    assert result["conclusion"] == "exhausted_no_match"
+    assert calls["tavily"] == 1, "Tier 1 for a non-LinkedIn lead is still Tavily"
+    assert calls["parallel"] == 1, "Parallel must run for a non-LinkedIn lead too"
+    assert seen_url["url"] == lead["Profile_Link"], "Parallel gets the lead's own profile URL, whatever platform it is"
+    assert result["field_sources"].get("_parallel_fallback") == "complete"
+    assert result["parallel_fallback"]["called"] is True
+    # And its resolved fields actually land on the lead, same as LinkedIn's.
+    assert result["lead"].get("Headline") == "Voice-over artist"
+
+
+def test_parallel_skipped_entirely_when_lead_has_no_profile_link():
+    """The gate is now "is there a URL to research", so a lead with no
+    Profile_Link at all must skip Tier 2 rather than call Parallel with an
+    empty string."""
+    orch = make_orchestrator()
+    calls = {"parallel": 0}
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or {})
+
+    result = orch.process_lead({"Source": "LinkedIn", "Full_Name": "Jane Doe"})
+
+    assert calls["parallel"] == 0, "no URL means nothing for Parallel to research"
+    assert result["parallel_fallback"] is None
+    assert "_parallel_fallback" not in result["field_sources"]
 
 
 def test_short_circuit_success_when_nothing_left_to_fill():
@@ -174,3 +221,116 @@ def test_genuine_crash_propagates_uncaught_distinct_from_exhausted_no_match():
         assert False, "expected RuntimeError to propagate, but process_lead returned normally"
     except RuntimeError as exc:
         assert "genuine bug" in str(exc)
+
+
+def test_parallel_absence_prose_never_reaches_a_data_field():
+    """Confirmed live 2026-09-07: Parallel returned the string "No
+    certifications are listed in the available profile evidence." INSIDE its
+    `certifications` list for 2 of 7 real leads, which landed in
+    Lead.certifications and would have been quoted back to the lead as a fact
+    in their outreach draft. The schema now instructs an empty list, but this
+    guard is what actually keeps prose out of the column if the model
+    regresses -- while still letting a genuine credential through."""
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "certifications": [
+                "No certifications are listed in the available profile evidence.",
+                "ATA Certified Translator",
+            ],
+            "country": "India",
+        }
+    )
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    result = orch.process_lead(lead)
+
+    certs = result["lead"].get("Certifications") or ""
+    assert "ATA Certified Translator" in certs, "a real credential must still come through"
+    assert "profile evidence" not in certs.lower(), "absence prose must never reach a data field"
+    assert any("dropped 1 non-data" in line for line in result["logs"]), "the drop should be logged, not silent"
+
+
+# --- Tier 2 re-attempt policy -------------------------------------------
+#
+# Replaces a plain truthy check that treated ANY marker value -- including
+# "failed" -- as "already attempted, never call again", so one transient blip
+# denied a lead Tier 2 forever (confirmed live 2026-09-07: three leads were
+# stamped "failed" by a since-fixed timeout bug, then silently skipped by
+# every later pass until their markers were cleared by hand).
+
+def _linkedin_lead():
+    return {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+
+
+def _orch_with_failing_parallel(exc, calls):
+    orch = make_orchestrator()
+
+    def fail(lead, profile_link):
+        calls["parallel"] += 1
+        raise exc
+
+    orch.parallel = stub(enrich_profile=fail)
+    return orch
+
+
+def test_transient_failure_is_retried_then_capped_at_two_attempts():
+    calls = {"parallel": 0}
+    orch = _orch_with_failing_parallel(ParallelError("connection reset"), calls)
+
+    # Pass 1: first attempt, fails, records attempt 1 of 2.
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+
+    # Pass 2: budget remains, so it tries again and records attempt 2.
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "a transient failure must be retried on a later pass"
+    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Pass 3: exhausted -- never called again, however many passes run.
+    r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    r4 = orch.process_lead(_linkedin_lead(), known_field_sources=r3["field_sources"])
+    assert calls["parallel"] == 2, f"capped at {orchestrator_module.MAX_PARALLEL_TRANSIENT_ATTEMPTS} attempts, got {calls['parallel']}"
+    assert r4["parallel_fallback"]["called"] is False
+    assert "exhausted" in " ".join(r4["logs"])
+
+
+def test_permanent_rejection_is_never_retried():
+    """A 4xx means Parallel understood us and refused -- the same input gets
+    the same refusal, so retrying only spends money and minutes."""
+    calls = {"parallel": 0}
+    exc = ParallelError("Parallel rejected this input (400): bad url", status_code=400, permanent=True)
+    orch = _orch_with_failing_parallel(exc, calls)
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_permanent"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 1, "a permanent rejection must never be retried"
+    assert r2["parallel_fallback"]["called"] is False
+
+
+def test_success_is_never_re_called():
+    calls = {"parallel": 0}
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1)
+        or {"headline": "Subtitler"}
+    )
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "complete"
+    orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 1, "a resolved lead must never be re-billed"
+
+
+def test_legacy_and_corrupt_markers_are_treated_as_settled():
+    """An unrecognised marker must not become a way to re-bill a lead on
+    every pass -- including the plain "failed" written before this policy."""
+    for marker in ["failed", "failed_transient:", "failed_transient:banana", "something_else"]:
+        calls = {"parallel": 0}
+        orch = _orch_with_failing_parallel(ParallelError("x"), calls)
+        orch.process_lead(_linkedin_lead(), known_field_sources={"_parallel_fallback": marker})
+        assert calls["parallel"] == 0, f"marker {marker!r} must not trigger a call"

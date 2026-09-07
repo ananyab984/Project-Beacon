@@ -12,8 +12,9 @@
 
 import { ClaudeClient } from "./claudeClient";
 import type { DraftingConfig } from "./config";
-import { Lead } from "./leads";
+import { citedNamedSpecifics, Lead } from "./leads";
 import { BRAND, buildEmailPrompt, buildLinkedinPrompt, RateMatch } from "./promptBuilder";
+import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 
 export interface Draft {
   channel: "email" | "linkedin";
@@ -28,28 +29,35 @@ export interface Draft {
   rate_flag: string | null;
 }
 
-const SPECIFICITY_RETRY_NOTE =
-  "Your previous draft didn't reference any specific named fact (a tool, certification, " +
-  "current title, or employer) even though one was available in LEAD FACTS. Regenerate " +
-  "the draft and this time explicitly name at least one of them, per the HARD REQUIREMENT " +
-  "rule above.";
+/** How many distinct named details a draft must cite. Two, not one: with a
+ * one-fact bar the model reliably produced a single specific clause followed
+ * by generic filler, which is exactly the templated feel this is meant to
+ * avoid. Softened per-lead to `min(REQUIRED, available)` so a genuinely thin
+ * profile is never held to a bar its own data can't meet. */
+const REQUIRED_SPECIFIC_FACTS = 2;
 
-/** Concrete, named facts a draft can point to -- used to verify the model
- * actually cited something specific rather than only a generic category. */
-function specificFactStrings(lead: Lead): string[] {
-  const facts: string[] = [];
-  facts.push(...lead.toolsSoftware);
-  facts.push(...lead.certifications);
-  if (lead.currentTitle) facts.push(lead.currentTitle);
-  if (lead.vendorExperience) {
-    facts.push(...lead.vendorExperience.split(",").map((c) => c.trim()).filter(Boolean));
-  }
-  return facts.filter(Boolean);
+function specificityRetryNote(cited: number, target: number, facts: string[]): string {
+  return (
+    `Your previous draft cited ${cited} specific named detail(s); this lead's profile supports ` +
+    `${target}. Regenerate it and name ${target} DISTINCT specifics from different categories ` +
+    `(a named employer/production/client, a named tool, a named credential, a specific ` +
+    `language pair or specialism, or a distinctive claim from a role excerpt), per the HARD ` +
+    `REQUIREMENT — specificity rule above. Available named details for this lead include: ` +
+    `${facts.slice(0, 12).join(", ")}. Weave them in naturally -- do not list them mechanically.`
+  );
 }
 
-function hasSpecificFact(body: string, facts: string[]): boolean {
-  const lowered = body.toLowerCase();
-  return facts.some((f) => lowered.includes(f.toLowerCase()));
+/** How many distinct grounded named details the body cites. Delegates to the
+ * shared measurement in leads.ts so the regenerate-once guard here and
+ * evaluator's named_specificity gate can never disagree on the bar. */
+export function countSpecificFacts(lead: Lead, body: string): number {
+  return citedNamedSpecifics(lead, body).length;
+}
+
+/** The bar for this particular lead: two specifics, or everything its profile
+ * offers when that's fewer than two. */
+export function specificityTarget(strongFacts: string[]): number {
+  return Math.min(REQUIRED_SPECIFIC_FACTS, strongFacts.length);
 }
 
 /** Guardrail: make sure the canonical brand links survived generation.
@@ -104,10 +112,12 @@ export async function generateEmail(
   });
   let data = parseDraftJson(completion.text);
 
-  const specificFacts = specificFactStrings(lead);
-  if (specificFacts.length && !hasSpecificFact(data.body || "", specificFacts)) {
-    console.warn(`[draftGenerator] Email draft for ${lead.firstName} cited no specific fact from ${specificFacts} -- regenerating once`);
-    const retryUser = `${user}\n\n${SPECIFICITY_RETRY_NOTE}`;
+  const specificFacts = lead.specificFactCandidates();
+  const target = specificityTarget(lead.strongFactCandidates());
+  let cited = countSpecificFacts(lead, data.body || "");
+  if (target > 0 && cited < target) {
+    console.warn(`[draftGenerator] Email draft for ${lead.firstName} cited ${cited}/${target} specific facts -- regenerating once`);
+    const retryUser = `${user}\n\n${specificityRetryNote(cited, target, specificFacts)}`;
     completion = await client.chat(system, retryUser, {
       model: cfg.genModel,
       temperature: cfg.genTemperature,
@@ -115,8 +125,9 @@ export async function generateEmail(
       maxTokens: 900,
     });
     data = parseDraftJson(completion.text);
-    if (!hasSpecificFact(data.body || "", specificFacts)) {
-      console.warn(`[draftGenerator] Retry for ${lead.firstName} still cited no specific fact; keeping it as best-effort`);
+    cited = countSpecificFacts(lead, data.body || "");
+    if (cited < target) {
+      console.warn(`[draftGenerator] Retry for ${lead.firstName} cited ${cited}/${target}; keeping it as best-effort`);
     }
   }
 
@@ -153,19 +164,53 @@ export async function generateLinkedin(
   });
   let data = parseDraftJson(completion.text);
 
-  const specificFacts = specificFactStrings(lead);
-  if (specificFacts.length && !hasSpecificFact(data.body || "", specificFacts)) {
-    console.warn(`[draftGenerator] LinkedIn draft for ${lead.firstName} cited no specific fact from ${specificFacts} -- regenerating once`);
-    const retryUser = `${user}\n\n${SPECIFICITY_RETRY_NOTE}`;
-    completion = await client.chat(system, retryUser, {
+  // Two things can send a note back for a rewrite, and both are worth one
+  // retry because both are mechanically fixable:
+  //
+  //  - Specificity. The note's ~200 chars have room for exactly one specific
+  //    detail, so the bar here is ONE (unlike email's two) -- but it IS a
+  //    bar: a note spending its characters on the generic service category
+  //    while a named tool or employer was available gets regenerated.
+  //  - Length. The note is truncated at exactly LINKEDIN_NOTE_MAX_CHARS
+  //    before sending and the apply URL sits at the END, so an over-long
+  //    note doesn't just read badly -- it silently loses its call to action.
+  //    Asking for a shorter rewrite is strictly better than shipping a note
+  //    that will be cut, or than holding one a rewrite could fix.
+  const specificFacts = lead.specificFactCandidates();
+  const complaints = (draftBody: string): string[] => {
+    const out: string[] = [];
+    if (lead.strongFactCandidates().length && countSpecificFacts(lead, draftBody) < 1) {
+      out.push(specificityRetryNote(0, 1, specificFacts));
+    }
+    // Measured on the body AFTER ensureLinks, since that's what actually
+    // gets sent -- a note that fits only until the apply URL is appended is
+    // still over the limit.
+    const sendable = ensureLinks(draftBody.trim(), "linkedin");
+    if (sendable.length > LINKEDIN_NOTE_MAX_CHARS) {
+      out.push(
+        `Your previous note was ${sendable.length} characters once the apply link was included -- ` +
+          `${LINKEDIN_NOTE_MAX_CHARS} is a HARD limit and the note is cut at exactly that length before ` +
+          `sending, which would drop the apply link entirely. Rewrite it shorter while KEEPING the ` +
+          `specific named detail: cut greeting filler and generic phrasing first, and prefer short ` +
+          `forms ("10 yrs", "EN>PL") over full sentences.`
+      );
+    }
+    return out;
+  };
+
+  let issues = complaints(data.body || "");
+  if (issues.length) {
+    console.warn(`[draftGenerator] LinkedIn draft for ${lead.firstName} needs a rewrite (${issues.length} issue(s)) -- regenerating once`);
+    completion = await client.chat(system, `${user}\n\n${issues.join("\n\n")}`, {
       model: cfg.genModel,
       temperature: cfg.genTemperature,
       jsonMode: true,
       maxTokens: 400,
     });
     data = parseDraftJson(completion.text);
-    if (!hasSpecificFact(data.body || "", specificFacts)) {
-      console.warn(`[draftGenerator] Retry for ${lead.firstName} still cited no specific fact; keeping it as best-effort`);
+    issues = complaints(data.body || "");
+    if (issues.length) {
+      console.warn(`[draftGenerator] Retry for ${lead.firstName} still has ${issues.length} issue(s); keeping it as best-effort for the evaluator to gate`);
     }
   }
 

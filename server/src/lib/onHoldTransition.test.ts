@@ -1,6 +1,6 @@
 /**
  * Unit tests for the shared On Hold transition rules used by
- * enrichLeadById, ClayService, and stallOverdueEnrichments.
+ * enrichLeadById and stallOverdueEnrichments.
  *
  * Run: cd server && npx ts-node src/lib/onHoldTransition.test.ts
  */
@@ -74,7 +74,7 @@ function test7_stillInFlightLeavesEverythingUntouched() {
     stillInFlight: true,
     outcome: "timed_out", // deliberately contradictory -- stillInFlight must win
   });
-  assert.deepStrictEqual(result, { flags: ["ON_HOLD", "DNC"], onHoldReason: "TIMEOUT" }, "clay_awaiting must leave flags/onHoldReason completely untouched regardless of outcome");
+  assert.deepStrictEqual(result, { flags: ["ON_HOLD", "DNC"], onHoldReason: "TIMEOUT" }, "stillInFlight must leave flags/onHoldReason completely untouched regardless of outcome");
 }
 
 function main() {

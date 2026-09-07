@@ -50,11 +50,6 @@ export const config = {
   unipileApiKey: requireEnv("UNIPILE_API_KEY"),
   unipileWebhookSecret: requireEnv("UNIPILE_WEBHOOK_SECRET"),
   unipileWebhookPathToken: requireEnv("UNIPILE_WEBHOOK_PATH_TOKEN"),
-  // Same two-factor defense as Unipile's webhook (opaque path token + secret
-  // header) -- Clay's outbound webhook is just as public-facing and needs
-  // the same "don't trust the URL alone" posture.
-  clayWebhookSecret: requireEnv("CLAY_WEBHOOK_SECRET"),
-  clayWebhookPathToken: requireEnv("CLAY_WEBHOOK_PATH_TOKEN"),
   appBaseUrl,
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
