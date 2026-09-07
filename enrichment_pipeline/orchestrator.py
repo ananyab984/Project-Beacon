@@ -405,14 +405,31 @@ class EnrichmentOrchestrator:
     def _apply_parsed_fields(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
         source_label: str, parsed: Dict[str, Any],
+        replaces: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Shared merge rule for ANY stage that resolves canonical fields
         (Stage 3's scrape parsers, Stage 3.5's Parallel call): NEVER
-        overwrite existing data -- EXCEPT OVERRIDE_ON_VERIFIED_FIELDS."""
+        overwrite existing data -- EXCEPT OVERRIDE_ON_VERIFIED_FIELDS.
+
+        `replaces` names, per field, a specific existing value this write is
+        allowed to overwrite even when the field isn't in
+        OVERRIDE_ON_VERIFIED_FIELDS. Its one use is English normalisation: a
+        translated Headline/About_Snippet has to be able to replace the
+        source-language string it was translated FROM, and nothing else.
+        Without it the English text reached `parallelData` but the canonical
+        column kept the Spanish -- which is what the enrichment dialog's
+        field rows and drafting's flat facts actually read, so the
+        translation was invisible where it mattered.
+        """
         for k, v in parsed.items():
             if is_empty_value(v):
                 continue
-            if k in OVERRIDE_ON_VERIFIED_FIELDS:
+            replaceable = replaces is not None and k in replaces and lead.get(k) == replaces[k]
+            if replaceable and lead.get(k) != v:
+                lead[k] = v
+                field_sources[k] = source_label
+                logs.append(f"Stage Parsed: {k} = {v!r} (from {source_label}, English normalisation replaces the source-language value)")
+            elif k in OVERRIDE_ON_VERIFIED_FIELDS:
                 # Mark it verified even when the resolved value happens to
                 # match the manual one -- otherwise field_sources stays
                 # "existing" and Stage 4 would needlessly re-send an
@@ -520,7 +537,28 @@ class EnrichmentOrchestrator:
                 )
             if kept:
                 mapped["Certifications"] = ", ".join(kept)
-        self._apply_parsed_fields(lead, field_sources, logs, "parallel", mapped)
+
+        # If this payload was translated, the canonical column may still be
+        # holding the exact source-language string we translated FROM (written
+        # by an earlier pass, before normalisation existed). Name those values
+        # as replaceable so the English text actually lands where the
+        # enrichment dialog and drafting read it -- narrowly, so nothing else
+        # about the never-overwrite rule changes.
+        original = parallel_data.get("_original_language")
+        replaces: Optional[Dict[str, Any]] = None
+        if isinstance(original, dict):
+            replaces = {
+                canonical: original[key]
+                for canonical, key in (
+                    ("Headline", "headline"),
+                    ("Current_Title", "current_title"),
+                    ("About_Snippet", "about_snippet"),
+                    ("Country_of_Residence", "country"),
+                )
+                if original.get(key)
+            }
+
+        self._apply_parsed_fields(lead, field_sources, logs, "parallel", mapped, replaces=replaces)
 
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()

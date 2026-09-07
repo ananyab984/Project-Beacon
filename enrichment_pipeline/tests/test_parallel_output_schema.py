@@ -196,3 +196,62 @@ def test_normalisation_runs_inside_the_waterfall_and_reaches_canonical_fields():
     )
     assert result["lead"]["Headline"] == "Warm, dynamic, striking and personal."
     assert result["parallel_fallback"]["data"]["_original_language"]["headline"] == SPANISH["headline"]
+
+
+def test_english_text_replaces_the_stale_source_language_column():
+    """The translation has to land where it's actually read.
+
+    Confirmed live 2026-09-07: after normalisation shipped, `parallelData`
+    held English while `Lead.headline`/`aboutSnippet` still held the Spanish
+    strings from an earlier pass -- and those columns are exactly what the
+    enrichment dialog's field rows and drafting's flat facts read, so the
+    translation was invisible where it mattered. The merge's never-overwrite
+    rule was doing it: those fields already had (Spanish) values.
+    """
+    orch = _orch()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: dict(SPANISH))
+    orch.claude = stub(
+        translate_to_english=lambda payload: {
+            "headline": "Warm, dynamic, impactful and personal.",
+            "about_snippet": "I have a somewhat raspy and personal voice",
+            "certifications": [],
+        }
+    )
+
+    # The lead already carries the source-language text from an earlier pass.
+    lead = {
+        "Source": "Bodalgo",
+        "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone",
+        "Full_Name": "Quique L",
+        "Headline": SPANISH["headline"],
+        "About_Snippet": SPANISH["about_snippet"],
+    }
+    result = orch.process_lead(lead)
+
+    assert result["lead"]["Headline"] == "Warm, dynamic, impactful and personal."
+    assert result["lead"]["About_Snippet"] == "I have a somewhat raspy and personal voice"
+    assert result["field_sources"]["Headline"] == "parallel"
+
+
+def test_a_value_that_is_not_the_translated_original_is_still_protected():
+    """`replaces` is narrow on purpose: it may only overwrite the exact
+    string that was translated, never some other value a recruiter or an
+    earlier provider put there."""
+    orch = _orch()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: dict(SPANISH))
+    orch.claude = stub(
+        translate_to_english=lambda payload: {
+            "headline": "Warm, dynamic, impactful and personal.",
+            "about_snippet": "I have a somewhat raspy and personal voice",
+            "certifications": [],
+        }
+    )
+
+    lead = {
+        "Source": "Bodalgo",
+        "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone",
+        "Full_Name": "Quique L",
+        "Headline": "Headline a recruiter typed by hand",
+    }
+    result = orch.process_lead(lead)
+    assert result["lead"]["Headline"] == "Headline a recruiter typed by hand"
