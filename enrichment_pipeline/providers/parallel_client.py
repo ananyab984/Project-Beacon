@@ -40,12 +40,20 @@ _parallel_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="paral
 
 
 class ParallelError(Exception):
-    """Failure calling Parallel's Task Run API."""
+    """Failure calling Parallel's Task Run API.
 
-    def __init__(self, message: str, status_code: Optional[int] = None):
+    `permanent` says whether re-running the SAME input could plausibly
+    succeed, and it drives whether the orchestrator ever tries this lead
+    again (see _run_parallel_stage). A malformed or unresearchable URL gets
+    the identical answer every time, so retrying it just spends money and
+    minutes; a timeout or a 5xx is worth another pass.
+    """
+
+    def __init__(self, message: str, status_code: Optional[int] = None, permanent: bool = False):
         super().__init__(message)
         self.message = message
         self.status_code = status_code
+        self.permanent = permanent
 
 
 class LeadProfile(BaseModel):
@@ -206,10 +214,30 @@ class ParallelClient:
                 output=LeadProfile,
             )
         except Exception as exc:  # noqa: BLE001 -- SDK raises its own exception types we don't import here
+            # Classify before deciding anything downstream. A 4xx (other than
+            # 429) means Parallel understood us and refused: the input URL is
+            # malformed, unreachable, or not something it can research. Sending
+            # the identical payload again gets the identical refusal, so this
+            # is raised as a PERMANENT ParallelError -- which core/resilience
+            # re-raises immediately rather than burning the retry budget on
+            # it, and which stops the orchestrator ever re-attempting this
+            # lead. Everything else (timeout, connection reset, 429, 5xx) is
+            # transient and worth another go.
+            status = getattr(exc, "status_code", None)
+            if isinstance(status, int) and 400 <= status < 500 and status != 429:
+                raise ParallelError(
+                    f"Parallel rejected this input ({status}): {exc}",
+                    status_code=status,
+                    permanent=True,
+                ) from exc
             raise TransientError(f"Parallel Task Run failed: {exc}") from exc
 
         output = getattr(run_result, "output", None)
         content = getattr(output, "content", None) if output is not None else None
         if not isinstance(content, dict):
+            # The run itself completed, it just produced nothing usable.
+            # Deliberately NOT permanent: this is the model returning an
+            # unexpected shape, which a fresh run can plausibly get right,
+            # and the orchestrator's attempt cap bounds what that can cost.
             raise ParallelError("Parallel Task Run returned no usable content")
         return content

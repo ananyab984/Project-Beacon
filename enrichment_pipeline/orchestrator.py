@@ -62,6 +62,61 @@ _ABSENCE_PROSE_MARKERS = (
 )
 
 
+# Values `field_sources["_parallel_fallback"]` can hold, and the re-attempt
+# policy they encode. The marker is round-tripped by the caller on every
+# enrichment pass (Node sends it back as Field_Sources), so it's the only
+# memory this stage has of what happened last time.
+#
+# It replaces a plain truthy check that treated ANY value -- including
+# "failed" -- as "already attempted, never call again". That meant a single
+# transient blip (a timeout, a 5xx, a dropped connection) denied a lead Tier 2
+# enrichment permanently, recoverable only by editing the database by hand.
+# Confirmed live 2026-09-07: three leads were stamped "failed" by a
+# since-fixed timeout bug and then silently skipped by every later pass, so
+# the fix couldn't reach them until their markers were cleared manually.
+PARALLEL_STATE_COMPLETE = "complete"
+PARALLEL_STATE_FAILED_PERMANENT = "failed_permanent"
+PARALLEL_STATE_FAILED_TRANSIENT_PREFIX = "failed_transient:"
+# Transient failures get this many total attempts across passes before the
+# lead is left alone. Two, deliberately: each attempt is a real paid Task Run
+# taking ~150-170s, and the poller revisits pending leads on a schedule, so an
+# uncapped retry would bill for the same dead URL indefinitely.
+MAX_PARALLEL_TRANSIENT_ATTEMPTS = 2
+
+
+def _parallel_attempts(state: Optional[str]) -> int:
+    """How many transient attempts this lead has already used."""
+    if not state or not state.startswith(PARALLEL_STATE_FAILED_TRANSIENT_PREFIX):
+        return 0
+    try:
+        return int(state.split(":", 1)[1])
+    except (IndexError, ValueError):
+        # An unparseable counter is treated as "already used them all" rather
+        # than "start over" -- a corrupt marker must never become a way to
+        # re-bill a lead on every pass.
+        return MAX_PARALLEL_TRANSIENT_ATTEMPTS
+
+
+def _parallel_state_is_settled(state: Optional[str]) -> Optional[str]:
+    """Human-readable reason this lead needs no further Parallel call, or
+    None if it should be (re-)attempted."""
+    if state == PARALLEL_STATE_COMPLETE:
+        return "Parallel already resolved this lead"
+    if state == PARALLEL_STATE_FAILED_PERMANENT:
+        return "Parallel permanently rejected this lead's input"
+    if state and state.startswith(PARALLEL_STATE_FAILED_TRANSIENT_PREFIX):
+        attempts = _parallel_attempts(state)
+        if attempts >= MAX_PARALLEL_TRANSIENT_ATTEMPTS:
+            return f"Parallel failed {attempts}/{MAX_PARALLEL_TRANSIENT_ATTEMPTS} times, attempts exhausted"
+        return None  # retry budget left
+    if state:
+        # Legacy marker from before this policy existed (plain "failed", or
+        # anything unrecognised). Treat as settled rather than guessing, so an
+        # unknown value can't silently re-bill every pass.
+        return f"unrecognised Parallel state {state!r}, treating as settled"
+    return None
+
+
 def _is_absence_prose(value: str) -> bool:
     """True if `value` reads as a sentence about missing data rather than a
     real data value. Deliberately narrow: requires one of the known marker
@@ -224,32 +279,49 @@ class EnrichmentOrchestrator:
         gate forward was an artificial holdover from the previous provider
         that left non-LinkedIn leads permanently without Tier 2 data and split
         enrichment provenance across the table. The gate is now simply "is
-        there a profile URL to research", which is the real precondition."""
-        already_ran = field_sources.get("_parallel_fallback")
+        there a profile URL to research", which is the real precondition.
+
+        Re-attempt policy (see PARALLEL_STATE_* above): a success or a
+        permanent rejection is final; a transient failure is retried on later
+        passes up to MAX_PARALLEL_TRANSIENT_ATTEMPTS."""
+        state = field_sources.get("_parallel_fallback")
 
         if not profile_link:
             logs.append("Stage 3.5 skipped: no Profile_Link for Parallel to research")
             return None
-        if already_ran:
-            logs.append(
-                f"Stage 3.5 skipped: Parallel already attempted for this lead (state={already_ran!r}), not re-calling"
-            )
-            return {"called": False, "reason": f"already_{already_ran}"}
+
+        settled = _parallel_state_is_settled(state)
+        if settled:
+            logs.append(f"Stage 3.5 skipped: {settled} (state={state!r}), not re-calling")
+            return {"called": False, "reason": f"already_{state}"}
+
         if not self.parallel:
             logs.append("Stage 3.5 skipped: PARALLEL_API_KEY not configured")
             return None
 
+        attempts_so_far = _parallel_attempts(state)
+
         try:
             parallel_data = self.parallel.enrich_profile(lead, profile_link)
-            field_sources["_parallel_fallback"] = "complete"
+            field_sources["_parallel_fallback"] = PARALLEL_STATE_COMPLETE
             msg = f"Stage 3.5: Parallel call complete ({tier1_label} scrape already ran)"
             logs.append(msg)
             log.info("Lead %s: %s", lead.get("Full_Name") or profile_link, msg)
             self._merge_parallel_fields(lead, field_sources, logs, parallel_data)
             return {"called": True, "reason": tier1_label, "data": parallel_data}
         except ParallelError as exc:
-            field_sources["_parallel_fallback"] = "failed"
-            msg = f"Stage 3.5: Parallel call failed: {exc}"
+            if getattr(exc, "permanent", False):
+                field_sources["_parallel_fallback"] = PARALLEL_STATE_FAILED_PERMANENT
+                msg = f"Stage 3.5: Parallel rejected this lead's input, not retrying: {exc}"
+            else:
+                attempts = attempts_so_far + 1
+                field_sources["_parallel_fallback"] = f"{PARALLEL_STATE_FAILED_TRANSIENT_PREFIX}{attempts}"
+                remaining = MAX_PARALLEL_TRANSIENT_ATTEMPTS - attempts
+                msg = (
+                    f"Stage 3.5: Parallel call failed (attempt {attempts}/"
+                    f"{MAX_PARALLEL_TRANSIENT_ATTEMPTS}, "
+                    f"{'will retry on a later pass' if remaining > 0 else 'attempts exhausted'}): {exc}"
+                )
             logs.append(msg)
             log.error(msg)
             return {"called": True, "reason": tier1_label, "error": str(exc)}

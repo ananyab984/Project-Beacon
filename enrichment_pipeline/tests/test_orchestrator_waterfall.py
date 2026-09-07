@@ -16,7 +16,7 @@ from config import Config
 from llm_fallback.client import ClaudeError
 from orchestrator import EnrichmentOrchestrator
 from providers.brightdata_client import BrightDataError
-from providers.parallel_client import ParallelError
+from providers.parallel_client import ParallelError  # noqa: F401  (constructed in the re-attempt tests)
 from providers.tavily_client import TavilyError
 
 
@@ -249,3 +249,88 @@ def test_parallel_absence_prose_never_reaches_a_data_field():
     assert "ATA Certified Translator" in certs, "a real credential must still come through"
     assert "profile evidence" not in certs.lower(), "absence prose must never reach a data field"
     assert any("dropped 1 non-data" in line for line in result["logs"]), "the drop should be logged, not silent"
+
+
+# --- Tier 2 re-attempt policy -------------------------------------------
+#
+# Replaces a plain truthy check that treated ANY marker value -- including
+# "failed" -- as "already attempted, never call again", so one transient blip
+# denied a lead Tier 2 forever (confirmed live 2026-09-07: three leads were
+# stamped "failed" by a since-fixed timeout bug, then silently skipped by
+# every later pass until their markers were cleared by hand).
+
+def _linkedin_lead():
+    return {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+
+
+def _orch_with_failing_parallel(exc, calls):
+    orch = make_orchestrator()
+
+    def fail(lead, profile_link):
+        calls["parallel"] += 1
+        raise exc
+
+    orch.parallel = stub(enrich_profile=fail)
+    return orch
+
+
+def test_transient_failure_is_retried_then_capped_at_two_attempts():
+    calls = {"parallel": 0}
+    orch = _orch_with_failing_parallel(ParallelError("connection reset"), calls)
+
+    # Pass 1: first attempt, fails, records attempt 1 of 2.
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+
+    # Pass 2: budget remains, so it tries again and records attempt 2.
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "a transient failure must be retried on a later pass"
+    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Pass 3: exhausted -- never called again, however many passes run.
+    r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    r4 = orch.process_lead(_linkedin_lead(), known_field_sources=r3["field_sources"])
+    assert calls["parallel"] == 2, f"capped at {orchestrator_module.MAX_PARALLEL_TRANSIENT_ATTEMPTS} attempts, got {calls['parallel']}"
+    assert r4["parallel_fallback"]["called"] is False
+    assert "exhausted" in " ".join(r4["logs"])
+
+
+def test_permanent_rejection_is_never_retried():
+    """A 4xx means Parallel understood us and refused -- the same input gets
+    the same refusal, so retrying only spends money and minutes."""
+    calls = {"parallel": 0}
+    exc = ParallelError("Parallel rejected this input (400): bad url", status_code=400, permanent=True)
+    orch = _orch_with_failing_parallel(exc, calls)
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_permanent"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 1, "a permanent rejection must never be retried"
+    assert r2["parallel_fallback"]["called"] is False
+
+
+def test_success_is_never_re_called():
+    calls = {"parallel": 0}
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1)
+        or {"headline": "Subtitler"}
+    )
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "complete"
+    orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 1, "a resolved lead must never be re-billed"
+
+
+def test_legacy_and_corrupt_markers_are_treated_as_settled():
+    """An unrecognised marker must not become a way to re-bill a lead on
+    every pass -- including the plain "failed" written before this policy."""
+    for marker in ["failed", "failed_transient:", "failed_transient:banana", "something_else"]:
+        calls = {"parallel": 0}
+        orch = _orch_with_failing_parallel(ParallelError("x"), calls)
+        orch.process_lead(_linkedin_lead(), known_field_sources={"_parallel_fallback": marker})
+        assert calls["parallel"] == 0, f"marker {marker!r} must not trigger a call"
