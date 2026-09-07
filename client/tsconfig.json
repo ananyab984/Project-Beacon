@@ -1,5 +1,12 @@
 {
   "include": ["src/**/*.ts", "src/**/*.tsx", "vite.config.js", "eslint.config.js"],
+  // Node-run unit tests (`npx tsx src/**/*.test.ts`) live next to the code
+  // they cover, but they aren't browser code: they import "node:assert" and
+  // touch `process`, which this config has no types for (and shouldn't --
+  // adding @types/node here would put Node globals in scope for the whole
+  // app). Excluded from the app typecheck; each test still typechecks when
+  // tsx runs it.
+  "exclude": ["src/**/*.test.ts"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",
