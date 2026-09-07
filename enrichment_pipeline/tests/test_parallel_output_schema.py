@@ -218,13 +218,15 @@ def test_english_text_replaces_the_stale_source_language_column():
         }
     )
 
-    # The lead already carries the source-language text from an earlier pass.
+    # The lead already carries source-language text from an earlier pass --
+    # and deliberately NOT byte-identical to what this run extracted, which
+    # is what defeated the first (exact-match) version of this rule.
     lead = {
         "Source": "Bodalgo",
         "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone",
         "Full_Name": "Quique L",
         "Headline": SPANISH["headline"],
-        "About_Snippet": SPANISH["about_snippet"],
+        "About_Snippet": "tengo una voz medio rasgada y personal, aunque tambien otros registros distintos",
     }
     result = orch.process_lead(lead)
 
@@ -233,10 +235,10 @@ def test_english_text_replaces_the_stale_source_language_column():
     assert result["field_sources"]["Headline"] == "parallel"
 
 
-def test_a_value_that_is_not_the_translated_original_is_still_protected():
-    """`replaces` is narrow on purpose: it may only overwrite the exact
-    string that was translated, never some other value a recruiter or an
-    earlier provider put there."""
+def test_forcing_is_scoped_to_the_translated_text_fields_only():
+    """The override is scoped to the four fields that carry translated free
+    text -- every other canonical field keeps the never-overwrite rule, so a
+    non-English profile can't become a licence to rewrite the whole row."""
     orch = _orch()
     orch.parallel = stub(enrich_profile=lambda lead, profile_link: dict(SPANISH))
     orch.claude = stub(
@@ -251,7 +253,12 @@ def test_a_value_that_is_not_the_translated_original_is_still_protected():
         "Source": "Bodalgo",
         "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone",
         "Full_Name": "Quique L",
-        "Headline": "Headline a recruiter typed by hand",
+        "Contact_Number": "+34 600 000 000",
+        "Vendor_Experience": "Some agency",
     }
     result = orch.process_lead(lead)
-    assert result["lead"]["Headline"] == "Headline a recruiter typed by hand"
+    # Translated text fields DO get replaced...
+    assert result["lead"]["Headline"] == "Warm, dynamic, impactful and personal."
+    # ...while fields outside that set keep the never-overwrite rule.
+    assert result["lead"]["Contact_Number"] == "+34 600 000 000"
+    assert result["lead"]["Vendor_Experience"] == "Some agency"

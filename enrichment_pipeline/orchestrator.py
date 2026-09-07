@@ -405,27 +405,35 @@ class EnrichmentOrchestrator:
     def _apply_parsed_fields(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
         source_label: str, parsed: Dict[str, Any],
-        replaces: Optional[Dict[str, Any]] = None,
+        force_keys: Optional[set] = None,
     ) -> None:
         """Shared merge rule for ANY stage that resolves canonical fields
         (Stage 3's scrape parsers, Stage 3.5's Parallel call): NEVER
         overwrite existing data -- EXCEPT OVERRIDE_ON_VERIFIED_FIELDS.
 
-        `replaces` names, per field, a specific existing value this write is
-        allowed to overwrite even when the field isn't in
-        OVERRIDE_ON_VERIFIED_FIELDS. Its one use is English normalisation: a
-        translated Headline/About_Snippet has to be able to replace the
-        source-language string it was translated FROM, and nothing else.
-        Without it the English text reached `parallelData` but the canonical
-        column kept the Spanish -- which is what the enrichment dialog's
-        field rows and drafting's flat facts actually read, so the
-        translation was invisible where it mattered.
+        `force_keys` lifts that rule for named fields on this one write. Its
+        only caller is English normalisation, and only for a profile it has
+        established is NOT in English -- in which case whatever is sitting in
+        Headline/About_Snippet/Current_Title/Country_of_Residence is either
+        the source-language text or an earlier provider's reading of the same
+        non-English page, and the freshly translated value supersedes it.
+        Without this the English text reached `parallelData` but the canonical
+        column kept the Spanish, and those columns are exactly what the
+        enrichment dialog's field rows and drafting's flat facts read -- so
+        the translation was invisible in both places it exists for.
+
+        A first attempt matched the stored value against the pre-translation
+        string exactly, which was too brittle to work: extraction isn't
+        byte-identical run to run, so a lead re-enriched later kept its
+        Spanish `about_snippet` while its headline updated. Recruiter edits
+        stay safe regardless -- enrichLeadById refuses to overwrite any field
+        tagged `manual` before this result is ever persisted.
         """
         for k, v in parsed.items():
             if is_empty_value(v):
                 continue
-            replaceable = replaces is not None and k in replaces and lead.get(k) == replaces[k]
-            if replaceable and lead.get(k) != v:
+            forced = force_keys is not None and k in force_keys
+            if forced and lead.get(k) != v:
                 lead[k] = v
                 field_sources[k] = source_label
                 logs.append(f"Stage Parsed: {k} = {v!r} (from {source_label}, English normalisation replaces the source-language value)")
@@ -538,27 +546,19 @@ class EnrichmentOrchestrator:
             if kept:
                 mapped["Certifications"] = ", ".join(kept)
 
-        # If this payload was translated, the canonical column may still be
-        # holding the exact source-language string we translated FROM (written
-        # by an earlier pass, before normalisation existed). Name those values
-        # as replaceable so the English text actually lands where the
-        # enrichment dialog and drafting read it -- narrowly, so nothing else
-        # about the never-overwrite rule changes.
-        original = parallel_data.get("_original_language")
-        replaces: Optional[Dict[str, Any]] = None
-        if isinstance(original, dict):
-            replaces = {
-                canonical: original[key]
-                for canonical, key in (
-                    ("Headline", "headline"),
-                    ("Current_Title", "current_title"),
-                    ("About_Snippet", "about_snippet"),
-                    ("Country_of_Residence", "country"),
-                )
-                if original.get(key)
-            }
+        # `_original_language` present means this profile was established to
+        # be non-English and the values above are its translation. Whatever is
+        # currently in these four columns therefore came from the same
+        # non-English page, so the translated text supersedes it -- otherwise
+        # the English only ever reaches `parallelData` and the dialog's field
+        # rows keep showing the source language. Scoped to exactly the fields
+        # that carry translated free text, so the never-overwrite rule still
+        # holds for everything else.
+        force_keys = None
+        if isinstance(parallel_data.get("_original_language"), dict):
+            force_keys = {"Headline", "Current_Title", "About_Snippet", "Country_of_Residence"}
 
-        self._apply_parsed_fields(lead, field_sources, logs, "parallel", mapped, replaces=replaces)
+        self._apply_parsed_fields(lead, field_sources, logs, "parallel", mapped, force_keys=force_keys)
 
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
