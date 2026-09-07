@@ -14,8 +14,9 @@
  * Send rule: All programmatic GATE checks pass. */
 
 import { fleschKincaidGrade, fleschReadingEase } from "./readability";
-import type { Draft } from "./draftGenerator";
-import { BRAND } from "./promptBuilder";
+import { specificityTarget, type Draft } from "./draftGenerator";
+import { BRAND, LINKEDIN_NOTE_CHAR_CAP } from "./promptBuilder";
+import { citedNamedSpecifics } from "./leads";
 
 // Common cold-outreach spam-trigger words (deliverability signal)
 const SPAM_WORDS = [
@@ -87,6 +88,17 @@ function heuristicUnsupportedEntities(draft: Draft): string[] {
   for (const v of Object.values(draft.lead.groundingFacts())) {
     for (const t of v.match(/[A-Za-z0-9]+/g) || []) allowed.add(t.toLowerCase());
   }
+  // The raw enrichment payloads are handed to the model as a sanctioned place
+  // to find one more distinctive detail (see promptBuilder's ADDITIONAL RAW
+  // PROFILE DATA block), so anything named in them is grounded -- it just
+  // isn't in the curated facts. Without this, the check contradicts the
+  // prompt and flags the model for doing exactly what it was told: confirmed
+  // live 2026-09-07, "Tata Mutual Fund" was flagged as an unsupported
+  // specific for a lead whose own Parallel payload named it.
+  for (const payload of [draft.lead.parallelFullData, draft.lead.rawScrapeData]) {
+    if (!payload) continue;
+    for (const t of JSON.stringify(payload).match(/[A-Za-z0-9]+/g) || []) allowed.add(t.toLowerCase());
+  }
   for (const w of ["global3", "global", "resources", "team", "hi", "we", "i"]) allowed.add(w);
   for (const v of Object.values(BRAND)) {
     for (const t of String(v).match(/[A-Za-z0-9]+/g) || []) allowed.add(t.toLowerCase());
@@ -97,10 +109,32 @@ function heuristicUnsupportedEntities(draft: Draft): string[] {
   for (const num of bodyNoUrls.match(/\b\d{2,}\b/g) || []) {
     if (!allowed.has(num.toLowerCase())) flags.push(num);
   }
+  // Multi-word names are checked as a WHOLE PHRASE against everything known
+  // about the lead, NOT token by token. Token-level matching let a fabricated
+  // pairing through whenever both halves happened to appear somewhere
+  // unrelated -- "Sony Pictures" passed for a lead whose payload mentioned
+  // "Sony" and, separately, "Pictures" -- and pouring both raw payloads into
+  // the token pool widened exactly that hole.
+  //
+  // The skip list here is deliberately ONLY our own brand wording and the
+  // lead's own name: those are the phrases that legitimately appear in a
+  // draft without being grounded in profile data. Skipping anything whose
+  // tokens are individually "allowed" would reintroduce the same bug, since
+  // that set contains every token of both payloads.
+  const structural = new Set<string>();
+  for (const w of ["global3", "global", "resources", "team", "hi", "we", "i", "best", "regards"]) structural.add(w);
+  for (const v of Object.values(BRAND)) {
+    for (const t of String(v).match(/[A-Za-z0-9]+/g) || []) structural.add(t.toLowerCase());
+  }
+  for (const t of `${draft.lead.fullName || ""} ${draft.lead.firstName || ""}`.match(/[A-Za-z0-9]+/g) || []) {
+    structural.add(t.toLowerCase());
+  }
+  const known = draft.lead.allKnownText();
   for (const match of bodyNoUrls.matchAll(/\b([A-Z][a-z]+(?: [A-Z][a-z]+)+)\b/g)) {
     const phrase = match[1];
     const toks = phrase.split(" ").map((t) => t.toLowerCase());
-    if (toks.some((t) => !allowed.has(t))) flags.push(phrase);
+    if (toks.every((t) => structural.has(t))) continue;
+    if (!known.includes(phrase.toLowerCase())) flags.push(phrase);
   }
   const nameToks = new Set(
     (draft.lead.fullName || "").split(/\s+/).filter(Boolean).map((t) => t.toLowerCase())
@@ -133,22 +167,22 @@ export function evaluate(draft: Draft): Evaluation {
     });
     if (!ok) flags.push("LENGTH_OUT_OF_BOUNDS");
   } else {
-    const ok = chars >= 60 && chars <= 300;
+    const ok = chars >= 60 && chars <= LINKEDIN_NOTE_CHAR_CAP;
     checks.push({
       name: "length_chars",
       passed: ok,
       severity: "gate",
-      detail: `${chars} chars (band 60-300; fits LinkedIn connection note cap)`,
+      detail: `${chars} chars (band 60-${LINKEDIN_NOTE_CHAR_CAP}; fits LinkedIn connection-note cap)`,
       value: chars,
     });
     checks.push({
       name: "linkedin_note_cap",
-      passed: chars <= 300,
+      passed: chars <= LINKEDIN_NOTE_CHAR_CAP,
       severity: "gate",
-      detail: `${chars} chars (${chars <= 300 ? "fits" : "EXCEEDS"} 300-char cap)`,
+      detail: `${chars} chars (${chars <= LINKEDIN_NOTE_CHAR_CAP ? "fits" : "EXCEEDS"} ${LINKEDIN_NOTE_CHAR_CAP}-char cap)`,
       value: chars,
     });
-    if (!ok || chars > 300) flags.push("LINKEDIN_NOTE_CAP_EXCEEDED");
+    if (!ok || chars > LINKEDIN_NOTE_CHAR_CAP) flags.push("LINKEDIN_NOTE_CAP_EXCEEDED");
   }
 
   // 2. Readability -------------------------------------------------------
@@ -209,14 +243,59 @@ export function evaluate(draft: Draft): Evaluation {
     .filter(([, vals]) => vals.some((val) => val.length >= 3 && bodyLower.includes(val.toLowerCase())))
     .map(([cat]) => cat);
   const depth = hitCategories.length;
+  // A cited named detail satisfies this too. This check matches the body
+  // against the CANONICAL columns (language/service/country/years), and those
+  // are routinely empty or plain wrong on real rows -- confirmed live
+  // 2026-09-07: a lead whose record said `targetLanguage: "English",
+  // services: []` while his actual profile headline read "Voice & Dubbing
+  // Artist Punjabi Hindi" got a correctly personalized draft ("your Hindi &
+  // Punjabi dubbing work stood out") and then failed this gate, because
+  // "Hindi" matches nothing in a record that claims English. Naming a
+  // grounded detail from the profile is strictly STRONGER evidence of
+  // personalization than echoing a canonical attribute, so it counts here as
+  // well; a draft with neither is still gated, which is the mail-merge case
+  // this exists to catch.
+  const specificsForDepth = citedNamedSpecifics(lead, body);
+  const depthOk = depth >= 1 || specificsForDepth.length >= 1;
   checks.push({
     name: "personalization_depth",
-    passed: depth >= 1,
+    passed: depthOk,
     severity: "gate",
-    detail: `${depth} real attribute categorie(s) referenced: ${depth ? JSON.stringify(hitCategories) : "none — only the name"}`,
+    detail:
+      `${depth} canonical attribute categorie(s) referenced: ${depth ? JSON.stringify(hitCategories) : "none"}` +
+      `; ${specificsForDepth.length} named profile detail(s) cited`,
     value: depth,
   });
-  if (depth < 1) flags.push("LOW_PERSONALIZATION_DEPTH");
+  if (!depthOk) flags.push("LOW_PERSONALIZATION_DEPTH");
+
+  // 5b. Named-specificity depth ------------------------------------------
+  // personalization_depth above only proves a broad attribute (a language, a
+  // service category, a country) was mentioned -- "your subtitling experience
+  // in Spain" passes it while reading like a mail merge. This check is the
+  // one that asks whether the draft names things only THIS person's profile
+  // could have supplied: a tool, a credential, an employer, a production.
+  // Bar is min(2, available) for email and min(1, available) for LinkedIn,
+  // whose ~200-char note has room for one -- so a genuinely thin profile is
+  // never held to a standard its own data can't meet. Shares
+  // Lead.specificFactCandidates() with draftGenerator's regenerate-once
+  // guard so the generator and the evaluator can't disagree on the bar.
+  const strongFacts = lead.strongFactCandidates();
+  const citedFacts = citedNamedSpecifics(lead, body);
+  // Email asks for the full bar; LinkedIn's ~200-char note has room for one.
+  const specTarget =
+    draft.channel === "email" ? specificityTarget(strongFacts) : Math.min(1, strongFacts.length);
+  const specOk = citedFacts.length >= specTarget;
+  checks.push({
+    name: "named_specificity",
+    passed: specOk,
+    severity: "gate",
+    detail:
+      strongFacts.length === 0
+        ? "no named org/tool/credential on this lead's profile — bar waived"
+        : `${citedFacts.length}/${specTarget} named detail(s) cited${citedFacts.length ? ": " + JSON.stringify(citedFacts.slice(0, 4)) : ""} (profile offers ${strongFacts.length} strong)`,
+    value: citedFacts.length,
+  });
+  if (!specOk) flags.push("LOW_NAMED_SPECIFICITY");
 
   // 6. Entity grounding pre-filter ---------------------------------------
   const unsupported = heuristicUnsupportedEntities(draft);
@@ -229,7 +308,10 @@ export function evaluate(draft: Draft): Evaluation {
   });
 
   // 7. Unfilled placeholders check ---------------------------------------
-  const placeholders = body.match(/(\[\s*[\w_]+\s*\]|\{\s*[\w_]+\s*\}|undefined|null|N\/A)/g) || [];
+  // Also matches MULTI-WORD bracket slots: the email exemplar now uses
+  // "[NAMED DETAIL #2: named tools, a credential, ...]" placeholders, and a
+  // single-token-only pattern would let a leaked one through as send-ready.
+  const placeholders = body.match(/(\[[^\]\n]{1,120}\]|\{\s*[\w_]+\s*\}|undefined|null|N\/A)/g) || [];
   const noPlaceholders = placeholders.length === 0;
   checks.push({
     name: "no_placeholders",

@@ -2,6 +2,7 @@ import axios from "axios";
 import FormData from "form-data";
 import crypto from "crypto";
 import { config } from "../config";
+import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 import { prisma } from "../prisma";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import { markContactedOnFirstOutreach } from "../lib/leadStageTransitions";
@@ -43,13 +44,11 @@ function mapAccountStatus(raw: string): AccountStatus {
   return mapped;
 }
 
-// LinkedIn connection-request notes are capped at 300 characters on paid
-// accounts and 200 on free accounts -- Unipile passes that limit straight
-// through as a "too_many_characters" 400. Since we don't know the connected
-// account's plan tier here, truncate to the conservative 200-char limit so
-// invites don't fail regardless of tier, cutting on a word boundary rather
-// than mid-word.
-const INVITE_NOTE_MAX_CHARS = 200;
+// Truncation backstop for a note that somehow arrives over the cap; drafting
+// now generates to the same limit (see lib/linkedinNoteCap for why 200, and
+// what went wrong when these two numbers disagreed). Cuts on a word boundary
+// rather than mid-word.
+const INVITE_NOTE_MAX_CHARS = LINKEDIN_NOTE_MAX_CHARS;
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
