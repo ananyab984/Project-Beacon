@@ -73,33 +73,54 @@ class LeadProfile(BaseModel):
     straight through to Lead.certifications and gets quoted back to the lead
     as a fact in their outreach draft. An empty list is the correct way to
     say "not present"; prose is not.
+
+    ANSWER IN THE PROFILE'S OWN LANGUAGE -- do NOT translate here. Many of
+    these profiles aren't in English (ProZ, Bodalgo and personal sites carry
+    Spanish, French, German, Portuguese and Italian ones), and English is
+    what every downstream consumer needs -- but asking for translation AT
+    EXTRACTION TIME makes the model do two jobs at once and quietly costs
+    detail: a phrase it can't render cleanly in English tends to come back
+    flattened or dropped entirely, and there's no way to tell afterwards
+    that anything went missing. Extract completely and faithfully in
+    whatever language the page uses; orchestrator.py's
+    `_normalize_parallel_language` translates the result to English as its
+    own step, keeping the original alongside so nothing is lost either way.
     """
 
     headline: Optional[str] = Field(
-        None, description="The profile's own headline/tagline, verbatim. Null if the page has none."
+        None,
+        description=(
+            "The profile's own headline/tagline, verbatim in the page's own language. "
+            "Null if the page has none."
+        ),
     )
     current_title: Optional[str] = Field(
         None,
         description=(
-            "The person's current role title exactly as displayed on the profile. "
-            "Null if no current role is listed -- do not infer one from past roles."
+            "The person's current role title exactly as displayed on the profile, in the "
+            "page's own language. Null if no current role is listed -- do not infer one "
+            "from past roles."
         ),
     )
     about_snippet: Optional[str] = Field(
         None,
         description=(
-            "The About/Bio/Summary text, verbatim or near-verbatim. Platforms label this "
-            "section differently ('About', 'Bio', 'Summary', 'Profile Overview') and it is "
-            "often the first block of prose under the name/headline with no heading at all -- "
-            "treat that as this field too. Null if the page genuinely has no such text."
+            "The About/Bio/Summary text, verbatim or near-verbatim IN THE PAGE'S OWN "
+            "LANGUAGE -- completeness matters more than language here, so never abridge a "
+            "passage because it would be awkward to translate. Platforms label this section "
+            "differently ('About', 'Bio', 'Summary', 'Profile Overview') and it is often the "
+            "first block of prose under the name/headline with no heading at all -- treat "
+            "that as this field too. Null if the page genuinely has no such text."
         ),
     )
     country: Optional[str] = Field(
         None,
         description=(
-            "The COUNTRY the person is based in, as a country name (e.g. 'India', 'Spain'). "
-            "If the profile shows only a city, region, or state, resolve it to its country. "
-            "Null if the page gives no location at all -- do not guess from language or name."
+            "The COUNTRY the person is based in, as a country name (e.g. 'India', 'Spain', "
+            "'España' -- whichever the page uses; it gets normalised later). If the profile "
+            "shows only a city, region, or state, resolve it to its country. Null if the page "
+            "gives no location at all -- do not guess from the profile's language or the "
+            "person's name."
         ),
     )
     certifications: List[str] = Field(
@@ -107,32 +128,36 @@ class LeadProfile(BaseModel):
         description=(
             "Names of real professional credentials (degrees, licences, institutional or "
             "vendor certifications) explicitly listed on the profile, one string per "
-            "credential. Return an EMPTY LIST if none are listed -- never a sentence "
-            "explaining that none were found, and never a placeholder like 'N/A'."
+            "credential, as named on the page. Return an EMPTY LIST if none are listed -- "
+            "never a sentence explaining that none were found, and never a placeholder "
+            "like 'N/A'."
         ),
     )
     experience: List[Dict[str, Any]] = Field(
         default_factory=list,
         description=(
             "One entry per role listed on the profile, each with whatever of "
-            "company/title/start_date/end_date/summary the page actually shows. Empty list "
-            "if no work history is listed -- never a sentence about its absence."
+            "company/title/start_date/end_date/summary the page actually shows, in the "
+            "page's own language. Empty list if no work history is listed -- never a "
+            "sentence about its absence."
         ),
     )
     education: List[Dict[str, Any]] = Field(
         default_factory=list,
         description=(
             "One entry per education record, each with whatever of "
-            "school_name/degree/field_of_study/start_date/end_date the page shows. Empty "
-            "list if none listed -- never a sentence about its absence."
+            "school_name/degree/field_of_study/start_date/end_date the page shows, in the "
+            "page's own language. Empty list if none listed -- never a sentence about its "
+            "absence."
         ),
     )
     languages: List[Dict[str, Any]] = Field(
         default_factory=list,
         description=(
             "One entry per language explicitly listed on the profile, each with `language` "
-            "and (if shown) `proficiency`. Only languages the page actually states -- do "
-            "not infer from the person's location or name. Empty list if none listed."
+            "and (if shown) `proficiency`, as the page names them. Only languages the page "
+            "actually states -- do not infer from the person's location or name. Empty list "
+            "if none listed."
         ),
     )
 

@@ -89,6 +89,77 @@ class ClaudeClient:
                 raise cause from exc
             raise ClaudeError(f"Claude LLM call failed after retries: {cause if cause else exc}") from exc
 
+    def translate_to_english(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Translate an enrichment payload's free text into English, keeping
+        its shape and every detail it carries.
+
+        A separate step from extraction on purpose. Asking Parallel to
+        extract-and-translate in one pass made it do two jobs at once and
+        quietly cost detail -- a phrase awkward to render in English came back
+        flattened or missing, with no way to tell afterwards that anything had
+        gone. So Parallel extracts faithfully in the profile's own language
+        (see providers/parallel_client.py's LeadProfile) and this turns the
+        result into English afterwards, which also leaves the original intact
+        for the caller to keep alongside.
+
+        Returns the same keys it was given. Raises ClaudeError, which the
+        caller treats as "keep the untranslated payload" rather than as a
+        failed enrichment -- source-language data is worth much more than no
+        data.
+        """
+        system = (
+            "You translate freelance-linguist profile data into English for an English-speaking "
+            "recruiting team.\n\n"
+            "RULES:\n"
+            "- Return a JSON object with EXACTLY the same keys and the same structure as the input. "
+            "Same array lengths, same nested object keys. Translate only the human-readable values.\n"
+            "- Translate every piece of free text into natural English, preserving ALL detail: every "
+            "named client, production, tool, number, date and claim survives the translation. Losing "
+            "detail is the one unacceptable outcome -- if a phrase is hard to render, translate it "
+            "plainly rather than dropping or summarising it.\n"
+            "- Add nothing. Never introduce a fact, a qualifier or an achievement that isn't in the input.\n"
+            "- Leave proper nouns exactly as written: company, school, production, brand and product "
+            "names are not translated ('Televisió de Catalunya' stays 'Televisió de Catalunya'). "
+            "Keep a credential's official name, and add a short English gloss in parentheses only if "
+            "the original name alone would be meaningless to an English reader.\n"
+            "- Country and language names DO become English ('España' -> 'Spain', 'Español' -> 'Spanish').\n"
+            "- Text already in English is returned unchanged, character for character.\n"
+            "- Preserve nulls as null and empty arrays as empty arrays. Never fill a gap."
+        )
+        strict_json_suffix = (
+            "\n\nRespond with ONLY the JSON object. No markdown code fences, no preamble, "
+            "no commentary. The response must start with '{' and end with '}'."
+        )
+        body = {
+            "model": self.config.claude_model,
+            "system": system + strict_json_suffix,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "PROFILE DATA TO TRANSLATE:\n\n"
+                    + json.dumps(payload, ensure_ascii=False)[:12000],
+                }
+            ],
+            "temperature": 0.0,
+            "max_tokens": 2048,
+        }
+
+        log.info("Claude translation request START model=%s", self.config.claude_model)
+
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Claude translation retryable failure attempt=%d/%d, retrying in %.1fs (%s)",
+                attempt + 1, self.config.max_retries, delay, exc,
+            )
+
+        try:
+            return retry_with_backoff(lambda: self._request_once(body), policy=self._policy, on_retry=on_retry)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, ClaudeError):
+                raise cause from exc
+            raise ClaudeError(f"Claude translation failed after retries: {cause if cause else exc}") from exc
+
     def _request_once(self, body: Dict[str, Any]) -> Dict[str, Any]:
         try:
             resp = self.session.post(

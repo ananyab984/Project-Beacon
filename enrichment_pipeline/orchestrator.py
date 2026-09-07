@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any, Dict, Literal, Optional, TypedDict
 
@@ -115,6 +116,46 @@ def _parallel_state_is_settled(state: Optional[str]) -> Optional[str]:
         # unknown value can't silently re-bill every pass.
         return f"unrecognised Parallel state {state!r}, treating as settled"
     return None
+
+
+# Function words that are common and distinctive in the languages these
+# profiles actually turn up in (Spanish, French, German, Portuguese, Italian),
+# and rare-to-absent in English profile prose. Used only to decide whether a
+# payload is worth sending for translation -- a false positive costs one cheap
+# Claude call, a false negative leaves that lead's text in its own language,
+# so the list leans towards triggering.
+#
+# ponytail: a word-list sniff, not language identification. Ceiling: a mostly
+# English profile with a stray foreign phrase triggers a (harmless) pass, and
+# a very short non-English field can slip past. Upgrade path is a real
+# detector (langdetect/lingua) if this proves too blunt in practice; not worth
+# a dependency for the handful of languages seen so far.
+_NON_ENGLISH_MARKERS = frozenset(
+    {
+        # Spanish / Portuguese
+        "de", "la", "el", "los", "las", "con", "para", "por", "una", "como",
+        "muy", "más", "también", "años", "voz", "trabajo", "em", "não", "uma",
+        # French
+        "le", "les", "des", "une", "du", "au", "aux", "est", "sur", "avec",
+        "pour", "dans", "traduction", "ans",
+        # German
+        "und", "der", "die", "das", "den", "von", "mit", "für", "ich", "auch",
+        "sprachen", "jahre",
+        # Italian
+        "il", "lo", "gli", "che", "con", "per", "sono", "anni", "voce",
+    }
+)
+
+
+def _looks_non_english(payload: Any) -> bool:
+    """True if a payload's free text reads as something other than English."""
+    text = json.dumps(payload, ensure_ascii=False, default=str).lower()
+    words = re.findall(r"[a-zà-öø-ÿ']+", text)
+    if len(words) < 12:
+        # Too little text to judge; leave it alone rather than pay for a call.
+        return False
+    hits = sum(1 for w in words if w in _NON_ENGLISH_MARKERS)
+    return hits / len(words) >= 0.06
 
 
 def _is_absence_prose(value: str) -> bool:
@@ -303,6 +344,7 @@ class EnrichmentOrchestrator:
 
         try:
             parallel_data = self.parallel.enrich_profile(lead, profile_link)
+            parallel_data = self._normalize_parallel_language(parallel_data, logs)
             field_sources["_parallel_fallback"] = PARALLEL_STATE_COMPLETE
             msg = f"Stage 3.5: Parallel call complete ({tier1_label} scrape already ran)"
             logs.append(msg)
@@ -398,6 +440,58 @@ class EnrichmentOrchestrator:
         profile_link = lead.get("Profile_Link", "")
         stage3_parsed = parser.parse(profile_link, raw_scraped_data)
         self._apply_parsed_fields(lead, field_sources, logs, source_label, stage3_parsed)
+
+    def _normalize_parallel_language(self, parallel_data: Dict[str, Any], logs: list[str]) -> Dict[str, Any]:
+        """Turn a source-language Parallel payload into English, keeping the
+        original alongside it.
+
+        Parallel extracts in whatever language the profile is written in (see
+        providers/parallel_client.py's LeadProfile on why translating at
+        extraction time loses detail), but everything downstream is English:
+        the recruiter-facing enrichment dialog, and the drafting prompt, which
+        quotes these fields back to the lead inside an English email.
+        Confirmed live 2026-09-07: two Bodalgo leads came back with Spanish
+        headlines and bios ("Cálida, dinámica, impactante...") that drafting
+        would have pasted straight into an English message.
+
+        Failure here is NOT enrichment failure. If translation can't be done
+        -- no Claude key, an API error -- the untranslated payload is returned
+        as-is, because source-language data is worth far more than none.
+        `_original_language` keeps the pre-translation payload so nothing is
+        ever lost to a bad translation either.
+        """
+        if not parallel_data or not _looks_non_english(parallel_data):
+            return parallel_data
+        if not self.claude:
+            logs.append("Stage 3.5: profile is not in English, but CLAUDE_API_KEY isn't set -- keeping it untranslated")
+            return parallel_data
+
+        try:
+            translated = self.claude.translate_to_english(parallel_data)
+        except ClaudeError as exc:
+            msg = f"Stage 3.5: English normalisation failed, keeping the original-language data: {exc}"
+            logs.append(msg)
+            log.warning(msg)
+            return parallel_data
+
+        if not isinstance(translated, dict) or not translated:
+            logs.append("Stage 3.5: English normalisation returned nothing usable -- keeping the original-language data")
+            return parallel_data
+
+        # Never let translation DROP a key that had content. A missing key here
+        # means information was lost in translation, which is the one outcome
+        # worth rejecting the whole result over -- the point of translating
+        # separately was to stop losing detail, not to move where it happens.
+        lost = [k for k, v in parallel_data.items() if not is_empty_value(v) and is_empty_value(translated.get(k))]
+        if lost:
+            msg = f"Stage 3.5: English normalisation dropped {lost} -- keeping the original-language data instead"
+            logs.append(msg)
+            log.warning(msg)
+            return parallel_data
+
+        translated["_original_language"] = parallel_data
+        logs.append("Stage 3.5: profile wasn't in English -- normalised to English (original kept under _original_language)")
+        return translated
 
     def _merge_parallel_fields(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], parallel_data: Dict[str, Any],
