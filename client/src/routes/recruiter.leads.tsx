@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
+import { ENRICHMENT_FIELD_TOTAL } from "@/lib/api-types";
 import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -517,8 +518,9 @@ function LeadsPage() {
                       {isOnHold ? (
                         <div className="inline-flex items-center gap-1.5">
                           <button
-                            onClick={() => setEnrichRaw(l)}
+                            onClick={() => setDetailsLead(l)}
                             className="font-semibold text-xs text-warning hover:underline cursor-pointer"
+                            title={`${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found — open to review or resume`}
                           >
                             On Hold ({fieldCount})
                           </button>
@@ -532,35 +534,18 @@ function LeadsPage() {
                               · Retry
                             </button>
                           )}
-                          <button
-                            onClick={() => unholdMutation.mutate(l.id)}
-                            disabled={unholdMutation.isPending}
-                            className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50"
-                            title="Take this lead off hold"
-                          >
-                            · Resume
-                          </button>
                         </div>
                       ) : isEnriched ? (
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            onClick={() => setDetailsLead(l)}
-                            className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
-                          >
-                            {!l.email && !l.contactNumber && (
-                              <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
-                            )}
-                            Enriched ({fieldCount})
-                          </button>
-                          <button
-                            onClick={() => holdMutation.mutate(l.id)}
-                            disabled={holdMutation.isPending}
-                            className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50"
-                            title="Put this lead on hold"
-                          >
-                            · Hold
-                          </button>
-                        </div>
+                        <button
+                          onClick={() => setDetailsLead(l)}
+                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
+                          title={`${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found`}
+                        >
+                          {!l.email && !l.contactNumber && (
+                            <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
+                          )}
+                          Enriched ({fieldCount})
+                        </button>
                       ) : isPending ? (
                         <span className="font-semibold text-xs text-amber-400">
                           Enriching…
@@ -643,6 +628,7 @@ function LeadsPage() {
         onOpenChange={(o) => !o && setDetailsLead(null)}
         lead={detailsLead}
         onSave={(id, patch) => enrichMutation.mutateAsync({ id, patch })}
+        onToggleHold={(id, hold) => (hold ? holdMutation : unholdMutation).mutateAsync(id)}
       />
     </div>
   );

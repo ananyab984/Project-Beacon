@@ -202,6 +202,13 @@ export function AddLeadDialog({
   };
 
   const handleExcelDownload = () => {
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ["Full Name", "Country", "Source", "Profile Link", "Email", "Contact", "Reachout Date", "Source Language", "Target Language", "Secondary Languages", "Services"],
+      ["Alex Chen", "Germany", "LinkedIn", "https://linkedin.com/in/alexchen", "alex@example.com", "+49 1234567", "2026-08-01", "English", "German", "French", "Dubbing; Subtitling"],
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+    XLSX.writeFile(workbook, "global3_lead_import_template.xlsx");
     toast.success("Downloaded Excel (.xlsx) lead import template!");
   };
 

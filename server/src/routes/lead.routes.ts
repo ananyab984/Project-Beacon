@@ -10,7 +10,7 @@ import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from ".
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
-import { MANUAL_FIELD_SOURCE_KEYS } from "../lib/manualFieldSources";
+import { resolveManualFieldSources } from "../lib/manualFieldSources";
 import { withEnrichedFieldCount } from "../lib/enrichmentCount";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 
@@ -688,21 +688,7 @@ leadRouter.patch(
     });
     const patch = schema.parse(req.body);
 
-    const existingFieldSources = ((existing.fieldSources as Record<string, string> | null) ?? {}) as Record<string, string>;
-    const nextFieldSources = { ...existingFieldSources };
-    for (const [patchKey, canonicalKey] of Object.entries(MANUAL_FIELD_SOURCE_KEYS)) {
-      if (!(patchKey in req.body)) continue; // key wasn't part of this request at all
-      const val = (patch as any)[patchKey];
-      const isCleared = val == null || (Array.isArray(val) && val.length === 0);
-      if (isCleared) {
-        // Recruiter explicitly cleared their own manual entry -- the field
-        // is fair game for auto-enrichment again, not still "protected".
-        delete nextFieldSources[canonicalKey];
-      } else {
-        nextFieldSources[canonicalKey] = "manual";
-      }
-    }
-    (patch as any).fieldSources = nextFieldSources;
+    (patch as any).fieldSources = resolveManualFieldSources(existing as any, req.body, patch as any);
 
     // A caller sending `flags` intends to ADD to the lead's flags (e.g.
     // stacking WATCHING onto a lead already flagged DNC), not replace the

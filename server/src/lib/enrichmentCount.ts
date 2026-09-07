@@ -1,59 +1,79 @@
 import type { Lead } from "@prisma/client";
 
 /**
- * How many of the 11 genuinely enrichment-findable fields are currently
- * non-empty on this lead -- computed fresh on every read, never stored, so a
- * manual edit (or a re-enrichment run) is reflected immediately with no
- * separate recompute step.
+ * The 10 fields the enrichment-details dialog shows, each paired with its
+ * canonical `fieldSources` key (the Python-pipeline naming -- must match
+ * MANUAL_FIELD_SOURCE_KEYS and orchestrator.py exactly).
  *
- * Deliberately narrower than "every field on the lead": `profileLink`,
- * `sourceLanguage`, `targetLanguage`, and `services` are excluded -- these
- * are set at lead CREATION (recruiter input, or a CSV/sheet import, which
- * even defaults sourceLanguage/targetLanguage to "English" when no value is
- * found -- see mapSheetRowsToLeads in lead.routes.ts), not discovered BY
- * enrichment. Including them made "Enriched (n)" show 6-8 for a lead the
- * waterfall found *nothing* for, since those 4 fields (plus fullName, always
- * required at creation) are populated on nearly every lead regardless of
- * enrichment outcome -- the number looked like enrichment succeeded when it
- * had completely failed. `fullName` still counts (it's the one creation-time
- * field explicitly called out as always-in-scope), but the count is now
- * dominated by fields enrichment (or manual entry standing in for it)
- * actually has to find: email/contactNumber/country/yearsOfExperience/
- * vendorExperience/headline/currentTitle/aboutSnippet/toolsSoftware/
- * certifications. A total-failure lead now shows "Enriched (1)", not (6-8).
+ * This list IS the denominator of the "Enriched (n)" counter: the recruiter
+ * sees these 10 rows in the dialog, so the number next to the status has to
+ * be counted from the same 10 and nothing else.
  */
-export function countPopulatedFields(lead: Pick<Lead,
-  | "fullName" | "email" | "contactNumber" | "country"
-  | "yearsOfExperience" | "vendorExperience" | "headline" | "currentTitle"
-  | "aboutSnippet" | "toolsSoftware" | "certifications"
->): number {
+export const ENRICHMENT_COUNT_FIELDS = [
+  ["email", "Email_Address"],
+  ["contactNumber", "Contact_Number"],
+  ["country", "Country_of_Residence"],
+  ["profileLink", "Profile_Link"],
+  ["sourceLanguage", "Source_Language"],
+  ["targetLanguage", "Target_Language"],
+  ["services", "Services"],
+  ["headline", "Headline"],
+  ["currentTitle", "Current_Title"],
+  ["aboutSnippet", "About_Snippet"],
+] as const satisfies ReadonlyArray<readonly [keyof Lead, string]>;
+
+export const ENRICHMENT_COUNT_TOTAL = ENRICHMENT_COUNT_FIELDS.length; // 10
+
+/** Sources that mean "this value was NOT produced by enrichment" -- i.e. the
+ *  field arrived already populated on the input row (orchestrator.py tags
+ *  every pre-populated field "existing" before any provider runs). A field
+ *  with no `fieldSources` entry at all is in the same boat: nothing ever
+ *  claimed to have found it, so it came in with the lead. */
+const NOT_ENRICHED_SOURCES = new Set(["existing"]);
+
+type CountableLead = Pick<Lead,
+  | "email" | "contactNumber" | "country" | "profileLink"
+  | "sourceLanguage" | "targetLanguage" | "services"
+  | "headline" | "currentTitle" | "aboutSnippet" | "fieldSources"
+>;
+
+/**
+ * How many of the 10 dialog fields enrichment (or a recruiter's manual
+ * stand-in for it) actually FOUND for this lead -- computed fresh on every
+ * read, never stored, so a manual edit or a re-enrichment run is reflected
+ * immediately with no separate recompute step.
+ *
+ * Two things are deliberately excluded:
+ *  - fields outside the dialog's 10 (yearsOfExperience, vendorExperience,
+ *    toolsSoftware, certifications, fullName) -- the recruiter can't see
+ *    them in the dialog, so counting them makes the number unverifiable;
+ *  - anything the lead was IMPORTED with. profileLink/sourceLanguage/
+ *    targetLanguage/services are set at lead creation on nearly every row
+ *    (a CSV/sheet import even defaults the two languages to "English" --
+ *    see mapSheetRowsToLeads), so counting them showed "Enriched (6-8)" for
+ *    a lead the waterfall found *nothing* for. Provenance, not mere
+ *    non-emptiness, is what makes a field count.
+ */
+export function countPopulatedFields(lead: CountableLead): number {
+  const sources = (lead.fieldSources as Record<string, string> | null) ?? {};
+
   const isNonEmpty = (v: unknown): boolean => {
     if (v == null) return false;
     if (typeof v === "string") return v.trim().length > 0;
     if (Array.isArray(v)) return v.length > 0;
-    return true; // numbers (yearsOfExperience/Decimal), etc.
+    return true; // numbers (Decimal), etc.
   };
 
-  const fields: unknown[] = [
-    lead.fullName,
-    lead.email,
-    lead.contactNumber,
-    lead.country,
-    lead.yearsOfExperience,
-    lead.vendorExperience,
-    lead.headline,
-    lead.currentTitle,
-    lead.aboutSnippet,
-    lead.toolsSoftware,
-    lead.certifications,
-  ];
-
-  return fields.filter(isNonEmpty).length;
+  return ENRICHMENT_COUNT_FIELDS.filter(([field, sourceKey]) => {
+    if (!isNonEmpty((lead as any)[field])) return false;
+    const source = sources[sourceKey];
+    return !!source && !NOT_ENRICHED_SOURCES.has(source);
+  }).length;
 }
 
 /** Convenience wrapper for a single API response site: spreads the lead and
  *  adds `enrichedFieldCount`, computed fresh from whatever was just read. */
-export function withEnrichedFieldCount<T extends Parameters<typeof countPopulatedFields>[0]>(
+export function withEnrichedFieldCount<T extends CountableLead>(
   lead: T
 ): T & { enrichedFieldCount: number } {
   return { ...lead, enrichedFieldCount: countPopulatedFields(lead) };
