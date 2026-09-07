@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
-import { ENRICHMENT_FIELD_TOTAL } from "@/lib/api-types";
+import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
 import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -484,20 +484,12 @@ function LeadsPage() {
                 const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
                 const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
                 const isSel = selected.has(l.id);
-                const isEnriched = l.enrichmentStatus === "COMPLETE";
-                // On Hold is now an overlay independent of completion --
-                // reserved for the waterfall not concluding (timeout/
-                // system_error, including a stalled/orphaned run) or a
-                // recruiter's own manual toggle -- never for a low field
-                // count. Checked before isEnriched, not gated by !isEnriched:
-                // a lead can in principle be both COMPLETE and manually held.
-                const isOnHold = (l.flags ?? []).includes("ON_HOLD");
-                const isPending = !isEnriched && !isOnHold && l.enrichmentStatus !== "STALLED";
-                // A human-triggered retry only makes sense for the "waterfall
-                // didn't conclude" reasons -- never for MANUAL, whose only
-                // exit is the toggle below, not a re-run.
-                const canRetry = isOnHold && l.onHoldReason !== "MANUAL";
-                const fieldCount = l.enrichedFieldCount ?? 0;
+                // On Hold is an overlay independent of completion -- reserved
+                // for the waterfall not concluding (timeout/system_error,
+                // including a stalled/orphaned run) or a recruiter's own
+                // manual toggle, never for a low field count. That rule, the
+                // retry eligibility, and how each state renders now live in
+                // EnrichmentStatusCell so both leads tables share one copy.
                 const completeness = enrichmentCompleteness(l);
                 const isWellEnriched = completeness >= ENRICHMENT_COMPLETENESS_THRESHOLD;
                 return (
@@ -515,44 +507,12 @@ function LeadsPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      {isOnHold ? (
-                        <div className="inline-flex items-center gap-1.5">
-                          <button
-                            onClick={() => setDetailsLead(l)}
-                            className="font-semibold text-xs text-warning hover:underline cursor-pointer"
-                            title={`${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found — open to review or resume`}
-                          >
-                            On Hold ({fieldCount})
-                          </button>
-                          {canRetry && (
-                            <button
-                              onClick={() => retryEnrichmentMutation.mutate(l.id)}
-                              disabled={retryEnrichmentMutation.isPending}
-                              className="text-xs text-destructive hover:underline cursor-pointer disabled:opacity-50"
-                              title="Enrichment didn't conclude -- click to retry"
-                            >
-                              · Retry
-                            </button>
-                          )}
-                        </div>
-                      ) : isEnriched ? (
-                        <button
-                          onClick={() => setDetailsLead(l)}
-                          className="inline-flex items-center gap-1.5 font-semibold text-xs text-emerald-400 hover:underline cursor-pointer"
-                          title={`${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found`}
-                        >
-                          {!l.email && !l.contactNumber && (
-                            <span className="h-1.5 w-1.5 rounded-full bg-destructive" title="No contact info found" />
-                          )}
-                          Enriched ({fieldCount})
-                        </button>
-                      ) : isPending ? (
-                        <span className="font-semibold text-xs text-amber-400">
-                          Enriching…
-                        </span>
-                      ) : (
-                        <span className="font-semibold text-xs text-muted-foreground">Pending</span>
-                      )}
+                      <EnrichmentStatusCell
+                        lead={l}
+                        onOpenDetails={setDetailsLead}
+                        onRetry={(id) => retryEnrichmentMutation.mutate(id)}
+                        retryPending={retryEnrichmentMutation.isPending}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
