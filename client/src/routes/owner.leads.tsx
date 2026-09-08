@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Trash2, Table2, KanbanSquare } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Trash2, Table2, KanbanSquare, Plus } from "lucide-react";
+import { AddLeadDialog } from "@/components/features/add-lead-dialog";
 import { useMemo, useState, useRef } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -339,6 +340,13 @@ function LeadsPage() {
             <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
           </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} onSheetImportComplete={invalidateLeads} />
+          <AddLeadDialog
+            trigger={
+              <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">
+                <Plus className="h-3.5 w-3.5" /> Add a Lead
+              </Button>
+            }
+          />
         </div>
       </div>
 
