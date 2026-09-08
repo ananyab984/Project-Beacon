@@ -25,7 +25,7 @@ emailQueueRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const items = await prisma.emailQueueItem.findMany({
       where: { recruiterId: req.user!.id },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
+      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
     });
 
     // Sort by most recent activity (matching how /api/conversations orders
@@ -60,7 +60,7 @@ emailQueueRouter.post(
 
     const existing = await prisma.emailQueueItem.findFirst({
       where: { leadId, recruiterId: req.user!.id },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
+      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
     });
     if (existing) return res.json({ item: existing });
 
@@ -79,7 +79,7 @@ emailQueueRouter.post(
         body: "",
         aiGenerated: false,
       },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
+      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
     });
 
     return res.status(201).json({ item });
@@ -242,7 +242,7 @@ emailQueueRouter.post(
         sentAt: new Date(),
         sentChannel: channel,
       },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true } } },
+      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
     });
     return res.json({ success: true, item: updated });
   })
