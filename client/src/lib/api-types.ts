@@ -77,6 +77,9 @@ export interface ApiLead {
   parallelData: Record<string, any> | null;
   availability: Availability;
   availabilityFromDate: string | null;
+  replyCategoryId: string | null;
+  replyClassificationSource: "AUTO" | "MANUAL" | null;
+  replyClassifiedAt: string | null;
   createdAt: string;
   lastActivityAt: string | null;
 }

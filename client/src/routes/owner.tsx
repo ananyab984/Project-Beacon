@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState } from "react";
-import { LayoutGrid, Building2, Users, ContactRound, HelpCircle, Settings, Sparkles, BarChart3, Plus, Mail, MessagesSquare, Link2 } from "lucide-react";
+import { LayoutGrid, Building2, Users, ContactRound, HelpCircle, Settings, Sparkles, BarChart3, Plus, Mail, MessagesSquare, Link2, Tags } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { EscalationsBell } from "@/components/features/escalations";
@@ -32,6 +32,7 @@ function useNav(): NavItem[] {
     { to: "/owner/email-queue", label: "Email Queue", icon: Mail },
     { to: "/owner/conversations", label: "Conversations", icon: MessagesSquare },
     { to: "/owner/faqs", label: "FAQs", icon: HelpCircle },
+    { to: "/owner/reply-categories", label: "Reply Categories", icon: Tags },
     ...(ai ? [{ to: "/owner/pipelines", label: "AI Pipelines", icon: Sparkles }] : []),
     { to: "/owner/reports", label: "Reports", icon: BarChart3 },
     { to: "/owner/settings", label: "Settings", icon: Settings },

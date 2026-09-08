@@ -100,6 +100,31 @@ export interface FaqCheckResponse {
   };
 }
 
+// -------------------- Reply Category types --------------------
+
+export interface ReplyCategory {
+  id: string;
+  groupName: string;
+  name: string;
+  description: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateReplyCategoryInput {
+  groupName: string;
+  name: string;
+  description: string;
+}
+
+export interface UpdateReplyCategoryInput {
+  groupName?: string;
+  name?: string;
+  description?: string;
+  isActive?: boolean;
+}
+
 export const api = {
   // -------------------- leads --------------------
 
@@ -572,5 +597,33 @@ export const api = {
   /** Soft-delete an FAQ entry (owner only) */
   async deleteFaq(id: string): Promise<{ success: boolean }> {
     return request(`/api/faq/${id}`, { method: "DELETE" });
+  },
+
+  // -------------------- Reply Categories --------------------
+
+  /** List all active reply categories */
+  async listReplyCategories(): Promise<{ replyCategories: ReplyCategory[] }> {
+    return request("/api/reply-categories");
+  },
+
+  /** Create a reply category (owner only) */
+  async createReplyCategory(data: CreateReplyCategoryInput): Promise<{ replyCategory: ReplyCategory }> {
+    return request("/api/reply-categories", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Update a reply category (owner only) */
+  async updateReplyCategory(id: string, data: UpdateReplyCategoryInput): Promise<{ replyCategory: ReplyCategory }> {
+    return request(`/api/reply-categories/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Delete a reply category (owner only) */
+  async deleteReplyCategory(id: string): Promise<{ success: boolean }> {
+    return request(`/api/reply-categories/${id}`, { method: "DELETE" });
   },
 };
