@@ -16,16 +16,65 @@ import { GroqClient } from "../drafting/groqClient";
 import { loadDraftingConfig } from "../drafting/config";
 import { classifyReply, ClassificationResult } from "../lib/replyClassifier";
 
-/** Resolves the Lead a given inbound message belongs to, via the
- * Conversation whose unipileChatId matches the message's threadId -- the
- * same correlation Unipile's own webhook handler already relies on (see
- * unipile.service.ts's `prisma.conversation.findUnique({ where: {
- * unipileChatId } })` lookup). Returns null if no conversation matches
- * (nothing to classify against). */
-export async function resolveLeadIdForInboundMessage(msg: { channel: string; threadId: string | null }): Promise<string | null> {
+// A lead often splits one reply across several quick back-to-back messages
+// ("Hi!" / "quick question" / "what's your hourly rate?") before the
+// recruiter answers -- classifying each in isolation means the early
+// fragments come back Unclassified and only the last one lands correctly.
+// Bounds how many of those PRIOR unanswered messages get pulled into one
+// classification call (the DB read, not the token budget -- classifyReply's
+// own MAX_MESSAGE_CHARS is the single source of truth for the final prompt
+// size cap, applied after these are joined).
+const MAX_CONTEXT_MESSAGES = 5;
+
+/** Resolves the Conversation (and its Lead) a given inbound message belongs
+ * to, via the Conversation whose unipileChatId matches the message's
+ * threadId -- the same correlation Unipile's own webhook handler already
+ * relies on (see unipile.service.ts's `prisma.conversation.findUnique({
+ * where: { unipileChatId } })` lookup). Returns null if no conversation
+ * matches (nothing to classify against). */
+export async function resolveConversationForInboundMessage(msg: { threadId: string | null }): Promise<{ id: string; leadId: string } | null> {
   if (!msg.threadId) return null;
-  const conversation = await prisma.conversation.findUnique({ where: { unipileChatId: msg.threadId } });
+  const conversation = await prisma.conversation.findUnique({
+    where: { unipileChatId: msg.threadId },
+    select: { id: true, leadId: true },
+  });
+  return conversation ?? null;
+}
+
+/** Thin wrapper kept for callers (and existing tests) that only need the
+ * leadId, not the full conversation. */
+export async function resolveLeadIdForInboundMessage(msg: { channel: string; threadId: string | null }): Promise<string | null> {
+  const conversation = await resolveConversationForInboundMessage(msg);
   return conversation?.leadId ?? null;
+}
+
+/** Builds the text to classify: the current inbound message combined with
+ * any earlier THEM (candidate) messages sent in the same conversation since
+ * the recruiter's last reply, oldest first. If the recruiter has never
+ * replied yet, every prior THEM message counts as part of the same
+ * unanswered burst. The current message is excluded from the "prior"
+ * query by timestamp (its own ConversationMessage row, if already synced
+ * by the time this runs, would otherwise be double-counted). */
+export async function buildClassificationText(
+  conversationId: string,
+  currentMessageText: string,
+  currentMessageReceivedAt: Date
+): Promise<string> {
+  const lastOwnMessage = await prisma.conversationMessage.findFirst({
+    where: { conversationId, sender: "ME" },
+    orderBy: { sentAt: "desc" },
+  });
+
+  const sentAtFilter: { lt: Date; gt?: Date } = { lt: currentMessageReceivedAt };
+  if (lastOwnMessage) sentAtFilter.gt = lastOwnMessage.sentAt;
+
+  const priorTheirMessages = await prisma.conversationMessage.findMany({
+    where: { conversationId, sender: "THEM", sentAt: sentAtFilter },
+    orderBy: { sentAt: "asc" },
+    take: MAX_CONTEXT_MESSAGES,
+  });
+
+  return [...priorTheirMessages.map((m) => m.text), currentMessageText].join("\n\n---\n\n");
 }
 
 /** Applies one classification attempt's outcome to a Lead and always logs
@@ -107,14 +156,16 @@ export async function processInboundMessage(inboundMessageId: string, isOutbound
       );
     } else {
       try {
-        const leadId = await resolveLeadIdForInboundMessage({ channel: msg.channel, threadId: msg.threadId });
-        if (!leadId) {
+        const conversation = await resolveConversationForInboundMessage({ threadId: msg.threadId });
+        if (!conversation) {
           console.log(`[processInbound] No matching conversation/lead for InboundMessage ${inboundMessageId} — skipping classification.`);
         } else {
+          const { id: conversationId, leadId } = conversation;
           const categories = await prisma.replyCategory.findMany({ where: { isActive: true } });
+          const classificationText = await buildClassificationText(conversationId, msg.content, msg.receivedAt);
           const draftingConfig = loadDraftingConfig();
           const groqClient = new GroqClient(draftingConfig);
-          const result = await classifyReply(groqClient, msg.content, categories);
+          const result = await classifyReply(groqClient, classificationText, categories);
           await applyClassificationResult(leadId, result);
           console.log(`[processInbound] Classified InboundMessage ${inboundMessageId} for lead ${leadId}: ${result ? `${result.categoryId} (${result.confidence})` : "Unclassified"}`);
         }

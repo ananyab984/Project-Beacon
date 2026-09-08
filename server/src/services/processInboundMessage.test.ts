@@ -9,7 +9,12 @@
 
 import assert from "node:assert";
 import { prisma } from "../prisma";
-import { resolveLeadIdForInboundMessage, applyClassificationResult, processInboundMessage } from "./processInboundMessage";
+import {
+  resolveLeadIdForInboundMessage,
+  applyClassificationResult,
+  processInboundMessage,
+  buildClassificationText,
+} from "./processInboundMessage";
 
 const TEST_CHAT_ID = "test_chat_classification_001";
 const TEST_OUTBOUND_MSG_ID = "test_unipile_msg_outbound_echo_001";
@@ -174,6 +179,73 @@ async function test6_outboundEchoIsNeverClassified() {
   await prisma.replyCategory.delete({ where: { id: category.id } });
 }
 
+/**
+ * A lead often splits one reply across several quick messages before the
+ * recruiter answers -- buildClassificationText should combine them, oldest
+ * first, with the current message last, so a burst like "Hi!" / "quick
+ * question" / "what's your rate?" classifies as one coherent reply instead
+ * of three isolated (mostly Unclassified) fragments.
+ */
+async function test7_combinesUnansweredBurstOldestFirst() {
+  const recruiterId = await getOrCreateTestRecruiter();
+  const lead = await makeLeadWithConversation(recruiterId);
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { leadId: lead.id } });
+
+  const base = Date.now();
+  await prisma.conversationMessage.create({
+    data: { conversationId: conversation.id, sender: "THEM", text: "Hi!", sentAt: new Date(base) },
+  });
+  await prisma.conversationMessage.create({
+    data: { conversationId: conversation.id, sender: "THEM", text: "quick question", sentAt: new Date(base + 1000) },
+  });
+
+  const combined = await buildClassificationText(conversation.id, "what's your hourly rate?", new Date(base + 2000));
+
+  assert.strictEqual(
+    combined,
+    "Hi!\n\n---\n\nquick question\n\n---\n\nwhat's your hourly rate?",
+    "prior messages must appear oldest-first, current message last"
+  );
+}
+
+/**
+ * Once the recruiter has replied, only THEM messages sent AFTER that reply
+ * count as "the current unanswered burst" -- an old message from before the
+ * recruiter's last response must not bleed into a fresh classification.
+ */
+async function test8_excludesMessagesBeforeLastOwnReply() {
+  const recruiterId = await getOrCreateTestRecruiter();
+  const lead = await makeLeadWithConversation(recruiterId);
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { leadId: lead.id } });
+
+  const base = Date.now();
+  await prisma.conversationMessage.create({
+    data: { conversationId: conversation.id, sender: "THEM", text: "Old unrelated message from before we replied", sentAt: new Date(base) },
+  });
+  await prisma.conversationMessage.create({
+    data: { conversationId: conversation.id, sender: "ME", text: "Our reply", sentAt: new Date(base + 1000) },
+  });
+  await prisma.conversationMessage.create({
+    data: { conversationId: conversation.id, sender: "THEM", text: "Follow-up after your reply", sentAt: new Date(base + 2000) },
+  });
+
+  const combined = await buildClassificationText(conversation.id, "one more thing", new Date(base + 3000));
+
+  assert.ok(!combined.includes("Old unrelated message"), "must exclude THEM messages sent before the recruiter's last reply");
+  assert.strictEqual(combined, "Follow-up after your reply\n\n---\n\none more thing");
+}
+
+/** With no prior messages at all, the current message passes through
+ * unchanged -- same behavior as before this feature existed. */
+async function test9_noPriorMessagesReturnsCurrentMessageOnly() {
+  const recruiterId = await getOrCreateTestRecruiter();
+  const lead = await makeLeadWithConversation(recruiterId);
+  const conversation = await prisma.conversation.findFirstOrThrow({ where: { leadId: lead.id } });
+
+  const combined = await buildClassificationText(conversation.id, "just this one", new Date());
+  assert.strictEqual(combined, "just this one");
+}
+
 async function main() {
   const tests = [
     test1_resolvesLeadIdFromMatchingConversation,
@@ -182,6 +254,9 @@ async function main() {
     test4_lowConfidenceOverManualLeavesLeadUntouched,
     test5_lowConfidenceOverAutoOrUnsetClearsToUnclassified,
     test6_outboundEchoIsNeverClassified,
+    test7_combinesUnansweredBurstOldestFirst,
+    test8_excludesMessagesBeforeLastOwnReply,
+    test9_noPriorMessagesReturnsCurrentMessageOnly,
   ];
   let failed = 0;
   await cleanup();
