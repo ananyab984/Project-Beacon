@@ -5,6 +5,7 @@ import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { prisma } from "../prisma";
+import { config } from "../config";
 
 export const replyCategoriesRouter = Router();
 
@@ -27,8 +28,13 @@ const updateReplyCategorySchema = z
     message: "Provide at least one field to update",
   });
 
-// GET /api/reply-categories — list all active categories. Any authenticated
-// role (needed for the manual-override dropdown on the lead card).
+// GET /api/reply-categories — list all active categories, plus the single
+// feature-wide kill switch (see config.ts's replyClassificationEnabled).
+// Every client surface that needs to know whether classification is on --
+// the owner nav item, the category dashboard, and the badge/dropdown on
+// both the LinkedIn and Email views -- reads `featureEnabled` off THIS
+// response rather than each carrying its own flag, so there's exactly one
+// place the client and server can ever drift on this.
 replyCategoriesRouter.get(
   "/",
   asyncHandler(async (_req: Request, res: Response) => {
@@ -36,7 +42,7 @@ replyCategoriesRouter.get(
       where: { isActive: true },
       orderBy: [{ groupName: "asc" }, { name: "asc" }],
     });
-    return res.json({ replyCategories });
+    return res.json({ replyCategories, featureEnabled: config.replyClassificationEnabled });
   })
 );
 

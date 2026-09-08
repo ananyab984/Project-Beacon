@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEmailQueueStore } from "@/stores/useEmailQueueStore";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -60,6 +60,34 @@ export function EmailQueuePageView() {
     queryFn: () => api.getLeads({ limit: 100 }),
   });
   const availableLeads = leadsData?.leads ?? [];
+
+  // Reply classification is lead-specific, not channel-specific -- the
+  // inbound webhook classifies email replies exactly the same way it
+  // classifies LinkedIn ones (see processInboundMessage.ts), so this page
+  // needs the same badge/override surface conversations-page-view.tsx has
+  // for LinkedIn. Shares its query key with owner.reply-categories.tsx and
+  // conversations-page-view.tsx so all three stay on one cache entry.
+  const { data: replyCategoriesData } = useQuery({
+    queryKey: ["reply-categories"],
+    queryFn: () => api.listReplyCategories(),
+  });
+  const replyCategories = replyCategoriesData?.replyCategories ?? [];
+  // Single server-side kill switch (server/src/config.ts's
+  // replyClassificationEnabled) -- defaults true while loading so the
+  // dropdown doesn't flash in then out on the common (enabled) path.
+  const replyClassificationEnabled = replyCategoriesData?.featureEnabled ?? true;
+
+  const overrideClassificationMutation = useMutation({
+    mutationFn: ({ leadId, replyCategoryId }: { leadId: string; replyCategoryId: string | null }) =>
+      api.updateLead(leadId, { replyCategoryId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["email-queue"] });
+      toast.success("Reply classification updated");
+    },
+    onError: (err: any) => {
+      toast.error(`Failed to update classification: ${err.message}`);
+    },
+  });
 
   const { isGeneratingDraft, setIsGeneratingDraft } = useEmailQueueStore();
 
@@ -388,6 +416,28 @@ export function EmailQueuePageView() {
                 <div>
                   <div className="text-lg font-semibold">{candidateName(selected)}</div>
                   <div className="text-xs text-muted-foreground">{selected.candidateRole}</div>
+                  {replyClassificationEnabled && (
+                    <div className="mt-1.5">
+                      <select
+                        className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"
+                        value={selected.lead?.replyCategoryId ?? ""}
+                        onChange={(e) =>
+                          overrideClassificationMutation.mutate({
+                            leadId: selected.leadId,
+                            replyCategoryId: e.target.value || null,
+                          })
+                        }
+                        disabled={overrideClassificationMutation.isPending}
+                      >
+                        <option value="">Unclassified</option>
+                        {replyCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <SaveStatus state={saveState} savedAt={savedAt} />
                 </div>
                 <div className="flex flex-wrap gap-2">

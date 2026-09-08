@@ -637,8 +637,10 @@ export const api = {
 
   // -------------------- Reply Categories --------------------
 
-  /** List all active reply categories */
-  async listReplyCategories(): Promise<{ replyCategories: ReplyCategory[] }> {
+  /** List all active reply categories, plus the feature's single kill
+   *  switch (`featureEnabled`) -- every UI surface that needs to know
+   *  whether classification is on reads it off this same response. */
+  async listReplyCategories(): Promise<{ replyCategories: ReplyCategory[]; featureEnabled: boolean }> {
     return request("/api/reply-categories");
   },
 

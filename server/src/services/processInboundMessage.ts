@@ -12,6 +12,7 @@
  */
 
 import { prisma } from "../prisma";
+import { config } from "../config";
 import { GroqClient } from "../drafting/groqClient";
 import { loadDraftingConfig } from "../drafting/config";
 import { classifyReply, ClassificationResult } from "../lib/replyClassifier";
@@ -154,6 +155,12 @@ export async function processInboundMessage(inboundMessageId: string, isOutbound
       console.log(
         `[processInbound] InboundMessage ${inboundMessageId} is an outbound echo, not a candidate reply — skipping classification.`
       );
+    } else if (!config.replyClassificationEnabled) {
+      // The feature's single kill switch (REPLY_CLASSIFICATION_ENABLED) --
+      // when off, no Groq call, no ReplyClassificationEvent, no Lead write.
+      // Still falls through to `processed: true`, same as every other skip
+      // reason here.
+      console.log(`[processInbound] Reply classification is disabled (REPLY_CLASSIFICATION_ENABLED=false) — skipping classification for InboundMessage ${inboundMessageId}.`);
     } else {
       try {
         const conversation = await resolveConversationForInboundMessage({ threadId: msg.threadId });

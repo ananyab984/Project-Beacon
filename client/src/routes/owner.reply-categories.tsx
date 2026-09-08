@@ -20,11 +20,13 @@ function ReplyCategoriesPage() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["reply-categories"],
-    queryFn: async () => {
-      const result = await api.listReplyCategories();
-      return result.replyCategories;
-    },
+    queryFn: () => api.listReplyCategories(),
   });
+  const categories = data?.replyCategories ?? [];
+  // Single server-side kill switch (server/src/config.ts's
+  // replyClassificationEnabled) -- defaults to true while loading so this
+  // page doesn't flash a "disabled" banner on the common (enabled) path.
+  const featureEnabled = data?.featureEnabled ?? true;
 
   const createMutation = useMutation({
     mutationFn: (formData: any) => api.createReplyCategory(formData),
@@ -65,8 +67,23 @@ function ReplyCategoriesPage() {
     return <div className="p-8 text-center text-muted-foreground">Loading reply categories...</div>;
   }
 
+  if (!featureEnabled) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">Reply Categories</h1>
+        </div>
+        <div className="border rounded-lg p-12 text-center">
+          <p className="text-muted-foreground">
+            Reply classification is currently disabled. Set <code className="text-xs">REPLY_CLASSIFICATION_ENABLED=true</code> on the server to re-enable it and manage categories again.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const grouped = new Map<string, ReplyCategory[]>();
-  for (const c of data ?? []) {
+  for (const c of categories) {
     const list = grouped.get(c.groupName) ?? [];
     list.push(c);
     grouped.set(c.groupName, list);

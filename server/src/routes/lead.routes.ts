@@ -704,6 +704,13 @@ leadRouter.patch(
     // "AUTO". Setting these two alongside `replyCategoryId` here means they
     // ride along in the single `prisma.lead.update` call below.
     if ("replyCategoryId" in patch) {
+      // Single kill switch for the whole feature (see config.ts) -- when
+      // off, the manual-override write path rejects too, not just the
+      // automated classifier, so a client bypassing the (already-hidden)
+      // UI dropdown can't still set a classification behind the flag's back.
+      if (!config.replyClassificationEnabled) {
+        throw new ApiError(403, "FEATURE_DISABLED", "Reply classification is currently disabled");
+      }
       // Zod only proves the id is a well-formed UUID, not that the category
       // still exists -- a recruiter holding a stale dropdown can send the id
       // of a category the owner just deleted. Without this check that reaches
