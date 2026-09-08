@@ -31,22 +31,25 @@ export async function enrichLeadById(leadId: string) {
       data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
     });
 
-    // Timeout raised again (400s -> 4000s): the pipeline enforces its own
-    // 3800s cumulative cap across the whole waterfall call sequence. Two
-    // successive guesses at Parallel's "typical" latency (150s, then 240s
-    // per-call; 350s, then... this) both still cut off calls that were
-    // genuinely succeeding server-side (confirmed live 2026-09-07: a real
-    // "core"-processor Task Run routinely takes ~150-170s, and our own
-    // guessed ceiling kept firing right as the real result was landing).
-    // Rather than guess a fourth number, enrichment_pipeline/providers/
-    // parallel_client.py now defers to the Parallel SDK's own well-engineered
-    // default (waits up to an hour for a task to actually finish) -- every
-    // timeout in this chain, including this one, is sized to never be the
-    // thing that cuts that off early. In practice, real calls still resolve
-    // in ~150-170s -- this ceiling only matters for a genuine outlier, not
-    // the expected case. Real elapsed time via time.monotonic() in
-    // orchestrator.py, layered on top of each individual provider call's own
-    // deadline) and returns a normal 200 response with `conclusion:
+    // Timeout raised again (4_000_000ms -> 4_200_000ms): the pipeline's own
+    // cumulative cap across the whole waterfall call sequence grew from 3800s
+    // to 4100s when Stage 6 (Claude web search, its own 300s deadline) was
+    // added as a real Tier 3 fallback behind Bright Data/Tavily and Parallel
+    // (see orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS for the full budget
+    // math). Earlier history: two successive guesses at Parallel's "typical"
+    // latency (150s, then 240s per-call; 350s, then 4000s) both still cut off
+    // calls that were genuinely succeeding server-side (confirmed live
+    // 2026-09-07: a real "core"-processor Task Run routinely takes ~150-170s,
+    // and our own guessed ceiling kept firing right as the real result was
+    // landing). Rather than guess yet another number, enrichment_pipeline/
+    // providers/parallel_client.py defers to the Parallel SDK's own
+    // well-engineered default (waits up to an hour for a task to actually
+    // finish) -- every timeout in this chain, including this one, is sized to
+    // never be the thing that cuts that off early. In practice, real calls
+    // still resolve in ~150-170s -- this ceiling only matters for a genuine
+    // outlier, not the expected case. Real elapsed time via time.monotonic()
+    // in orchestrator.py, layered on top of each individual provider call's
+    // own deadline) and returns a normal 200 response with `conclusion:
     // "timed_out"` when it hits that cap, rather than hanging -- a shorter
     // axios timeout would abort the request before Python ever gets the
     // chance to respond gracefully, turning a clean "on hold" signal into an
@@ -92,28 +95,28 @@ export async function enrichLeadById(leadId: string) {
             // `_unverified()`.
             Field_Sources: lead.fieldSources ?? undefined,
           },
-          { timeout: 4_000_000, signal }
+          { timeout: 4_200_000, signal }
         ),
       // A documented exception to the 15s ceiling used everywhere else: this
-      // call fans out to BrightData/Tavily/Parallel/Claude inside the Python
-      // pipeline (each individually bounded there), and the pipeline's own
-      // cumulative cap is 3800s (see orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS
-      // and config.py's parallel_deadline_seconds). 4000s/attempt stays above
-      // that 3800s cap so Python gets to respond gracefully instead of Node's
-      // own timeout firing first. Note this deadline still doesn't
-      // comfortably cover two full attempts back to back: 4200s total /
-      // 4000s per attempt is ~1.05 attempts, so worst case (Parallel runs
-      // close to its full allowed time) the first attempt consumes nearly
-      // the whole deadline, leaving only ~200s for a second attempt to even
-      // start -- nowhere near enough for it to finish, so it gets killed by
-      // the deadline mid-flight regardless of whether it was about to
-      // succeed. Effectively one real attempt plus a mostly-wasted partial
-      // second one, not two real tries -- an accepted tradeoff of Parallel's
-      // latency, not something solved here by adding new retry
-      // infrastructure. In practice, real Parallel calls resolve in
-      // ~150-170s, so this multi-thousand-second ceiling is a safety net for
-      // a genuine outlier, not the expected per-lead wait.
-      { isRetryable: isRetryableByDefault, deadlineMs: 4_200_000 }
+      // call fans out to BrightData/Tavily/Parallel/Claude web search inside
+      // the Python pipeline (each individually bounded there), and the
+      // pipeline's own cumulative cap is 4100s (see orchestrator.py's
+      // LEAD_LEVEL_TIMEOUT_SECONDS and config.py's parallel_deadline_seconds /
+      // claude_websearch_deadline_seconds). 4200s/attempt stays above that
+      // 4100s cap so Python gets to respond gracefully instead of Node's own
+      // timeout firing first. Note this deadline still doesn't comfortably
+      // cover two full attempts back to back: 4400s total / 4200s per attempt
+      // is ~1.05 attempts, so worst case (Parallel runs close to its full
+      // allowed time) the first attempt consumes nearly the whole deadline,
+      // leaving only ~200s for a second attempt to even start -- nowhere near
+      // enough for it to finish, so it gets killed by the deadline mid-flight
+      // regardless of whether it was about to succeed. Effectively one real
+      // attempt plus a mostly-wasted partial second one, not two real tries --
+      // an accepted tradeoff of Parallel's latency, not something solved here
+      // by adding new retry infrastructure. In practice, real Parallel calls
+      // resolve in ~150-170s, so this multi-thousand-second ceiling is a
+      // safety net for a genuine outlier, not the expected per-lead wait.
+      { isRetryable: isRetryableByDefault, deadlineMs: 4_400_000 }
     );
 
     let enrichedEmail = lead.email;

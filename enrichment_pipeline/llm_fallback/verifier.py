@@ -1,89 +1,45 @@
-"""Verbatim evidence verification module for LLM-extracted critical fields."""
+"""Grounding safeguard for Tier 3's Claude web-search fallback."""
 
 from __future__ import annotations
 
-import re
-from typing import Any, Dict
+from typing import Any, Dict, List
 
-from llm_fallback.prompt_builder import LIST_FIELDS
 from logger import get_logger
 
 log = get_logger(__name__)
 
 
-def verify_against_source(llm_result: Dict[str, Any], raw_source_text: str) -> Dict[str, Any]:
-    """Belt-and-suspenders verification, generalized over whatever fields were
-    requested (the 3 original critical fields, plus Services/languages/
-    country when those were also targeted -- see orchestrator.py's
-    LLM_ENRICHABLE_FIELDS).
-
-    Nulls out any LLM-extracted value that doesn't verifiably appear in the
-    raw source text.
+def filter_web_search_result(result: Dict[str, Any], target_fields: List[str]) -> Dict[str, Any]:
+    """Process safeguard for the web_search fallback, in place of verbatim
+    verification: Claude's web_search tool matches results server-side and
+    returns them to us as encrypted content blocks, so unlike the old
+    raw-text extraction there's no client-visible source text to check
+    extracted facts against. Instead: discard everything if the model
+    reported finding nothing, or cited no real source URL for the batch --
+    grounding here rests on the prompt's strict rules plus this minimum
+    citation requirement, not an independent verbatim match.
     """
-    if not isinstance(llm_result, dict):
+    if not isinstance(result, dict) or result.get("could_not_find_anything"):
         return {}
 
-    src = (raw_source_text or "").lower()
+    sources = result.get("sources_used")
+    if not isinstance(sources, list) or not any(isinstance(s, str) and s.strip() for s in sources):
+        log.warning("DISCARDING web_search result: no real source URL cited")
+        return {}
+
     verified: Dict[str, Any] = {}
+    for field in target_fields:
+        val = result.get(field)
+        if isinstance(val, str) and val.strip():
+            verified[field] = val.strip()
+            log.info("Accepted web_search %s=%s (sources=%s)", field, val, sources)
 
-    # 1. Verify Years_of_Exp via its dedicated evidence-quote field -- a bare
-    # integer can't be verbatim-matched against source text the way a
-    # name/language/service string can.
-    years_val = llm_result.get("Years_of_Exp")
-    years_quote = (llm_result.get("years_experience_evidence") or "").strip().lower()
-    if years_val is not None:
-        if years_quote and years_quote in src:
-            try:
-                verified["Years_of_Exp"] = int(years_val)
-                log.info("Verified LLM Years_of_Exp=%s with evidence quote %r", years_val, years_quote)
-            except (ValueError, TypeError):
-                log.warning("Invalid integer format for LLM Years_of_Exp: %r", years_val)
-        else:
-            log.warning("DISCARDING LLM Years_of_Exp=%s: evidence quote %r not found verbatim in source", years_val, years_quote)
-
-    # 2. Verify Contact_Number via digit-normalized comparison (formatting varies).
-    phone_val = llm_result.get("Contact_Number")
-    if phone_val and isinstance(phone_val, str):
-        digits_phone = re.sub(r"[^\d+]", "", phone_val)
-        digits_src = re.sub(r"[^\d+]", "", src)
-        if digits_phone and digits_phone in digits_src:
-            verified["Contact_Number"] = phone_val.strip()
-            log.info("Verified LLM Contact_Number=%s in source text", phone_val)
-        else:
-            log.warning("DISCARDING LLM Contact_Number=%s: digits not found in source text", phone_val)
-
-    # 3. LIST_FIELDS (Secondary_Languages, Services): expect a JSON array,
-    # each element independently verbatim-verified, then joined with ", " --
-    # storing a single unverified prose string ("French and German") would
-    # break downstream comma-splitting into a malformed one-item list.
-    for key in LIST_FIELDS:
-        items = llm_result.get(key)
-        if not isinstance(items, list):
-            continue
-        verified_items = []
-        for item in items:
-            if not item or not isinstance(item, str):
-                continue
-            if item.strip().lower() in src and item.strip() not in verified_items:
-                verified_items.append(item.strip())
-            else:
-                log.warning("DISCARDING LLM %s item=%s: not found verbatim in source text", key, item)
-        if verified_items:
-            verified[key] = ", ".join(verified_items)
-            log.info("Verified LLM %s=%s in source text", key, verified[key])
-
-    # 4. Every other requested field (Email_Address, Source_Language,
-    # Target_Language, Country_of_Residence, Current_Title, ...): accept only
-    # if the exact returned value appears verbatim (case-insensitive)
-    # somewhere in the source text.
-    _HANDLED = {"Years_of_Exp", "years_experience_evidence", "Contact_Number", *LIST_FIELDS}
-    for key, val in llm_result.items():
-        if key in _HANDLED or not val or not isinstance(val, str):
-            continue
-        if val.strip().lower() in src:
-            verified[key] = val.strip()
-            log.info("Verified LLM %s=%s in source text", key, val)
-        else:
-            log.warning("DISCARDING LLM %s=%s: not found verbatim in source text", key, val)
+    # Hard line, defense in depth alongside never asking for these in the
+    # prompt (build_web_search_prompt) and never passing them in
+    # target_fields (orchestrator.py's _WEBSEARCH_EXCLUDED_FIELDS): a wrong
+    # contact value reaches a different real human being, so it must never
+    # survive this filter even if a caller or a model slip put one here.
+    for contact_field in ("Email_Address", "Contact_Number"):
+        verified.pop(contact_field, None)
 
     return verified
