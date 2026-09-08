@@ -321,3 +321,83 @@ def test_martin_godart_shaped_lead_reaches_stage_6_websearch():
     assert websearch_calls["n"] == 1, "a resolved Stage 6 lead must never be re-billed"
     assert r2["websearch_fallback"]["called"] is False
     assert r2["field_sources"]["_websearch_fallback"] == "complete"
+
+
+# --- the stage's own time budget ----------------------------------------
+#
+# Stage 6 fires ONLY for leads every earlier tier came up thin on, so all of
+# its latency lands on the rows a recruiter is already watching and calling
+# stuck. Measured live 2026-09-08 on two real such leads (Martin Godart,
+# Omaima Atef -- both LinkedIn profiles blocked to Bright Data AND to
+# Parallel's browsing agent): 8 search rounds hit the 240s request timeout
+# both times, then a retry that could never fit the remaining deadline burned
+# another 60s. ~5 minutes per lead, zero results, 0 successes ever recorded.
+#
+# The two knobs were picked independently of the timeout, which is how the
+# arithmetic came to not work. These pin the relationship, not the numbers.
+
+def _websearch_call_args():
+    """Captures the request body and RetryPolicy search_missing_fields builds,
+    without making a call."""
+    from llm_fallback.client import ClaudeClient
+
+    cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="k", groq_api_key="")
+    client = ClaudeClient(cfg)
+    captured = {}
+
+    def fake_retry(fn, *, policy, on_retry=None, on_exhausted=None, executor=None):
+        captured["policy"] = policy
+        # fn closes over the body and timeout; run it against a stub request.
+        captured["result"] = fn()
+        return captured["result"]
+
+    def fake_request_once(body, timeout=None):
+        captured["body"] = body
+        captured["timeout"] = timeout
+        return {"sources_used": [], "could_not_find_anything": True}
+
+    import llm_fallback.client as client_module
+
+    real_retry, real_request = client_module.retry_with_backoff, client._request_once
+    client_module.retry_with_backoff = fake_retry
+    client._request_once = fake_request_once
+    try:
+        client.search_missing_fields(["Headline"], "Someone", "https://example.com/x", "brightdata")
+    finally:
+        client_module.retry_with_backoff = real_retry
+        client._request_once = real_request
+    return captured
+
+
+def test_every_allowed_attempt_fits_inside_the_deadline():
+    """The defect this pins: retries=1 with a 240s per-request timeout under a
+    300s deadline. Attempt one consumes 240s, retry_with_backoff then STARTS
+    attempt two with 60s left and the deadline kills it mid-flight -- 60s
+    spent on a call that could not have finished. A retry that cannot
+    complete is not a retry, it is latency."""
+    c = _websearch_call_args()
+    attempts = c["policy"].retries + 1
+    budget = c["policy"].deadline_seconds
+    per_attempt = c["timeout"]
+    assert attempts * per_attempt <= budget, (
+        f"{attempts} attempts x {per_attempt}s per attempt exceeds the {budget}s deadline -- "
+        f"the last attempt gets started and then killed mid-flight"
+    )
+
+
+def test_search_rounds_can_finish_inside_the_request_timeout():
+    """8 rounds timed out on every real call. Budget ~40s per round (the
+    observed rate: 240s elapsed with 8 rounds still unfinished), so the round
+    count has to leave room to actually return an answer."""
+    c = _websearch_call_args()
+    max_uses = c["body"]["tools"][0]["max_uses"]
+    assert max_uses * 40 <= c["timeout"], (
+        f"{max_uses} search rounds at ~40s each cannot finish inside the {c['timeout']}s "
+        f"request timeout -- the call times out instead of answering"
+    )
+
+
+def test_a_later_pass_is_what_retries_this_stage():
+    """Dropping the in-call retry is only safe because re-attempts live in the
+    marker policy instead -- guard against both being removed."""
+    assert orchestrator_module.MAX_WEBSEARCH_TRANSIENT_ATTEMPTS >= 2

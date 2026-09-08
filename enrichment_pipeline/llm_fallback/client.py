@@ -96,20 +96,51 @@ class ClaudeClient:
         the same _extract_json_object/_request_once path every Claude call
         here shares.
 
-        Own retry policy and per-request timeout: a single call can run up
-        to 8 server-side search rounds and legitimately takes minutes -- the
+        Own retry policy and per-request timeout: a single call runs several
+        server-side search rounds and legitimately takes minutes -- the
         default 15s RetryPolicy and short request_timeout would abort a call
         that's genuinely still working. See config.py's
         claude_websearch_deadline_seconds.
+
+        `max_uses` and the retry count are both sized to the 240s request
+        timeout rather than chosen independently, because the first version
+        of this stage set them independently and the arithmetic never worked:
+
+          - 8 search rounds cannot finish inside 240s. Measured live
+            2026-09-08 on two real thin leads (Martin Godart, Omaima Atef --
+            both LinkedIn profiles blocked to Bright Data AND to Parallel's
+            browsing agent, which is exactly the case this stage exists for):
+            the request hit the 240s timeout BOTH times. Stage 6 has never
+            once returned a result. 3 rounds fits the budget, so the stage
+            gets a real chance to answer instead of structurally timing out.
+
+          - `retries=1` could never run. One attempt consumes the full 240s
+            of a 300s deadline, leaving 60s for an attempt that needs 240s,
+            so retry_with_backoff starts it and the deadline kills it
+            mid-flight: 10:14:15 start -> 10:18:16 timeout -> 10:19:15
+            deadline, 60s spent on a call that could not have finished.
+            Dropping it takes the worst case from 300s to 240s and loses
+            nothing -- a genuine retry already happens on a LATER pass via
+            the `_websearch_fallback: failed_transient:n` marker, which is
+            where re-attempts for this stage are actually budgeted.
+
+        Per-lead cost is the whole point: this stage fires only for leads
+        every earlier tier came up thin on, so its latency lands entirely on
+        the leads that already look slowest to a recruiter watching the row.
         """
         prompt = build_web_search_prompt(missing_fields, full_name, profile_link, source_platform)
         body = {
             "model": _WEB_SEARCH_MODEL,
             "max_tokens": 4096,
-            "tools": [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            # 3, not 8: see the budget note above -- 8 rounds cannot finish
+            # inside `request_timeout` and timed out on every real call.
+            "tools": [{"type": "web_search_20260209", "name": "web_search", "max_uses": 3}],
             "messages": [{"role": "user", "content": prompt}],
         }
-        policy = RetryPolicy(retries=1, deadline_seconds=self.config.claude_websearch_deadline_seconds)
+        # retries=0 -> exactly one attempt. A second one cannot fit inside the
+        # deadline (see the budget note above), so allowing it only spent
+        # wall-clock on a call guaranteed to be killed mid-flight.
+        policy = RetryPolicy(retries=0, deadline_seconds=self.config.claude_websearch_deadline_seconds)
         request_timeout = max(self.config.request_timeout, 240)
 
         log.info("Claude web_search fallback START name=%r fields=%s", full_name, missing_fields)
