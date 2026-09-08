@@ -118,6 +118,25 @@ def _parallel_state_is_settled(state: Optional[str]) -> Optional[str]:
     return None
 
 
+def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
+    """True if Parallel's Task Run succeeded (no exception) but found nothing
+    real -- every scalar field null/blank AND every list field empty.
+
+    Confirmed live 2026-09-07: a blocked LinkedIn profile made Parallel return
+    exactly `{"headline": null, "current_title": null, "about_snippet": null,
+    "country": null, "experience": [], "education": [], "languages": [],
+    "certifications": []}` -- a well-formed LeadProfile dict, so
+    `isinstance(content, dict)` in parallel_client.py's `_run_once` never
+    raised, and this was accepted as a genuine success on the first try."""
+    scalar_fields = ("headline", "current_title", "about_snippet", "country")
+    list_fields = ("experience", "education", "languages", "certifications")
+    if any(parallel_data.get(f) for f in scalar_fields):
+        return False
+    if any(parallel_data.get(f) for f in list_fields):
+        return False
+    return True
+
+
 # Function words that are common and distinctive in the languages these
 # profiles actually turn up in (Spanish, French, German, Portuguese, Italian),
 # and rare-to-absent in English profile prose. Used only to decide whether a
@@ -381,6 +400,24 @@ class EnrichmentOrchestrator:
         try:
             parallel_data = self.parallel.enrich_profile(lead, profile_link)
             parallel_data = self._normalize_parallel_language(parallel_data, logs)
+
+            if _is_empty_parallel_result(parallel_data):
+                # Technically a success (no exception), but empty -- Martin
+                # Godart's actual case: every field null/[], because Parallel's
+                # browsing agent hit the same LinkedIn block Bright Data did.
+                # This used to be stamped COMPLETE on the very first attempt,
+                # which meant the 2-attempt transient-retry policy below --
+                # already decided on and already built -- never even engaged,
+                # since it only ever fired for a genuine exception. Routing an
+                # empty-but-well-formed result through the SAME transient path
+                # gives it the real second attempt that policy was meant to
+                # guarantee, on the chance a retry lands on a different
+                # session/IP than the one that just got blocked.
+                msg = self._record_parallel_transient(field_sources, attempts_so_far, "returned no usable content")
+                logs.append(msg)
+                log.warning(msg)
+                return {"called": True, "reason": tier1_label, "error": "empty result"}
+
             field_sources["_parallel_fallback"] = PARALLEL_STATE_COMPLETE
             msg = f"Stage 3.5: Parallel call complete ({tier1_label} scrape already ran)"
             logs.append(msg)
@@ -391,18 +428,27 @@ class EnrichmentOrchestrator:
             if getattr(exc, "permanent", False):
                 field_sources["_parallel_fallback"] = PARALLEL_STATE_FAILED_PERMANENT
                 msg = f"Stage 3.5: Parallel rejected this lead's input, not retrying: {exc}"
+                logs.append(msg)
+                log.error(msg)
             else:
-                attempts = attempts_so_far + 1
-                field_sources["_parallel_fallback"] = f"{PARALLEL_STATE_FAILED_TRANSIENT_PREFIX}{attempts}"
-                remaining = MAX_PARALLEL_TRANSIENT_ATTEMPTS - attempts
-                msg = (
-                    f"Stage 3.5: Parallel call failed (attempt {attempts}/"
-                    f"{MAX_PARALLEL_TRANSIENT_ATTEMPTS}, "
-                    f"{'will retry on a later pass' if remaining > 0 else 'attempts exhausted'}): {exc}"
-                )
-            logs.append(msg)
-            log.error(msg)
+                msg = self._record_parallel_transient(field_sources, attempts_so_far, str(exc))
+                logs.append(msg)
+                log.error(msg)
             return {"called": True, "reason": tier1_label, "error": str(exc)}
+
+    @staticmethod
+    def _record_parallel_transient(field_sources: Dict[str, str], attempts_so_far: int, reason: str) -> str:
+        """Stamps the next transient-attempt marker and returns the log line
+        -- shared by a genuine exception and an empty-but-successful result,
+        since both consume the same 2-attempt budget the same way."""
+        attempts = attempts_so_far + 1
+        field_sources["_parallel_fallback"] = f"{PARALLEL_STATE_FAILED_TRANSIENT_PREFIX}{attempts}"
+        remaining = MAX_PARALLEL_TRANSIENT_ATTEMPTS - attempts
+        return (
+            f"Stage 3.5: Parallel call failed (attempt {attempts}/"
+            f"{MAX_PARALLEL_TRANSIENT_ATTEMPTS}, "
+            f"{'will retry on a later pass' if remaining > 0 else 'attempts exhausted'}): {reason}"
+        )
 
     def _run_non_linkedin_steps(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],

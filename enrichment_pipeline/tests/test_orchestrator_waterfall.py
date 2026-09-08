@@ -312,6 +312,83 @@ def test_permanent_rejection_is_never_retried():
     assert r2["parallel_fallback"]["called"] is False
 
 
+def test_empty_but_well_formed_result_is_retried_not_stamped_complete():
+    """The actual reported bug: Martin Godart's real case. Parallel's Task Run
+    succeeds (no exception) but every field comes back null/[] -- LinkedIn
+    blocked the browsing agent the same way it blocked Bright Data. This used
+    to be stamped "complete" on the very first attempt, so the 2-attempt
+    transient-retry policy above -- already decided on, already built --
+    never got a chance to run at all."""
+    calls = {"parallel": 0}
+    empty_result = {
+        "headline": None, "current_title": None, "about_snippet": None, "country": None,
+        "experience": [], "education": [], "languages": [], "certifications": [],
+    }
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(empty_result))
+
+    # Pass 1: empty result must be treated as a transient failure, attempt 1 of 2.
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1", (
+        f"an empty-but-successful result must not be stamped complete, got {r1['field_sources'].get('_parallel_fallback')!r}"
+    )
+
+    # Pass 2: real second attempt -- this is the exact gap being fixed.
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "an empty result must actually be retried on the next pass"
+    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Pass 3: exhausted, same as the exception-based path.
+    r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["parallel"] == 2, "capped at 2 attempts even for repeated empty results"
+    assert r3["parallel_fallback"]["called"] is False
+
+
+def test_empty_result_that_succeeds_on_retry_stops_retrying():
+    """If attempt 2 comes back with real content, it settles as complete --
+    an empty first try must not doom a lead to "always empty" forever."""
+    calls = {"parallel": 0}
+
+    def enrich(lead, profile_link):
+        calls["parallel"] += 1
+        if calls["parallel"] == 1:
+            return {"headline": None, "current_title": None, "about_snippet": None, "country": None,
+                    "experience": [], "education": [], "languages": [], "certifications": []}
+        return {"headline": "Voice Artist", "current_title": None, "about_snippet": None, "country": None,
+                "experience": [], "education": [], "languages": [], "certifications": []}
+
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=enrich)
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2
+    assert r2["field_sources"]["_parallel_fallback"] == "complete"
+    assert r2["lead"]["Headline"] == "Voice Artist"
+
+    # Pass 3 must not call Parallel again -- it's settled now.
+    orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["parallel"] == 2
+
+
+def test_a_result_with_some_real_content_is_accepted_immediately():
+    """Not every thin result is empty -- one populated field is enough to
+    settle as complete on the first try, matching test_success_is_never_re_called."""
+    calls = {"parallel": 0}
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1)
+        or {"headline": None, "current_title": None, "about_snippet": None, "country": "Spain",
+            "experience": [], "education": [], "languages": [], "certifications": []}
+    )
+    result = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert result["field_sources"]["_parallel_fallback"] == "complete"
+
+
 def test_success_is_never_re_called():
     calls = {"parallel": 0}
     orch = make_orchestrator()
