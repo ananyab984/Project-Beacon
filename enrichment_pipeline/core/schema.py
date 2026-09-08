@@ -48,6 +48,44 @@ def is_empty_value(val: Any) -> bool:
     return False
 
 
+def has_content(value: Any) -> bool:
+    """True if `value` carries actual data rather than a well-formed shell.
+
+    Recurses on purpose: "is not empty" and "contains anything" are different
+    questions, and only the second is worth acting on. `[{}, {}, {}]` is a
+    non-empty list of three entries that each say nothing, and a plain
+    truthiness check (or `is_empty_value` above, which only measures length)
+    reads it as real content.
+
+    That gap was not hypothetical. Confirmed live 2026-09-08: every one of 112
+    experience/education/language rows across 32 enriched leads was `{}`,
+    because the output schema declared those entries as free-form objects with
+    no properties. The row COUNTS were right, so every check that asked "did
+    anything come back?" said yes, the result was banked as a success, and the
+    lead was never re-attempted -- while the recruiter saw "Enriched" over a
+    profile whose deep sections all read "None found".
+
+    Lives here rather than in orchestrator.py because every provider needs the
+    same judgement and `providers/` cannot import `orchestrator` without a
+    cycle. Judging a payload by its structure rather than its presence is what
+    makes that whole class of bug self-correcting: a provider returning shells
+    raises and gets retried instead of being recorded as a find.
+    """
+    if isinstance(value, dict):
+        # Skip our own bookkeeping keys (`_original_language`, `_parallel_fallback`)
+        # -- they are never the reason a payload counts as having found something.
+        return any(
+            has_content(v)
+            for k, v in value.items()
+            if not (isinstance(k, str) and k.startswith("_"))
+        )
+    if isinstance(value, (list, tuple, set)):
+        return any(has_content(v) for v in value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
+
+
 def create_empty_lead() -> Dict[str, Any]:
     """Create a dictionary with all canonical fields initialized to None."""
     return {field: None for field in CANONICAL_FIELDS}
