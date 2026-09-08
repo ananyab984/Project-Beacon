@@ -257,7 +257,14 @@ export type EmailQueueStatus = "AI_DRAFTED" | "FOLLOW_UP" | "REVIEW_NEEDED" | "S
 export interface ApiEmailQueueItem {
   id: string;
   leadId: string;
-  lead?: { fullName: string | null; displayName: string | null; email?: string | null; profileLink?: string | null };
+  lead?: {
+    fullName: string | null;
+    displayName: string | null;
+    email?: string | null;
+    profileLink?: string | null;
+    replyCategoryId?: string | null;
+    replyClassificationSource?: "AUTO" | "MANUAL" | null;
+  };
   recruiterId: string;
   candidateName: string;
   candidateRole: string | null;

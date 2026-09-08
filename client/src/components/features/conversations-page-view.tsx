@@ -70,12 +70,13 @@ export function ConversationsPageView() {
 
   const { data: replyCategoriesData } = useQuery({
     queryKey: ["reply-categories"],
-    queryFn: async () => {
-      const result = await api.listReplyCategories();
-      return result.replyCategories;
-    },
+    queryFn: () => api.listReplyCategories(),
   });
-  const replyCategories = replyCategoriesData ?? [];
+  const replyCategories = replyCategoriesData?.replyCategories ?? [];
+  // Single server-side kill switch (server/src/config.ts's
+  // replyClassificationEnabled) -- defaults true while loading so the
+  // dropdown doesn't flash in then out on the common (enabled) path.
+  const replyClassificationEnabled = replyCategoriesData?.featureEnabled ?? true;
 
   const overrideClassificationMutation = useMutation({
     mutationFn: ({ leadId, replyCategoryId }: { leadId: string; replyCategoryId: string | null }) =>
@@ -348,24 +349,26 @@ export function ConversationsPageView() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
-                    <select
-                      className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"
-                      value={conv.lead?.replyCategoryId ?? ""}
-                      onChange={(e) =>
-                        overrideClassificationMutation.mutate({
-                          leadId: conv.leadId,
-                          replyCategoryId: e.target.value || null,
-                        })
-                      }
-                      disabled={overrideClassificationMutation.isPending}
-                    >
-                      <option value="">Unclassified</option>
-                      {replyCategories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    {replyClassificationEnabled && (
+                      <select
+                        className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"
+                        value={conv.lead?.replyCategoryId ?? ""}
+                        onChange={(e) =>
+                          overrideClassificationMutation.mutate({
+                            leadId: conv.leadId,
+                            replyCategoryId: e.target.value || null,
+                          })
+                        }
+                        disabled={overrideClassificationMutation.isPending}
+                      >
+                        <option value="">Unclassified</option>
+                        {replyCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
                 </div>
 

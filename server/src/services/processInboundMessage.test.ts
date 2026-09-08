@@ -9,6 +9,7 @@
 
 import assert from "node:assert";
 import { prisma } from "../prisma";
+import { config } from "../config";
 import {
   resolveLeadIdForInboundMessage,
   applyClassificationResult,
@@ -180,6 +181,49 @@ async function test6_outboundEchoIsNeverClassified() {
 }
 
 /**
+ * The feature's single kill switch (REPLY_CLASSIFICATION_ENABLED, read into
+ * config.replyClassificationEnabled at boot) must be enough on its own to
+ * fully disable classification: no Groq call, no ReplyClassificationEvent,
+ * no Lead write -- same shape as the outbound-echo skip above, just gated on
+ * config instead of the isOutbound flag.
+ */
+async function test10_disabledFeatureNeverClassifies() {
+  const recruiterId = await getOrCreateTestRecruiter();
+  const lead = await makeLeadWithConversation(recruiterId);
+  const before = await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } });
+
+  const originalValue = config.replyClassificationEnabled;
+  (config as any).replyClassificationEnabled = false;
+  try {
+    const msg = await prisma.inboundMessage.create({
+      data: {
+        unipileMessageId: "test_unipile_msg_feature_disabled_001",
+        channel: "LINKEDIN",
+        accountId: "test_account_feature_disabled",
+        threadId: TEST_CHAT_ID,
+        sender: "candidate",
+        content: "What's your hourly rate?",
+        receivedAt: new Date(),
+      },
+    });
+
+    await processInboundMessage(msg.id, false);
+
+    const events = await prisma.replyClassificationEvent.findMany({ where: { leadId: lead.id } });
+    assert.strictEqual(events.length, 0, "a disabled feature must never produce a ReplyClassificationEvent");
+
+    const after = await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } });
+    assert.strictEqual(after.replyCategoryId, before.replyCategoryId);
+    assert.strictEqual(after.replyClassificationSource, before.replyClassificationSource);
+
+    const processedRow = await prisma.inboundMessage.findUniqueOrThrow({ where: { id: msg.id } });
+    assert.strictEqual(processedRow.processed, true, "the message must still end up marked processed even when the feature is disabled");
+  } finally {
+    (config as any).replyClassificationEnabled = originalValue;
+  }
+}
+
+/**
  * A lead often splits one reply across several quick messages before the
  * recruiter answers -- buildClassificationText should combine them, oldest
  * first, with the current message last, so a burst like "Hi!" / "quick
@@ -257,6 +301,7 @@ async function main() {
     test7_combinesUnansweredBurstOldestFirst,
     test8_excludesMessagesBeforeLastOwnReply,
     test9_noPriorMessagesReturnsCurrentMessageOnly,
+    test10_disabledFeatureNeverClassifies,
   ];
   let failed = 0;
   await cleanup();

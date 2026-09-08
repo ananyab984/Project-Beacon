@@ -93,6 +93,16 @@ export const config = {
   // block the whole server from booting.
   groqApiKey: process.env.GROQ_API_KEY || "",
   groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
+  // Single kill switch for the whole inbound reply classification feature --
+  // flipping this off must be enough on its own to fully undo it: the
+  // webhook stops running the classifier (processInboundMessage.ts), the
+  // manual-override write path on PATCH /api/leads/:id starts rejecting,
+  // and every client surface (nav item, category dashboard, badge/dropdown
+  // on both the LinkedIn and Email views) hides itself -- all three read
+  // this one value via GET /api/reply-categories' `featureEnabled` field,
+  // not a separate flag each, so there's exactly one place this can drift.
+  // Defaults on: this is live functionality, not something opt-in.
+  replyClassificationEnabled: (process.env.REPLY_CLASSIFICATION_ENABLED || "true").trim().toLowerCase() !== "false",
   keepaliveEnabled: (process.env.KEEPALIVE_ENABLED || (isProduction ? "true" : "false")).trim().toLowerCase() !== "false",
   // Keeping this service alive means pinging THIS service -- appBaseUrl is
   // already required-and-validated in production two lines up, so there's
