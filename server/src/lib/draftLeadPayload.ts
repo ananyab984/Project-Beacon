@@ -1,13 +1,5 @@
 import type { Lead } from "@prisma/client";
-
-/** First present value among candidate keys on a raw Parallel LeadProfile
- * payload (see enrichment_pipeline/providers/parallel_client.py). */
-function firstOf(raw: Record<string, any>, keys: string[]): any {
-  for (const key of keys) {
-    if (raw[key] !== undefined && raw[key] !== null) return raw[key];
-  }
-  return undefined;
-}
+import { mergeProfileSections } from "./profileSections";
 
 /** The greeting name for this lead.
  *
@@ -53,6 +45,20 @@ function greetingFirstName(lead: Lead): string | null {
  */
 export function buildDraftLeadPayload(lead: Lead, emailOverride?: string | null) {
   const parallelData = (lead.parallelData as Record<string, any> | null) || null;
+  // The deep sections, MERGED across Bright Data and Parallel -- not
+  // Parallel alone. On LinkedIn, Parallel's browsing agent cannot see
+  // experience/education/languages/certifications at all (they sit behind
+  // LinkedIn's login wall); only Bright Data's authenticated scrape can.
+  // Before this, `Deep_Experience`/`Deep_Education`/`Deep_Languages` (then
+  // named `Parallel_*`) were sourced from `parallelData` only, so for every
+  // LinkedIn lead the curated deep facts drafting reads --
+  // additional_languages_spoken, education, courses_completed -- were empty
+  // while the data sat, unused, in `rawScrapeData`. On a linguist
+  // recruitment platform, a candidate's stated languages and proficiency are
+  // the qualifying facts, not a nice-to-have. See lib/profileSections.ts for
+  // the merge itself, already shipped for the enrichment dialog; this wires
+  // the SAME merged view into drafting rather than duplicating it.
+  const sections = mergeProfileSections(lead);
 
   return {
     First_Name: greetingFirstName(lead),
@@ -78,12 +84,26 @@ export function buildDraftLeadPayload(lead: Lead, emailOverride?: string | null)
     Current_Title: lead.currentTitle,
     Tools_Software: lead.toolsSoftware.join(", "),
     Certifications: lead.certifications.join(", "),
-    // Named, cleanly-typed views into Parallel's raw LeadProfile -- these
-    // feed the structured grounding facts (recent_experience, education,
-    // etc.) in drafting's leads.ts.
-    Parallel_Experience: parallelData ? firstOf(parallelData, ["experience"]) : undefined,
-    Parallel_Education: parallelData ? firstOf(parallelData, ["education"]) : undefined,
-    Parallel_Languages: parallelData ? firstOf(parallelData, ["languages"]) : undefined,
+    // Merged across every source that found them (Bright Data AND Parallel,
+    // not Parallel alone -- see the comment above), in the same entry shape
+    // either source emits (title/company/start_date/end_date/summary;
+    // institution/degree/field_of_study; language/proficiency). Each entry
+    // also carries a `source` tag ("brightdata"|"parallel") that drafting's
+    // formatRole/labelOf simply ignore, same as they already ignore any
+    // other unmodeled key. Named `Deep_*` (not `Parallel_*`) because that
+    // prefix stopped being accurate the moment a second provider could fill
+    // them -- `fromRecord` in drafting/leads.ts still accepts the old
+    // `Parallel_*` names as aliases for any other caller of the /draft
+    // endpoint that hasn't moved to the new ones.
+    Deep_Experience: sections.experience.length ? sections.experience : undefined,
+    Deep_Education: sections.education.length ? sections.education : undefined,
+    Deep_Languages: sections.languages.length ? sections.languages : undefined,
+    // Previously named `Parallel_Courses` and read by drafting/leads.ts, but
+    // never once produced by this function -- courses_completed was
+    // structurally always empty regardless of what enrichment found. Bright
+    // Data returns this section directly (29 courses on one real lead);
+    // Parallel has no equivalent, so this is Bright-Data-only in practice.
+    Deep_Courses: sections.courses.length ? sections.courses : undefined,
     // The ENTIRE raw Parallel payload, verbatim, on top of the curated views
     // above -- nothing pre-filtered out. Whatever wasn't anticipated by the
     // named fields is still here for the model to mine if it's useful,
