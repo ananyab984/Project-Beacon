@@ -9,9 +9,10 @@
 
 import assert from "node:assert";
 import { prisma } from "../prisma";
-import { resolveLeadIdForInboundMessage, applyClassificationResult } from "./processInboundMessage";
+import { resolveLeadIdForInboundMessage, applyClassificationResult, processInboundMessage } from "./processInboundMessage";
 
 const TEST_CHAT_ID = "test_chat_classification_001";
+const TEST_OUTBOUND_MSG_ID = "test_unipile_msg_outbound_echo_001";
 
 async function cleanup() {
   const lead = await prisma.lead.findFirst({ where: { fullName: "Test Wiring Lead" } });
@@ -21,6 +22,7 @@ async function cleanup() {
     await prisma.lead.delete({ where: { id: lead.id } });
   }
   await prisma.replyCategory.deleteMany({ where: { name: { startsWith: "test_" } } });
+  await prisma.inboundMessage.deleteMany({ where: { unipileMessageId: { startsWith: "test_unipile_msg_" } } });
 }
 
 async function makeLeadWithConversation(recruiterId: string) {
@@ -114,6 +116,64 @@ async function test5_lowConfidenceOverAutoOrUnsetClearsToUnclassified() {
   assert.strictEqual(updated?.replyClassificationSource, "AUTO");
 }
 
+/**
+ * Regression: Unipile echoes the recruiter's OWN sent messages back through
+ * the message webhook, and unipile.service.ts deliberately stores those as
+ * InboundMessage rows too. Classifying one would treat our own outreach text
+ * as the candidate's answer, and a confident match would silently destroy a
+ * human's MANUAL override. `isOutbound` is not persisted on the row (it's
+ * threaded through as a parameter from handleWebhookEvent), so this tests
+ * processInboundMessage(id, isOutbound) at the function level.
+ */
+async function test6_outboundEchoIsNeverClassified() {
+  const recruiterId = await getOrCreateTestRecruiter();
+  const lead = await makeLeadWithConversation(recruiterId);
+  const category = await prisma.replyCategory.create({
+    data: { groupName: "General Queries", name: "test_Outbound Echo Guard", description: "test" },
+  });
+
+  // A human already set this lead's category by hand -- the exact state an
+  // echo-triggered classification would clobber.
+  await prisma.lead.update({
+    where: { id: lead.id },
+    data: { replyCategoryId: category.id, replyClassificationSource: "MANUAL" },
+  });
+  const before = await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } });
+
+  const echo = await prisma.inboundMessage.create({
+    data: {
+      unipileMessageId: TEST_OUTBOUND_MSG_ID,
+      channel: "LINKEDIN",
+      accountId: "test_account_outbound_echo",
+      threadId: TEST_CHAT_ID,
+      sender: "test_recruiter_own_provider_id",
+      // Recruiter's own outreach copy -- reads like a candidate reply to a
+      // classifier, which is exactly the trap.
+      content: "Hi! Are you available for a quick call this week to discuss the role and your rate expectations?",
+      receivedAt: new Date(),
+    },
+  });
+
+  await processInboundMessage(echo.id, true);
+
+  const events = await prisma.replyClassificationEvent.findMany({ where: { leadId: lead.id } });
+  assert.strictEqual(events.length, 0, "an outbound echo must never produce a ReplyClassificationEvent");
+
+  const after = await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } });
+  assert.strictEqual(after.replyCategoryId, before.replyCategoryId, "the MANUAL override must survive an outbound echo");
+  assert.strictEqual(after.replyClassificationSource, "MANUAL");
+  assert.strictEqual(
+    after.replyClassifiedAt?.getTime() ?? null,
+    before.replyClassifiedAt?.getTime() ?? null,
+    "replyClassifiedAt must not be touched by an outbound echo"
+  );
+
+  const processedRow = await prisma.inboundMessage.findUniqueOrThrow({ where: { id: echo.id } });
+  assert.strictEqual(processedRow.processed, true, "the echo row must still end up marked processed");
+
+  await prisma.replyCategory.delete({ where: { id: category.id } });
+}
+
 async function main() {
   const tests = [
     test1_resolvesLeadIdFromMatchingConversation,
@@ -121,6 +181,7 @@ async function main() {
     test3_confidentResultAlwaysOverwrites,
     test4_lowConfidenceOverManualLeavesLeadUntouched,
     test5_lowConfidenceOverAutoOrUnsetClearsToUnclassified,
+    test6_outboundEchoIsNeverClassified,
   ];
   let failed = 0;
   await cleanup();

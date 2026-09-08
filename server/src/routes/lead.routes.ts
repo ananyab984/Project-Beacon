@@ -695,6 +695,17 @@ leadRouter.patch(
     // "AUTO". Setting these two alongside `replyCategoryId` here means they
     // ride along in the single `prisma.lead.update` call below.
     if ("replyCategoryId" in patch) {
+      // Zod only proves the id is a well-formed UUID, not that the category
+      // still exists -- a recruiter holding a stale dropdown can send the id
+      // of a category the owner just deleted. Without this check that reaches
+      // prisma.lead.update and surfaces as an unmapped P2003 foreign-key
+      // violation, i.e. a raw 500. Same existence-check-before-mutation
+      // convention as replyCategories.routes.ts. `null` clears the lead to
+      // Unclassified and references no category row, so it needs no check.
+      if (patch.replyCategoryId) {
+        const category = await prisma.replyCategory.findUnique({ where: { id: patch.replyCategoryId } });
+        if (!category) throw new ApiError(404, "REPLY_CATEGORY_NOT_FOUND", "Reply category not found");
+      }
       (patch as any).replyClassificationSource = "MANUAL";
       (patch as any).replyClassifiedAt = new Date();
     }
@@ -741,22 +752,31 @@ leadRouter.patch(
       });
     }
 
-    const updated = await prisma.lead.update({
-      where: { id: existing.id },
-      data: { ...patch, lastActivityAt: new Date() },
-    });
-
-    if ("replyCategoryId" in patch) {
-      await prisma.replyClassificationEvent.create({
-        data: {
-          leadId: existing.id,
-          categoryId: patch.replyCategoryId ?? null,
-          confidence: null,
-          source: "MANUAL",
-          changedByUserId: req.user!.id,
-        },
+    // The lead update and the override's ReplyClassificationEvent must land
+    // together (design spec Component 6): the event table is the history of
+    // record for the lead's denormalized replyCategoryId /
+    // replyClassificationSource, so a half-applied pair would drift them.
+    // Scope is deliberately just this pair -- nothing else in this handler.
+    const updated = await prisma.$transaction(async (tx) => {
+      const lead = await tx.lead.update({
+        where: { id: existing.id },
+        data: { ...patch, lastActivityAt: new Date() },
       });
-    }
+
+      if ("replyCategoryId" in patch) {
+        await tx.replyClassificationEvent.create({
+          data: {
+            leadId: existing.id,
+            categoryId: patch.replyCategoryId ?? null,
+            confidence: null,
+            source: "MANUAL",
+            changedByUserId: req.user!.id,
+          },
+        });
+      }
+
+      return lead;
+    });
 
     // Automatically sync updated candidate name and details to email queue and conversation threads
     if (updated.email || updated.displayName || updated.fullName) {

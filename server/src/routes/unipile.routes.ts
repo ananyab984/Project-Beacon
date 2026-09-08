@@ -112,7 +112,7 @@ unipileRouter.post("/webhook/:token", async (req: Request, res: Response) => {
     // This keeps the webhook response fast and avoids Unipile retry storms.
     if (result.inboundMessageId) {
       setImmediate(() => {
-        processInboundMessage(result.inboundMessageId!).catch((err) =>
+        processInboundMessage(result.inboundMessageId!, result.isOutbound).catch((err) =>
           console.error("[webhook] async processInboundMessage failed:", err)
         );
       });

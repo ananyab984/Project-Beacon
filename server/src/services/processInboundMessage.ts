@@ -35,33 +35,49 @@ export async function applyClassificationResult(leadId: string, result: Classifi
   const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { replyClassificationSource: true } });
   if (!lead) return;
 
-  await prisma.replyClassificationEvent.create({
-    data: {
-      leadId,
-      categoryId: result?.categoryId ?? null,
-      confidence: result?.confidence ?? null,
-      source: "AUTO",
-    },
-  });
-
   const isConfident = result !== null;
   const priorWasManual = lead.replyClassificationSource === "MANUAL";
+  // a human override survives an ambiguous/unrelated follow-up reply -- the
+  // attempt is still logged as an event, the Lead just isn't touched.
+  const shouldUpdateLead = isConfident || !priorWasManual;
 
-  if (!isConfident && priorWasManual) {
-    return; // a human override survives an ambiguous/unrelated follow-up reply
-  }
+  // The event insert and the Lead's denormalized classification fields must
+  // land together (design spec Component 6): the event table is the source of
+  // truth for those fields, so a half-applied pair would leave them drifted.
+  await prisma.$transaction(async (tx) => {
+    await tx.replyClassificationEvent.create({
+      data: {
+        leadId,
+        categoryId: result?.categoryId ?? null,
+        confidence: result?.confidence ?? null,
+        source: "AUTO",
+      },
+    });
 
-  await prisma.lead.update({
-    where: { id: leadId },
-    data: {
-      replyCategoryId: result?.categoryId ?? null,
-      replyClassificationSource: "AUTO",
-      replyClassifiedAt: new Date(),
-    },
+    if (!shouldUpdateLead) return;
+
+    await tx.lead.update({
+      where: { id: leadId },
+      data: {
+        replyCategoryId: result?.categoryId ?? null,
+        replyClassificationSource: "AUTO",
+        replyClassifiedAt: new Date(),
+      },
+    });
   });
 }
 
-export async function processInboundMessage(inboundMessageId: string): Promise<void> {
+/**
+ * @param isOutbound true when this row is Unipile's echo of the recruiter's
+ *   OWN sent message rather than a candidate reply. Unipile delivers those
+ *   through the same webhook and unipile.service.ts deliberately stores them
+ *   as InboundMessage rows (load-bearing for the self-echo chat-id backfill),
+ *   so this flag is the only way to tell the two apart here -- it is NOT
+ *   persisted on the row. Classifying an echo would treat our own outreach
+ *   text as the candidate's answer, and a confident match would then silently
+ *   overwrite a human's MANUAL override.
+ */
+export async function processInboundMessage(inboundMessageId: string, isOutbound?: boolean): Promise<void> {
   try {
     const msg = await prisma.inboundMessage.findUnique({
       where: { id: inboundMessageId },
@@ -81,23 +97,39 @@ export async function processInboundMessage(inboundMessageId: string): Promise<v
       `[processInbound] Processing ${msg.channel} message from "${msg.sender}" (id=${msg.id}): "${msg.content.slice(0, 80)}…"`
     );
 
-    try {
-      const leadId = await resolveLeadIdForInboundMessage({ channel: msg.channel, threadId: msg.threadId });
-      if (!leadId) {
-        console.log(`[processInbound] No matching conversation/lead for InboundMessage ${inboundMessageId} — skipping classification.`);
-      } else {
-        const categories = await prisma.replyCategory.findMany({ where: { isActive: true } });
-        const draftingConfig = loadDraftingConfig();
-        const groqClient = new GroqClient(draftingConfig);
-        const result = await classifyReply(groqClient, msg.content, categories);
-        await applyClassificationResult(leadId, result);
-        console.log(`[processInbound] Classified InboundMessage ${inboundMessageId} for lead ${leadId}: ${result ? `${result.categoryId} (${result.confidence})` : "Unclassified"}`);
+    if (isOutbound === true) {
+      // Mirrors the same gate unipile.service.ts already applies before
+      // syncing a ConversationMessage (`if (conversation && !isOutbound)`).
+      // Still falls through to `processed: true` below so the row's existing
+      // lifecycle is unchanged.
+      console.log(
+        `[processInbound] InboundMessage ${inboundMessageId} is an outbound echo, not a candidate reply — skipping classification.`
+      );
+    } else {
+      try {
+        const leadId = await resolveLeadIdForInboundMessage({ channel: msg.channel, threadId: msg.threadId });
+        if (!leadId) {
+          console.log(`[processInbound] No matching conversation/lead for InboundMessage ${inboundMessageId} — skipping classification.`);
+        } else {
+          const categories = await prisma.replyCategory.findMany({ where: { isActive: true } });
+          const draftingConfig = loadDraftingConfig();
+          const groqClient = new GroqClient(draftingConfig);
+          const result = await classifyReply(groqClient, msg.content, categories);
+          await applyClassificationResult(leadId, result);
+          console.log(`[processInbound] Classified InboundMessage ${inboundMessageId} for lead ${leadId}: ${result ? `${result.categoryId} (${result.confidence})` : "Unclassified"}`);
+        }
+      } catch (classifyErr: any) {
+        // Classification failure must never block marking the message
+        // processed -- matches this function's existing error-isolation
+        // contract (see the outer try/catch below). This is the ONLY place a
+        // silent classification outage (bad GROQ_MODEL, expired key, Groq
+        // outage) becomes visible, so the tag below is deliberately unique
+        // and greppable/alertable: `CLASSIFICATION_FAILED`.
+        console.error(
+          `[processInbound] CLASSIFICATION_FAILED for InboundMessage ${inboundMessageId} — reply left unclassified (message still marked processed):`,
+          classifyErr?.message || classifyErr
+        );
       }
-    } catch (classifyErr: any) {
-      // Classification failure must never block marking the message
-      // processed -- matches this function's existing error-isolation
-      // contract (see the outer try/catch below).
-      console.error(`[processInbound] Classification failed for InboundMessage ${inboundMessageId}:`, classifyErr?.message || classifyErr);
     }
 
     await prisma.inboundMessage.update({

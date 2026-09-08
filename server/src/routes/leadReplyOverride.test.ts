@@ -21,12 +21,20 @@ async function cleanup() {
  * is present in the request body (see Step 3 below) -- used here to test
  * the underlying data changes without spinning up an HTTP server. */
 async function applyManualOverride(leadId: string, replyCategoryId: string | null, changedByUserId: string) {
-  await prisma.lead.update({
-    where: { id: leadId },
-    data: { replyCategoryId, replyClassificationSource: "MANUAL", replyClassifiedAt: new Date() },
-  });
-  await prisma.replyClassificationEvent.create({
-    data: { leadId, categoryId: replyCategoryId, confidence: null, source: "MANUAL", changedByUserId },
+  // Existence check first (the handler 404s REPLY_CATEGORY_NOT_FOUND here);
+  // then the update + event insert as one transaction, as the handler does.
+  if (replyCategoryId) {
+    const category = await prisma.replyCategory.findUnique({ where: { id: replyCategoryId } });
+    if (!category) throw new Error("REPLY_CATEGORY_NOT_FOUND");
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.lead.update({
+      where: { id: leadId },
+      data: { replyCategoryId, replyClassificationSource: "MANUAL", replyClassifiedAt: new Date() },
+    });
+    await tx.replyClassificationEvent.create({
+      data: { leadId, categoryId: replyCategoryId, confidence: null, source: "MANUAL", changedByUserId },
+    });
   });
 }
 
@@ -60,8 +68,33 @@ async function test2_overrideToNullClearsToUnclassified() {
   assert.strictEqual(updated?.replyClassificationSource, "MANUAL", "explicitly clearing to Unclassified is still a MANUAL action");
 }
 
+/** A well-formed-but-nonexistent category id (stale dropdown after the owner
+ * deleted a category) must be rejected before the write, not fall through to
+ * a Prisma P2003 foreign-key violation surfacing as a raw 500. */
+async function test3_nonexistentCategoryIsRejectedBeforeWrite() {
+  const owner = await prisma.user.findFirstOrThrow({ where: { email: "test_override_owner@example.com" } });
+  const lead = await prisma.lead.findFirstOrThrow({ where: { fullName: "Test Override Lead" } });
+  const before = await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } });
+
+  const ghostId = "00000000-0000-4000-8000-000000000000";
+  const ghost = await prisma.replyCategory.findUnique({ where: { id: ghostId } });
+  assert.strictEqual(ghost, null, "precondition: the ghost category id must not exist");
+
+  await assert.rejects(
+    () => applyManualOverride(lead.id, ghostId, owner.id),
+    /REPLY_CATEGORY_NOT_FOUND/
+  );
+
+  const after = await prisma.lead.findUniqueOrThrow({ where: { id: lead.id } });
+  assert.strictEqual(after.replyCategoryId, before.replyCategoryId, "a rejected override must not touch the lead");
+}
+
 async function main() {
-  const tests = [test1_overrideSetsManualSourceAndLogsEvent, test2_overrideToNullClearsToUnclassified];
+  const tests = [
+    test1_overrideSetsManualSourceAndLogsEvent,
+    test2_overrideToNullClearsToUnclassified,
+    test3_nonexistentCategoryIsRejectedBeforeWrite,
+  ];
   let failed = 0;
   await cleanup();
   for (const t of tests) {

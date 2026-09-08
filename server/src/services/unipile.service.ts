@@ -1068,6 +1068,14 @@ export class UnipileService {
     const inboundChannel = eventType === "mail_received" || eventType === "email.received" ? InboundChannel.EMAIL : InboundChannel.LINKEDIN;
 
     let inboundMessageId: string | null = null;
+    // Unipile echoes the recruiter's OWN sent messages back through this same
+    // webhook, and the InboundMessage row above is deliberately created for
+    // those echoes too (load-bearing for the self-echo chat-id backfill
+    // below). This flag is computed in the `connAcc` block further down and
+    // hoisted here so it can ride out on the return value -- the async
+    // classifier (processInboundMessage) needs it to avoid classifying our
+    // own outbound text as if it were the candidate's reply.
+    let isOutbound = false;
 
     if (isMessageEvent && (body.message || body.text || body.body_plain || body.body) && accountId) {
       const connAcc = await prisma.connectedAccount.findUnique({
@@ -1100,7 +1108,7 @@ export class UnipileService {
 
         if (existingInbound) {
           // Already stored — return 200 immediately, do nothing else.
-          return { status: "already_processed", inboundMessageId: existingInbound.id, dedupeKey };
+          return { status: "already_processed", inboundMessageId: existingInbound.id, dedupeKey, isOutbound };
         }
 
         // Provider timestamp (acknowledged send time per Unipile guide, with safe NaN fallback)
@@ -1151,10 +1159,11 @@ export class UnipileService {
         const fromIdentity = (body.from_attendee?.identifier || "").toLowerCase();
         const ownEmailIdentity = (connAcc.accountName || "").toLowerCase();
         const ownIdentity = providerUserId || connAcc.accountName || null;
-        const isOutbound =
+        isOutbound = !!(
           (providerUserId && senderProviderId && providerUserId === senderProviderId) ||
           body.is_sender === true ||
-          (!!ownEmailIdentity && !!fromIdentity && ownEmailIdentity === fromIdentity);
+          (!!ownEmailIdentity && !!fromIdentity && ownEmailIdentity === fromIdentity)
+        );
 
         let eventTimestamp = new Date();
         if (body.timestamp) {
@@ -1353,6 +1362,6 @@ export class UnipileService {
       }
     }
 
-    return { status: "processed", dedupeKey, inboundMessageId };
+    return { status: "processed", dedupeKey, inboundMessageId, isOutbound };
   }
 }
