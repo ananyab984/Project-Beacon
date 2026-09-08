@@ -11,6 +11,8 @@ export interface DraftingConfig {
   requestTimeoutMs: number;
   maxRetries: number;
   retryBackoffBase: number;
+  groqApiKey: string;
+  groqModel: string;
 }
 
 // Friendly-name aliases accepted in CLAUDE_MODEL, mapped to real Anthropic
@@ -42,5 +44,7 @@ export function loadDraftingConfig(): DraftingConfig {
     requestTimeoutMs: serverConfig.requestTimeoutSeconds * 1000,
     maxRetries: serverConfig.maxRetries,
     retryBackoffBase: serverConfig.retryBackoffBase,
+    groqApiKey: serverConfig.groqApiKey,
+    groqModel: serverConfig.groqModel,
   };
 }

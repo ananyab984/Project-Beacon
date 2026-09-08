@@ -67,6 +67,11 @@ export const config = {
   requestTimeoutSeconds: parseInt(process.env.REQUEST_TIMEOUT || "60", 10),
   maxRetries: parseInt(process.env.MAX_RETRIES || "4", 10),
   retryBackoffBase: parseFloat(process.env.RETRY_BACKOFF_BASE || "2.0"),
+  // Groq (inbound reply classification) -- same "empty string, throw at call
+  // time" pattern as claudeApiKey: classification-only failure must never
+  // block the whole server from booting.
+  groqApiKey: process.env.GROQ_API_KEY || "",
+  groqModel: process.env.GROQ_MODEL || "openai/gpt-oss-20b",
   keepaliveEnabled: (process.env.KEEPALIVE_ENABLED || (isProduction ? "true" : "false")).trim().toLowerCase() !== "false",
   // Keeping this service alive means pinging THIS service -- appBaseUrl is
   // already required-and-validated in production two lines up, so there's
