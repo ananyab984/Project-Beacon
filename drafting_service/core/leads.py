@@ -310,11 +310,22 @@ def from_record(rec: Dict[str, Any]) -> Lead:
         current_title=_clean(rec.get("Current_Title")) or _clean(rec.get("current_title")),
         tools_software=_split_list(rec.get("Tools_Software") or rec.get("tools_software")),
         certifications=_split_list(rec.get("Certifications") or rec.get("certifications")),
-        experience=_as_list(rec.get("Clay_Experience")),
-        education=_as_list(rec.get("Clay_Education")),
-        languages=_as_list(rec.get("Clay_Languages")),
-        courses=_as_list(rec.get("Clay_Courses")),
-        clay_full_data=rec.get("Clay_Full_Data") if isinstance(rec.get("Clay_Full_Data"), dict) else None,
+        # Deep_* is current -- see server/src/lib/draftLeadPayload.ts's
+        # buildDraftLeadPayload, the live Node port this service mirrors.
+        # These are merged across Bright Data AND Parallel (see
+        # server/src/lib/profileSections.ts), not Clay -- Clay was replaced
+        # by Parallel as Tier 2 (commit 8501972), and this Python service is
+        # legacy (not decommissioned; the Node port is production), so it had
+        # never been updated past the original Clay-shaped key names. Falls
+        # back to the old names only so a record built before this rename
+        # still works.
+        experience=_as_list(rec.get("Deep_Experience") or rec.get("Clay_Experience")),
+        education=_as_list(rec.get("Deep_Education") or rec.get("Clay_Education")),
+        languages=_as_list(rec.get("Deep_Languages") or rec.get("Clay_Languages")),
+        courses=_as_list(rec.get("Deep_Courses") or rec.get("Clay_Courses")),
+        clay_full_data=rec.get("Parallel_Full_Data")
+        if isinstance(rec.get("Parallel_Full_Data"), dict)
+        else (rec.get("Clay_Full_Data") if isinstance(rec.get("Clay_Full_Data"), dict) else None),
         raw_scrape_data=rec.get("Raw_Scrape_Data") if rec.get("Raw_Scrape_Data") else None,
     )
 

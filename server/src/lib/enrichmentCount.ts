@@ -1,4 +1,5 @@
 import type { Lead } from "@prisma/client";
+import { mergeProfileSections, type ProfileSections } from "./profileSections";
 
 /**
  * The 10 fields the enrichment-details dialog shows, each paired with its
@@ -72,9 +73,20 @@ export function countPopulatedFields(lead: CountableLead): number {
 }
 
 /** Convenience wrapper for a single API response site: spreads the lead and
- *  adds `enrichedFieldCount`, computed fresh from whatever was just read. */
-export function withEnrichedFieldCount<T extends CountableLead>(
+ *  adds `enrichedFieldCount`, computed fresh from whatever was just read.
+ *
+ *  Also attaches `profileSections` (see lib/profileSections.ts). Both live
+ *  here because this function is the ONE chokepoint every lead response goes
+ *  through -- 11 call sites across lead.routes.ts -- so a derived field added
+ *  here reaches the whole API at once, and cannot be forgotten on a route.
+ *  Deriving rather than storing is deliberate for the same reason the count
+ *  is derived: no migration, and a re-enrichment shows up immediately. */
+export function withEnrichedFieldCount<T extends CountableLead & { rawScrapeData?: unknown; parallelData?: unknown }>(
   lead: T
-): T & { enrichedFieldCount: number } {
-  return { ...lead, enrichedFieldCount: countPopulatedFields(lead) };
+): T & { enrichedFieldCount: number; profileSections: ProfileSections } {
+  return {
+    ...lead,
+    enrichedFieldCount: countPopulatedFields(lead),
+    profileSections: mergeProfileSections(lead),
+  };
 }

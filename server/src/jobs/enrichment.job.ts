@@ -5,6 +5,7 @@ import { candidateRoleOf } from "../lib/messageTemplates";
 import { normalizeServices } from "../lib/normalizeServices";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
+import { mapWithConcurrency } from "../lib/mapWithConcurrency";
 
 function splitToArray(val: unknown): string[] | undefined {
   if (typeof val !== "string" || !val.trim()) return undefined;
@@ -12,6 +13,14 @@ function splitToArray(val: unknown): string[] | undefined {
 }
 
 const BATCH_SIZE = 20;
+// How many leads pollPendingEnrichment works on at once. A real Parallel call
+// measured 150-170s (up to 486s for a thin lead that falls through to Stage
+// 6), so BATCH_SIZE=20 processed one at a time -- as this used to be -- took
+// ~50-60 minutes per batch. 4 keeps a batch to roughly the per-lead time
+// instead of a multiple of it, while staying within
+// providers/parallel_client.py's own 8-worker bulkhead (`_parallel_executor`)
+// on the enrichment service side, so this can't starve it either.
+const POLL_CONCURRENCY = 4;
 
 /** Enriches a single lead by calling the real Python enrichment_pipeline and
  *  trusting ITS verdict on completeness (`enrichment_status`) instead of
@@ -31,22 +40,25 @@ export async function enrichLeadById(leadId: string) {
       data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
     });
 
-    // Timeout raised again (400s -> 4000s): the pipeline enforces its own
-    // 3800s cumulative cap across the whole waterfall call sequence. Two
-    // successive guesses at Parallel's "typical" latency (150s, then 240s
-    // per-call; 350s, then... this) both still cut off calls that were
-    // genuinely succeeding server-side (confirmed live 2026-09-07: a real
-    // "core"-processor Task Run routinely takes ~150-170s, and our own
-    // guessed ceiling kept firing right as the real result was landing).
-    // Rather than guess a fourth number, enrichment_pipeline/providers/
-    // parallel_client.py now defers to the Parallel SDK's own well-engineered
-    // default (waits up to an hour for a task to actually finish) -- every
-    // timeout in this chain, including this one, is sized to never be the
-    // thing that cuts that off early. In practice, real calls still resolve
-    // in ~150-170s -- this ceiling only matters for a genuine outlier, not
-    // the expected case. Real elapsed time via time.monotonic() in
-    // orchestrator.py, layered on top of each individual provider call's own
-    // deadline) and returns a normal 200 response with `conclusion:
+    // Timeout raised again (4_000_000ms -> 4_200_000ms): the pipeline's own
+    // cumulative cap across the whole waterfall call sequence grew from 3800s
+    // to 4100s when Stage 6 (Claude web search, its own 300s deadline) was
+    // added as a real Tier 3 fallback behind Bright Data/Tavily and Parallel
+    // (see orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS for the full budget
+    // math). Earlier history: two successive guesses at Parallel's "typical"
+    // latency (150s, then 240s per-call; 350s, then 4000s) both still cut off
+    // calls that were genuinely succeeding server-side (confirmed live
+    // 2026-09-07: a real "core"-processor Task Run routinely takes ~150-170s,
+    // and our own guessed ceiling kept firing right as the real result was
+    // landing). Rather than guess yet another number, enrichment_pipeline/
+    // providers/parallel_client.py defers to the Parallel SDK's own
+    // well-engineered default (waits up to an hour for a task to actually
+    // finish) -- every timeout in this chain, including this one, is sized to
+    // never be the thing that cuts that off early. In practice, real calls
+    // still resolve in ~150-170s -- this ceiling only matters for a genuine
+    // outlier, not the expected case. Real elapsed time via time.monotonic()
+    // in orchestrator.py, layered on top of each individual provider call's
+    // own deadline) and returns a normal 200 response with `conclusion:
     // "timed_out"` when it hits that cap, rather than hanging -- a shorter
     // axios timeout would abort the request before Python ever gets the
     // chance to respond gracefully, turning a clean "on hold" signal into an
@@ -92,28 +104,28 @@ export async function enrichLeadById(leadId: string) {
             // `_unverified()`.
             Field_Sources: lead.fieldSources ?? undefined,
           },
-          { timeout: 4_000_000, signal }
+          { timeout: 4_200_000, signal }
         ),
       // A documented exception to the 15s ceiling used everywhere else: this
-      // call fans out to BrightData/Tavily/Parallel/Claude inside the Python
-      // pipeline (each individually bounded there), and the pipeline's own
-      // cumulative cap is 3800s (see orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS
-      // and config.py's parallel_deadline_seconds). 4000s/attempt stays above
-      // that 3800s cap so Python gets to respond gracefully instead of Node's
-      // own timeout firing first. Note this deadline still doesn't
-      // comfortably cover two full attempts back to back: 4200s total /
-      // 4000s per attempt is ~1.05 attempts, so worst case (Parallel runs
-      // close to its full allowed time) the first attempt consumes nearly
-      // the whole deadline, leaving only ~200s for a second attempt to even
-      // start -- nowhere near enough for it to finish, so it gets killed by
-      // the deadline mid-flight regardless of whether it was about to
-      // succeed. Effectively one real attempt plus a mostly-wasted partial
-      // second one, not two real tries -- an accepted tradeoff of Parallel's
-      // latency, not something solved here by adding new retry
-      // infrastructure. In practice, real Parallel calls resolve in
-      // ~150-170s, so this multi-thousand-second ceiling is a safety net for
-      // a genuine outlier, not the expected per-lead wait.
-      { isRetryable: isRetryableByDefault, deadlineMs: 4_200_000 }
+      // call fans out to BrightData/Tavily/Parallel/Claude web search inside
+      // the Python pipeline (each individually bounded there), and the
+      // pipeline's own cumulative cap is 4100s (see orchestrator.py's
+      // LEAD_LEVEL_TIMEOUT_SECONDS and config.py's parallel_deadline_seconds /
+      // claude_websearch_deadline_seconds). 4200s/attempt stays above that
+      // 4100s cap so Python gets to respond gracefully instead of Node's own
+      // timeout firing first. Note this deadline still doesn't comfortably
+      // cover two full attempts back to back: 4400s total / 4200s per attempt
+      // is ~1.05 attempts, so worst case (Parallel runs close to its full
+      // allowed time) the first attempt consumes nearly the whole deadline,
+      // leaving only ~200s for a second attempt to even start -- nowhere near
+      // enough for it to finish, so it gets killed by the deadline mid-flight
+      // regardless of whether it was about to succeed. Effectively one real
+      // attempt plus a mostly-wasted partial second one, not two real tries --
+      // an accepted tradeoff of Parallel's latency, not something solved here
+      // by adding new retry infrastructure. In practice, real Parallel calls
+      // resolve in ~150-170s, so this multi-thousand-second ceiling is a
+      // safety net for a genuine outlier, not the expected per-lead wait.
+      { isRetryable: isRetryableByDefault, deadlineMs: 4_400_000 }
     );
 
     let enrichedEmail = lead.email;
@@ -300,13 +312,32 @@ export async function enrichLeadById(leadId: string) {
   }
 }
 
-// A lead only sits in IN_PROGRESS for the split second enrichLeadById's own
-// axios call is in flight -- that call either lands in the try block's own
-// terminal update or the catch block's revert-to-PENDING. Confirmed live:
-// nothing was ever re-querying IN_PROGRESS, so a lead orphaned there (process
-// restart, an error thrown outside that try/catch) stayed stuck forever.
-// 20 minutes is generous slack above that split-second norm.
-const STALL_TIMEOUT_MS = 20 * 60_000;
+// A lead sits in IN_PROGRESS for as long as enrichLeadById's own axios call
+// is in flight -- that call either lands in the try block's own terminal
+// update or the catch block's revert-to-PENDING. Confirmed live: nothing was
+// ever re-querying IN_PROGRESS, so a lead orphaned there (process restart, an
+// error thrown outside that try/catch) stayed stuck forever.
+//
+// This used to reason about that span as "the split second the axios call is
+// in flight" and set 20 minutes as generous slack above it -- which was wrong
+// about the actual span: that same axios call is configured with a 70-minute
+// timeout (4_200_000ms, see enrichLeadById above) and a 73.3-minute outer
+// retry deadline (4_400_000ms), specifically so Node never cuts off a
+// genuinely-still-running Python call before its own ~68-minute
+// LEAD_LEVEL_TIMEOUT_SECONDS cap gets to respond gracefully with
+// `conclusion: "timed_out"`. A 20-minute stall timeout could flag a lead
+// STALLED -- and hand it to a human to retry -- while it was still legitimately
+// in flight per every OTHER timeout in this same chain. In practice real
+// calls resolve in 150-486s, so this only matters for a genuine outlier, but
+// the ceiling has to be an honest reflection of what's actually configured,
+// not of the typical case.
+//
+// 80 minutes stays above BOTH the 70-minute axios timeout and the
+// 73.3-minute retry deadline, so this can only ever catch a lead that is
+// truly orphaned (the axios call itself never returned control at all --
+// process crash/restart mid-call), never one still working within its own
+// documented budget.
+const STALL_TIMEOUT_MS = 80 * 60_000;
 
 /** Finds leads stuck in IN_PROGRESS past STALL_TIMEOUT_MS and marks them
  *  STALLED so they stop looking like they're still actively enriching.
@@ -358,16 +389,69 @@ export async function stallOverdueEnrichments() {
  *  system_error) -- the actual fix that stops the waterfall from being
  *  re-run on the same lead every few minutes forever. A lead only comes
  *  back into this query by having ON_HOLD explicitly cleared (the manual
- *  toggle, or the retry-enrichment endpoint) -- never automatically. */
+ *  toggle, or the retry-enrichment endpoint) -- never automatically.
+ *
+ *  CLAIMS the whole batch atomically (one updateMany, re-checking
+ *  enrichmentStatus: "PENDING" in the WHERE clause) before processing any of
+ *  it, and works the claimed leads with bounded concurrency rather than one
+ *  at a time.
+ *
+ *  This used to fetch a batch, then process it with
+ *  `for (const lead of pending) { await enrichLeadById(lead.id); }` --
+ *  sequential and unclaimed. At Parallel's measured ~150-170s per lead (up to
+ *  486s for a lead that falls through to Stage 6), a single slow lead
+ *  routinely outlasted the 3-minute cron interval (jobs/index.ts). The NEXT
+ *  tick's own query for PENDING leads then legitimately found lead[1..N] --
+ *  never yet touched, since the first run's sequential loop hadn't reached
+ *  them -- started enriching them itself, and the FIRST run's loop
+ *  eventually reached those same lead ids too: `enrichLeadById` re-fetches by
+ *  id and unconditionally re-marks IN_PROGRESS, with no re-check of current
+ *  status, so it re-enriched them a second time regardless of what the other
+ *  run had already done. Two concurrent runs paying for the same paid
+ *  Parallel Task Run, compounding every 3 minutes.
+ *
+ *  The re-checked WHERE clause on the updateMany below is what actually
+ *  prevents this -- it is a single atomic statement, so if a concurrent call
+ *  claims a lead first, this run's updateMany simply does not match that row
+ *  (Postgres's own row-level locking makes the two claims mutually
+ *  exclusive, not application-level coordination). `enrichLeadById` is left
+ *  unchanged: it is also called directly and unconditionally from
+ *  lead.routes.ts (immediate enrichment on Add Lead, bulk upload), where
+ *  "claim first" does not apply -- a human just triggered exactly this one
+ *  lead. */
 export async function pollPendingEnrichment() {
-  const pending = await prisma.lead.findMany({
+  const candidates = await prisma.lead.findMany({
     where: { enrichmentStatus: "PENDING", NOT: { flags: { has: "ON_HOLD" } } },
     take: BATCH_SIZE,
     orderBy: { createdAt: "asc" },
+    select: { id: true },
   });
-  if (pending.length === 0) return;
+  if (candidates.length === 0) return;
 
-  for (const lead of pending) {
-    await enrichLeadById(lead.id);
-  }
+  const candidateIds = candidates.map((l) => l.id);
+  await prisma.lead.updateMany({
+    where: { id: { in: candidateIds }, enrichmentStatus: "PENDING" },
+    data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
+  });
+
+  // Re-read which of the candidates THIS run actually claimed -- fewer than
+  // `candidateIds.length` if a concurrent run claimed some of them first in
+  // the gap between the query above and this one; those are simply left to
+  // whichever run claimed them; process the rest.
+  const claimed = await prisma.lead.findMany({
+    where: { id: { in: candidateIds }, enrichmentStatus: "IN_PROGRESS" },
+    select: { id: true },
+  });
+  if (claimed.length === 0) return;
+
+  await mapWithConcurrency(claimed, POLL_CONCURRENCY, async (lead) => {
+    // enrichLeadById's own catch path handles a failed call (reverts to
+    // PENDING, flags ON_HOLD/SYSTEM_ERROR) -- this outer catch exists only so
+    // one lead throwing something outside that try/catch (a bug, not a
+    // provider failure) can't take the whole concurrent batch down, mirroring
+    // every other fire-and-forget call site's `.catch((err) => console.error(...))`.
+    await enrichLeadById(lead.id).catch((err) =>
+      console.error(`[enrichment.job] pollPendingEnrichment: lead ${lead.id} failed:`, err)
+    );
+  });
 }

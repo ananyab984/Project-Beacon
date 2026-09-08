@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
+import html
 import json
 import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from parsers.base import BaseParser
+
+
+def _clean_text(val: Any) -> Optional[str]:
+    """Decode HTML entities and collapse whitespace on scraped text.
+
+    Bright Data returns LinkedIn's raw HTML text, entities included: a real
+    stored About read "Classical Greek &amp; Latin graduate with hands-on
+    experience..." and another had "-&gt;" for every bullet. Those columns are
+    not just displayed -- drafting quotes them back to the candidate inside an
+    outreach email, so an undecoded entity is a visible defect in a message to
+    a real person, not merely an ugly cell in the dialog.
+
+    html.unescape rather than a hand-rolled replace table: the stdlib already
+    knows the full entity set (see AGENTS.md rung 3), including numeric forms
+    like &#39; that a three-entry table would miss.
+    """
+    if val is None:
+        return None
+    text = html.unescape(str(val)).strip()
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text or None
 
 
 def _safe_get(data: Any, *keys: str) -> Any:
@@ -164,11 +186,23 @@ def _extract_years_of_experience(profile: dict) -> Optional[int]:
         except (ValueError, TypeError):
             pass
 
-    # Fallback: Count entries in experience array
-    exp_list = profile.get("experience") or profile.get("positions") or []
-    if isinstance(exp_list, list) and len(exp_list) > 0:
-        return len(exp_list) * 2  # Estimate ~2 yrs per role
-
+    # Deliberately NO count-based fallback. This used to end with
+    #     return len(exp_list) * 2  # Estimate ~2 yrs per role
+    # which turned a ROW COUNT into an asserted number: it reaches
+    # Lead.yearsOfExperience and becomes the drafting grounding fact
+    # `years_of_experience: "N years"`, quoted back to a real candidate in an
+    # outreach email. It was the only place in the pipeline that converted
+    # structurally-empty data into a positive factual claim -- and during the
+    # empty-shell period `[{}, {}, {}]` confidently produced "6 years" from
+    # literally no data. A profile with 5 genuine roles produced "10 years"
+    # regardless of its actual dates.
+    #
+    # The two paths above are kept because both read a number the profile
+    # ACTUALLY STATES (an explicit field, or "10+ years of experience" in the
+    # About text). If a span estimate is wanted later, derive it from real
+    # start/end dates -- POC/linkedin_poc/async_experiment.py already has
+    # `years_from_experience()` doing latest-minus-earliest, which is a
+    # defensible derivation from stated data. `count x 2` is not.
     return None
 
 
@@ -292,16 +326,64 @@ def _extract_certifications_from_text(text_blob: str) -> List[str]:
     return found
 
 
+def _extract_country(profile: dict) -> Optional[str]:
+    """The COUNTRY, not the city.
+
+    This used to be `profile.get("country") or profile.get("location") or
+    profile.get("country_code")`, which is wrong against the dataset Bright
+    Data actually returns: there is no `country` key at all, and `location`
+    holds a CITY ("San Francisco", "Cairo"). So the first expression fell
+    straight through to the city and stored it as the country -- confirmed on
+    real rows, `country = "Cairo"` and `country = "Bengaluru"`.
+
+    That is worse than an empty field: Country is a recruiter-facing filter,
+    so a city sitting in it silently removes the lead from every correct
+    country search while looking perfectly populated.
+
+    `city` is the reliable source because Bright Data formats it as a
+    comma-separated hierarchy ending in the country -- "Cairo, Cairo, Egypt",
+    "San Francisco, California, United States" -- so the last segment is the
+    country. `country_code` ("EG", "US") is the fallback; it is returned as a
+    bare code, which is at least unambiguously a country rather than a city
+    mislabelled as one.
+    """
+    city = _clean_text(profile.get("city"))
+    if city and "," in city:
+        tail = city.rsplit(",", 1)[-1].strip()
+        if tail:
+            return tail
+    explicit = _clean_text(profile.get("country"))
+    if explicit:
+        return explicit
+    code = _clean_text(profile.get("country_code"))
+    if code:
+        return code.upper()
+    # Deliberately NOT falling back to `location`: see the docstring. A city
+    # in the country column is a silent filtering bug, and no value at all is
+    # the honest, correctable outcome -- Parallel supplies a real country name
+    # for most leads anyway.
+    return None
+
+
 def _extract_headline(profile: dict) -> Optional[str]:
+    # Note for anyone debugging "why is Headline always empty from Bright
+    # Data": this dataset revision has no `headline` key at all, and
+    # `position` comes back as "" on real profiles. So this legitimately
+    # returns None for most leads and Parallel is what actually fills
+    # Headline -- which it does reliably, since a headline is part of the
+    # public preview LinkedIn serves without a login. Kept as-is because the
+    # keys cost nothing when a revision does return them.
     headline = profile.get("headline") or profile.get("position") or profile.get("title")
-    return str(headline).strip() if headline else None
+    return _clean_text(headline)
 
 
 def _extract_about_snippet(profile: dict, max_chars: int = 280) -> Optional[str]:
     """A short, personalization-usable excerpt of the profile's About/summary
     text -- distinct from `_about_text_blob`, which mixes in headline/bio and
     is used only for internal regex mining, not surfaced as a fact itself."""
-    text = str(profile.get("about") or profile.get("summary") or profile.get("summary_text") or "").strip()
+    # _clean_text first: Bright Data returns this field HTML-escaped, and it
+    # is the single field drafting quotes most often.
+    text = _clean_text(profile.get("about") or profile.get("summary") or profile.get("summary_text")) or ""
     if not text:
         return None
     text = " ".join(text.split())
@@ -398,9 +480,9 @@ class LinkedInParser(BaseParser):
             result["Full_Name"] = str(full_name)
             result["First_Name"] = str(full_name).split(" ")[0]
 
-        country = profile.get("country") or profile.get("location") or profile.get("country_code")
+        country = _extract_country(profile)
         if country:
-            result["Country_of_Residence"] = str(country)
+            result["Country_of_Residence"] = country
 
         # Contact Info (Email & Phone)
         email = _extract_email(profile)

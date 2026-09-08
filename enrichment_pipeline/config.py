@@ -81,6 +81,30 @@ class Config:
     # matters for a genuine outlier, not the expected case.
     parallel_deadline_seconds: float = 3700.0
 
+    # Whole retry+backoff sequence deadline for ONE Tier 3 web-search call
+    # (llm_fallback/client.py's search_missing_fields). A single call can run
+    # up to 8 server-side search rounds and legitimately takes minutes, so
+    # this deliberately isn't the default 15s RetryPolicy -- but unlike
+    # Parallel's deadline, there's no SDK-managed poll to defer to here, so
+    # 300s is a real, chosen ceiling (not a placeholder pending a better
+    # number): comfortably above the multi-round search budget, comfortably
+    # below orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS headroom for this
+    # stage (see that constant's own comment for the full budget math).
+    claude_websearch_deadline_seconds: float = 300.0
+
+    # Stage 6 (Claude web search, Tier 3) defaults OFF. Measured across every
+    # production run captured in logs: it fired for 28 of 32 leads (88%) --
+    # because its gate was measuring a 10-field metric that includes
+    # Profile_Link (enriched exactly 0 times ever, it's the input) and
+    # Email_Address/Contact_Number (which Stage 6 is itself forbidden from
+    # filling, see WEBSEARCH_EXCLUDED_FIELDS) -- and recorded ZERO successes,
+    # while costing 91-486s per lead it ran on. The gating metric is fixed
+    # (core/enrichment_count.py's count_stage6_fillable_fields), but this stays
+    # off by default until it has recorded at least one real success under the
+    # corrected gate; flip it on deliberately, not by inheriting a default that
+    # was never actually earned.
+    stage6_websearch_enabled: bool = False
+
     brightdata_base_url: str = "https://api.brightdata.com/datasets/v3/scrape"
     tavily_extract_url: str = "https://api.tavily.com/extract"
     tavily_search_url: str = "https://api.tavily.com/search"
@@ -103,6 +127,22 @@ class Config:
     # server/src/lib/retryWithBackoff.ts for system-wide consistency.
     max_retries: int = 4
     log_level: str = "INFO"
+
+    # Bright Data gets its OWN request timeout and wall-clock deadline, because
+    # the shared 10s/15s pair above made its retries unreachable: one 10s
+    # attempt plus a 1s backoff leaves ~4s of a 15s budget for an attempt that
+    # needs 10s, so retry_with_backoff started it and the deadline killed it
+    # mid-flight. It effectively got one attempt no matter what max_retries
+    # said -- silently defeating the retry that providers/brightdata_client.py's
+    # content-free guard explicitly relies on to land on a different
+    # residential-proxy session.
+    #
+    # 30s/60s is sized off measured latency, not guessed: real PoC scrapes ran
+    # 5.0-13.5s, four of ten over the old 10s ceiling. 60s leaves room for two
+    # full 30s attempts plus backoff. A defended synchronous page scrape is a
+    # different animal from a fast JSON API and should not share its budget.
+    brightdata_request_timeout: int = 30
+    brightdata_deadline_seconds: float = 60.0
 
     # Duplicate/identity-resolution stage ("Danny M rule") -- pairs scoring >= this are
     # flagged for human review, never auto-merged.
@@ -129,6 +169,7 @@ def load_config(require_keys: bool = False) -> Config:
     parallel_api_key = os.getenv("PARALLEL_API_KEY", "").strip()
     parallel_processor = os.getenv("PARALLEL_PROCESSOR", "core").strip()
     parallel_deadline_seconds = float(os.getenv("PARALLEL_DEADLINE_SECONDS", "3700.0"))
+    claude_websearch_deadline_seconds = float(os.getenv("CLAUDE_WEBSEARCH_DEADLINE_SECONDS", "300.0"))
 
     if require_keys:
         missing = []
@@ -163,8 +204,12 @@ def load_config(require_keys: bool = False) -> Config:
         parallel_api_key=parallel_api_key,
         parallel_processor=parallel_processor,
         parallel_deadline_seconds=parallel_deadline_seconds,
+        claude_websearch_deadline_seconds=claude_websearch_deadline_seconds,
+        stage6_websearch_enabled=(os.getenv("STAGE6_WEBSEARCH_ENABLED", "false").strip().lower() == "true"),
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
         request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
+        brightdata_request_timeout=int(os.getenv("BRIGHTDATA_REQUEST_TIMEOUT", "30")),
+        brightdata_deadline_seconds=float(os.getenv("BRIGHTDATA_DEADLINE_SECONDS", "60.0")),
         max_retries=int(os.getenv("MAX_RETRIES", "4")),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         dedup_match_threshold=dedup_match_threshold,

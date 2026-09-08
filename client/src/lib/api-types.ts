@@ -21,6 +21,36 @@ export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO
  * concludes cleanly. */
 export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
+export type ReenrichmentStatus = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED" | "TIMED_OUT";
+
+/** Summary attached to each lead so the table can disable Re-enrich for a run
+ *  that's still going — including one started before the page was reloaded. */
+export interface ReenrichmentSummary {
+  status: ReenrichmentStatus;
+  lastRunAt: string | null;
+}
+
+/** A populated field where Autumn disagrees with what the lead already has.
+ *  Never applied until the recruiter picks a side. */
+export interface ReenrichmentConflict {
+  field: string;
+  current: string | string[];
+  proposed: string | string[];
+}
+
+/** One re-enrichment run, as polled by the re-enrichment modal. */
+export interface ReenrichmentRun {
+  id: string;
+  status: Exclude<ReenrichmentStatus, "IDLE">;
+  creditsUsed: number | null;
+  fieldsWritten: number | null;
+  message: string | null;
+  conflicts: ReenrichmentConflict[] | null;
+  resolvedAt: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface ApiLead {
   id: string;
   createdByRecruiterId: string | null;
@@ -75,6 +105,20 @@ export interface ApiLead {
   enrichedFieldCount: number;
   /** Full-fidelity Parallel enrichment: { experience, education, languages, certifications, ... } */
   parallelData: Record<string, any> | null;
+  /** The deep profile sections, normalized to one shape and merged across
+   *  EVERY source that found them, each entry tagged with its provider.
+   *  Computed server-side on every read (see lib/profileSections.ts).
+   *
+   *  Read this instead of `parallelData` for these five sections. Parallel is
+   *  the deep tier for ProZ/Bodalgo/personal sites, but LinkedIn keeps
+   *  experience/education/languages/certifications behind its login wall, so
+   *  on LinkedIn only Bright Data can see them -- rendering `parallelData`
+   *  alone showed "None found" over 4 languages, 10 certifications and 29
+   *  courses that were sitting in the row. */
+  profileSections: ProfileSections | null;
+  /** Latest Autumn re-enrichment run for this lead. Attached by the list and
+   *  detail endpoints only, so it's optional on leads returned by mutations. */
+  reenrichment?: ReenrichmentSummary;
   availability: Availability;
   availabilityFromDate: string | null;
   replyCategoryId: string | null;
@@ -82,6 +126,22 @@ export interface ApiLead {
   replyClassifiedAt: string | null;
   createdAt: string;
   lastActivityAt: string | null;
+}
+
+/** One normalized profile-section entry. Keys vary by section (language/
+ *  proficiency, institution/degree, title/company/…) and always carry the
+ *  provider that found it. Mirrors server/src/lib/profileSections.ts. */
+export interface SectionEntry {
+  source: "brightdata" | "parallel";
+  [key: string]: unknown;
+}
+
+export interface ProfileSections {
+  experience: SectionEntry[];
+  education: SectionEntry[];
+  languages: SectionEntry[];
+  certifications: SectionEntry[];
+  courses: SectionEntry[];
 }
 
 export interface LeadTimelineEvent {

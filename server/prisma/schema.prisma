@@ -455,6 +455,11 @@ model Lead {
   // internal LLM-fallback verification and discarded before the response
   // was even built; now persisted so drafting can mine it too.
   rawScrapeData Json? @map("raw_scrape_data")
+  // Verbatim raw output row + citation map from a recruiter-triggered Autumn.ai
+  // re-enrichment run (see ReenrichmentRun below) -- same "nothing dropped"
+  // principle as parallelData/rawScrapeData, kept separate from both since
+  // Autumn is its own task-based path, not a waterfall step.
+  autumnData Json? @map("autumn_data")
 
   // --- source + enrichment (Phase 1: Bright Data / ProZ / Claude wrapper) ---
   source                  LeadSource
@@ -471,14 +476,15 @@ model Lead {
   lastActivityAt DateTime? @map("last_activity_at") // repo: last_activity, rendered as relative time
 
   // relations
-  vendorMatches          LeadVendorMatch[]
-  stageHistory           StageHistory[]
-  flagEvents             LeadFlagEvent[]
-  interactionEvents      InteractionEvent[]
-  manualActivityLogs     ManualActivityLog[]
-  emailQueueItems        EmailQueueItem[]
-  conversations          Conversation[]
-  classificationEvents   ReplyClassificationEvent[]
+  vendorMatches        LeadVendorMatch[]
+  stageHistory         StageHistory[]
+  flagEvents           LeadFlagEvent[]
+  interactionEvents    InteractionEvent[]
+  manualActivityLogs   ManualActivityLog[]
+  emailQueueItems      EmailQueueItem[]
+  conversations        Conversation[]
+  classificationEvents ReplyClassificationEvent[]
+  reenrichmentRuns     ReenrichmentRun[]
 
   @@index([enrichmentStatus])
   @@index([assignedRecruiterId])
@@ -486,6 +492,47 @@ model Lead {
   @@index([stage])
   @@index([country])
   @@map("leads")
+}
+
+/// A single recruiter-triggered Autumn.ai re-enrichment attempt for one lead.
+/// Separate from the waterfall's own enrichmentStatus/enrichmentStartedAt --
+/// Autumn is an agent-based task (submit -> poll -> fetch output), not a
+/// waterfall step, so it gets its own task-lifecycle record rather than
+/// overloading the waterfall's fields. Also doubles as: the in-flight lock
+/// (a RUNNING row blocks a second click), the credit-cost log, and the
+/// per-lead cooldown/daily-cap rate limit (computed from startedAt).
+model ReenrichmentRun {
+  id            String                @id @default(cuid())
+  leadId        String                @map("lead_id")
+  lead          Lead                  @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  status        ReenrichmentRunStatus @default(RUNNING)
+  taskId        String?               @map("autumn_task_id")
+  requestedById String?               @map("requested_by_id")
+  creditsUsed   Int?                  @map("credits_used")
+  /// How many Lead fields this run actually wrote (null until it concludes).
+  fieldsWritten Int?                  @map("fields_written")
+  /// Human-readable outcome detail for the recruiter, whatever the status:
+  /// the failure/timeout reason, or on success a note about which manual
+  /// values were deliberately left alone.
+  message       String?               @map("message")
+  /// Populated fields where Autumn's value differs from the lead's:
+  /// [{field, current, proposed}]. Never applied automatically -- the
+  /// recruiter picks a side via POST /:id/reenrichment-resolve, which
+  /// clears this. Null/empty means nothing to decide.
+  conflicts     Json?                 @map("conflicts")
+  resolvedAt    DateTime?             @map("resolved_at")
+  startedAt     DateTime              @default(now()) @map("started_at")
+  finishedAt    DateTime?             @map("finished_at")
+
+  @@index([leadId, startedAt])
+  @@map("reenrichment_runs")
+}
+
+enum ReenrichmentRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  TIMED_OUT
 }
 
 /// Seed competitor list match, referenced by Enrichment_Outreach_Tool_Comparison

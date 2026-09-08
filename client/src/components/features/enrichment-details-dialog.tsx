@@ -160,15 +160,31 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
 
   const sources = lead.fieldSources || {};
   const parallel = lead.parallelData || {};
-  const experienceRows: string[] = Array.isArray(parallel.experience) ? parallel.experience.map(formatRole).filter(Boolean) : [];
-  const educationRows: string[] = Array.isArray(parallel.education) ? parallel.education.map(formatEducation).filter(Boolean) : [];
-  const languageRows: string[] = Array.isArray(parallel.languages) ? parallel.languages.map(labelOf).filter(Boolean) : [];
-  // Parallel has no course/certification-course equivalent -- always empty
-  // (kept rather than removed so the render below doesn't need to special-case it).
-  const courseRows: string[] = Array.isArray(parallel.courses) ? parallel.courses.map(labelOf).filter(Boolean) : [];
-  const certificationRows: string[] = Array.isArray(parallel.certifications)
-    ? parallel.certifications.map((c: any) => String(c ?? "").trim()).filter(Boolean)
-    : [];
+
+  // Read the MERGED sections, not `parallelData`. Measured 2026-09-08 with
+  // one output schema and one task instruction: Parallel returns these
+  // sections for ProZ (education 1, languages 3, certifications 3) and
+  // returns NOTHING for LinkedIn even on the "pro" processor, because
+  // LinkedIn serves them only behind a login. Bright Data does get them --
+  // 4 languages with proficiency, 10 certifications, 29 courses on one real
+  // lead -- and every one of those rendered as "None found" while this block
+  // read Parallel alone. See server/src/lib/profileSections.ts.
+  const merged = lead.profileSections;
+  const rowsOf = (
+    key: keyof NonNullable<typeof merged>,
+    format: (e: any) => string
+  ): { text: string; source: string }[] =>
+    (merged?.[key] ?? []).map((e) => ({ text: format(e), source: String(e.source) })).filter((r) => r.text);
+
+  const experienceRows = rowsOf("experience", formatRole);
+  const educationRows = rowsOf("education", formatEducation);
+  const languageRows = rowsOf("languages", (e) => {
+    const label = labelOf(e);
+    const prof = String(e.proficiency ?? "").trim();
+    return label && prof ? `${label} — ${prof}` : label;
+  });
+  const certificationRows = rowsOf("certifications", (e) => String(e.title ?? e.name ?? "").trim());
+  const courseRows = rowsOf("courses", (e) => String(e.title ?? e.name ?? "").trim());
 
   // Anything Parallel returned that no section above accounts for. The stored
   // payload is deliberately lossless (see Lead.parallelData), so without this
@@ -187,7 +203,13 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
     if (typeof value === "object" && Object.keys(value as object).length === 0) return false;
     return true;
   });
-  const hasAnyParallelData = Object.keys(parallel).length > 0;
+  // Judged on whether any section actually has ROWS, not on whether the
+  // payload has keys. `Object.keys(parallelData).length > 0` was true for a
+  // payload of all-nulls and empty lists, so the block rendered five "None
+  // found" rows instead of saying plainly that nothing was found.
+  const allSectionRows = [experienceRows, educationRows, languageRows, certificationRows, courseRows];
+  const hasAnySectionData = allSectionRows.some((rows) => rows.length > 0);
+  const sectionSources = [...new Set(allSectionRows.flat().map((r) => r.source))].sort();
 
   const hasContact = !!(values.email?.trim() || values.contactNumber?.trim());
 
@@ -328,14 +350,25 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
         <div className="mt-3 pt-3 border-t border-border/40">
           <div className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
             Additional profile data found
-            <Badge variant="outline" className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px]">
-              Parallel
-            </Badge>
+            {/* The badge used to say "Parallel" unconditionally, which was
+                wrong twice over: on LinkedIn these rows come from Bright
+                Data (Parallel cannot see them behind the login wall), and a
+                merged list can carry both. Provenance now lives per row. */}
+            {sectionSources.map((s) => (
+              <Badge
+                key={s}
+                variant="outline"
+                className="border-emerald-500/30 bg-emerald-500/10 text-emerald-400 text-[10px]"
+              >
+                {SOURCE_LABEL[s] ?? s}
+              </Badge>
+            ))}
           </div>
 
-          {!hasAnyParallelData ? (
+          {!hasAnySectionData ? (
             <p className="text-xs text-muted-foreground/70">
-              No deeper profile data for this lead yet — Tier&nbsp;2 enrichment either hasn't run or returned nothing.
+              No deeper profile data for this lead yet — no source has returned experience, education,
+              languages or certifications.
             </p>
           ) : (
             <div className="space-y-2">
@@ -351,7 +384,15 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
                   {rows.length > 0 ? (
                     <ul className="space-y-0.5">
                       {rows.map((r, i) => (
-                        <li key={i} className="text-xs leading-relaxed">{r}</li>
+                        <li key={i} className="text-xs leading-relaxed flex items-start gap-1.5">
+                          <span className="flex-1">{r.text}</span>
+                          <span
+                            className="shrink-0 text-[9px] uppercase tracking-wide text-muted-foreground/50 pt-0.5"
+                            title={`Found by ${SOURCE_LABEL[r.source] ?? r.source}`}
+                          >
+                            {r.source === "brightdata" ? "BD" : "P"}
+                          </span>
+                        </li>
                       ))}
                     </ul>
                   ) : (

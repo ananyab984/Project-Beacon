@@ -189,7 +189,10 @@ def test_normalisation_runs_inside_the_waterfall_and_reaches_canonical_fields():
             "headline": "Warm, dynamic, striking and personal.",
             "about_snippet": "I have a slightly husky, distinctive voice",
             "certifications": [],
-        }
+        },
+        # This lead is thin enough to also trigger Stage 6 -- irrelevant to
+        # what this test checks (translation), so stubbed to a harmless no-op.
+        search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
     )
     result = orch.process_lead(
         {"Source": "Bodalgo", "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone", "Full_Name": "Raul A"}
@@ -215,7 +218,8 @@ def test_english_text_replaces_the_stale_source_language_column():
             "headline": "Warm, dynamic, impactful and personal.",
             "about_snippet": "I have a somewhat raspy and personal voice",
             "certifications": [],
-        }
+        },
+        search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
     )
 
     # The lead already carries source-language text from an earlier pass --
@@ -246,7 +250,8 @@ def test_forcing_is_scoped_to_the_translated_text_fields_only():
             "headline": "Warm, dynamic, impactful and personal.",
             "about_snippet": "I have a somewhat raspy and personal voice",
             "certifications": [],
-        }
+        },
+        search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
     )
 
     lead = {
@@ -311,3 +316,199 @@ def test_preserved_original_does_not_retrigger_translation():
         "_original_language": SPANISH,
     }
     assert not _looks_non_english(translated)
+
+
+# --- the nested entry schemas ------------------------------------------------
+#
+# The bug these pin down (confirmed live 2026-09-08): experience/education/
+# languages were typed `List[Dict[str, Any]]`, which compiles to
+# `{"type": "object", "additionalProperties": true}` -- an object with NO
+# declared properties. Parallel returned the right NUMBER of rows and nothing
+# inside any of them: 107 rows across 27 leads, every one `{}`. Martin
+# Godart's profile reported 3 roles and stored 3 blank objects, and the lead
+# read "Enriched" in the UI with every deep section showing "None found".
+#
+# Nothing else catches this. The call succeeds, the payload validates, the
+# counts look right, and the data is simply absent.
+
+ENTRY_KEYS = {
+    # field -> keys the CONSUMERS already read. The enrichment dialog
+    # (client/src/components/features/enrichment-details-dialog.tsx:
+    # formatRole/formatEducation/labelOf) and drafting_service/core/leads.py
+    # (_format_role/_role_highlight/_label_of) both read these names, so the
+    # schema has to emit exactly them or the data lands where nobody looks.
+    "experience": {"title", "company", "start_date", "end_date", "summary"},
+    "education": {"institution", "degree", "field_of_study"},
+    "languages": {"language", "proficiency"},
+}
+
+
+def _item_properties(field: str) -> dict:
+    items = FIELDS[field]["items"]
+    ref = items.get("$ref")
+    assert ref, (
+        f"{field} items are a free-form object ({items}) -- Parallel has no named keys to "
+        f"fill and returns empty rows"
+    )
+    return SCHEMA["$defs"][ref.split("/")[-1]]["properties"]
+
+
+def test_nested_list_entries_declare_real_properties():
+    """A free-form object gives the extractor nowhere to put anything."""
+    for field in ENTRY_KEYS:
+        props = _item_properties(field)
+        assert props, f"{field} entries declare no properties at all"
+
+
+def test_nested_entry_keys_match_what_the_consumers_read():
+    for field, expected in ENTRY_KEYS.items():
+        props = set(_item_properties(field))
+        missing = expected - props
+        assert not missing, f"{field} entries no longer emit {sorted(missing)}, which its readers look for"
+
+
+def test_role_summary_is_asked_for_verbatim():
+    """`summary` is the field carrying quotable specifics (named clients,
+    productions, tools); a title and company alone personalise nothing.
+
+    Asserts the INTENT -- complete, and explicitly not a paraphrase -- rather
+    than one particular wording. The first version of this test required the
+    literal word "verbatim", which then failed against the PoC's own proven
+    phrasing ("exactly as written on the profile - not a paraphrase"). Pinning
+    a synonym rather than the requirement made the test an obstacle to adopting
+    the wording that demonstrably works."""
+    desc = (_item_properties("experience")["summary"].get("description") or "").lower()
+    assert "paraphras" in desc, "summary must explicitly rule out a paraphrase"
+    assert any(w in desc for w in ("verbatim", "exactly as written", "full, complete")), (
+        "summary must ask for the COMPLETE description, not merely a description"
+    )
+
+
+# --- content-free results are never banked as a success ----------------------
+
+def test_rows_with_no_data_inside_do_not_count_as_a_find():
+    """The exact stored shape from the live bug: right row counts, nothing in
+    any of them. Treating this as a success is what stamped `complete` on
+    leads that had found nothing, so they were never re-attempted."""
+    assert orchestrator_module._is_empty_parallel_result(
+        {
+            "headline": None, "current_title": None, "about_snippet": None, "country": None,
+            "experience": [{}, {}, {}], "education": [{}], "languages": [{}], "certifications": [],
+        }
+    )
+
+
+def test_a_single_real_value_anywhere_still_counts_as_a_find():
+    """Martin Godart's actual result -- Parallel did resolve country and
+    current_title, so the run must not be thrown away as empty."""
+    assert not orchestrator_module._is_empty_parallel_result(
+        {"country": "France", "current_title": "InfoGraphiste Web / Print", "experience": [{}, {}, {}]}
+    )
+    assert not orchestrator_module._is_empty_parallel_result(
+        {"headline": None, "experience": [{"title": "Traductrice"}]}
+    )
+
+
+def test_blank_strings_are_not_content():
+    assert orchestrator_module._is_empty_parallel_result(
+        {"headline": "   ", "experience": [{"title": "", "company": None}]}
+    )
+
+
+# --- the forcing mechanisms that make extraction complete ----------------
+#
+# The PoC (POC/parallel_api_poc/test.py) returned 5 fully-populated roles with
+# multi-paragraph narrative summaries for a LinkedIn profile. Production, for
+# the SAME lead, returned 5 empty objects and later `[]`. The schema was
+# rewritten from the PoC's maximal-extraction design into a narrow one when
+# Parallel replaced Clay, dropping every mechanism below. These assertions
+# exist because the field descriptions ARE the instructions Parallel receives
+# -- there is no separate prompt -- so a well-meaning tightening of this text
+# is a silent behaviour change with no other symptom.
+
+def test_schema_demands_maximal_not_minimal_extraction():
+    """The single most load-bearing sentence in the schema. The prior wording
+    ("Kept intentionally narrow", "Extract ONLY what is literally present")
+    combined with all-optional entries made `[]` the cheapest valid answer."""
+    # Whitespace-collapsed: these phrases wrap across lines in the docstring,
+    # and a test that only matches them unwrapped would break on a reflow
+    # rather than on a real change of meaning.
+    desc = " ".join((SCHEMA.get("description") or "").lower().split())
+    assert "maximal" in desc, "the maximal-extraction instruction is gone"
+    assert "do not stop early" in desc
+    assert "entire page" in desc, "the read-the-whole-page instruction is gone"
+
+
+REQUIRED_ENTRY_FIELDS = {
+    # field -> the keys that must be REQUIRED on its entry model.
+    # An all-optional object schema lets the model satisfy the whole section
+    # with an empty list; requiring the identifying keys means an entry cannot
+    # be emitted as a shell, so it must extract or omit.
+    "experience": {"company", "title"},
+    "education": {"institution"},
+    "languages": {"language"},
+}
+
+
+def test_identifying_entry_fields_are_required():
+    for field, must_require in REQUIRED_ENTRY_FIELDS.items():
+        ref = FIELDS[field]["items"]["$ref"].split("/")[-1]
+        required = set(SCHEMA["$defs"][ref].get("required", []))
+        missing = must_require - required
+        assert not missing, (
+            f"{field} entries no longer require {sorted(missing)} -- an all-optional entry "
+            f"makes an empty list the cheapest valid answer for the whole section"
+        )
+
+
+def test_experience_keeps_its_two_self_check_booleans():
+    """`title_pairing_verified` guards a documented real bug: LinkedIn stacked
+    roles at one employer having their titles and narratives swapped, caught
+    only by comparing against Clay's independent record. Being required is the
+    point -- it forces a per-entry re-read of the page layout."""
+    ref = FIELDS["experience"]["items"]["$ref"].split("/")[-1]
+    entry = SCHEMA["$defs"][ref]
+    required = set(entry.get("required", []))
+    assert {"is_current", "title_pairing_verified"} <= required
+    assert "self-check" in (entry["properties"]["title_pairing_verified"].get("description") or "").lower()
+
+
+def test_the_page_audit_checklist_exists():
+    """`profile_sections_detected` makes the model enumerate the headings it
+    actually saw before filling any field -- the strongest forcing function in
+    the PoC schema."""
+    desc = (FIELDS["profile_sections_detected"].get("description") or "").lower()
+    assert "checklist" in desc
+    assert "do not stop after finding the first" in desc
+
+
+def test_every_list_field_says_capture_all():
+    """Each list previously carried only restraint framing ("never invent one
+    to fill the list"), which reads as permission to under-extract."""
+    for field in ["certifications", "experience", "education", "languages"]:
+        desc = (FIELDS[field].get("description") or "").lower()
+        assert ("all of them" in desc or "every role" in desc), (
+            f"{field} no longer instructs an exhaustive capture"
+        )
+
+
+def test_languages_names_its_own_importance_on_this_platform():
+    """This is a linguist recruitment platform: language + proficiency is the
+    qualifying data recruiters filter on."""
+    desc = (FIELDS["languages"].get("description") or "").lower()
+    assert "linguist" in desc
+
+
+def test_the_page_audit_is_not_counted_as_profile_prose():
+    """Section headings skew English even on a French page ("About",
+    "Experience"), so counting them in the language sniff is the same dilution
+    bug the sniff's own docstring describes for schema key names."""
+    french = {
+        "headline": "Étudiante à Université Rennes 2 Traduction EN—>FR",
+        "about_snippet": "Traductrice EN—>FR et ES—>FR · Expérience : Freelance · Lieu : Le Rheu",
+        "profile_sections_detected": [
+            "About", "Experience", "Education", "Languages", "Skills", "Certifications",
+            "Recommendations", "Courses", "Projects", "Honors and Awards",
+        ],
+    }
+    assert _looks_non_english(french), "an English heading list must not mask a French profile"

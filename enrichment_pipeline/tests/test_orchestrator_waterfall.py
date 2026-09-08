@@ -6,6 +6,7 @@ Run: cd enrichment_pipeline && source .venv/bin/activate && pytest tests/test_or
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 
@@ -32,9 +33,14 @@ def stub(**methods):
     return type("Stub", (), {name: staticmethod(fn) for name, fn in methods.items()})()
 
 
-def test_linkedin_waterfall_falls_through_brightdata_parallel_to_llm():
+def test_linkedin_waterfall_falls_through_brightdata_parallel_to_websearch():
+    # This is the one test in this file that exercises Stage 6 itself, so it
+    # opts back in explicitly -- Stage 6 defaults off in production (see
+    # orchestrator.py's MAX_FIELDS_BEFORE_WEBSEARCH), and every other test in
+    # this file correctly gets it disabled via make_orchestrator().
     orch = make_orchestrator()
-    calls = {"brightdata": 0, "parallel": 0, "llm": 0}
+    orch.config = dataclasses.replace(orch.config, stage6_websearch_enabled=True)  # Config is frozen
+    calls = {"brightdata": 0, "parallel": 0, "websearch": 0}
 
     def bd_scrape(url):
         calls["brightdata"] += 1
@@ -44,23 +50,24 @@ def test_linkedin_waterfall_falls_through_brightdata_parallel_to_llm():
         calls["parallel"] += 1
         raise ParallelError("call failed")
 
-    def llm_extract(system_prompt, raw_text):
-        calls["llm"] += 1
-        return {}
+    def websearch(missing_fields, full_name, profile_link, source_platform):
+        calls["websearch"] += 1
+        return {"could_not_find_anything": True, "sources_used": []}
 
     orch.brightdata = stub(scrape_profile=bd_scrape)
     orch.parallel = stub(enrich_profile=parallel_enrich)
-    orch.claude = stub(extract_critical_fields=llm_extract)
+    orch.claude = stub(search_missing_fields=websearch)
 
     lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
     result = orch.process_lead(lead)
 
     assert calls["brightdata"] == 1, "BrightData should have been tried first"
     assert calls["parallel"] == 1, "Parallel should be tried after BrightData fails"
-    # raw_source_text is empty since BrightData failed -- LLM fallback is
-    # skipped for lack of source text, not called; this is existing,
-    # unrelated behavior (LLM needs something to extract from).
-    assert calls["llm"] == 0
+    # Both Tier 1 and Tier 2 came up empty, and this lead is well under the
+    # MAX_FIELDS_BEFORE_WEBSEARCH threshold -- Stage 6 must fire as the
+    # backstop, unlike the old raw-text extraction (which needed scraped
+    # text that was never there to begin with).
+    assert calls["websearch"] == 1, "Stage 6 web search must be tried after Parallel fails, for a thin lead"
     assert result["conclusion"] == "exhausted_no_match"
     assert result["parallel_fallback"]["called"] is True
     assert result["parallel_fallback"]["error"] == "call failed"
@@ -152,7 +159,7 @@ def test_short_circuit_success_when_nothing_left_to_fill():
     round-trips a lead's persisted field_sources on every re-enrichment call."""
     orch = make_orchestrator()
     llm_calls = {"n": 0}
-    orch.claude = stub(extract_critical_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {})
+    orch.claude = stub(search_missing_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {})
 
     lead = {
         "Source": "Freelancer",
@@ -168,6 +175,8 @@ def test_short_circuit_success_when_nothing_left_to_fill():
         "Current_Title": "Translator",
         "Tools_Software": "Trados",
         "Certifications": "ATA",
+        "Headline": "Freelance Translator",
+        "About_Snippet": "10 years of experience in AV translation.",
     }
     known_field_sources = {
         f: "llm_fallback" for f in
@@ -312,6 +321,83 @@ def test_permanent_rejection_is_never_retried():
     assert r2["parallel_fallback"]["called"] is False
 
 
+def test_empty_but_well_formed_result_is_retried_not_stamped_complete():
+    """The actual reported bug: Martin Godart's real case. Parallel's Task Run
+    succeeds (no exception) but every field comes back null/[] -- LinkedIn
+    blocked the browsing agent the same way it blocked Bright Data. This used
+    to be stamped "complete" on the very first attempt, so the 2-attempt
+    transient-retry policy above -- already decided on, already built --
+    never got a chance to run at all."""
+    calls = {"parallel": 0}
+    empty_result = {
+        "headline": None, "current_title": None, "about_snippet": None, "country": None,
+        "experience": [], "education": [], "languages": [], "certifications": [],
+    }
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(empty_result))
+
+    # Pass 1: empty result must be treated as a transient failure, attempt 1 of 2.
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1", (
+        f"an empty-but-successful result must not be stamped complete, got {r1['field_sources'].get('_parallel_fallback')!r}"
+    )
+
+    # Pass 2: real second attempt -- this is the exact gap being fixed.
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "an empty result must actually be retried on the next pass"
+    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Pass 3: exhausted, same as the exception-based path.
+    r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["parallel"] == 2, "capped at 2 attempts even for repeated empty results"
+    assert r3["parallel_fallback"]["called"] is False
+
+
+def test_empty_result_that_succeeds_on_retry_stops_retrying():
+    """If attempt 2 comes back with real content, it settles as complete --
+    an empty first try must not doom a lead to "always empty" forever."""
+    calls = {"parallel": 0}
+
+    def enrich(lead, profile_link):
+        calls["parallel"] += 1
+        if calls["parallel"] == 1:
+            return {"headline": None, "current_title": None, "about_snippet": None, "country": None,
+                    "experience": [], "education": [], "languages": [], "certifications": []}
+        return {"headline": "Voice Artist", "current_title": None, "about_snippet": None, "country": None,
+                "experience": [], "education": [], "languages": [], "certifications": []}
+
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=enrich)
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2
+    assert r2["field_sources"]["_parallel_fallback"] == "complete"
+    assert r2["lead"]["Headline"] == "Voice Artist"
+
+    # Pass 3 must not call Parallel again -- it's settled now.
+    orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["parallel"] == 2
+
+
+def test_a_result_with_some_real_content_is_accepted_immediately():
+    """Not every thin result is empty -- one populated field is enough to
+    settle as complete on the first try, matching test_success_is_never_re_called."""
+    calls = {"parallel": 0}
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1)
+        or {"headline": None, "current_title": None, "about_snippet": None, "country": "Spain",
+            "experience": [], "education": [], "languages": [], "certifications": []}
+    )
+    result = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert result["field_sources"]["_parallel_fallback"] == "complete"
+
+
 def test_success_is_never_re_called():
     calls = {"parallel": 0}
     orch = make_orchestrator()
@@ -334,3 +420,68 @@ def test_legacy_and_corrupt_markers_are_treated_as_settled():
         orch = _orch_with_failing_parallel(ParallelError("x"), calls)
         orch.process_lead(_linkedin_lead(), known_field_sources={"_parallel_fallback": marker})
         assert calls["parallel"] == 0, f"marker {marker!r} must not trigger a call"
+
+
+# --- Tier 1 and Tier 2 run concurrently, not in sequence --------------------
+#
+# Measured on production leads: Tier 1 (Bright Data/Tavily) runs 7-15s, Tier 2
+# (Parallel) 150-170s. Running them in sequence meant every lead paid Tier 1's
+# full duration on top of Tier 2's, for no reason -- the two calls share
+# nothing but the profile URL. _dispatch_parallel_stage submits Parallel's
+# call before Tier 1's own (blocking) scrape runs; _resolve_parallel_stage is
+# called only after Tier 1's merge, so override precedence is unchanged.
+
+def test_tier1_and_tier2_run_concurrently_not_sequentially():
+    import time
+
+    order: list[tuple[str, float]] = []
+    orch = make_orchestrator()
+
+    def bd_scrape(url):
+        order.append(("brightdata_start", time.monotonic()))
+        time.sleep(0.2)
+        order.append(("brightdata_end", time.monotonic()))
+        return {"name": "Jane Doe"}
+
+    def parallel_enrich(lead, profile_link):
+        order.append(("parallel_start", time.monotonic()))
+        time.sleep(0.05)
+        order.append(("parallel_end", time.monotonic()))
+        return {"headline": "Senior Translator"}
+
+    orch.brightdata = stub(scrape_profile=bd_scrape)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
+
+    t0 = time.monotonic()
+    orch.process_lead(_linkedin_lead())
+    elapsed = time.monotonic() - t0
+
+    starts = {name: t for name, t in order if name.endswith("_start")}
+    # Both must start within a few ms of each other -- a sequential call
+    # would show parallel_start only after brightdata_end (~0.2s later).
+    assert abs(starts["brightdata_start"] - starts["parallel_start"]) < 0.05, (
+        "Tier 2 did not start until Tier 1 finished -- the two calls are running sequentially again"
+    )
+    # Total time tracks the SLOWER call (~0.2s), not the sum (~0.25s).
+    assert elapsed < 0.24, f"total time {elapsed:.3f}s looks sequential, not concurrent"
+
+
+def test_merge_order_is_unchanged_by_concurrency():
+    """Tier 1 first, Tier 2 second -- OVERRIDE_ON_VERIFIED_FIELDS depends on
+    this order, so making the two calls concurrent must not silently change
+    which one's value wins when both resolve the same field."""
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Tier1 Name", "country": "Tier1Country"})
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "headline": None, "current_title": None, "about_snippet": None,
+            "country": "Tier2Country", "experience": [], "education": [], "languages": [], "certifications": [],
+        }
+    )
+
+    result = orch.process_lead(_linkedin_lead())
+    # Country_of_Residence is in OVERRIDE_ON_VERIFIED_FIELDS -- Tier 2's value
+    # must win because it merges SECOND, exactly as before this was made
+    # concurrent (Tier 1 sets it first, Tier 2 then overrides).
+    assert result["lead"]["Country_of_Residence"] == "Tier2Country"
+    assert result["field_sources"]["Country_of_Residence"] == "parallel"

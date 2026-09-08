@@ -15,6 +15,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
 import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
+import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 import { STANDARD_SERVICES } from "@/lib/services";
 
@@ -216,6 +217,8 @@ function LeadsPage() {
     },
     onError: (err: any) => toast.error(err?.message ?? "Failed to retry enrichment"),
   });
+
+  const reenrichment = useReenrichment(invalidateLeads);
 
   // Manual On Hold toggle -- reuses the existing (previously unused) flags
   // endpoints, same as DNC/Watching/High Priority. Independent of field
@@ -512,6 +515,7 @@ function LeadsPage() {
                         onOpenDetails={setDetailsLead}
                         onRetry={(id) => retryEnrichmentMutation.mutate(id)}
                         retryPending={retryEnrichmentMutation.isPending}
+                        onReenrich={reenrichment.start}
                       />
                     </td>
                     <td className="px-4 py-3">
@@ -590,6 +594,8 @@ function LeadsPage() {
         onSave={(id, patch) => enrichMutation.mutateAsync({ id, patch })}
         onToggleHold={(id, hold) => (hold ? holdMutation : unholdMutation).mutateAsync(id)}
       />
+
+      <ReenrichmentModal {...reenrichment.modalProps} />
     </div>
   );
 }

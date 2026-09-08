@@ -89,7 +89,30 @@ class TavilyClient:
         except requests.exceptions.HTTPError as exc:
             raise TavilyError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code) from exc
 
-        return resp.json()
+        data = resp.json()
+
+        # Raised INSIDE the retried call, not after it, so this provider's
+        # existing retry_with_backoff actually engages -- the same reasoning
+        # (and the same fix) as brightdata_client.py's content-free guard.
+        #
+        # Tier 1's non-LinkedIn half had no guard at all: a page that extracted
+        # to nothing logged "Tavily Extract SUCCESS ... content length=0",
+        # returned `raw_content: ""`, and orchestrator.py's
+        # `if raw_scraped_data is not None` merged it as a successful scrape.
+        # The lead was then banked with a Tier 1 "success" that contained no
+        # text, and never retried -- identical in kind to the LinkedIn-side bug
+        # that was fixed, on the platforms where Tavily IS the primary source
+        # (ProZ, Bodalgo, ATA/ATAA, personal sites). A retry is worth taking:
+        # `extract_depth: "advanced"` on a slow page can simply come back
+        # empty once.
+        results = data.get("results")
+        if not results or not isinstance(results, list):
+            raise TransientError("Tavily Extract returned no results for this URL")
+        first = results[0] if isinstance(results[0], dict) else {}
+        if not str(first.get("raw_content") or first.get("content") or "").strip():
+            raise TransientError("Tavily Extract returned a result with no page content")
+
+        return data
 
     def search_snippets(self, query: str, include_domains: Optional[List[str]] = None) -> Dict[str, Any]:
         """Search public snippets via Tavily Search API (used for ProZ fallback)."""
@@ -147,4 +170,16 @@ class TavilyClient:
         except requests.exceptions.HTTPError as exc:
             raise TavilyError(f"HTTP {resp.status_code}: {resp.text[:200]}", status_code=resp.status_code) from exc
 
-        return resp.json()
+        data = resp.json()
+
+        # Same guard as _extract_once above, for the search path. A search that
+        # matched nothing returned `results: []`, which the caller wrapped as
+        # `primary_snippet: None` and handed on as a successful scrape. Retrying
+        # is worth it here for a different reason than Extract: the ProZ query
+        # is built from the lead's name (`site:proz.com {Full_Name}`), and a
+        # transient index miss on a name is exactly the kind of thing a second
+        # attempt resolves.
+        if not data.get("results"):
+            raise TransientError("Tavily Search returned no results for this query")
+
+        return data

@@ -158,14 +158,21 @@ export class Lead {
   readonly currentTitle: string | null;
   readonly toolsSoftware: string[];
   readonly certifications: string[];
-  // Parallel's full-fidelity enrichment -- specific past roles/companies/
-  // dates, not the lossy thin summary above. Each entry is whatever dict
-  // shape Parallel's Task Run returned (title/company/start_date/end_date,
-  // etc. -- see enrichment_pipeline/providers/parallel_client.py's
-  // LeadProfile), rendered into a concise, specific grounding fact in
-  // groundingFacts() below. `courses` has no Parallel equivalent -- kept as
-  // an always-empty field rather than removed, so nothing else on this
-  // class needs to special-case its absence.
+  // The deep enrichment sections -- specific past roles/companies/dates, not
+  // the lossy thin summary above. MERGED across every source that found
+  // them (Bright Data's authenticated LinkedIn scrape AND Parallel's
+  // browsing agent -- see server/src/lib/profileSections.ts), not Parallel
+  // alone: on LinkedIn, Parallel cannot see these sections at all (they sit
+  // behind the login wall), so Bright Data is the only source for them
+  // there. Each entry's shape is title/company/start_date/end_date/summary
+  // (experience), institution/degree/field_of_study (education), or
+  // language/proficiency (languages) -- see profileSections.ts's
+  // ExperienceEntry/EducationEntry/LanguageEntry-equivalent normalization --
+  // rendered into a concise, specific grounding fact in groundingFacts()
+  // below. `courses` DOES have real data now (Bright Data returns it
+  // directly, e.g. 29 entries on one real lead) -- it used to be
+  // structurally always empty because draftLeadPayload.ts never actually
+  // produced the field it claimed to read.
   readonly experience: Record<string, any>[];
   readonly education: Record<string, any>[];
   readonly languages: unknown[];
@@ -660,12 +667,14 @@ export function fromRecord(rec: Record<string, any>): Lead {
     currentTitle: clean(rec.Current_Title) ?? clean(rec.current_title),
     toolsSoftware: splitList(rec.Tools_Software ?? rec.tools_software),
     certifications: splitList(rec.Certifications ?? rec.certifications),
-    experience: asList(rec.Parallel_Experience),
-    education: asList(rec.Parallel_Education),
-    languages: asList(rec.Parallel_Languages),
-    // No Parallel equivalent -- always empty (see the `courses` field's own
-    // comment on the Lead class above).
-    courses: asList(rec.Parallel_Courses),
+    // Deep_* is current (see draftLeadPayload.ts's buildDraftLeadPayload):
+    // merged across Bright Data AND Parallel, not Parallel alone. Parallel_*
+    // kept as a fallback alias for any other /draft caller not yet updated,
+    // not because the data still comes from Parallel specifically.
+    experience: asList(rec.Deep_Experience ?? rec.Parallel_Experience),
+    education: asList(rec.Deep_Education ?? rec.Parallel_Education),
+    languages: asList(rec.Deep_Languages ?? rec.Parallel_Languages),
+    courses: asList(rec.Deep_Courses ?? rec.Parallel_Courses),
     parallelFullData:
       rec.Parallel_Full_Data && typeof rec.Parallel_Full_Data === "object" && !Array.isArray(rec.Parallel_Full_Data)
         ? rec.Parallel_Full_Data

@@ -21,6 +21,13 @@ from orchestrator import EnrichmentOrchestrator
 log = get_logger(__name__)
 
 
+# Parallel's processor tiers, cheapest/fastest first. `processor` is typed as a
+# bare `str` in the SDK's RunInput, so a wrong value is not caught locally --
+# it is rejected by the API mid-run, after the lead has already waited. Used
+# only to tell truth on /health; the value itself stays whatever is configured.
+KNOWN_PARALLEL_PROCESSORS = frozenset({"lite", "base", "core", "pro", "ultra"})
+
+
 def _start_keepalive_ping(service_name: str, keepalive_url: str, interval_seconds: int) -> None:
     if not keepalive_url:
         return
@@ -137,6 +144,7 @@ class EnrichmentResponse(BaseModel):
     logs: List[str]
     duplicate_flag: Optional[Dict[str, Any]] = None
     parallel_fallback: Optional[Dict[str, Any]] = None
+    websearch_fallback: Optional[Dict[str, Any]] = None
     raw_enrichment_data: Optional[Any] = None
 
 
@@ -170,12 +178,51 @@ def run_server(host: str, port: int, config) -> None:
 
     orchestrator = EnrichmentOrchestrator(config)
 
+    # Served at BOTH paths on purpose. The platform's health check is what
+    # decides a deploy is live, and its configured path lives in the Render
+    # dashboard, not in this repo -- so a path set to "/" (or left at a
+    # provider default of "/") polls a route FastAPI answers with 404, the
+    # deploy never goes healthy, and it sits "In progress" until the platform
+    # gives up and rolls back. The build itself is 32s; everything after that
+    # is the platform waiting for an answer at whatever path it was told to
+    # use. Answering on "/" as well costs one route and removes the entire
+    # class of "deployed fine, never went live".
+    @app.get("/")
     @app.get("/health")
     def health_check():
+        # Reports WHICH TIERS ARE ACTUALLY WIRED UP, because "healthy" on its
+        # own is a misleading thing to say. Every provider here is optional by
+        # design (`load_config(require_keys=False)`, and each client is None
+        # when its key is absent), so this process starts up, answers health
+        # checks, accepts /enrich, and returns 200 while silently doing a
+        # fraction of the work -- a missing BRIGHTDATA_API_KEY costs Tier 1 on
+        # every single lead and looks identical to a blocked profile from the
+        # outside. That happened (2026-09-08): a profile Bright Data scrapes
+        # perfectly on demand came back with rawScrapeData NULL and no
+        # explanation anywhere. One curl against this endpoint now answers
+        # "is the environment complete?" for any deployment.
+        #
+        # Booleans only -- never echo a key. `parallel_processor` is a tier
+        # NAME, not a secret, but it is reported as a validity verdict rather
+        # than verbatim precisely so that a key mistakenly pasted into that
+        # variable is reported as wrong WITHOUT this public endpoint leaking
+        # it.
         return {
             "status": "healthy",
             "service": "enrichment_pipeline",
             "version": "1.0.0",
+            "providers_configured": {
+                "brightdata": bool(config.brightdata_api_key),
+                "brightdata_dataset_id": bool(config.dataset_id),
+                "tavily": bool(config.tavily_api_key),
+                "parallel": bool(config.parallel_api_key),
+                "claude": bool(config.claude_api_key),
+            },
+            "parallel_processor": (
+                config.parallel_processor
+                if config.parallel_processor in KNOWN_PARALLEL_PROCESSORS
+                else f"INVALID -- not one of {sorted(KNOWN_PARALLEL_PROCESSORS)}"
+            ),
         }
 
     @app.post("/enrich", response_model=EnrichmentResponse)
@@ -211,7 +258,21 @@ def run_server(host: str, port: int, config) -> None:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     log.info("Starting Enrichment Pipeline FastAPI server at http://%s:%d", host, port)
-    uvicorn.run(app, host=host, port=port)
+    # timeout_graceful_shutdown is set because uvicorn's default is to wait
+    # FOREVER for in-flight requests on SIGTERM, and an in-flight request here
+    # is a full waterfall run -- minutes normally, up to orchestrator.py's
+    # LEAD_LEVEL_TIMEOUT_SECONDS (4100s) at the ceiling. A redeploy lands
+    # SIGTERM on an instance mid-enrichment routinely, and the platform then
+    # SIGKILLs it after its own (much shorter) grace window anyway, so the
+    # unbounded wait bought nothing and just made every deploy end in a hard
+    # kill. 25s stays inside a typical 30s platform window, so the process
+    # exits cleanly on its own terms instead.
+    #
+    # A lead cut off this way is NOT lost: the connection closes, Node's
+    # enrichLeadById catch path reverts it to PENDING and flags
+    # ON_HOLD/SYSTEM_ERROR, so it shows up with a Retry rather than sitting
+    # in IN_PROGRESS until the 20-minute stall sweep notices.
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=25)
 
 
 def main(argv: Optional[List[str]] = None) -> int:

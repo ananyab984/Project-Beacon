@@ -12,6 +12,11 @@ import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
 import { resolveManualFieldSources } from "../lib/manualFieldSources";
 import { withEnrichedFieldCount } from "../lib/enrichmentCount";
+import { attachReenrichmentStatus } from "../lib/reenrichmentStatus";
+import { checkReenrichmentRateLimit } from "../lib/reenrichmentRateLimit";
+import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFieldMapping";
+import { runAutumnReenrichment } from "../jobs/reenrichment.job";
+import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 
 export const leadRouter = Router();
@@ -153,7 +158,10 @@ leadRouter.get(
 
     const hasMore = leads.length > limit;
     const page = hasMore ? leads.slice(0, limit) : leads;
-    return res.json({ leads: page.map(withEnrichedFieldCount), nextCursor: hasMore ? page[page.length - 1].id : null });
+    return res.json({
+      leads: await attachReenrichmentStatus(page.map(withEnrichedFieldCount)),
+      nextCursor: hasMore ? page[page.length - 1].id : null,
+    });
   })
 );
 
@@ -177,7 +185,7 @@ leadRouter.get(
           };
 
     const leads = await prisma.lead.findMany({ where, orderBy: { createdAt: "desc" } });
-    return res.json({ leads: leads.map(withEnrichedFieldCount) });
+    return res.json({ leads: await attachReenrichmentStatus(leads.map(withEnrichedFieldCount)) });
   })
 );
 
@@ -337,7 +345,8 @@ leadRouter.get(
     }
 
     const timeline = await getLeadTimeline(lead.id);
-    return res.json({ lead: withEnrichedFieldCount(lead), timeline });
+    const [withStatus] = await attachReenrichmentStatus([withEnrichedFieldCount(lead)]);
+    return res.json({ lead: withStatus, timeline });
   })
 );
 
@@ -1046,6 +1055,131 @@ leadRouter.post(
       data: { enrichmentStatus: "PENDING", flags, onHoldReason: null },
     });
     return res.json({ lead: withEnrichedFieldCount(updated) });
+  })
+);
+
+// POST /api/leads/:id/reenrich — recruiter-triggered re-enrichment via
+// Autumn.ai. Distinct from /retry-enrichment above in both trigger and
+// destination: that one hands a stuck lead back to the normal waterfall
+// queue, this one dispatches an Autumn agent task for any lead, whenever the
+// recruiter asks. Returns as soon as the run is recorded -- an Autumn task
+// takes minutes, so the work happens in the background and the recruiter
+// reads progress off the run row (GET /:id/reenrichment-status below).
+leadRouter.post(
+  "/:id/reenrich",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+    // The in-flight lock. The button is disabled client-side while a run is
+    // active, but that alone can't stop a second tab, a stale page, or a
+    // double-submit -- and every duplicate run costs real Autumn credits.
+    const active = await prisma.reenrichmentRun.findFirst({
+      where: { leadId: lead.id, status: "RUNNING" },
+    });
+    if (active) {
+      throw new ApiError(409, "ALREADY_RUNNING", "A re-enrichment run is already in progress for this lead");
+    }
+
+    const cooldownStart = new Date(Date.now() - 24 * 3600_000);
+    const recent = await prisma.reenrichmentRun.findMany({
+      where: { leadId: lead.id, startedAt: { gte: cooldownStart } },
+      select: { startedAt: true },
+    });
+    const limit = checkReenrichmentRateLimit(
+      recent.map((r) => r.startedAt),
+      new Date(),
+      {
+        cooldownMinutes: config.autumnReenrichCooldownMinutes,
+        dailyCap: config.autumnReenrichDailyCap,
+      }
+    );
+    if (!limit.allowed) {
+      throw new ApiError(429, limit.reason!, limit.message!);
+    }
+
+    const run = await prisma.reenrichmentRun.create({
+      data: { leadId: lead.id, requestedById: req.user!.id },
+    });
+
+    setImmediate(() => {
+      runAutumnReenrichment(run.id).catch((err) =>
+        console.error(`[reenrichment] unhandled failure for run ${run.id}:`, err?.message || err)
+      );
+    });
+
+    return res.status(202).json({ run: { id: run.id, status: run.status, startedAt: run.startedAt } });
+  })
+);
+
+// GET /api/leads/:id/reenrichment-status — latest run for one lead, polled by
+// the re-enrichment modal while it's open.
+leadRouter.get(
+  "/:id/reenrichment-status",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const run = await prisma.reenrichmentRun.findFirst({
+      where: { leadId: req.params.id },
+      orderBy: { startedAt: "desc" },
+      select: {
+        id: true,
+        status: true,
+        creditsUsed: true,
+        fieldsWritten: true,
+        message: true,
+        conflicts: true,
+        resolvedAt: true,
+        startedAt: true,
+        finishedAt: true,
+      },
+    });
+    return res.json({ run });
+  })
+);
+
+// POST /api/leads/:id/reenrichment-resolve — the recruiter's decision on the
+// fields where Autumn disagreed with what the lead already had. Only the
+// fields named in `acceptFields` are taken from Autumn; everything else keeps
+// its current value. Nothing here can overwrite a manual entry -- that's
+// re-checked against the lead's live fieldSources, not the stale run.
+leadRouter.post(
+  "/:id/reenrichment-resolve",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { runId, acceptFields } = z
+      .object({ runId: z.string(), acceptFields: z.array(z.string()) })
+      .parse(req.body);
+
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+    const run = await prisma.reenrichmentRun.findFirst({ where: { id: runId, leadId: lead.id } });
+    if (!run) throw new ApiError(404, "RUN_NOT_FOUND", "Re-enrichment run not found for this lead");
+    if (run.resolvedAt) throw new ApiError(409, "ALREADY_RESOLVED", "These changes have already been applied");
+
+    const conflicts = (run.conflicts as unknown as FieldConflict[] | null) ?? [];
+    const { updates, fieldSources, writtenFields } = applyConflictChoices(
+      conflicts,
+      acceptFields,
+      lead.fieldSources as Record<string, string> | null
+    );
+
+    const updated = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { ...updates, fieldSources: fieldSources as any },
+    });
+    await prisma.reenrichmentRun.update({
+      where: { id: run.id },
+      data: {
+        resolvedAt: new Date(),
+        conflicts: undefined,
+        fieldsWritten: (run.fieldsWritten ?? 0) + writtenFields.length,
+      },
+    });
+
+    const [withStatus] = await attachReenrichmentStatus([withEnrichedFieldCount(updated)]);
+    return res.json({ lead: withStatus, appliedFields: writtenFields });
   })
 );
 
