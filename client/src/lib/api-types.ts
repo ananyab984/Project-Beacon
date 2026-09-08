@@ -121,6 +121,9 @@ export interface ApiLead {
   reenrichment?: ReenrichmentSummary;
   availability: Availability;
   availabilityFromDate: string | null;
+  replyCategoryId: string | null;
+  replyClassificationSource: "AUTO" | "MANUAL" | null;
+  replyClassifiedAt: string | null;
   createdAt: string;
   lastActivityAt: string | null;
 }
@@ -273,7 +276,14 @@ export interface ApiConversationMessage {
 export interface ApiConversation {
   id: string;
   leadId: string;
-  lead?: { fullName: string | null; displayName: string | null; email?: string | null; profileLink?: string | null };
+  lead?: {
+    fullName: string | null;
+    displayName: string | null;
+    email?: string | null;
+    profileLink?: string | null;
+    replyCategoryId?: string | null;
+    replyClassificationSource?: "AUTO" | "MANUAL" | null;
+  };
   recruiterId: string;
   candidateName: string;
   candidateRole: string | null;

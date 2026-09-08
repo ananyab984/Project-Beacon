@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
@@ -67,6 +67,27 @@ export function ConversationsPageView() {
     refetchInterval: 10_000, // Poll every 10s for new inbound messages
   });
   const conversations = data?.conversations ?? [];
+
+  const { data: replyCategoriesData } = useQuery({
+    queryKey: ["reply-categories"],
+    queryFn: async () => {
+      const result = await api.listReplyCategories();
+      return result.replyCategories;
+    },
+  });
+  const replyCategories = replyCategoriesData ?? [];
+
+  const overrideClassificationMutation = useMutation({
+    mutationFn: ({ leadId, replyCategoryId }: { leadId: string; replyCategoryId: string | null }) =>
+      api.updateLead(leadId, { replyCategoryId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations", "own"] });
+      toast.success("Reply classification updated");
+    },
+    onError: (err: any) => {
+      toast.error(`Failed to update classification: ${err.message}`);
+    },
+  });
 
   const [id, setId] = useState<string | undefined>(undefined);
   const [draft, setDraft] = useState("");
@@ -325,7 +346,27 @@ export function ConversationsPageView() {
                     </div>
                     <div className="text-[11px] text-muted-foreground">{conv.candidateRole}</div>
                   </div>
-                  <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
+                    <select
+                      className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"
+                      value={conv.lead?.replyCategoryId ?? ""}
+                      onChange={(e) =>
+                        overrideClassificationMutation.mutate({
+                          leadId: conv.leadId,
+                          replyCategoryId: e.target.value || null,
+                        })
+                      }
+                      disabled={overrideClassificationMutation.isPending}
+                    >
+                      <option value="">Unclassified</option>
+                      {replyCategories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 <div className="shrink-0 border-b border-border px-4 py-2">

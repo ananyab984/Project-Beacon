@@ -31,7 +31,7 @@ conversationRouter.get(
     const conversations = await prisma.conversation.findMany({
       where,
       include: {
-        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
+        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true, replyCategoryId: true, replyClassificationSource: true } },
         messages: { orderBy: { sentAt: "asc" } },
       },
       // Postgres defaults to NULLS FIRST for DESC, so threads with no
@@ -59,7 +59,7 @@ conversationRouter.get(
     const conversation = await prisma.conversation.findFirst({
       where: baseWhere,
       include: {
-        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
+        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true, replyCategoryId: true, replyClassificationSource: true } },
         messages: { orderBy: { sentAt: "asc" } },
       },
       // Postgres defaults to NULLS FIRST for DESC, so threads with no
@@ -84,7 +84,7 @@ conversationRouter.get(
     const conversation = await prisma.conversation.findUnique({
       where: { id: req.params.id },
       include: {
-        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
+        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true, replyCategoryId: true, replyClassificationSource: true } },
         messages: { orderBy: { sentAt: "asc" } },
       },
     });
@@ -129,7 +129,7 @@ conversationRouter.post(
     const existing = await prisma.conversation.findFirst({
       where: { leadId, recruiterId: req.user!.id, channel: ConversationChannel.LINKEDIN },
       include: {
-        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
+        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true, replyCategoryId: true, replyClassificationSource: true } },
         messages: { orderBy: { sentAt: "asc" } },
       },
     });
@@ -147,7 +147,7 @@ conversationRouter.post(
         unread: false,
       },
       include: {
-        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true } },
+        lead: { select: { fullName: true, displayName: true, profileLink: true, email: true, replyCategoryId: true, replyClassificationSource: true } },
         messages: { orderBy: { sentAt: "asc" } },
       },
     });

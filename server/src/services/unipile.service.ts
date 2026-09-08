@@ -1068,11 +1068,49 @@ export class UnipileService {
     const inboundChannel = eventType === "mail_received" || eventType === "email.received" ? InboundChannel.EMAIL : InboundChannel.LINKEDIN;
 
     let inboundMessageId: string | null = null;
+    // Unipile echoes the recruiter's OWN sent messages back through this same
+    // webhook, and the InboundMessage row above is deliberately created for
+    // those echoes too (load-bearing for the self-echo chat-id backfill
+    // below). This flag is computed in the `connAcc` block further down and
+    // hoisted here so it can ride out on the return value -- the async
+    // classifier (processInboundMessage) needs it to avoid classifying our
+    // own outbound text as if it were the candidate's reply.
+    let isOutbound = false;
 
     if (isMessageEvent && (body.message || body.text || body.body_plain || body.body) && accountId) {
       const connAcc = await prisma.connectedAccount.findUnique({
         where: { unipileAccountId: accountId },
       });
+
+      // Computed here, immediately after connAcc resolves and BEFORE the
+      // existingInbound early-return below -- previously this lived further
+      // down inside the `if (connAcc)` ConversationMessage-sync block, which
+      // sits after that early-return. A message-id-retry delivery (Unipile
+      // resending the same message_id with a slightly different body, which
+      // does NOT get caught by the exact-duplicate dedupeKey check) hit that
+      // early-return and shipped isOutbound's stale `false` default straight
+      // to processInboundMessage, defeating the outbound-echo classification
+      // gate for exactly the delivery shape most likely to actually occur.
+      // `ownIdentity`/`fromIdentity` are reused further below both to decide
+      // the current event's direction and to reconcile earlier InboundMessage
+      // rows -- kept in this same function-body scope so both sites read the
+      // one computation.
+      let providerUserId: string | undefined;
+      let senderProviderId: string | undefined;
+      let fromIdentity = "";
+      let ownIdentity: string | null = null;
+      if (connAcc) {
+        providerUserId = body.account_info?.user_id;
+        senderProviderId = body.sender?.attendee_provider_id || body.sender_id;
+        fromIdentity = (body.from_attendee?.identifier || "").toLowerCase();
+        const ownEmailIdentity = (connAcc.accountName || "").toLowerCase();
+        ownIdentity = providerUserId || connAcc.accountName || null;
+        isOutbound = !!(
+          (providerUserId && senderProviderId && providerUserId === senderProviderId) ||
+          body.is_sender === true ||
+          (!!ownEmailIdentity && !!fromIdentity && ownEmailIdentity === fromIdentity)
+        );
+      }
 
       // Prefer body_plain for email -- body/body.body is the raw HTML including
       // a 1x1 tracking pixel <img>. body_plain is still the raw quoted-reply
@@ -1100,7 +1138,7 @@ export class UnipileService {
 
         if (existingInbound) {
           // Already stored — return 200 immediately, do nothing else.
-          return { status: "already_processed", inboundMessageId: existingInbound.id, dedupeKey };
+          return { status: "already_processed", inboundMessageId: existingInbound.id, dedupeKey, isOutbound };
         }
 
         // Provider timestamp (acknowledged send time per Unipile guide, with safe NaN fallback)
@@ -1137,24 +1175,9 @@ export class UnipileService {
 
       // --- ConversationMessage + InteractionEvent (existing logic, now for both channels) ---
       if (connAcc) {
-        // LinkedIn payloads carry `account_info.user_id` (the connected
-        // account's own id, stable across every event regardless of who sent
-        // that particular message) -- email payloads have no such field, so
-        // fall back to the connected account's own email address instead.
-        // `ownIdentity` is this account's stable "that's us" value, reused
-        // below both to classify the current event AND (critically) to
-        // classify earlier InboundMessage rows during reconciliation, where
-        // comparing against THIS event's own sender would be wrong whenever
-        // this event itself happens to be the other party's message.
-        const providerUserId = body.account_info?.user_id;
-        const senderProviderId = body.sender?.attendee_provider_id || body.sender_id;
-        const fromIdentity = (body.from_attendee?.identifier || "").toLowerCase();
-        const ownEmailIdentity = (connAcc.accountName || "").toLowerCase();
-        const ownIdentity = providerUserId || connAcc.accountName || null;
-        const isOutbound =
-          (providerUserId && senderProviderId && providerUserId === senderProviderId) ||
-          body.is_sender === true ||
-          (!!ownEmailIdentity && !!fromIdentity && ownEmailIdentity === fromIdentity);
+        // isOutbound/providerUserId/fromIdentity/ownIdentity are already
+        // computed above, before the existingInbound early-return -- reused
+        // here as-is (see the comment at their declaration for why).
 
         let eventTimestamp = new Date();
         if (body.timestamp) {
@@ -1353,6 +1376,6 @@ export class UnipileService {
       }
     }
 
-    return { status: "processed", dedupeKey, inboundMessageId };
+    return { status: "processed", dedupeKey, inboundMessageId, isOutbound };
   }
 }

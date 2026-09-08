@@ -36,6 +36,7 @@ import { Route as OwnerFaqsRouteImport } from './routes/owner.faqs'
 import { Route as OwnerLeadsRouteImport } from './routes/owner.leads'
 import { Route as OwnerPipelinesRouteImport } from './routes/owner.pipelines'
 import { Route as OwnerRecruitersRouteImport } from './routes/owner.recruiters'
+import { Route as OwnerReplyCategoriesRouteImport } from './routes/owner.reply-categories'
 import { Route as OwnerReportsRouteImport } from './routes/owner.reports'
 import { Route as OwnerSettingsRouteImport } from './routes/owner.settings'
 import { Route as RecruiterIndexRouteImport } from './routes/recruiter.index'
@@ -183,6 +184,11 @@ const OwnerRecruitersRoute = OwnerRecruitersRouteImport.update({
   path: '/recruiters',
   getParentRoute: () => OwnerRoute,
 } as any)
+const OwnerReplyCategoriesRoute = OwnerReplyCategoriesRouteImport.update({
+  id: '/reply-categories',
+  path: '/reply-categories',
+  getParentRoute: () => OwnerRoute,
+} as any)
 const OwnerReportsRoute = OwnerReportsRouteImport.update({
   id: '/reports',
   path: '/reports',
@@ -266,6 +272,7 @@ export interface FileRoutesByFullPath {
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
   '/owner/recruiters': typeof OwnerRecruitersRoute
+  '/owner/reply-categories': typeof OwnerReplyCategoriesRoute
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
   '/recruiter/clients': typeof RecruiterClientsRoute
@@ -303,6 +310,7 @@ export interface FileRoutesByTo {
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
   '/owner/recruiters': typeof OwnerRecruitersRoute
+  '/owner/reply-categories': typeof OwnerReplyCategoriesRoute
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
   '/recruiter/clients': typeof RecruiterClientsRoute
@@ -344,6 +352,7 @@ export interface FileRoutesById {
   '/owner/leads': typeof OwnerLeadsRoute
   '/owner/pipelines': typeof OwnerPipelinesRoute
   '/owner/recruiters': typeof OwnerRecruitersRoute
+  '/owner/reply-categories': typeof OwnerReplyCategoriesRoute
   '/owner/reports': typeof OwnerReportsRoute
   '/owner/settings': typeof OwnerSettingsRoute
   '/recruiter/clients': typeof RecruiterClientsRoute
@@ -386,6 +395,7 @@ export interface FileRouteTypes {
     | '/owner/leads'
     | '/owner/pipelines'
     | '/owner/recruiters'
+    | '/owner/reply-categories'
     | '/owner/reports'
     | '/owner/settings'
     | '/recruiter/clients'
@@ -423,6 +433,7 @@ export interface FileRouteTypes {
     | '/owner/leads'
     | '/owner/pipelines'
     | '/owner/recruiters'
+    | '/owner/reply-categories'
     | '/owner/reports'
     | '/owner/settings'
     | '/recruiter/clients'
@@ -463,6 +474,7 @@ export interface FileRouteTypes {
     | '/owner/leads'
     | '/owner/pipelines'
     | '/owner/recruiters'
+    | '/owner/reply-categories'
     | '/owner/reports'
     | '/owner/settings'
     | '/recruiter/clients'
@@ -683,6 +695,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OwnerRecruitersRouteImport
       parentRoute: typeof OwnerRoute
     }
+    '/owner/reply-categories': {
+      id: '/owner/reply-categories'
+      path: '/reply-categories'
+      fullPath: '/owner/reply-categories'
+      preLoaderRoute: typeof OwnerReplyCategoriesRouteImport
+      parentRoute: typeof OwnerRoute
+    }
     '/owner/reports': {
       id: '/owner/reports'
       path: '/reports'
@@ -796,6 +815,7 @@ interface OwnerRouteChildren {
   OwnerLeadsRoute: typeof OwnerLeadsRoute
   OwnerPipelinesRoute: typeof OwnerPipelinesRoute
   OwnerRecruitersRoute: typeof OwnerRecruitersRoute
+  OwnerReplyCategoriesRoute: typeof OwnerReplyCategoriesRoute
   OwnerReportsRoute: typeof OwnerReportsRoute
   OwnerSettingsRoute: typeof OwnerSettingsRoute
   OwnerIndexRoute: typeof OwnerIndexRoute
@@ -811,6 +831,7 @@ const OwnerRouteChildren: OwnerRouteChildren = {
   OwnerLeadsRoute: OwnerLeadsRoute,
   OwnerPipelinesRoute: OwnerPipelinesRoute,
   OwnerRecruitersRoute: OwnerRecruitersRoute,
+  OwnerReplyCategoriesRoute: OwnerReplyCategoriesRoute,
   OwnerReportsRoute: OwnerReportsRoute,
   OwnerSettingsRoute: OwnerSettingsRoute,
   OwnerIndexRoute: OwnerIndexRoute,

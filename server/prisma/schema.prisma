@@ -208,6 +208,11 @@ enum MessageSender {
   THEM
 }
 
+enum ClassificationSource {
+  AUTO
+  MANUAL
+}
+
 enum LeadPriority {
   P0
   P1
@@ -300,6 +305,7 @@ model User {
   emailQueueItems     EmailQueueItem[]
   conversations       Conversation[]
   escalationsOwned    Escalation[]        @relation("EscalationOwner")
+  replyClassificationEvents ReplyClassificationEvent[]
 
   // Contractor-management (recruiter <-> assigned contractors)
   contractorsManaged ContractorAssignment[] @relation("ManagingRecruiter")
@@ -387,6 +393,11 @@ model Lead {
   promotedToGlobalAt DateTime?        @map("promoted_to_global_at")
   justEnrichedUntil  DateTime?        @map("just_enriched_until") // repo: transient "recently enriched" highlight window
 
+  replyCategoryId           String?               @map("reply_category_id")
+  replyCategory             ReplyCategory?        @relation(fields: [replyCategoryId], references: [id], onDelete: SetNull)
+  replyClassificationSource ClassificationSource? @map("reply_classification_source")
+  replyClassifiedAt         DateTime?             @map("reply_classified_at")
+
   stage                 LeadStage      @default(NEW)
   status                LeadStatus     @default(NEW) // repo's richer UI vocabulary; independently editable per-card, not strictly derived from stage
   priority              LeadPriority? // repo: leadPriority/setLeadPriority (P0-P3), inline-editable on lead cards
@@ -465,14 +476,15 @@ model Lead {
   lastActivityAt DateTime? @map("last_activity_at") // repo: last_activity, rendered as relative time
 
   // relations
-  vendorMatches      LeadVendorMatch[]
-  stageHistory       StageHistory[]
-  flagEvents         LeadFlagEvent[]
-  interactionEvents  InteractionEvent[]
-  manualActivityLogs ManualActivityLog[]
-  emailQueueItems    EmailQueueItem[]
-  conversations      Conversation[]
-  reenrichmentRuns   ReenrichmentRun[]
+  vendorMatches        LeadVendorMatch[]
+  stageHistory         StageHistory[]
+  flagEvents           LeadFlagEvent[]
+  interactionEvents    InteractionEvent[]
+  manualActivityLogs   ManualActivityLog[]
+  emailQueueItems      EmailQueueItem[]
+  conversations        Conversation[]
+  classificationEvents ReplyClassificationEvent[]
+  reenrichmentRuns     ReenrichmentRun[]
 
   @@index([enrichmentStatus])
   @@index([assignedRecruiterId])
@@ -1013,6 +1025,53 @@ model ContractorAssignment {
   assignedAt   DateTime @default(now()) @map("assigned_at")
 
   @@map("contractor_assignments")
+}
+
+// ----------------------------------------------------------------------------
+// REPLY CATEGORIES — owner-editable taxonomy for inbound reply classification
+// (Inbound_Reply_Classification.docx: 6 groups, 33 sub-categories). Mirrors
+// FaqEntry's shape: `groupName` is free text like FaqEntry.category so the
+// owner can add/rename groups without a migration; `name` is the actual
+// classification value stored on Lead; `description` is both the doc's
+// "Description / Trigger" column and the text fed to the classifier prompt.
+// ----------------------------------------------------------------------------
+model ReplyCategory {
+  id          String   @id @default(uuid())
+  groupName   String   @map("group_name")
+  name        String   @unique
+  description String
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  leads  Lead[]
+  events ReplyClassificationEvent[]
+
+  @@index([isActive])
+  @@map("reply_categories")
+}
+
+// ----------------------------------------------------------------------------
+// REPLY CLASSIFICATION EVENTS — insert-only audit log, one row per
+// classification attempt (auto or manual). Lead.replyCategoryId is the fast
+// "current state" read; this table is the source of truth for history,
+// mirroring the StageHistory / LeadFlagEvent pattern already used for other
+// denormalized Lead fields.
+// ----------------------------------------------------------------------------
+model ReplyClassificationEvent {
+  id              String               @id @default(uuid())
+  leadId          String               @map("lead_id")
+  lead            Lead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  categoryId      String?              @map("category_id")
+  category        ReplyCategory?       @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  confidence      Decimal?             @db.Decimal(4, 3)
+  source          ClassificationSource
+  changedByUserId String?              @map("changed_by_user_id")
+  changedBy       User?                @relation(fields: [changedByUserId], references: [id])
+  createdAt       DateTime             @default(now()) @map("created_at")
+
+  @@index([leadId])
+  @@map("reply_classification_events")
 }
 
 // ----------------------------------------------------------------------------

@@ -407,6 +407,53 @@ const FAQ_ENTRIES: { id: string; category: string; question: string; answer: str
   },
 ];
 
+const REPLY_CATEGORIES: { groupName: string; name: string; description: string }[] = [
+  // Onboarding & Platform Access
+  { groupName: "Onboarding & Platform Access", name: "Identity Verification Issue", description: "Veriff failure, document not accepted, unsupported ID type" },
+  { groupName: "Onboarding & Platform Access", name: "Manual Verification Request", description: "Candidate requests video call as alternative to Veriff" },
+  { groupName: "Onboarding & Platform Access", name: "MSA Query", description: "Signing issues, clause clarification, wrong date, PDF copy request" },
+  { groupName: "Onboarding & Platform Access", name: "Login Issue", description: "Password reset, 2FA setup, authenticator app, backup code" },
+  { groupName: "Onboarding & Platform Access", name: "Onboarding Link", description: "Link expired, not received, needs to be resent" },
+  { groupName: "Onboarding & Platform Access", name: "Payment Details Setup", description: "WISE, PayPal, bank transfer, Payment ID field clarification" },
+  { groupName: "Onboarding & Platform Access", name: "Onboarding Status Check", description: "What are the next steps? What stage am I at?" },
+  { groupName: "Onboarding & Platform Access", name: "Email Change / Re-registration", description: "Candidate wants to change login email or re-register" },
+
+  // Payment & Invoicing
+  { groupName: "Payment & Invoicing", name: "Invoice Submission Query", description: "Submission link, deadline, format, invoice template" },
+  { groupName: "Payment & Invoicing", name: "Payment Terms Clarification", description: "Net 30, currency, WISE fees, bank transfer charges" },
+  { groupName: "Payment & Invoicing", name: "Tax Form Query", description: "W-8BEN, tax documentation for international freelancers" },
+  { groupName: "Payment & Invoicing", name: "Rate Query", description: "RTM rate, hourly rate, per-word rate, premium rate request" },
+  { groupName: "Payment & Invoicing", name: "Payment Method Request", description: "Bank transfer, direct ACH, alternative to WISE/PayPal" },
+
+  // Training & Projects
+  { groupName: "Training & Projects", name: "Training Materials Not Received", description: "No materials after onboarding completion" },
+  { groupName: "Training & Projects", name: "Practice File / Evaluation Query", description: "When will I receive it? Is it paid?" },
+  { groupName: "Training & Projects", name: "Feedback Pending on Practice File", description: "No response after submission" },
+  { groupName: "Training & Projects", name: "Project Availability Query", description: "When will I get assigned? Any projects available?" },
+  { groupName: "Training & Projects", name: "Minimum Volume / Work Guarantee", description: "Candidate asking for guaranteed minimum hours or tasks" },
+
+  // Role & Workflow Clarification
+  { groupName: "Role & Workflow Clarification", name: "Dubbing Adaptor Role Confusion", description: "Mistaken for voice-over role; needs clarification on adaptation vs recording" },
+  { groupName: "Role & Workflow Clarification", name: "AI Usage / Voice Cloning Concern", description: "Candidate concerned about AI training or voice data usage" },
+  { groupName: "Role & Workflow Clarification", name: "Subtitling vs Dubbing Scope", description: "What exactly does each role involve at G3?" },
+  { groupName: "Role & Workflow Clarification", name: "AVL vs Document Translation", description: "Candidate from document translation background asking about fit" },
+  { groupName: "Role & Workflow Clarification", name: "Portfolio / Confidentiality Query", description: "Can I share completed work? NDA implications?" },
+
+  // Candidate Interest & Application
+  { groupName: "Candidate Interest & Application", name: "New Application / CV Submission", description: "Candidate applying or sharing CV directly via email" },
+  { groupName: "Candidate Interest & Application", name: "Follow-up – No Response Received", description: "Candidate chasing a previous email with no reply" },
+  { groupName: "Candidate Interest & Application", name: "Rate Negotiation", description: "Candidate requesting a higher or premium rate" },
+  { groupName: "Candidate Interest & Application", name: "Remove from Mailing List", description: "Candidate requesting to unsubscribe or be removed from database" },
+  { groupName: "Candidate Interest & Application", name: "Referral Introduction", description: "Referred by a partner, colleague, or internal team member" },
+
+  // General Queries
+  { groupName: "General Queries", name: "Company Legitimacy Concern", description: "Candidate questioning whether G3 is a genuine company" },
+  { groupName: "General Queries", name: "Data Privacy / ID Security Concern", description: "Reluctant to share ID; questions about data handling" },
+  { groupName: "General Queries", name: "Availability / Capacity Update", description: "Candidate sharing or updating their availability" },
+  { groupName: "General Queries", name: "Time Zone / Scheduling Query", description: "Asking about call times, IST/CEST/PST conversions" },
+  { groupName: "General Queries", name: "General Interest / LinkedIn Outreach", description: "Broad networking outreach with no specific role in mind" },
+];
+
 async function main() {
   // Clean up any old synthetic dummy accounts and their dependent rows
   const dummyEmails = ["mathu@global3.co", "divya@global3.co", "varsha@global3.co", "sharmistha@global3.co", "sunaina@global3.co"];
@@ -455,6 +502,15 @@ async function main() {
       create: f,
     });
     console.log(`Seeded FAQ: ${f.id}`);
+  }
+
+  for (const c of REPLY_CATEGORIES) {
+    await prisma.replyCategory.upsert({
+      where: { name: c.name },
+      update: { groupName: c.groupName, description: c.description },
+      create: c,
+    });
+    console.log(`Seeded reply category: ${c.name}`);
   }
 }
 
