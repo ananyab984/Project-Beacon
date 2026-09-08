@@ -137,6 +137,7 @@ class EnrichmentResponse(BaseModel):
     logs: List[str]
     duplicate_flag: Optional[Dict[str, Any]] = None
     parallel_fallback: Optional[Dict[str, Any]] = None
+    websearch_fallback: Optional[Dict[str, Any]] = None
     raw_enrichment_data: Optional[Any] = None
 
 

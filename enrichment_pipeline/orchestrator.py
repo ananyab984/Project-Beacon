@@ -8,12 +8,12 @@ import time
 from typing import Any, Dict, Literal, Optional, TypedDict
 
 from config import Config
+from core.enrichment_count import count_enriched_fields
 from core.field_audit import audit_lead_fields
 from core.schema import is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
-from llm_fallback.prompt_builder import build_targeted_prompt
-from llm_fallback.verifier import verify_against_source
+from llm_fallback.verifier import filter_web_search_result
 from logger import get_logger
 from providers.brightdata_client import BrightDataClient, BrightDataError
 from providers.parallel_client import ParallelClient, ParallelError
@@ -45,8 +45,14 @@ OVERRIDE_ON_VERIFIED_FIELDS = {
 }
 
 # Fields with no manual-entry equivalent -- only worth asking the LLM fallback
-# about when still empty after Stage 3's deterministic parse.
-FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications"]
+# about when still empty after Stage 3's deterministic parse. Headline and
+# About_Snippet were confirmed in production to come back empty from
+# BrightData for a meaningful share of LinkedIn profiles (Martin Godart's
+# reported case: every one of the dialog's 10 fields blank, including these
+# two) yet were never wired into any fallback list, so a persistently-blocked
+# profile would show them as permanently "Not found" even after Stage 6 was
+# added -- Stage 6 only ever tries fields that land in fallback_targets.
+FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certifications", "Headline", "About_Snippet"]
 
 # Phrases that mark a value as the model NARRATING an absence rather than
 # reporting data ("No certifications are listed in the available profile
@@ -115,6 +121,62 @@ def _parallel_state_is_settled(state: Optional[str]) -> Optional[str]:
         # anything unrecognised). Treat as settled rather than guessing, so an
         # unknown value can't silently re-bill every pass.
         return f"unrecognised Parallel state {state!r}, treating as settled"
+    return None
+
+
+
+# Stage 6 (Claude web search, Tier 3) fires only once a lead is still thin
+# after Bright Data/Tavily and Parallel have both had their (retried)
+# chance -- using the exact same metric as the "Enriched (n)" badge already
+# in the UI (core/enrichment_count.py's count_enriched_fields), so the
+# threshold means the same thing on both sides of the stack. Deliberately
+# NOT "any target field still missing" (the old Stage 4 trigger) -- that
+# fires for nearly every lead (e.g. just Tools_Software missing) and would
+# make the most expensive tier the most frequently-used one.
+MAX_FIELDS_BEFORE_WEBSEARCH = 5
+
+# Never asked for, never accepted from Stage 6 even if the model returns
+# them anyway (see verifier.py's filter_web_search_result) -- a wrong
+# contact reaches a different real human being, so missing contact info is
+# the safer failure. Years_of_Exp stays in scope; a wrong number only carries
+# the ordinary hallucination risk every other field has.
+WEBSEARCH_EXCLUDED_FIELDS = frozenset({"Email_Address", "Contact_Number"})
+
+# Same re-attempt policy as PARALLEL_STATE_* above, duplicated rather than
+# shared: this is a distinct provider/marker (`_websearch_fallback`, not
+# `_parallel_fallback`), and each already has its own settled/attempt-count
+# meaning that would only get harder to follow behind a shared parameterized
+# helper for two call sites.
+WEBSEARCH_STATE_COMPLETE = "complete"
+WEBSEARCH_STATE_FAILED_PERMANENT = "failed_permanent"
+WEBSEARCH_STATE_FAILED_TRANSIENT_PREFIX = "failed_transient:"
+MAX_WEBSEARCH_TRANSIENT_ATTEMPTS = 2
+
+
+def _websearch_attempts(state: Optional[str]) -> int:
+    """How many transient attempts this lead has already used for Stage 6."""
+    if not state or not state.startswith(WEBSEARCH_STATE_FAILED_TRANSIENT_PREFIX):
+        return 0
+    try:
+        return int(state.split(":", 1)[1])
+    except (IndexError, ValueError):
+        return MAX_WEBSEARCH_TRANSIENT_ATTEMPTS
+
+
+def _websearch_state_is_settled(state: Optional[str]) -> Optional[str]:
+    """Human-readable reason this lead needs no further Stage 6 call, or
+    None if it should be (re-)attempted."""
+    if state == WEBSEARCH_STATE_COMPLETE:
+        return "web search already resolved this lead"
+    if state == WEBSEARCH_STATE_FAILED_PERMANENT:
+        return "Claude permanently rejected this lead's web-search request"
+    if state and state.startswith(WEBSEARCH_STATE_FAILED_TRANSIENT_PREFIX):
+        attempts = _websearch_attempts(state)
+        if attempts >= MAX_WEBSEARCH_TRANSIENT_ATTEMPTS:
+            return f"web search failed {attempts}/{MAX_WEBSEARCH_TRANSIENT_ATTEMPTS} times, attempts exhausted"
+        return None
+    if state:
+        return f"unrecognised web-search state {state!r}, treating as settled"
     return None
 
 
@@ -227,25 +289,26 @@ def _is_absence_prose(value: str) -> bool:
 # one lead -- real elapsed time via time.monotonic(), not a sum of each
 # step's own deadline (core/resilience.py's RetryPolicy.deadline_seconds
 # already bounds each individual provider call; this is a separate, outer
-# safety net). Worst case today, now identical for both waterfall shapes
-# since Parallel runs on all platforms: Tier 1 (BrightData or Tavily, 15s) +
-# Parallel 3700s (its own much longer deadline -- see config.py's
-# parallel_deadline_seconds) + the LLM fallback call itself (15s) =
-# 15 + 3700 + 15 = 3730s -- comfortably under this 3800s ceiling.
-# Raised again (350s -> 3800s) after TWO successive guesses at Parallel's
-# "typical" latency (150s, then 240s) both still cut off calls that were
-# genuinely succeeding server-side (confirmed live 2026-09-07: a real
-# "core"-processor Task Run routinely takes ~150-170s, and our own guessed
-# ceiling kept firing right as the real result was landing). Rather than
-# guess a third number, providers/parallel_client.py now defers to the
+# safety net). Worst case, identical for both waterfall shapes since Parallel
+# runs on all platforms: Tier 1 (BrightData or Tavily, 15s) + Parallel 3700s
+# (its own much longer deadline -- see config.py's parallel_deadline_seconds)
+# + Stage 6's web-search call (300s -- see config.py's
+# claude_websearch_deadline_seconds) = 15 + 3700 + 300 = 4015s -- raised
+# (3800s -> 4100s) for headroom under this new ceiling.
+# Earlier history: raised 350s -> 3800s after TWO successive guesses at
+# Parallel's "typical" latency (150s, then 240s) both still cut off calls
+# that were genuinely succeeding server-side (confirmed live 2026-09-07: a
+# real "core"-processor Task Run routinely takes ~150-170s, and our own
+# guessed ceiling kept firing right as the real result was landing). Rather
+# than guess a third number, providers/parallel_client.py now defers to the
 # Parallel SDK's own well-engineered default (waits up to an hour for a task
 # to actually finish) -- this ceiling, and every one below, is sized to never
 # be the thing that cuts that off early. In practice, real calls still
 # resolve in ~150-170s -- this ceiling only matters for a genuine outlier,
 # not the expected case. See server/src/jobs/enrichment.job.ts's matching
-# axios timeout (4000s) and retryWithBackoff deadlineMs (4200s), both raised
+# axios timeout (4200s) and retryWithBackoff deadlineMs (4400s), both raised
 # in lockstep so Node's own timeouts never fire before this one does.
-LEAD_LEVEL_TIMEOUT_SECONDS = 3800.0
+LEAD_LEVEL_TIMEOUT_SECONDS = 4100.0
 
 Conclusion = Literal["short_circuit_success", "exhausted_no_match", "timed_out"]
 
@@ -269,6 +332,13 @@ class PipelineResult(TypedDict):
     # Parallel's call is synchronous, so this field always reflects a
     # concluded outcome by the time this dict is built.
     parallel_fallback: Optional[Dict[str, Any]]
+    # Set whenever Stage 6's Claude web-search call was attempted for this
+    # lead -- same shape/meaning as parallel_fallback above (`called: True`
+    # with `data` on success, `called: False` when skipped, `called: True`
+    # with no `data` key on failure). None when Stage 6 never applied at all
+    # (short-circuited, over the field-count threshold, or only contact
+    # fields were missing).
+    websearch_fallback: Optional[Dict[str, Any]]
     # The COMPLETE raw scrape payload (Bright Data or Tavily, whichever ran)
     # -- previously computed as raw_source_text purely for internal LLM
     # fallback verification, then discarded before the response was even
@@ -320,6 +390,7 @@ class EnrichmentOrchestrator:
             "execution_time_ms": elapsed_ms,
             "logs": logs,
             "parallel_fallback": None,
+            "websearch_fallback": None,
             "raw_enrichment_data": None,
             "conclusion": "timed_out",
         }
@@ -447,6 +518,81 @@ class EnrichmentOrchestrator:
         return (
             f"Stage 3.5: Parallel call failed (attempt {attempts}/"
             f"{MAX_PARALLEL_TRANSIENT_ATTEMPTS}, "
+            f"{'will retry on a later pass' if remaining > 0 else 'attempts exhausted'}): {reason}"
+        )
+
+    def _run_websearch_stage(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+        web_search_targets: list[str], profile_link: str, source_platform: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Stage 6: Claude web search -- Tier 3, replacing the old raw-text
+        extraction entirely. Fires only when the lead is still thin after
+        Bright Data/Tavily and Parallel have both had their (retried) chance
+        (see MAX_FIELDS_BEFORE_WEBSEARCH in process_lead) -- exactly the
+        backstop a persistently-blocked profile (a LinkedIn 301, a dead ProZ
+        link) needs, since neither earlier tier has anything left to try.
+
+        Re-attempt policy mirrors _run_parallel_stage's: a genuine success or
+        a permanent rejection is final; an empty-but-successful result (the
+        model reported could_not_find_anything, or cited no source) is
+        routed through the SAME transient-retry bookkeeping a raised
+        ClaudeError would use, up to MAX_WEBSEARCH_TRANSIENT_ATTEMPTS -- the
+        exact "successful but empty must still get its retry" fix Part 0
+        made for Parallel, applied here from the start rather than
+        discovered as a second bug later.
+        """
+        state = field_sources.get("_websearch_fallback")
+        settled = _websearch_state_is_settled(state)
+        if settled:
+            logs.append(f"Stage 6 skipped: {settled} (state={state!r}), not re-calling")
+            return {"called": False, "reason": f"already_{state}"}
+
+        if not self.claude:
+            logs.append("Stage 6 skipped: CLAUDE_API_KEY not configured")
+            return None
+
+        attempts_so_far = _websearch_attempts(state)
+        full_name = lead.get("Full_Name") or ""
+
+        try:
+            web_result = self.claude.search_missing_fields(web_search_targets, full_name, profile_link, source_platform)
+            verified = filter_web_search_result(web_result, web_search_targets)
+
+            if not verified:
+                msg = self._record_websearch_transient(field_sources, attempts_so_far, "found nothing usable/verifiable")
+                logs.append(msg)
+                log.warning(msg)
+                return {"called": True, "reason": "web_search", "error": "empty result"}
+
+            field_sources["_websearch_fallback"] = WEBSEARCH_STATE_COMPLETE
+            msg = f"Stage 6: Web search complete, sources={web_result.get('sources_used')}"
+            logs.append(msg)
+            log.info("Lead %s: %s", full_name or profile_link, msg)
+            self._apply_parsed_fields(lead, field_sources, logs, "llm_fallback", verified)
+            return {"called": True, "reason": "web_search", "data": web_result}
+        except ClaudeError as exc:
+            if getattr(exc, "permanent", False):
+                field_sources["_websearch_fallback"] = WEBSEARCH_STATE_FAILED_PERMANENT
+                msg = f"Stage 6: Claude rejected this web-search request, not retrying: {exc}"
+                logs.append(msg)
+                log.error(msg)
+            else:
+                msg = self._record_websearch_transient(field_sources, attempts_so_far, str(exc))
+                logs.append(msg)
+                log.error(msg)
+            return {"called": True, "reason": "web_search", "error": str(exc)}
+
+    @staticmethod
+    def _record_websearch_transient(field_sources: Dict[str, str], attempts_so_far: int, reason: str) -> str:
+        """Stamps the next transient-attempt marker and returns the log line
+        -- shared by a genuine exception and an empty-but-successful result,
+        mirroring _record_parallel_transient."""
+        attempts = attempts_so_far + 1
+        field_sources["_websearch_fallback"] = f"{WEBSEARCH_STATE_FAILED_TRANSIENT_PREFIX}{attempts}"
+        remaining = MAX_WEBSEARCH_TRANSIENT_ATTEMPTS - attempts
+        return (
+            f"Stage 6: Web search failed (attempt {attempts}/"
+            f"{MAX_WEBSEARCH_TRANSIENT_ATTEMPTS}, "
             f"{'will retry on a later pass' if remaining > 0 else 'attempts exhausted'}): {reason}"
         )
 
@@ -711,13 +857,14 @@ class EnrichmentOrchestrator:
         missing_fill_only = [f for f in FILL_ONLY_ENRICHABLE_FIELDS if is_empty_value(lead.get(f))]
         fallback_targets = list(dict.fromkeys(missing_critical + override_candidates + missing_fill_only))
 
-        # Waterfall order: Bright Data/Tavily -> Parallel -> AI extraction, in
-        # that priority -- AI is the last resort, run only after Parallel has
-        # already had its (synchronous, already-concluded-by-this-point)
-        # chance. Unlike Clay's old async design, there is no "still awaiting"
-        # state to check here -- Stage 3.5 above either ran to completion or
-        # was skipped/failed before this line, so Stage 4 always sees a
-        # settled picture of the lead.
+        # Waterfall order: Bright Data/Tavily -> Parallel -> Claude web
+        # search, in that priority -- web search is the last resort, run only
+        # after Parallel has already had its (synchronous,
+        # already-concluded-by-this-point) chance. Unlike Clay's old async
+        # design, there is no "still awaiting" state to check here -- Stage
+        # 3.5 above either ran to completion or was skipped/failed before
+        # this line, so Stage 4 always sees a settled picture of the lead.
+        websearch_fallback: Optional[Dict[str, Any]] = None
         if not fallback_targets:
             # ABSOLUTE RULE: nothing left to fill or verify -- BYPASS LLM STAGE ENTIRELY
             msg = "Stage 4 Bypass Guard: nothing left for the LLM to fill or verify! BYPASSING LLM FALLBACK ENTIRELY."
@@ -725,53 +872,27 @@ class EnrichmentOrchestrator:
             log.info(msg)
             conclusion: Conclusion = "short_circuit_success"
         else:
-            # Stage 5 & 6: Targeted LLM Fallback & Verbatim Evidence Verification
             # Every step that could run for this platform has now been
-            # attempted (scrape, Parallel if applicable, LLM fallback below) --
-            # whatever this pass ends up with is a normal, concluded result,
-            # not a failure of the waterfall itself, whether the LLM call
-            # below succeeds, partially succeeds, or raises ClaudeError
-            # (itself only raised after core/resilience.py's own retry/
-            # deadline budget is exhausted).
+            # attempted (scrape, Parallel) -- whatever this pass ends up with
+            # is a normal, concluded result, not a failure of the waterfall
+            # itself, whether Stage 6 below fires, is skipped, or fails.
             conclusion = "exhausted_no_match"
-            logs.append(f"Stage 4 Audit: Target fields {fallback_targets} -> Triggering Targeted LLM Fallback")
+            logs.append(f"Stage 4 Audit: Target fields {fallback_targets}")
 
-            if self.claude and raw_source_text:
-                try:
-                    system_prompt = build_targeted_prompt(fallback_targets)
-                    llm_raw_output = self.claude.extract_critical_fields(system_prompt, raw_source_text)
+            web_search_targets = [f for f in fallback_targets if f not in WEBSEARCH_EXCLUDED_FIELDS]
+            enriched_count = count_enriched_fields(lead, field_sources)
 
-                    # Stage 6: Verbatim Evidence Verification
-                    verified_llm = verify_against_source(llm_raw_output, raw_source_text)
-
-                    for k, v in verified_llm.items():
-                        if is_empty_value(v):
-                            continue
-                        if k in OVERRIDE_ON_VERIFIED_FIELDS:
-                            # Mark it settled even when the LLM-verified value
-                            # matches what's already there -- otherwise a
-                            # future re-enrichment of this same lead would
-                            # spend another Claude call re-asking about it.
-                            if lead.get(k) != v:
-                                lead[k] = v
-                                logs.append(f"Stage 6 Verified LLM: {k} = {v!r} (verified profile overrides manual entry)")
-                            else:
-                                logs.append(f"Stage 6 Verified LLM: {k} = {v!r} (confirmed matches manual entry)")
-                            field_sources[k] = "llm_fallback"
-                        elif is_empty_value(lead.get(k)):
-                            lead[k] = v
-                            field_sources[k] = "llm_fallback"
-                            logs.append(f"Stage 6 Verified LLM: {k} = {v!r}")
-
-                except ClaudeError as exc:
-                    msg = f"LLM Fallback error: {exc}"
-                    logs.append(msg)
-                    log.error(msg)
+            if enriched_count > MAX_FIELDS_BEFORE_WEBSEARCH:
+                logs.append(
+                    f"Stage 6 skipped: {enriched_count} fields already enriched "
+                    f"(> {MAX_FIELDS_BEFORE_WEBSEARCH}), web search reserved for thin leads"
+                )
+            elif not web_search_targets:
+                logs.append("Stage 6 skipped: only Email_Address/Contact_Number are missing, which web search never fills")
             else:
-                if not self.claude:
-                    logs.append("LLM Fallback skipped: CLAUDE_API_KEY not configured")
-                elif not raw_source_text:
-                    logs.append("LLM Fallback skipped: No raw scraped text available")
+                websearch_fallback = self._run_websearch_stage(
+                    lead, field_sources, logs, web_search_targets, profile_link, provider_type
+                )
 
         # Stage 7: Finalize & Score Calculation
         final_audit = audit_lead_fields(lead)
@@ -789,6 +910,7 @@ class EnrichmentOrchestrator:
             "execution_time_ms": elapsed_ms,
             "logs": logs,
             "parallel_fallback": parallel_fallback,
+            "websearch_fallback": websearch_fallback,
             "raw_enrichment_data": raw_scraped_data,
             "conclusion": conclusion,
         }

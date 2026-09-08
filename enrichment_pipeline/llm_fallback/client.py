@@ -1,21 +1,42 @@
-"""Claude (Anthropic) REST API client for targeted critical field extraction."""
+"""Claude (Anthropic) REST API client: English normalization (translate_to_english)
+and Tier 3's web-search fallback (search_missing_fields)."""
 
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
 
 from config import Config
 from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
+from llm_fallback.prompt_builder import build_web_search_prompt
 from logger import get_logger
 
 log = get_logger(__name__)
 
+# search_missing_fields always uses this model regardless of config.claude_model
+# (which defaults to Haiku 4.5 for cost reasons on translate_to_english): the
+# web_search_20260209 tool type requires Opus 5/4.8/4.7/4.6, Sonnet 5, or
+# Sonnet 4.6 -- Haiku 4.5 isn't supported for it.
+_WEB_SEARCH_MODEL = "claude-sonnet-5"
+
 
 class ClaudeError(RuntimeError):
-    """Failure during Claude API execution."""
+    """Failure during Claude API execution.
+
+    `permanent` mirrors ParallelError's flag: True means the SAME request
+    would fail the same way again (a genuine 4xx the model/API rejected
+    outright), so a caller's re-attempt policy should never retry it. False
+    (the default) covers everything that already went through
+    retry_with_backoff's own retry budget and still failed (timeouts, 5xx,
+    network errors) -- still worth a fresh attempt on a LATER pass, since the
+    underlying cause may have been transient (a different search, a
+    recovered upstream)."""
+
+    def __init__(self, message: str, permanent: bool = False):
+        super().__init__(message)
+        self.permanent = permanent
 
 
 def _extract_json_object(text: str) -> Dict[str, Any]:
@@ -56,38 +77,61 @@ class ClaudeClient:
         )
         self._policy = RetryPolicy(retries=config.max_retries)
 
-    def extract_critical_fields(self, system_prompt: str, raw_text: str) -> Dict[str, Any]:
-        """Run targeted LLM extraction with temperature=0 and an enforced-JSON prompt."""
-        strict_json_suffix = (
-            "\n\nRespond with ONLY the JSON object. No markdown code fences, no preamble, "
-            "no commentary, no explanation before or after it. The response must start "
-            "with '{' and end with '}'."
-        )
-        body = {
-            "model": self.config.claude_model,
-            "system": system_prompt + strict_json_suffix,
-            "messages": [
-                {"role": "user", "content": f"RAW SCRAPED PROFILE CONTENT:\n\n{raw_text[:8000]}"},
-            ],
-            "temperature": 0.0,
-            "max_tokens": 1024,
-        }
+    def search_missing_fields(
+        self, missing_fields: List[str], full_name: str, profile_link: str, source_platform: str
+    ) -> Dict[str, Any]:
+        """Tier 3: ask Claude to use its web_search server tool to find
+        specific missing fields about a named person -- fired only when
+        Bright Data/Tavily and Parallel have both come up thin (see
+        orchestrator.py's MAX_FIELDS_BEFORE_WEBSEARCH gate), so there's no
+        scraped source text left for a raw-text extraction to mine. Ported
+        from the abandoned feat/linkedin-websearch-fallback branch (commit
+        2da2456), generalized beyond LinkedIn.
 
-        log.info("Claude LLM request START model=%s", self.config.claude_model)
+        No `system` field: confirmed in that branch's own testing that
+        combining a system prompt / forced-JSON instruction with server tool
+        use made the model skip calling the tool entirely and hallucinate a
+        schema-shaped answer instead. The JSON instruction lives in the
+        prompt text, and the result is salvaged from the final text block via
+        the same _extract_json_object/_request_once path every Claude call
+        here shares.
+
+        Own retry policy and per-request timeout: a single call can run up
+        to 8 server-side search rounds and legitimately takes minutes -- the
+        default 15s RetryPolicy and short request_timeout would abort a call
+        that's genuinely still working. See config.py's
+        claude_websearch_deadline_seconds.
+        """
+        prompt = build_web_search_prompt(missing_fields, full_name, profile_link, source_platform)
+        body = {
+            "model": _WEB_SEARCH_MODEL,
+            "max_tokens": 4096,
+            "tools": [{"type": "web_search_20260209", "name": "web_search", "max_uses": 8}],
+            "messages": [{"role": "user", "content": prompt}],
+        }
+        policy = RetryPolicy(retries=1, deadline_seconds=self.config.claude_websearch_deadline_seconds)
+        request_timeout = max(self.config.request_timeout, 240)
+
+        log.info("Claude web_search fallback START name=%r fields=%s", full_name, missing_fields)
 
         def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
             log.warning(
-                "Claude LLM request retryable failure attempt=%d/%d, retrying in %.1fs (%s)",
-                attempt + 1, self.config.max_retries, delay, exc,
+                "Claude web_search fallback retryable failure attempt=%d/%d, retrying in %.1fs (%s)",
+                attempt + 1, policy.retries, delay, exc,
             )
 
         try:
-            return retry_with_backoff(lambda: self._request_once(body), policy=self._policy, on_retry=on_retry)
+            result = retry_with_backoff(
+                lambda: self._request_once(body, timeout=request_timeout), policy=policy, on_retry=on_retry
+            )
         except RetryExhaustedError as exc:
             cause = exc.cause
             if isinstance(cause, ClaudeError):
                 raise cause from exc
-            raise ClaudeError(f"Claude LLM call failed after retries: {cause if cause else exc}") from exc
+            raise ClaudeError(f"Claude web_search fallback failed after retries: {cause if cause else exc}") from exc
+
+        log.info("Claude web_search fallback SUCCESS name=%r sources=%s", full_name, result.get("sources_used"))
+        return result
 
     def translate_to_english(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         """Translate an enrichment payload's free text into English, keeping
@@ -160,15 +204,16 @@ class ClaudeClient:
                 raise cause from exc
             raise ClaudeError(f"Claude translation failed after retries: {cause if cause else exc}") from exc
 
-    def _request_once(self, body: Dict[str, Any]) -> Dict[str, Any]:
+    def _request_once(self, body: Dict[str, Any], timeout: Optional[int] = None) -> Dict[str, Any]:
+        effective_timeout = timeout if timeout is not None else self.config.request_timeout
         try:
             resp = self.session.post(
                 self.config.claude_base_url,
                 json=body,
-                timeout=self.config.request_timeout,
+                timeout=effective_timeout,
             )
         except requests.exceptions.Timeout as exc:
-            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+            raise TransientError(f"Request timed out after {effective_timeout}s") from exc
         except requests.exceptions.RequestException as exc:
             raise TransientError(f"Network error: {exc}") from exc
 
@@ -179,7 +224,13 @@ class ClaudeClient:
         try:
             resp.raise_for_status()
         except requests.exceptions.HTTPError as exc:
-            raise ClaudeError(f"Claude LLM call failed: HTTP {resp.status_code}: {resp.text[:200]}") from exc
+            # A 4xx other than 429 means the API rejected this exact request
+            # (bad model name, malformed body, auth) -- the same request will
+            # fail the same way again, so callers with a re-attempt policy
+            # (search_missing_fields) must treat this as permanent, not retry it.
+            raise ClaudeError(
+                f"Claude LLM call failed: HTTP {resp.status_code}: {resp.text[:200]}", permanent=True
+            ) from exc
 
         data = resp.json()
         content_blocks = data.get("content", [])

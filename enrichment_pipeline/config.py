@@ -81,6 +81,17 @@ class Config:
     # matters for a genuine outlier, not the expected case.
     parallel_deadline_seconds: float = 3700.0
 
+    # Whole retry+backoff sequence deadline for ONE Tier 3 web-search call
+    # (llm_fallback/client.py's search_missing_fields). A single call can run
+    # up to 8 server-side search rounds and legitimately takes minutes, so
+    # this deliberately isn't the default 15s RetryPolicy -- but unlike
+    # Parallel's deadline, there's no SDK-managed poll to defer to here, so
+    # 300s is a real, chosen ceiling (not a placeholder pending a better
+    # number): comfortably above the multi-round search budget, comfortably
+    # below orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS headroom for this
+    # stage (see that constant's own comment for the full budget math).
+    claude_websearch_deadline_seconds: float = 300.0
+
     brightdata_base_url: str = "https://api.brightdata.com/datasets/v3/scrape"
     tavily_extract_url: str = "https://api.tavily.com/extract"
     tavily_search_url: str = "https://api.tavily.com/search"
@@ -129,6 +140,7 @@ def load_config(require_keys: bool = False) -> Config:
     parallel_api_key = os.getenv("PARALLEL_API_KEY", "").strip()
     parallel_processor = os.getenv("PARALLEL_PROCESSOR", "core").strip()
     parallel_deadline_seconds = float(os.getenv("PARALLEL_DEADLINE_SECONDS", "3700.0"))
+    claude_websearch_deadline_seconds = float(os.getenv("CLAUDE_WEBSEARCH_DEADLINE_SECONDS", "300.0"))
 
     if require_keys:
         missing = []
@@ -163,6 +175,7 @@ def load_config(require_keys: bool = False) -> Config:
         parallel_api_key=parallel_api_key,
         parallel_processor=parallel_processor,
         parallel_deadline_seconds=parallel_deadline_seconds,
+        claude_websearch_deadline_seconds=claude_websearch_deadline_seconds,
         groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
         request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
         max_retries=int(os.getenv("MAX_RETRIES", "4")),

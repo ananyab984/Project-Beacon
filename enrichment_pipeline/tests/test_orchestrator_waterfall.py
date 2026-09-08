@@ -32,9 +32,9 @@ def stub(**methods):
     return type("Stub", (), {name: staticmethod(fn) for name, fn in methods.items()})()
 
 
-def test_linkedin_waterfall_falls_through_brightdata_parallel_to_llm():
+def test_linkedin_waterfall_falls_through_brightdata_parallel_to_websearch():
     orch = make_orchestrator()
-    calls = {"brightdata": 0, "parallel": 0, "llm": 0}
+    calls = {"brightdata": 0, "parallel": 0, "websearch": 0}
 
     def bd_scrape(url):
         calls["brightdata"] += 1
@@ -44,23 +44,24 @@ def test_linkedin_waterfall_falls_through_brightdata_parallel_to_llm():
         calls["parallel"] += 1
         raise ParallelError("call failed")
 
-    def llm_extract(system_prompt, raw_text):
-        calls["llm"] += 1
-        return {}
+    def websearch(missing_fields, full_name, profile_link, source_platform):
+        calls["websearch"] += 1
+        return {"could_not_find_anything": True, "sources_used": []}
 
     orch.brightdata = stub(scrape_profile=bd_scrape)
     orch.parallel = stub(enrich_profile=parallel_enrich)
-    orch.claude = stub(extract_critical_fields=llm_extract)
+    orch.claude = stub(search_missing_fields=websearch)
 
     lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
     result = orch.process_lead(lead)
 
     assert calls["brightdata"] == 1, "BrightData should have been tried first"
     assert calls["parallel"] == 1, "Parallel should be tried after BrightData fails"
-    # raw_source_text is empty since BrightData failed -- LLM fallback is
-    # skipped for lack of source text, not called; this is existing,
-    # unrelated behavior (LLM needs something to extract from).
-    assert calls["llm"] == 0
+    # Both Tier 1 and Tier 2 came up empty, and this lead is well under the
+    # MAX_FIELDS_BEFORE_WEBSEARCH threshold -- Stage 6 must fire as the
+    # backstop, unlike the old raw-text extraction (which needed scraped
+    # text that was never there to begin with).
+    assert calls["websearch"] == 1, "Stage 6 web search must be tried after Parallel fails, for a thin lead"
     assert result["conclusion"] == "exhausted_no_match"
     assert result["parallel_fallback"]["called"] is True
     assert result["parallel_fallback"]["error"] == "call failed"
@@ -152,7 +153,7 @@ def test_short_circuit_success_when_nothing_left_to_fill():
     round-trips a lead's persisted field_sources on every re-enrichment call."""
     orch = make_orchestrator()
     llm_calls = {"n": 0}
-    orch.claude = stub(extract_critical_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {})
+    orch.claude = stub(search_missing_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {})
 
     lead = {
         "Source": "Freelancer",
@@ -168,6 +169,8 @@ def test_short_circuit_success_when_nothing_left_to_fill():
         "Current_Title": "Translator",
         "Tools_Software": "Trados",
         "Certifications": "ATA",
+        "Headline": "Freelance Translator",
+        "About_Snippet": "10 years of experience in AV translation.",
     }
     known_field_sources = {
         f: "llm_fallback" for f in
