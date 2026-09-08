@@ -18,6 +18,7 @@ import { escalationRouter } from "./routes/escalation.routes";
 import { evaluationRouter } from "./routes/evaluation.routes";
 import { reportsRouter } from "./routes/reports.routes";
 import { faqRouter } from "./routes/faq.routes";
+import { replyCategoriesRouter } from "./routes/replyCategories.routes";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { startBackgroundJobs } from "./jobs";
 
@@ -83,6 +84,7 @@ app.use("/api/conversations", conversationRouter);
 app.use("/api/escalations", escalationRouter);
 app.use("/api/reports", reportsRouter);
 app.use("/api/faq", faqRouter);
+app.use("/api/reply-categories", replyCategoriesRouter);
 app.use("/api", evaluationRouter);
 
 app.use(notFoundHandler);
