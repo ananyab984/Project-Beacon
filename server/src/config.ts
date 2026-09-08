@@ -61,6 +61,27 @@ export const config = {
   // unset (matching the ported orchestrator.py's own RuntimeError), rather
   // than blocking the whole server from booting over a drafting-only
   // misconfiguration.
+  // Autumn.ai -- recruiter-triggered re-enrichment only (never the waterfall).
+  // Not requireEnv: the re-enrichment job throws at call time if it's unset,
+  // so a missing key fails that one action loudly instead of blocking the
+  // whole server from booting over a feature nothing else depends on.
+  autumnApiKey: process.env.AUTUMN_API_KEY || "",
+  autumnBaseUrl: resolveEnv("AUTUMN_BASE_URL", "https://api.autumn.ai", false),
+  // Autumn's own ceiling, deliberately NOT the waterfall's. The Python
+  // pipeline's cumulative cap is LEAD_LEVEL_TIMEOUT_SECONDS = 3800s
+  // (orchestrator.py), sized for retrying slow scrapes across three heavy
+  // stages -- unrelated to one agentic research task. (The "60s cumulative
+  // cap" in schema.prisma's OnHoldReason comment is stale, predating that.)
+  // 300s is ~1.7x the 175.8s the PoC's single Autumn task took to enrich all
+  // 12 edge-case leads at once (POC/autumn_poc/output_edge_cases.json), so a
+  // one-lead run has real headroom without hanging a recruiter for an hour.
+  autumnReenrichTimeoutSeconds: parseInt(process.env.AUTUMN_REENRICH_TIMEOUT_SECONDS || "300", 10),
+  // Cost guardrails. Autumn is credit-metered and its per-task price isn't
+  // documented up front, so a recruiter re-clicking the same lead must not be
+  // able to spend without bound. Conservative starting values, per lead.
+  autumnReenrichCooldownMinutes: parseInt(process.env.AUTUMN_REENRICH_COOLDOWN_MINUTES || "10", 10),
+  autumnReenrichDailyCap: parseInt(process.env.AUTUMN_REENRICH_DAILY_CAP || "3", 10),
+
   claudeApiKey: process.env.CLAUDE_API_KEY || "",
   claudeModel: process.env.CLAUDE_MODEL || "",
   genTemperature: parseFloat(process.env.GEN_TEMPERATURE || "0.5"),

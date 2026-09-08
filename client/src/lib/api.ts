@@ -1,5 +1,6 @@
 import type {
   ApiLead,
+  ReenrichmentRun,
   LeadTimelineEvent,
   ApiUser,
   ApiClient,
@@ -197,6 +198,25 @@ export const api = {
 
   async retryLeadEnrichment(id: string): Promise<{ lead: ApiLead }> {
     return request(`/api/leads/${id}/retry-enrichment`, { method: "POST" });
+  },
+
+  // Dispatches an Autumn.ai research task and returns immediately -- the run
+  // itself takes minutes, so progress is read back via getReenrichmentStatus.
+  async reenrichLead(id: string): Promise<{ run: { id: string; status: string; startedAt: string } }> {
+    return request(`/api/leads/${id}/reenrich`, { method: "POST" });
+  },
+
+  async getReenrichmentStatus(id: string): Promise<{ run: ReenrichmentRun | null }> {
+    return request(`/api/leads/${id}/reenrichment-status`);
+  },
+
+  // Applies only the conflicting fields the recruiter chose to take from
+  // Autumn; everything else keeps the lead's current value.
+  async resolveReenrichment(id: string, runId: string, acceptFields: string[]): Promise<{ lead: ApiLead; appliedFields: string[] }> {
+    return request(`/api/leads/${id}/reenrichment-resolve`, {
+      method: "POST",
+      body: JSON.stringify({ runId, acceptFields }),
+    });
   },
 
   // A plain `window.open`/`<a href>` to this endpoint can't carry the Neon

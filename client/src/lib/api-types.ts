@@ -21,6 +21,36 @@ export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO
  * concludes cleanly. */
 export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
+export type ReenrichmentStatus = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED" | "TIMED_OUT";
+
+/** Summary attached to each lead so the table can disable Re-enrich for a run
+ *  that's still going — including one started before the page was reloaded. */
+export interface ReenrichmentSummary {
+  status: ReenrichmentStatus;
+  lastRunAt: string | null;
+}
+
+/** A populated field where Autumn disagrees with what the lead already has.
+ *  Never applied until the recruiter picks a side. */
+export interface ReenrichmentConflict {
+  field: string;
+  current: string | string[];
+  proposed: string | string[];
+}
+
+/** One re-enrichment run, as polled by the re-enrichment modal. */
+export interface ReenrichmentRun {
+  id: string;
+  status: Exclude<ReenrichmentStatus, "IDLE">;
+  creditsUsed: number | null;
+  fieldsWritten: number | null;
+  message: string | null;
+  conflicts: ReenrichmentConflict[] | null;
+  resolvedAt: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
 export interface ApiLead {
   id: string;
   createdByRecruiterId: string | null;
@@ -75,6 +105,9 @@ export interface ApiLead {
   enrichedFieldCount: number;
   /** Full-fidelity Parallel enrichment: { experience, education, languages, certifications, ... } */
   parallelData: Record<string, any> | null;
+  /** Latest Autumn re-enrichment run for this lead. Attached by the list and
+   *  detail endpoints only, so it's optional on leads returned by mutations. */
+  reenrichment?: ReenrichmentSummary;
   availability: Availability;
   availabilityFromDate: string | null;
   createdAt: string;

@@ -38,14 +38,21 @@ interface Props {
   /** Re-runs the waterfall for a lead whose run didn't conclude. */
   onRetry: (id: string) => void;
   retryPending?: boolean;
+  /** Dispatches an Autumn re-enrichment run. Unlike Retry, this is available
+   *  for any lead at any time -- it's the recruiter deciding the data is
+   *  stale, not the system reporting a run that didn't conclude. */
+  onReenrich: (lead: ApiLead) => void;
 }
 
-export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPending }: Props) {
+export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPending, onReenrich }: Props) {
   const kind = enrichmentStatusKindOf(lead);
   const fieldCount = lead.enrichedFieldCount ?? 0;
   // A retry only makes sense for a hold the system placed, never a
   // recruiter's own deliberate one.
   const canRetry = kind === "on_hold" && lead.onHoldReason !== "MANUAL";
+  // Server-side truth, not local click state -- so the button is still
+  // disabled after a reload or a trip to another page mid-run.
+  const reenriching = lead.reenrichment?.status === "RUNNING";
   const missingContact = !lead.email && !lead.contactNumber;
 
   const tone: Record<EnrichmentStatusKind, string> = {
@@ -98,6 +105,18 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
           · Retry
         </button>
       )}
+      <button
+        onClick={() => onReenrich(lead)}
+        disabled={reenriching}
+        className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-default"
+        title={
+          reenriching
+            ? "An Autumn re-enrichment run is already in progress for this lead"
+            : "Re-research this profile with Autumn (takes a few minutes)"
+        }
+      >
+        {reenriching ? "· Re-enriching…" : "· Re-enrich"}
+      </button>
     </div>
   );
 }
