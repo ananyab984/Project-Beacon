@@ -685,8 +685,19 @@ leadRouter.patch(
       priority: z.enum(["P0", "P1", "P2", "P3"]).optional(),
       stage: z.enum(LEAD_STAGES).optional(),
       closureReason: z.string().optional(),
+      replyCategoryId: z.string().uuid().nullable().optional(),
     });
     const patch = schema.parse(req.body);
+
+    // A caller sending `replyCategoryId` (even explicitly `null`) is
+    // performing a manual override -- distinct from the auto-classifier's
+    // own writes (see processInboundMessage.ts), which always use source
+    // "AUTO". Setting these two alongside `replyCategoryId` here means they
+    // ride along in the single `prisma.lead.update` call below.
+    if ("replyCategoryId" in patch) {
+      (patch as any).replyClassificationSource = "MANUAL";
+      (patch as any).replyClassifiedAt = new Date();
+    }
 
     (patch as any).fieldSources = resolveManualFieldSources(existing as any, req.body, patch as any);
 
@@ -734,6 +745,18 @@ leadRouter.patch(
       where: { id: existing.id },
       data: { ...patch, lastActivityAt: new Date() },
     });
+
+    if ("replyCategoryId" in patch) {
+      await prisma.replyClassificationEvent.create({
+        data: {
+          leadId: existing.id,
+          categoryId: patch.replyCategoryId ?? null,
+          confidence: null,
+          source: "MANUAL",
+          changedByUserId: req.user!.id,
+        },
+      });
+    }
 
     // Automatically sync updated candidate name and details to email queue and conversation threads
     if (updated.email || updated.displayName || updated.fullName) {
