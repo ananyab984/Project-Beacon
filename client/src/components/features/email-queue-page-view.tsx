@@ -69,12 +69,13 @@ export function EmailQueuePageView() {
   // conversations-page-view.tsx so all three stay on one cache entry.
   const { data: replyCategoriesData } = useQuery({
     queryKey: ["reply-categories"],
-    queryFn: async () => {
-      const result = await api.listReplyCategories();
-      return result.replyCategories;
-    },
+    queryFn: () => api.listReplyCategories(),
   });
-  const replyCategories = replyCategoriesData ?? [];
+  const replyCategories = replyCategoriesData?.replyCategories ?? [];
+  // Single server-side kill switch (server/src/config.ts's
+  // replyClassificationEnabled) -- defaults true while loading so the
+  // dropdown doesn't flash in then out on the common (enabled) path.
+  const replyClassificationEnabled = replyCategoriesData?.featureEnabled ?? true;
 
   const overrideClassificationMutation = useMutation({
     mutationFn: ({ leadId, replyCategoryId }: { leadId: string; replyCategoryId: string | null }) =>
@@ -415,26 +416,28 @@ export function EmailQueuePageView() {
                 <div>
                   <div className="text-lg font-semibold">{candidateName(selected)}</div>
                   <div className="text-xs text-muted-foreground">{selected.candidateRole}</div>
-                  <div className="mt-1.5">
-                    <select
-                      className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"
-                      value={selected.lead?.replyCategoryId ?? ""}
-                      onChange={(e) =>
-                        overrideClassificationMutation.mutate({
-                          leadId: selected.leadId,
-                          replyCategoryId: e.target.value || null,
-                        })
-                      }
-                      disabled={overrideClassificationMutation.isPending}
-                    >
-                      <option value="">Unclassified</option>
-                      {replyCategories.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {replyClassificationEnabled && (
+                    <div className="mt-1.5">
+                      <select
+                        className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"
+                        value={selected.lead?.replyCategoryId ?? ""}
+                        onChange={(e) =>
+                          overrideClassificationMutation.mutate({
+                            leadId: selected.leadId,
+                            replyCategoryId: e.target.value || null,
+                          })
+                        }
+                        disabled={overrideClassificationMutation.isPending}
+                      >
+                        <option value="">Unclassified</option>
+                        {replyCategories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <SaveStatus state={saveState} savedAt={savedAt} />
                 </div>
                 <div className="flex flex-wrap gap-2">
