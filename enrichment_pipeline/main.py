@@ -171,6 +171,16 @@ def run_server(host: str, port: int, config) -> None:
 
     orchestrator = EnrichmentOrchestrator(config)
 
+    # Served at BOTH paths on purpose. The platform's health check is what
+    # decides a deploy is live, and its configured path lives in the Render
+    # dashboard, not in this repo -- so a path set to "/" (or left at a
+    # provider default of "/") polls a route FastAPI answers with 404, the
+    # deploy never goes healthy, and it sits "In progress" until the platform
+    # gives up and rolls back. The build itself is 32s; everything after that
+    # is the platform waiting for an answer at whatever path it was told to
+    # use. Answering on "/" as well costs one route and removes the entire
+    # class of "deployed fine, never went live".
+    @app.get("/")
     @app.get("/health")
     def health_check():
         return {
@@ -212,7 +222,21 @@ def run_server(host: str, port: int, config) -> None:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     log.info("Starting Enrichment Pipeline FastAPI server at http://%s:%d", host, port)
-    uvicorn.run(app, host=host, port=port)
+    # timeout_graceful_shutdown is set because uvicorn's default is to wait
+    # FOREVER for in-flight requests on SIGTERM, and an in-flight request here
+    # is a full waterfall run -- minutes normally, up to orchestrator.py's
+    # LEAD_LEVEL_TIMEOUT_SECONDS (4100s) at the ceiling. A redeploy lands
+    # SIGTERM on an instance mid-enrichment routinely, and the platform then
+    # SIGKILLs it after its own (much shorter) grace window anyway, so the
+    # unbounded wait bought nothing and just made every deploy end in a hard
+    # kill. 25s stays inside a typical 30s platform window, so the process
+    # exits cleanly on its own terms instead.
+    #
+    # A lead cut off this way is NOT lost: the connection closes, Node's
+    # enrichLeadById catch path reverts it to PENDING and flags
+    # ON_HOLD/SYSTEM_ERROR, so it shows up with a Retry rather than sitting
+    # in IN_PROGRESS until the 20-minute stall sweep notices.
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=25)
 
 
 def main(argv: Optional[List[str]] = None) -> int:
