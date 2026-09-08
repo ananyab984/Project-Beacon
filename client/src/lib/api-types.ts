@@ -21,6 +21,23 @@ export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO
  * concludes cleanly. */
 export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
+export type OutreachFunnelCategory = "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc";
+
+/** One row in a funnel tile's drill-down list -- deliberately lighter than
+ *  ApiLead, matching what GET /reports/outreach-funnel/leads selects. */
+export interface OutreachFunnelLead {
+  id: string;
+  displayName: string | null;
+  fullName: string | null;
+  maskedLabel: string | null;
+  status: string;
+  stage: string;
+  country: string | null;
+  targetLanguage: string | null;
+  source: string;
+  assignedTo: { name: string } | null;
+}
+
 export type ReenrichmentStatus = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED" | "TIMED_OUT";
 
 /** Summary attached to each lead so the table can disable Re-enrich for a run

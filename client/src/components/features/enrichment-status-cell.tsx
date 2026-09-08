@@ -1,5 +1,6 @@
 import type { ApiLead } from "@/lib/api-types";
 import { ENRICHMENT_FIELD_TOTAL } from "@/lib/api-types";
+import { RefreshCw } from "lucide-react";
 
 /**
  * The enrichment-status cell for the leads table.
@@ -108,14 +109,14 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
       <button
         onClick={() => onReenrich(lead)}
         disabled={reenriching}
-        className="text-xs text-muted-foreground hover:underline cursor-pointer disabled:opacity-50 disabled:cursor-default"
+        className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-50 disabled:cursor-default disabled:hover:bg-transparent"
         title={
           reenriching
             ? "An Autumn re-enrichment run is already in progress for this lead"
             : "Re-research this profile with Autumn (takes a few minutes)"
         }
       >
-        {reenriching ? "· Re-enriching…" : "· Re-enrich"}
+        <RefreshCw className={`h-3.5 w-3.5 ${reenriching ? "animate-spin" : ""}`} />
       </button>
     </div>
   );

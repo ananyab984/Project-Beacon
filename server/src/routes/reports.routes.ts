@@ -142,6 +142,65 @@ reportsRouter.get(
   })
 );
 
+const FUNNEL_CATEGORIES = ["contacted", "awaiting_reply", "replied", "in_negotiation", "dnc"] as const;
+type FunnelCategory = (typeof FUNNEL_CATEGORIES)[number];
+
+/**
+ * The lead-id set behind each outreach-funnel tile, as one shared
+ * computation -- both the tile counts and the "view these leads" drill-down
+ * read the exact same sets, so a count and its list can never disagree.
+ */
+async function getOutreachFunnelLeadIds(
+  req: Request,
+  range: string
+): Promise<Record<FunnelCategory, string[]>> {
+  const since = getSinceDate(range);
+  const isOwner = req.user!.role.toLowerCase() === "owner";
+
+  const interactionWhere: any = { occurredAt: { gte: since } };
+  if (!isOwner) interactionWhere.recruiterId = req.user!.id;
+
+  // Same lead-ownership definition GET /api/leads/mine already uses.
+  const leadWhere: any = isOwner
+    ? {}
+    : {
+        OR: [
+          { assignedRecruiterId: req.user!.id },
+          { claimedByRecruiterId: req.user!.id },
+          { createdByRecruiterId: req.user!.id },
+        ],
+      };
+
+  const [outboundEvents, inboundEvents, negotiating, dnc] = await Promise.all([
+    prisma.interactionEvent.findMany({
+      where: { ...interactionWhere, direction: "OUTBOUND" },
+      select: { leadId: true },
+      distinct: ["leadId"],
+    }),
+    prisma.interactionEvent.findMany({
+      where: { ...interactionWhere, direction: "INBOUND" },
+      select: { leadId: true },
+      distinct: ["leadId"],
+    }),
+    prisma.lead.findMany({ where: { ...leadWhere, stage: "NEGOTIATING" }, select: { id: true } }),
+    // `flags` is the denormalized LeadFlagEvent cache (see schema.prisma) --
+    // already trusted directly elsewhere in the app (e.g. the ON_HOLD
+    // checks in recruiter.leads.tsx), not re-derived from the event log here.
+    prisma.lead.findMany({ where: { ...leadWhere, flags: { has: "DNC" } }, select: { id: true } }),
+  ]);
+
+  const repliedLeadIds = new Set(inboundEvents.map((e) => e.leadId));
+  const contactedIds = outboundEvents.map((e) => e.leadId);
+
+  return {
+    contacted: contactedIds,
+    awaiting_reply: contactedIds.filter((id) => !repliedLeadIds.has(id)),
+    replied: [...repliedLeadIds],
+    in_negotiation: negotiating.map((l) => l.id),
+    dnc: dnc.map((l) => l.id),
+  };
+}
+
 // GET /api/reports/outreach-funnel?range=30d — real Contacted/Awaiting Reply/
 // Replied/Negotiation/DNC counts, replacing the hardcoded-zero g3-mock
 // outreachBatch object both dashboards used to read from. Recruiters see
@@ -151,53 +210,56 @@ reportsRouter.get(
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
     const range = (req.query.range as string) || "30d";
-    const since = getSinceDate(range);
-    const isOwner = req.user!.role.toLowerCase() === "owner";
-
-    const interactionWhere: any = { occurredAt: { gte: since } };
-    if (!isOwner) interactionWhere.recruiterId = req.user!.id;
-
-    // Same lead-ownership definition GET /api/leads/mine already uses.
-    const leadWhere: any = isOwner
-      ? {}
-      : {
-          OR: [
-            { assignedRecruiterId: req.user!.id },
-            { claimedByRecruiterId: req.user!.id },
-            { createdByRecruiterId: req.user!.id },
-          ],
-        };
-
-    const [outboundEvents, inboundEvents, inNegotiation, dnc] = await Promise.all([
-      prisma.interactionEvent.findMany({
-        where: { ...interactionWhere, direction: "OUTBOUND" },
-        select: { leadId: true },
-        distinct: ["leadId"],
-      }),
-      prisma.interactionEvent.findMany({
-        where: { ...interactionWhere, direction: "INBOUND" },
-        select: { leadId: true },
-        distinct: ["leadId"],
-      }),
-      prisma.lead.count({ where: { ...leadWhere, stage: "NEGOTIATING" } }),
-      // `flags` is the denormalized LeadFlagEvent cache (see schema.prisma) --
-      // already trusted directly elsewhere in the app (e.g. the ON_HOLD
-      // checks in recruiter.leads.tsx), not re-derived from the event log here.
-      prisma.lead.count({ where: { ...leadWhere, flags: { has: "DNC" } } }),
-    ]);
-
-    const repliedLeadIds = new Set(inboundEvents.map((e) => e.leadId));
-    const contacted = outboundEvents.length;
-    const awaitingReply = outboundEvents.filter((e) => !repliedLeadIds.has(e.leadId)).length;
-
+    const ids = await getOutreachFunnelLeadIds(req, range);
     return res.json({
       range,
-      contacted,
-      awaiting_reply: awaitingReply,
-      replied: repliedLeadIds.size,
-      in_negotiation: inNegotiation,
-      dnc,
+      contacted: ids.contacted.length,
+      awaiting_reply: ids.awaiting_reply.length,
+      replied: ids.replied.length,
+      in_negotiation: ids.in_negotiation.length,
+      dnc: ids.dnc.length,
     });
+  })
+);
+
+// GET /api/reports/outreach-funnel/leads?category=contacted&range=30d — the
+// leads behind one funnel tile, for the dashboard's click-to-drill-down.
+// Reuses getOutreachFunnelLeadIds so this list is always consistent with the
+// count shown on the tile that opened it.
+reportsRouter.get(
+  "/outreach-funnel/leads",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const range = (req.query.range as string) || "30d";
+    const category = req.query.category as string;
+    if (!FUNNEL_CATEGORIES.includes(category as FunnelCategory)) {
+      return res.status(400).json({ error: `category must be one of: ${FUNNEL_CATEGORIES.join(", ")}` });
+    }
+
+    const ids = await getOutreachFunnelLeadIds(req, range);
+    const leadIds = ids[category as FunnelCategory];
+    // Order follows the id list above (interaction-recency for the three
+    // event-derived categories), not an independent createdAt sort -- so the
+    // top of the list matches "most recently contacted/replied" intuition.
+    const leads = await prisma.lead.findMany({
+      where: { id: { in: leadIds } },
+      select: {
+        id: true,
+        displayName: true,
+        fullName: true,
+        maskedLabel: true,
+        status: true,
+        stage: true,
+        country: true,
+        targetLanguage: true,
+        source: true,
+        assignedTo: { select: { name: true } },
+      },
+    });
+    const byId = new Map(leads.map((l) => [l.id, l]));
+    const ordered = leadIds.map((id) => byId.get(id)).filter((l): l is NonNullable<typeof l> => !!l);
+
+    return res.json({ category, range, leads: ordered });
   })
 );
 

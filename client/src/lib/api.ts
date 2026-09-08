@@ -1,6 +1,8 @@
 import type {
   ApiLead,
   ReenrichmentRun,
+  OutreachFunnelCategory,
+  OutreachFunnelLead,
   LeadTimelineEvent,
   ApiUser,
   ApiClient,
@@ -548,6 +550,18 @@ export const api = {
     dnc: number;
   }> {
     return request(`/api/reports/outreach-funnel?range=${range}`);
+  },
+
+  /** The leads behind one outreach-funnel tile -- drives the dashboard's
+   *  click-to-drill-down. Always consistent with getOutreachFunnel's count
+   *  for the same category+range, since the server computes both from the
+   *  same id set. */
+  async getOutreachFunnelLeads(category: OutreachFunnelCategory, range: string = "30d"): Promise<{
+    category: string;
+    range: string;
+    leads: OutreachFunnelLead[];
+  }> {
+    return request(`/api/reports/outreach-funnel/leads?category=${category}&range=${range}`);
   },
 
   /** Real lead-data completeness -- replaces the hardcoded-zero g3-mock

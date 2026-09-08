@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { teamKpis } from "@/lib/g3-mock";
 import { api } from "@/lib/api";
+import type { OutreachFunnelCategory } from "@/lib/api-types";
 import { FEATURES } from "@/lib/feature-flags";
+import { OutreachFunnelLeadsDialog } from "@/components/features/outreach-funnel-leads-dialog";
 import {
   Radio,
   Mail,
@@ -53,6 +56,7 @@ function Overview() {
   const { data: dataHealth } = useQuery({ queryKey: ["data-health"], queryFn: api.getDataHealth });
   const { data: analytics } = useQuery({ queryKey: ["reports-analytics", range], queryFn: () => api.getReportsAnalytics(range) });
   const teamAvgScore = analytics?.summary.teamAvgScore ?? team.overall_score;
+  const [funnelCategory, setFunnelCategory] = useState<OutreachFunnelCategory | null>(null);
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       {/* Good Morning Ethan Hero Header Block */}
@@ -116,13 +120,15 @@ function Overview() {
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <OutreachBlock icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" />
-          <OutreachBlock icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" />
-          <OutreachBlock icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" />
-          <OutreachBlock icon={Handshake} label="In Negotiation" value={funnel.in_negotiation} tone="warning" />
-          <OutreachBlock icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" />
+          <OutreachBlock icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" onClick={() => setFunnelCategory("contacted")} />
+          <OutreachBlock icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" onClick={() => setFunnelCategory("awaiting_reply")} />
+          <OutreachBlock icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" onClick={() => setFunnelCategory("replied")} />
+          <OutreachBlock icon={Handshake} label="In Negotiation" value={funnel.in_negotiation} tone="warning" onClick={() => setFunnelCategory("in_negotiation")} />
+          <OutreachBlock icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" onClick={() => setFunnelCategory("dnc")} />
         </div>
       </section>
+
+      <OutreachFunnelLeadsDialog category={funnelCategory} range={range} onOpenChange={(open) => !open && setFunnelCategory(null)} />
 
       {/* Team health — evaluation framework strip */}
       <section className="rounded-2xl border border-border bg-card p-5">
@@ -217,11 +223,13 @@ function OutreachBlock({
   label,
   value,
   tone,
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
   tone: "primary" | "muted" | "accent" | "warning" | "destructive";
+  onClick: () => void;
 }) {
   const colorMap = {
     primary: "border-primary/30 bg-primary/5 text-primary",
@@ -231,12 +239,16 @@ function OutreachBlock({
     destructive: "border-destructive/30 bg-destructive/5 text-destructive",
   };
   return (
-    <div className={`rounded-xl border p-3.5 space-y-2 ${colorMap[tone]}`}>
+    <button
+      onClick={onClick}
+      className={`rounded-xl border p-3.5 space-y-2 text-left transition-colors hover:brightness-110 cursor-pointer ${colorMap[tone]}`}
+      title={`View leads in ${label}`}
+    >
       <div className="flex items-center justify-between">
         <Icon className="h-4 w-4" />
         <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{label}</span>
       </div>
       <div className="text-2xl font-bold tabular-nums">{value.toLocaleString()}</div>
-    </div>
+    </button>
   );
 }
