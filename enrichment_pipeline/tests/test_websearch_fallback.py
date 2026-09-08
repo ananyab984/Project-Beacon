@@ -401,3 +401,54 @@ def test_a_later_pass_is_what_retries_this_stage():
     """Dropping the in-call retry is only safe because re-attempts live in the
     marker policy instead -- guard against both being removed."""
     assert orchestrator_module.MAX_WEBSEARCH_TRANSIENT_ATTEMPTS >= 2
+
+
+# --- a disabled Tier 1 must never be silent -----------------------------
+#
+# Confirmed live 2026-09-08: a lead whose LinkedIn profile Bright Data
+# scrapes perfectly on demand (name, About, education and certifications all
+# returned when called directly) was stored with `rawScrapeData: NULL` and no
+# explanation anywhere in the service log. `self.brightdata` is None whenever
+# BRIGHTDATA_API_KEY is absent, and the Tier 1 branch had no else, so a
+# misconfigured DEPLOYMENT looked exactly like a blocked PROFILE -- same
+# stored shape, same silence. It also drives the latency complaint: with
+# Tier 1 gone every lead scores thin, so Stage 6 fires on all of them.
+
+def test_missing_tier1_key_says_so_and_names_the_variable():
+    orch = make_orchestrator()          # constructed with no provider keys
+    assert orch.brightdata is None, "fixture must represent an unconfigured environment"
+    result = orch.process_lead(
+        {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone/", "Full_Name": "Someone"}
+    )
+    line = next((l for l in result["logs"] if "Stage 3 SKIPPED" in l), None)
+    assert line, "a disabled Tier 1 produced no log line -- the exact bug this guards"
+    assert "BRIGHTDATA_API_KEY" in line, "the operator cannot act on a message that doesn't name the variable"
+
+
+def test_tavily_path_reports_its_own_missing_key():
+    orch = make_orchestrator()
+    assert orch.tavily is None
+    result = orch.process_lead(
+        {"Source": "ProZ", "Profile_Link": "https://www.proz.com/profile/12345", "Full_Name": "Someone"}
+    )
+    line = next((l for l in result["logs"] if "Stage 3 SKIPPED" in l), None)
+    assert line and "TAVILY_API_KEY" in line
+
+
+def test_a_lead_with_no_url_is_not_reported_as_a_config_fault():
+    """The two causes must stay distinguishable: no URL is normal and
+    per-lead, a missing key is a deployment fault affecting every lead."""
+    orch = make_orchestrator()
+    result = orch.process_lead({"Source": "LinkedIn", "Full_Name": "No Link"})
+    assert any("no Profile_Link to scrape" in l for l in result["logs"])
+    assert not any("SKIPPED" in l and "API_KEY" in l for l in result["logs"])
+
+
+def test_health_only_accepts_real_processor_tiers():
+    """A key pasted into PARALLEL_PROCESSOR must read as invalid -- the SDK
+    types `processor` as a bare str, so nothing else catches it until the API
+    rejects the run, after the lead has already waited."""
+    from main import KNOWN_PARALLEL_PROCESSORS
+
+    assert {"lite", "base", "core"} <= KNOWN_PARALLEL_PROCESSORS
+    assert "BWKP3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" not in KNOWN_PARALLEL_PROCESSORS

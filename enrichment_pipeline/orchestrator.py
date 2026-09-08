@@ -180,6 +180,31 @@ def _websearch_state_is_settled(state: Optional[str]) -> Optional[str]:
     return None
 
 
+def _tier1_skip_reason(env_var: str, profile_link: str, client: Any) -> str:
+    """Why Stage 3 (Tier 1) did not run, named precisely enough to act on.
+
+    The two causes are worlds apart operationally -- "this lead has no URL to
+    scrape" is normal and per-lead, while "the API key is missing from this
+    environment" is a deployment fault affecting EVERY lead -- and both used
+    to produce the same thing: nothing. A misconfigured environment was
+    therefore indistinguishable from a blocked profile, right up to the shape
+    of the stored result (`rawScrapeData: NULL`).
+
+    The second message deliberately says the lead falls back to Parallel/web
+    search, because that is also the latency story: with Tier 1 gone every
+    lead looks thin, so Stage 6 fires on all of them and adds its own minutes
+    to a run that had no chance of finding much anyway."""
+    if not profile_link:
+        return "Stage 3 skipped: no Profile_Link to scrape"
+    if client is None:
+        return (
+            f"Stage 3 SKIPPED: {env_var} is not configured in this environment -- Tier 1 is "
+            f"disabled for EVERY lead, not just this one. This lead now depends entirely on "
+            f"Parallel and web search, which is both thinner and slower."
+        )
+    return "Stage 3 skipped: Tier 1 unavailable for this lead"
+
+
 def _has_content(value: Any) -> bool:
     """True if `value` carries actual data rather than a well-formed shell.
 
@@ -459,6 +484,22 @@ class EnrichmentOrchestrator:
                 msg = f"Scraping warning (brightdata): {exc}"
                 logs.append(msg)
                 log.warning(msg)
+        else:
+            # Previously this branch did not exist, so Tier 1 being disabled
+            # was indistinguishable from Tier 1 running and finding nothing:
+            # both left raw_scraped_data as None with not one line of output.
+            # That is the worst possible failure to debug, because it looks
+            # exactly like a blocked profile. Confirmed live 2026-09-08 on a
+            # lead whose LinkedIn profile Bright Data scrapes perfectly on
+            # demand (name, About, education, certifications all returned)
+            # yet whose stored rawScrapeData was NULL -- with nothing in the
+            # service log to say why, since `self.brightdata` is None
+            # whenever BRIGHTDATA_API_KEY is absent from the environment.
+            # Stage 3.5 already announces its own missing key; Tier 1 stayed
+            # silent. It no longer does.
+            msg = _tier1_skip_reason("BRIGHTDATA_API_KEY", profile_link, self.brightdata)
+            logs.append(msg)
+            log.warning(msg)
 
         if raw_scraped_data is not None:
             self._merge_stage3_parsed(lead, field_sources, logs, "linkedin", "brightdata", raw_scraped_data)
@@ -663,6 +704,11 @@ class EnrichmentOrchestrator:
                 msg = f"Scraping warning ({provider_type}): {exc}"
                 logs.append(msg)
                 log.warning(msg)
+        else:
+            # Same silent-skip gap as the LinkedIn path above, same fix.
+            msg = _tier1_skip_reason("TAVILY_API_KEY", profile_link, self.tavily)
+            logs.append(msg)
+            log.warning(msg)
 
         if raw_scraped_data is not None:
             self._merge_stage3_parsed(lead, field_sources, logs, parser_name, "tavily", raw_scraped_data)

@@ -21,6 +21,13 @@ from orchestrator import EnrichmentOrchestrator
 log = get_logger(__name__)
 
 
+# Parallel's processor tiers, cheapest/fastest first. `processor` is typed as a
+# bare `str` in the SDK's RunInput, so a wrong value is not caught locally --
+# it is rejected by the API mid-run, after the lead has already waited. Used
+# only to tell truth on /health; the value itself stays whatever is configured.
+KNOWN_PARALLEL_PROCESSORS = frozenset({"lite", "base", "core", "pro", "ultra"})
+
+
 def _start_keepalive_ping(service_name: str, keepalive_url: str, interval_seconds: int) -> None:
     if not keepalive_url:
         return
@@ -183,10 +190,39 @@ def run_server(host: str, port: int, config) -> None:
     @app.get("/")
     @app.get("/health")
     def health_check():
+        # Reports WHICH TIERS ARE ACTUALLY WIRED UP, because "healthy" on its
+        # own is a misleading thing to say. Every provider here is optional by
+        # design (`load_config(require_keys=False)`, and each client is None
+        # when its key is absent), so this process starts up, answers health
+        # checks, accepts /enrich, and returns 200 while silently doing a
+        # fraction of the work -- a missing BRIGHTDATA_API_KEY costs Tier 1 on
+        # every single lead and looks identical to a blocked profile from the
+        # outside. That happened (2026-09-08): a profile Bright Data scrapes
+        # perfectly on demand came back with rawScrapeData NULL and no
+        # explanation anywhere. One curl against this endpoint now answers
+        # "is the environment complete?" for any deployment.
+        #
+        # Booleans only -- never echo a key. `parallel_processor` is a tier
+        # NAME, not a secret, but it is reported as a validity verdict rather
+        # than verbatim precisely so that a key mistakenly pasted into that
+        # variable is reported as wrong WITHOUT this public endpoint leaking
+        # it.
         return {
             "status": "healthy",
             "service": "enrichment_pipeline",
             "version": "1.0.0",
+            "providers_configured": {
+                "brightdata": bool(config.brightdata_api_key),
+                "brightdata_dataset_id": bool(config.dataset_id),
+                "tavily": bool(config.tavily_api_key),
+                "parallel": bool(config.parallel_api_key),
+                "claude": bool(config.claude_api_key),
+            },
+            "parallel_processor": (
+                config.parallel_processor
+                if config.parallel_processor in KNOWN_PARALLEL_PROCESSORS
+                else f"INVALID -- not one of {sorted(KNOWN_PARALLEL_PROCESSORS)}"
+            ),
         }
 
     @app.post("/enrich", response_model=EnrichmentResponse)
