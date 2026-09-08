@@ -14,6 +14,8 @@ import type {
   ApiRecruiterMetricSnapshot,
   ApiRecruiterKpiSummary,
   ApiSheetSyncConfig,
+  ApiReportsAnalytics,
+  ApiRecentReport,
   ApiRequestError,
   UserRole,
   WorkStatus,
