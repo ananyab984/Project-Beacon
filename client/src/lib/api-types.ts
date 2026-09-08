@@ -83,6 +83,12 @@ export interface ApiLead {
   onHoldReason: OnHoldReason | null;
   promotedToGlobalAt: string | null;
   justEnrichedUntil: string | null;
+  /** Stamped by enrichLeadById the moment the pipeline call actually starts
+   *  (null while still PENDING/queued, not yet running). The only signal the
+   *  client has for "how long has this genuinely been in flight" -- there is
+   *  no real per-stage progress feed, so enrichment-status-cell.tsx uses this
+   *  to render an elapsed-time ESTIMATE, not a true completion percentage. */
+  enrichmentStartedAt: string | null;
   stage: LeadStage;
   status: LeadStatus;
   priority: LeadPriority | null;

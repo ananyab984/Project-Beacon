@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import type { ApiLead } from "@/lib/api-types";
 import { ENRICHMENT_FIELD_TOTAL } from "@/lib/api-types";
 import { RefreshCw } from "lucide-react";
@@ -22,6 +23,44 @@ import { RefreshCw } from "lucide-react";
  */
 
 export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "pending";
+
+/** Real, measured Parallel `core` durations this session, against the live
+ *  API, no mocks: 233s / 247s / 256s / 263s / 486s (one outlier). There is no
+ *  real per-stage progress feed to show -- the whole call is one blocking
+ *  HTTP round-trip, and Python has no channel back to the client mid-call --
+ *  so this is deliberately an ESTIMATE from elapsed time, not a true
+ *  completion percentage. Its only job is to keep the row from reading as
+ *  halted during a genuinely-normal ~4 minute wait.
+ *
+ *  Two segments, both capped well short of 100%: 0->TYPICAL_MS climbs to
+ *  TYPICAL_CAP (covers the typical case, ~230-265s measured), then
+ *  TYPICAL_MS->OUTLIER_MS climbs the rest of the way to OUTLIER_CAP (covers
+ *  the measured outlier up to 486s). Past OUTLIER_MS it holds at
+ *  OUTLIER_CAP indefinitely -- it must NEVER reach 100% on its own; only the
+ *  server flipping enrichmentStatus to COMPLETE does that. A bar stuck at
+ *  99% while genuinely still running is the exact "looks halted" failure
+ *  this exists to avoid, just moved to a different number. */
+const TYPICAL_MS = 4 * 60_000;
+const TYPICAL_CAP = 85;
+const OUTLIER_MS = 8 * 60_000;
+const OUTLIER_CAP = 96;
+
+/** Elapsed-time estimate of enrichment progress, 0-96, or `null` if the lead
+ *  hasn't actually started yet (still queued -- `startedAt` is stamped only
+ *  once enrichLeadById's call begins, never for a merely-PENDING lead). Pure
+ *  and pass `now` in explicitly so a re-render is the only thing that makes
+ *  the number move -- no internal clock to fake out in a test. */
+export function estimateEnrichmentProgress(startedAt: string | null | undefined, now: number): number | null {
+  if (!startedAt) return null;
+  const elapsed = now - new Date(startedAt).getTime();
+  if (elapsed <= 0) return 0;
+  if (elapsed <= TYPICAL_MS) return Math.round((elapsed / TYPICAL_MS) * TYPICAL_CAP);
+  if (elapsed <= OUTLIER_MS) {
+    const intoSecondLeg = (elapsed - TYPICAL_MS) / (OUTLIER_MS - TYPICAL_MS);
+    return Math.round(TYPICAL_CAP + intoSecondLeg * (OUTLIER_CAP - TYPICAL_CAP));
+  }
+  return OUTLIER_CAP;
+}
 
 export function enrichmentStatusKindOf(lead: ApiLead): EnrichmentStatusKind {
   // On Hold is an overlay independent of completion, so it's checked first
@@ -56,6 +95,21 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
   const reenriching = lead.reenrichment?.status === "RUNNING";
   const missingContact = !lead.email && !lead.contactNumber;
 
+  // Ticks this row every few seconds while it's genuinely in flight, purely
+  // to move `now` forward so estimateEnrichmentProgress recomputes -- the
+  // underlying data (enrichmentStartedAt) never changes, only the clock does.
+  // Scoped tightly (only runs for a lead with a real startedAt) so a table of
+  // 200 mostly-idle rows isn't running 200 live timers.
+  const genuinelyRunning = kind === "enriching" && !!lead.enrichmentStartedAt;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!genuinelyRunning) return;
+    const id = setInterval(() => setNow(Date.now()), 3000);
+    return () => clearInterval(id);
+  }, [genuinelyRunning]);
+
+  const progressPct = genuinelyRunning ? estimateEnrichmentProgress(lead.enrichmentStartedAt, now) : null;
+
   const tone: Record<EnrichmentStatusKind, string> = {
     on_hold: "text-warning",
     enriched: "text-emerald-400",
@@ -65,7 +119,11 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
   const label: Record<EnrichmentStatusKind, string> = {
     on_hold: `On Hold (${fieldCount})`,
     enriched: `Enriched (${fieldCount})`,
-    enriching: "Enriching…",
+    // A lead still PENDING (queued, not yet started -- no enrichmentStartedAt
+    // yet) has no elapsed time to estimate from, so it keeps the plain
+    // ellipsis rather than a fabricated "0%" that would just be another way
+    // of looking halted. Once it genuinely starts, the percentage takes over.
+    enriching: progressPct != null ? `Enriching (${progressPct}%)` : "Enriching…",
     pending: "Stalled",
   };
   const countsShown = kind === "on_hold" || kind === "enriched";
@@ -92,7 +150,16 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
           {label[kind]}
         </button>
       ) : (
-        <span className={`font-semibold text-xs ${tone[kind]}`} title={kind === "enriching" ? "Enrichment is running" : "Enrichment didn't conclude"}>
+        <span
+          className={`font-semibold text-xs ${tone[kind]}`}
+          title={
+            kind !== "enriching"
+              ? "Enrichment didn't conclude"
+              : progressPct != null
+                ? "Estimated from elapsed time -- a typical run takes about 4 minutes"
+                : "Queued, not yet started"
+          }
+        >
           {label[kind]}
         </span>
       )}
