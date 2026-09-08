@@ -186,11 +186,23 @@ def _extract_years_of_experience(profile: dict) -> Optional[int]:
         except (ValueError, TypeError):
             pass
 
-    # Fallback: Count entries in experience array
-    exp_list = profile.get("experience") or profile.get("positions") or []
-    if isinstance(exp_list, list) and len(exp_list) > 0:
-        return len(exp_list) * 2  # Estimate ~2 yrs per role
-
+    # Deliberately NO count-based fallback. This used to end with
+    #     return len(exp_list) * 2  # Estimate ~2 yrs per role
+    # which turned a ROW COUNT into an asserted number: it reaches
+    # Lead.yearsOfExperience and becomes the drafting grounding fact
+    # `years_of_experience: "N years"`, quoted back to a real candidate in an
+    # outreach email. It was the only place in the pipeline that converted
+    # structurally-empty data into a positive factual claim -- and during the
+    # empty-shell period `[{}, {}, {}]` confidently produced "6 years" from
+    # literally no data. A profile with 5 genuine roles produced "10 years"
+    # regardless of its actual dates.
+    #
+    # The two paths above are kept because both read a number the profile
+    # ACTUALLY STATES (an explicit field, or "10+ years of experience" in the
+    # About text). If a span estimate is wanted later, derive it from real
+    # start/end dates -- POC/linkedin_poc/async_experiment.py already has
+    # `years_from_experience()` doing latest-minus-earliest, which is a
+    # defensible derivation from stated data. `count x 2` is not.
     return None
 
 

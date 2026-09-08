@@ -6,6 +6,7 @@ Run: cd enrichment_pipeline && source .venv/bin/activate && pytest tests/test_or
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import sys
 
@@ -33,7 +34,12 @@ def stub(**methods):
 
 
 def test_linkedin_waterfall_falls_through_brightdata_parallel_to_websearch():
+    # This is the one test in this file that exercises Stage 6 itself, so it
+    # opts back in explicitly -- Stage 6 defaults off in production (see
+    # orchestrator.py's MAX_FIELDS_BEFORE_WEBSEARCH), and every other test in
+    # this file correctly gets it disabled via make_orchestrator().
     orch = make_orchestrator()
+    orch.config = dataclasses.replace(orch.config, stage6_websearch_enabled=True)  # Config is frozen
     calls = {"brightdata": 0, "parallel": 0, "websearch": 0}
 
     def bd_scrape(url):
@@ -414,3 +420,68 @@ def test_legacy_and_corrupt_markers_are_treated_as_settled():
         orch = _orch_with_failing_parallel(ParallelError("x"), calls)
         orch.process_lead(_linkedin_lead(), known_field_sources={"_parallel_fallback": marker})
         assert calls["parallel"] == 0, f"marker {marker!r} must not trigger a call"
+
+
+# --- Tier 1 and Tier 2 run concurrently, not in sequence --------------------
+#
+# Measured on production leads: Tier 1 (Bright Data/Tavily) runs 7-15s, Tier 2
+# (Parallel) 150-170s. Running them in sequence meant every lead paid Tier 1's
+# full duration on top of Tier 2's, for no reason -- the two calls share
+# nothing but the profile URL. _dispatch_parallel_stage submits Parallel's
+# call before Tier 1's own (blocking) scrape runs; _resolve_parallel_stage is
+# called only after Tier 1's merge, so override precedence is unchanged.
+
+def test_tier1_and_tier2_run_concurrently_not_sequentially():
+    import time
+
+    order: list[tuple[str, float]] = []
+    orch = make_orchestrator()
+
+    def bd_scrape(url):
+        order.append(("brightdata_start", time.monotonic()))
+        time.sleep(0.2)
+        order.append(("brightdata_end", time.monotonic()))
+        return {"name": "Jane Doe"}
+
+    def parallel_enrich(lead, profile_link):
+        order.append(("parallel_start", time.monotonic()))
+        time.sleep(0.05)
+        order.append(("parallel_end", time.monotonic()))
+        return {"headline": "Senior Translator"}
+
+    orch.brightdata = stub(scrape_profile=bd_scrape)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
+
+    t0 = time.monotonic()
+    orch.process_lead(_linkedin_lead())
+    elapsed = time.monotonic() - t0
+
+    starts = {name: t for name, t in order if name.endswith("_start")}
+    # Both must start within a few ms of each other -- a sequential call
+    # would show parallel_start only after brightdata_end (~0.2s later).
+    assert abs(starts["brightdata_start"] - starts["parallel_start"]) < 0.05, (
+        "Tier 2 did not start until Tier 1 finished -- the two calls are running sequentially again"
+    )
+    # Total time tracks the SLOWER call (~0.2s), not the sum (~0.25s).
+    assert elapsed < 0.24, f"total time {elapsed:.3f}s looks sequential, not concurrent"
+
+
+def test_merge_order_is_unchanged_by_concurrency():
+    """Tier 1 first, Tier 2 second -- OVERRIDE_ON_VERIFIED_FIELDS depends on
+    this order, so making the two calls concurrent must not silently change
+    which one's value wins when both resolve the same field."""
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Tier1 Name", "country": "Tier1Country"})
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "headline": None, "current_title": None, "about_snippet": None,
+            "country": "Tier2Country", "experience": [], "education": [], "languages": [], "certifications": [],
+        }
+    )
+
+    result = orch.process_lead(_linkedin_lead())
+    # Country_of_Residence is in OVERRIDE_ON_VERIFIED_FIELDS -- Tier 2's value
+    # must win because it merges SECOND, exactly as before this was made
+    # concurrent (Tier 1 sets it first, Tier 2 then overrides).
+    assert result["lead"]["Country_of_Residence"] == "Tier2Country"
+    assert result["field_sources"]["Country_of_Residence"] == "parallel"

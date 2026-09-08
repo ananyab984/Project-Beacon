@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import re
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, Literal, Optional, TypedDict
 
 from config import Config
-from core.enrichment_count import count_enriched_fields
+from core.enrichment_count import count_stage6_fillable_fields
 from core.field_audit import audit_lead_fields
-from core.schema import is_empty_value
+from core.schema import has_content, is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
 from llm_fallback.verifier import filter_web_search_result
@@ -29,6 +30,19 @@ from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 
 log = get_logger(__name__)
+
+# Lets Tier 2 (Parallel) START before Tier 1 (Bright Data/Tavily) FINISHES,
+# since both take only the profile URL and share no state -- there was never
+# a real reason for the second to wait on the first, only that the code
+# called them in sequence. Measured on production leads: Tier 1 runs 7-15s,
+# so the previous sequential shape spent that whole span doing nothing for
+# Parallel, which dominates total latency (~150-170s) regardless. Small and
+# separate from core/resilience.py's `_executor` (used inside every retried
+# HTTP attempt) and providers/parallel_client.py's `_parallel_executor`
+# (Parallel's own retry bulkhead) -- this pool only ever holds ONE
+# outstanding dispatch per lead being processed, for the span of Tier 1's
+# scrape, so 8 workers comfortably covers real concurrent load.
+_tier_overlap_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="tier-overlap")
 
 # Fields where a manually-typed value is frequently just an approximation (a
 # name spelling/nickname, a rough one-item service guess picked from a
@@ -126,14 +140,25 @@ def _parallel_state_is_settled(state: Optional[str]) -> Optional[str]:
 
 
 # Stage 6 (Claude web search, Tier 3) fires only once a lead is still thin
-# after Bright Data/Tavily and Parallel have both had their (retried)
-# chance -- using the exact same metric as the "Enriched (n)" badge already
-# in the UI (core/enrichment_count.py's count_enriched_fields), so the
-# threshold means the same thing on both sides of the stack. Deliberately
-# NOT "any target field still missing" (the old Stage 4 trigger) -- that
-# fires for nearly every lead (e.g. just Tools_Software missing) and would
-# make the most expensive tier the most frequently-used one.
-MAX_FIELDS_BEFORE_WEBSEARCH = 5
+# after Bright Data/Tavily and Parallel have both had their (retried) chance.
+#
+# Gated on count_stage6_fillable_fields, NOT the 10-field UI metric
+# (count_enriched_fields) this used to share -- that metric includes
+# Profile_Link (the lead's own input, enriched 0 times ever, in 32 of 32
+# production leads) and Email_Address/Contact_Number (which Stage 6 is itself
+# forbidden from filling, see WEBSEARCH_EXCLUDED_FIELDS below). Measuring
+# "how thin is this lead" against a denominator that includes fields nothing
+# can ever fill, and one stage is barred from filling, made a threshold of ">5
+# of 10" actually demand "6 of a real 7" -- which is why Stage 6 fired for 28
+# of 32 leads (88%) with zero recorded successes across every run in
+# production logs, at a measured cost of 91-486s each.
+#
+# 2 (of the real 7 fillable fields) reserves this for genuinely thin leads --
+# a lead with headline/title/about/services already found (the common case)
+# will not trigger it just because Country or a language field is still
+# missing, which is exactly the failure mode the original ">5 of 10" threshold
+# was trying (and failing) to prevent.
+MAX_FIELDS_BEFORE_WEBSEARCH = 2
 
 # Never asked for, never accepted from Stage 6 even if the model returns
 # them anyway (see verifier.py's filter_web_search_result) -- a wrong
@@ -205,42 +230,9 @@ def _tier1_skip_reason(env_var: str, profile_link: str, client: Any) -> str:
     return "Stage 3 skipped: Tier 1 unavailable for this lead"
 
 
-def _has_content(value: Any) -> bool:
-    """True if `value` carries actual data rather than a well-formed shell.
-
-    Recurses on purpose: "is not empty" and "contains anything" are different
-    questions, and only the second one is worth acting on. `[{}, {}, {}]` is
-    a non-empty list of three entries that each say nothing, and a plain
-    truthiness check reads it as real content.
-
-    That gap was not hypothetical. Confirmed live 2026-09-08: every one of
-    107 experience/education/language rows across 27 enriched leads was `{}`
-    (Martin Godart's profile reported "3 roles found" and stored three blank
-    objects), because the output schema declared those entries as free-form
-    objects with no properties. The row counts were right, so every check
-    that asked "did anything come back?" said yes, the result was banked as
-    `complete`, and the lead was never re-attempted -- while the recruiter
-    saw "Enriched" over a profile whose deep sections all read "None found".
-
-    Judging a payload by its structure rather than by its presence is what
-    makes that whole class of bug self-correcting: any future provider or
-    schema regression that returns shells instead of data now falls into the
-    transient-retry path instead of being recorded as a success.
-    """
-    if isinstance(value, dict):
-        # Skip our own bookkeeping keys (`_original_language`), same
-        # convention as _payload_strings above -- they are never the reason a
-        # payload counts as having found something.
-        return any(
-            _has_content(v)
-            for k, v in value.items()
-            if not (isinstance(k, str) and k.startswith("_"))
-        )
-    if isinstance(value, (list, tuple, set)):
-        return any(_has_content(v) for v in value)
-    if isinstance(value, str):
-        return bool(value.strip())
-    return value is not None
+# `_has_content` now lives in core/schema.py: every provider needs the same
+# judgement about structurally-empty-but-well-formed payloads, and providers/
+# cannot import orchestrator without a cycle. Imported above as `has_content`.
 
 
 def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
@@ -254,12 +246,12 @@ def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
     `isinstance(content, dict)` in parallel_client.py's `_run_once` never
     raised, and this was accepted as a genuine success on the first try.
 
-    Emptiness is measured with `_has_content`, not truthiness, so the
+    Emptiness is measured with `has_content` (core/schema.py), not truthiness, so the
     near-miss version of that payload -- one whose lists hold the right
     NUMBER of entries and no data inside any of them -- is judged the same
     way rather than passing as a find."""
     return not any(
-        _has_content(parallel_data.get(f))
+        has_content(parallel_data.get(f))
         for f in (
             "headline", "current_title", "about_snippet", "country",
             "experience", "education", "languages", "certifications",
@@ -310,6 +302,14 @@ def _payload_strings(value: Any) -> list[str]:
             # Skip our own bookkeeping, and never count the preserved original
             # (which is by definition non-English) when re-judging a payload.
             if isinstance(key, str) and key.startswith("_"):
+                continue
+            # `profile_sections_detected` is a QA checklist of the page's
+            # section HEADINGS, not profile prose -- and headings skew English
+            # even on a French page ("About", "Experience", "Education").
+            # Counting them is the same dilution bug this function's docstring
+            # already describes for schema key names: it worked where the free
+            # text was long enough to outweigh them and failed where it wasn't.
+            if key == "profile_sections_detected":
                 continue
             out.extend(_payload_strings(v))
         return out
@@ -468,9 +468,20 @@ class EnrichmentOrchestrator:
     ) -> tuple[Any, str, Optional[Dict[str, Any]]]:
         """LinkedIn waterfall, steps 1-2 of 3: Bright Data -> Parallel.
         Differs from the non-LinkedIn shape only in its Tier 1 provider --
-        both now share _run_parallel_stage() for Tier 2."""
+        both now share _dispatch_parallel_stage()/_resolve_parallel_stage()
+        for Tier 2, run CONCURRENTLY with this method's own Tier 1 scrape
+        rather than after it (see _dispatch_parallel_stage's docstring)."""
         raw_scraped_data: Any = None
         raw_source_text = ""
+
+        # Dispatched BEFORE Tier 1's blocking scrape below, not after -- the
+        # two calls share nothing but the profile URL, so there was never a
+        # real reason for Parallel to wait out Tier 1's own 7-15s before
+        # starting. Resolved only after Tier 1's merge, further down, so merge
+        # ORDER (Tier 1 first) is unchanged.
+        parallel_early_result, parallel_future, parallel_attempts = self._dispatch_parallel_stage(
+            lead, field_sources, logs, profile_link
+        )
 
         if profile_link and self.brightdata:
             try:
@@ -507,53 +518,97 @@ class EnrichmentOrchestrator:
         post_stage3_audit = audit_lead_fields(lead)
         logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")
 
-        parallel_fallback = self._run_parallel_stage(lead, field_sources, logs, profile_link, "brightdata")
+        # Tier 1's merge is already applied above -- resolving Tier 2 here,
+        # not before, is what keeps _apply_parsed_fields' override precedence
+        # (Tier 1 first, Tier 2 second) unchanged from before this was made
+        # concurrent.
+        if parallel_future is not None:
+            parallel_fallback = self._resolve_parallel_stage(
+                parallel_future, parallel_attempts, lead, field_sources, logs, "brightdata"
+            )
+        else:
+            parallel_fallback = parallel_early_result
         return raw_scraped_data, raw_source_text, parallel_fallback
 
-    def _run_parallel_stage(
-        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
-        profile_link: str, tier1_label: str,
-    ) -> Optional[Dict[str, Any]]:
-        """Stage 3.5: Parallel -- synchronous, replacing Clay's async
-        dispatch-and-webhook design entirely. This call either returns
-        resolved fields or raises before it returns, so there is no "still
-        pending" state left for the rest of the waterfall (or Node) to
-        account for -- contrast with Clay's old `_clay_dispatch: "pending"`
-        marker, which no longer has an equivalent here.
+    def _dispatch_parallel_stage(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], profile_link: str,
+    ) -> "tuple[Optional[Dict[str, Any]], Optional[Future], int]":
+        """Non-blocking half of Stage 3.5. Shared by BOTH waterfall shapes.
+        Clay's version of this stage was hard-gated to linkedin.com/in|sales
+        URLs, because Clay's own "Enrich person" action rejected anything
+        else outright ("Invalid person identifier", confirmed against its
+        dashboard 2026-08-26). Parallel has no such limitation -- the PoC ran
+        it successfully against ProZ, Bodalgo, ATA/ATAA and Freelancer.com
+        profile URLs -- so carrying that gate forward was an artificial
+        holdover from the previous provider that left non-LinkedIn leads
+        permanently without Tier 2 data and split enrichment provenance
+        across the table. The gate is simply "is there a profile URL to
+        research", which is the real precondition, checked below.
 
-        Shared by BOTH waterfall shapes. Clay's version of this stage was
-        hard-gated to linkedin.com/in|sales URLs, because Clay's own "Enrich
-        person" action rejected anything else outright ("Invalid person
-        identifier", confirmed against its dashboard 2026-08-26). Parallel has
-        no such limitation -- the PoC ran it successfully against ProZ,
-        Bodalgo, ATA/ATAA and Freelancer.com profile URLs -- so carrying that
-        gate forward was an artificial holdover from the previous provider
-        that left non-LinkedIn leads permanently without Tier 2 data and split
-        enrichment provenance across the table. The gate is now simply "is
-        there a profile URL to research", which is the real precondition.
+        Every early-exit check this stage has always made (no URL, already
+        settled, key not configured) is performed up front so it costs
+        nothing, and -- only if none of them apply -- the network call is
+        SUBMITTED rather than awaited. Returns one of:
 
-        Re-attempt policy (see PARALLEL_STATE_* above): a success or a
-        permanent rejection is final; a transient failure is retried on later
-        passes up to MAX_PARALLEL_TRANSIENT_ATTEMPTS."""
+          (result, None, 0)      -- an early-exit result; nothing to resolve.
+          (None, future, n)      -- dispatched; call _resolve_parallel_stage
+                                     with `future` and attempts-so-far `n`
+                                     once Tier 1's OWN merge has been applied.
+          (None, None, 0)        -- Parallel not configured; nothing to do.
+
+        `lead` is passed as a SHALLOW COPY taken at this exact moment, not the
+        live mutable dict -- Tier 1's scrape (running concurrently in the
+        caller) will go on to mutate `lead` via `_merge_stage3_parsed`, and
+        `enrich_profile` only ever reads `lead.get("Full_Name")` to build its
+        request. A snapshot makes that read deterministic (always "whatever
+        Full_Name held at dispatch time") instead of racing Tier 1's write,
+        and costs nothing in practice: Full_Name is a required field at
+        Add-Lead time, so it is already populated in nearly every case before
+        either tier ever runs -- Tier 1 only occasionally corrects it (a
+        verified spelling), and profile_link is what Parallel actually reads
+        the page from, not the name.
+        """
         state = field_sources.get("_parallel_fallback")
 
         if not profile_link:
             logs.append("Stage 3.5 skipped: no Profile_Link for Parallel to research")
-            return None
+            return None, None, 0
 
         settled = _parallel_state_is_settled(state)
         if settled:
             logs.append(f"Stage 3.5 skipped: {settled} (state={state!r}), not re-calling")
-            return {"called": False, "reason": f"already_{state}"}
+            return {"called": False, "reason": f"already_{state}"}, None, 0
 
         if not self.parallel:
             logs.append("Stage 3.5 skipped: PARALLEL_API_KEY not configured")
-            return None
+            return None, None, 0
 
         attempts_so_far = _parallel_attempts(state)
+        future = _tier_overlap_executor.submit(self.parallel.enrich_profile, dict(lead), profile_link)
+        return None, future, attempts_so_far
 
+    def _resolve_parallel_stage(
+        self, future: Future, attempts_so_far: int,
+        lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], tier1_label: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Stage 3.5's blocking half: wait for the call `_dispatch_parallel_stage`
+        already submitted, then apply the exact merge/error-handling logic
+        this method always had. Called only AFTER Tier 1's own merge is
+        applied in the caller -- merge ORDER (not dispatch order) is what
+        `_apply_parsed_fields`' override precedence depends on, and that
+        order is unchanged by making the two calls run concurrently.
+
+        This call either returns resolved fields or raises before it
+        returns, so there is no "still pending" state left for the rest of
+        the waterfall (or Node) to account for -- contrast with Clay's old
+        `_clay_dispatch: "pending"` marker, which no longer has an
+        equivalent here.
+
+        Re-attempt policy (see PARALLEL_STATE_* above): a success or a
+        permanent rejection is final; a transient failure is retried on later
+        passes up to MAX_PARALLEL_TRANSIENT_ATTEMPTS."""
         try:
-            parallel_data = self.parallel.enrich_profile(lead, profile_link)
+            parallel_data = future.result()
             parallel_data = self._normalize_parallel_language(parallel_data, logs)
 
             if _is_empty_parallel_result(parallel_data):
@@ -616,7 +671,7 @@ class EnrichmentOrchestrator:
         backstop a persistently-blocked profile (a LinkedIn 301, a dead ProZ
         link) needs, since neither earlier tier has anything left to try.
 
-        Re-attempt policy mirrors _run_parallel_stage's: a genuine success or
+        Re-attempt policy mirrors _dispatch_parallel_stage/_resolve_parallel_stage's: a genuine success or
         a permanent rejection is final; an empty-but-successful result (the
         model reported could_not_find_anything, or cited no source) is
         routed through the SAME transient-retry bookkeeping a raised
@@ -687,10 +742,18 @@ class EnrichmentOrchestrator:
         """Non-LinkedIn waterfall, steps 1-2 of 3: Tavily -> Parallel. Parallel
         used to be unreachable from this path by construction (a holdover from
         Clay, which rejected non-LinkedIn identifiers); it now runs here too,
-        via the same _run_parallel_stage() the LinkedIn path uses, so a
-        ProZ/Bodalgo/personal-site lead gets the same Tier 2 treatment."""
+        via the same _dispatch_parallel_stage()/_resolve_parallel_stage() the
+        LinkedIn path uses, so a ProZ/Bodalgo/personal-site lead gets the same
+        Tier 2 treatment -- run CONCURRENTLY with this method's own Tavily
+        call rather than after it (see _dispatch_parallel_stage's docstring)."""
         raw_scraped_data: Any = None
         raw_source_text = ""
+
+        # Dispatched before Tavily's blocking call, same reasoning as the
+        # LinkedIn path: the two share nothing but the profile URL.
+        parallel_early_result, parallel_future, parallel_attempts = self._dispatch_parallel_stage(
+            lead, field_sources, logs, profile_link
+        )
 
         if profile_link and self.tavily:
             try:
@@ -716,7 +779,15 @@ class EnrichmentOrchestrator:
         post_stage3_audit = audit_lead_fields(lead)
         logs.append(f"Stage 3 Complete: Score = {post_stage3_audit['enrichment_percentage']}%")
 
-        parallel_fallback = self._run_parallel_stage(lead, field_sources, logs, profile_link, provider_type)
+        # Tier 1's merge is already applied above -- see the LinkedIn path's
+        # matching comment for why resolve-after-merge is what preserves
+        # override precedence.
+        if parallel_future is not None:
+            parallel_fallback = self._resolve_parallel_stage(
+                parallel_future, parallel_attempts, lead, field_sources, logs, provider_type
+            )
+        else:
+            parallel_fallback = parallel_early_result
         return raw_scraped_data, raw_source_text, parallel_fallback
 
     def _apply_parsed_fields(
@@ -909,10 +980,11 @@ class EnrichmentOrchestrator:
         # Stage 3 + 3.5: two waterfall shapes that differ only in their
         # Tier 1 provider -- LinkedIn uses Bright Data, every other platform
         # uses Tavily -- and then share Tier 2 (Parallel, via
-        # _run_parallel_stage) and the Tier 3 LLM fallback below. Parallel was
+        # _dispatch_parallel_stage/_resolve_parallel_stage) and the Tier 3 LLM
+        # fallback below. Parallel was
         # LinkedIn-only while Clay held that position, since Clay rejected
         # every other identifier; that gate is gone (see
-        # _run_parallel_stage's docstring).
+        # _dispatch_parallel_stage's docstring).
         if provider_type == "brightdata":
             raw_scraped_data, raw_source_text, parallel_fallback = self._run_linkedin_steps(lead, field_sources, logs, profile_link)
         else:
@@ -969,11 +1041,16 @@ class EnrichmentOrchestrator:
             logs.append(f"Stage 4 Audit: Target fields {fallback_targets}")
 
             web_search_targets = [f for f in fallback_targets if f not in WEBSEARCH_EXCLUDED_FIELDS]
-            enriched_count = count_enriched_fields(lead, field_sources)
+            # Scoped to the fields Stage 6 could actually fill -- see
+            # MAX_FIELDS_BEFORE_WEBSEARCH's comment for why the 10-field UI
+            # metric was the wrong denominator for this decision.
+            fillable_count = count_stage6_fillable_fields(lead, field_sources)
 
-            if enriched_count > MAX_FIELDS_BEFORE_WEBSEARCH:
+            if not self.config.stage6_websearch_enabled:
+                logs.append("Stage 6 skipped: disabled (STAGE6_WEBSEARCH_ENABLED is not 'true')")
+            elif fillable_count > MAX_FIELDS_BEFORE_WEBSEARCH:
                 logs.append(
-                    f"Stage 6 skipped: {enriched_count} fields already enriched "
+                    f"Stage 6 skipped: {fillable_count} fillable fields already enriched "
                     f"(> {MAX_FIELDS_BEFORE_WEBSEARCH}), web search reserved for thin leads"
                 )
             elif not web_search_targets:

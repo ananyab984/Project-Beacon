@@ -48,3 +48,41 @@ def count_enriched_fields(lead: Dict[str, Any], field_sources: Dict[str, str]) -
         if source and source not in _NOT_ENRICHED_SOURCES:
             count += 1
     return count
+
+
+# Fields Stage 6 (orchestrator.py's web search) could ever actually fill,
+# excluded from the 10-field UI metric above.
+#
+# `Profile_Link` is the LEAD'S INPUT, not something enrichment resolves --
+# confirmed live 2026-09-08 across all 32 production leads, it was filled by
+# enrichment exactly ZERO times, ever. `Email_Address`/`Contact_Number` are in
+# orchestrator.py's WEBSEARCH_EXCLUDED_FIELDS (a wrong contact reaches a
+# different real human being, so Stage 6 is forbidden from touching them) yet
+# were still counted in the "how thin is this lead" metric that decides
+# whether to RUN Stage 6 -- so the gate was partly measuring a stage's own
+# forbidden output as if filling it were possible.
+#
+# Net effect, measured on the same 32 leads: with a denominator of 10 including
+# these three, Stage 6 fired for 28 of 32 (88%) and recorded ZERO successes
+# across every run captured in production logs. The threshold was demanding 6
+# of a real 7 fillable fields without knowing it.
+_STAGE6_UNFILLABLE_FIELDS = frozenset({"Profile_Link", "Email_Address", "Contact_Number"})
+
+STAGE6_GATING_FIELDS = tuple(f for f in ENRICHMENT_COUNT_FIELDS if f not in _STAGE6_UNFILLABLE_FIELDS)
+
+
+def count_stage6_fillable_fields(lead: Dict[str, Any], field_sources: Dict[str, str]) -> int:
+    """Same provenance-gated counting as `count_enriched_fields`, but scoped to
+    the fields Stage 6 could actually have filled -- use this ONLY to decide
+    whether Stage 6 should run. `count_enriched_fields`/`ENRICHMENT_COUNT_FIELDS`
+    stay untouched because they back the recruiter-facing "Enriched (n)" badge,
+    which people already read; changing that denominator would move a number
+    in front of users for a reason unrelated to what they see it for."""
+    count = 0
+    for field in STAGE6_GATING_FIELDS:
+        if is_empty_value(lead.get(field)):
+            continue
+        source = field_sources.get(field)
+        if source and source not in _NOT_ENRICHED_SOURCES:
+            count += 1
+    return count

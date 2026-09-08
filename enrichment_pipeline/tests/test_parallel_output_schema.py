@@ -369,9 +369,19 @@ def test_nested_entry_keys_match_what_the_consumers_read():
 
 def test_role_summary_is_asked_for_verbatim():
     """`summary` is the field carrying quotable specifics (named clients,
-    productions, tools); a title and company alone personalise nothing."""
+    productions, tools); a title and company alone personalise nothing.
+
+    Asserts the INTENT -- complete, and explicitly not a paraphrase -- rather
+    than one particular wording. The first version of this test required the
+    literal word "verbatim", which then failed against the PoC's own proven
+    phrasing ("exactly as written on the profile - not a paraphrase"). Pinning
+    a synonym rather than the requirement made the test an obstacle to adopting
+    the wording that demonstrably works."""
     desc = (_item_properties("experience")["summary"].get("description") or "").lower()
-    assert "verbatim" in desc and "paraphras" in desc
+    assert "paraphras" in desc, "summary must explicitly rule out a paraphrase"
+    assert any(w in desc for w in ("verbatim", "exactly as written", "full, complete")), (
+        "summary must ask for the COMPLETE description, not merely a description"
+    )
 
 
 # --- content-free results are never banked as a success ----------------------
@@ -403,3 +413,102 @@ def test_blank_strings_are_not_content():
     assert orchestrator_module._is_empty_parallel_result(
         {"headline": "   ", "experience": [{"title": "", "company": None}]}
     )
+
+
+# --- the forcing mechanisms that make extraction complete ----------------
+#
+# The PoC (POC/parallel_api_poc/test.py) returned 5 fully-populated roles with
+# multi-paragraph narrative summaries for a LinkedIn profile. Production, for
+# the SAME lead, returned 5 empty objects and later `[]`. The schema was
+# rewritten from the PoC's maximal-extraction design into a narrow one when
+# Parallel replaced Clay, dropping every mechanism below. These assertions
+# exist because the field descriptions ARE the instructions Parallel receives
+# -- there is no separate prompt -- so a well-meaning tightening of this text
+# is a silent behaviour change with no other symptom.
+
+def test_schema_demands_maximal_not_minimal_extraction():
+    """The single most load-bearing sentence in the schema. The prior wording
+    ("Kept intentionally narrow", "Extract ONLY what is literally present")
+    combined with all-optional entries made `[]` the cheapest valid answer."""
+    # Whitespace-collapsed: these phrases wrap across lines in the docstring,
+    # and a test that only matches them unwrapped would break on a reflow
+    # rather than on a real change of meaning.
+    desc = " ".join((SCHEMA.get("description") or "").lower().split())
+    assert "maximal" in desc, "the maximal-extraction instruction is gone"
+    assert "do not stop early" in desc
+    assert "entire page" in desc, "the read-the-whole-page instruction is gone"
+
+
+REQUIRED_ENTRY_FIELDS = {
+    # field -> the keys that must be REQUIRED on its entry model.
+    # An all-optional object schema lets the model satisfy the whole section
+    # with an empty list; requiring the identifying keys means an entry cannot
+    # be emitted as a shell, so it must extract or omit.
+    "experience": {"company", "title"},
+    "education": {"institution"},
+    "languages": {"language"},
+}
+
+
+def test_identifying_entry_fields_are_required():
+    for field, must_require in REQUIRED_ENTRY_FIELDS.items():
+        ref = FIELDS[field]["items"]["$ref"].split("/")[-1]
+        required = set(SCHEMA["$defs"][ref].get("required", []))
+        missing = must_require - required
+        assert not missing, (
+            f"{field} entries no longer require {sorted(missing)} -- an all-optional entry "
+            f"makes an empty list the cheapest valid answer for the whole section"
+        )
+
+
+def test_experience_keeps_its_two_self_check_booleans():
+    """`title_pairing_verified` guards a documented real bug: LinkedIn stacked
+    roles at one employer having their titles and narratives swapped, caught
+    only by comparing against Clay's independent record. Being required is the
+    point -- it forces a per-entry re-read of the page layout."""
+    ref = FIELDS["experience"]["items"]["$ref"].split("/")[-1]
+    entry = SCHEMA["$defs"][ref]
+    required = set(entry.get("required", []))
+    assert {"is_current", "title_pairing_verified"} <= required
+    assert "self-check" in (entry["properties"]["title_pairing_verified"].get("description") or "").lower()
+
+
+def test_the_page_audit_checklist_exists():
+    """`profile_sections_detected` makes the model enumerate the headings it
+    actually saw before filling any field -- the strongest forcing function in
+    the PoC schema."""
+    desc = (FIELDS["profile_sections_detected"].get("description") or "").lower()
+    assert "checklist" in desc
+    assert "do not stop after finding the first" in desc
+
+
+def test_every_list_field_says_capture_all():
+    """Each list previously carried only restraint framing ("never invent one
+    to fill the list"), which reads as permission to under-extract."""
+    for field in ["certifications", "experience", "education", "languages"]:
+        desc = (FIELDS[field].get("description") or "").lower()
+        assert ("all of them" in desc or "every role" in desc), (
+            f"{field} no longer instructs an exhaustive capture"
+        )
+
+
+def test_languages_names_its_own_importance_on_this_platform():
+    """This is a linguist recruitment platform: language + proficiency is the
+    qualifying data recruiters filter on."""
+    desc = (FIELDS["languages"].get("description") or "").lower()
+    assert "linguist" in desc
+
+
+def test_the_page_audit_is_not_counted_as_profile_prose():
+    """Section headings skew English even on a French page ("About",
+    "Experience"), so counting them in the language sniff is the same dilution
+    bug the sniff's own docstring describes for schema key names."""
+    french = {
+        "headline": "Étudiante à Université Rennes 2 Traduction EN—>FR",
+        "about_snippet": "Traductrice EN—>FR et ES—>FR · Expérience : Freelance · Lieu : Le Rheu",
+        "profile_sections_detected": [
+            "About", "Experience", "Education", "Languages", "Skills", "Certifications",
+            "Recommendations", "Courses", "Projects", "Honors and Awards",
+        ],
+    }
+    assert _looks_non_english(french), "an English heading list must not mask a French profile"

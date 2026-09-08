@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.enrichment_count import count_enriched_fields
+from core.enrichment_count import count_enriched_fields, count_stage6_fillable_fields
 from llm_fallback.client import ClaudeError
 from llm_fallback.verifier import filter_web_search_result
 from providers.brightdata_client import BrightDataError
@@ -25,7 +25,15 @@ from orchestrator import EnrichmentOrchestrator
 
 
 def make_orchestrator() -> EnrichmentOrchestrator:
-    cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="")
+    # stage6_websearch_enabled=True: this whole file tests Stage 6 itself, so
+    # it opts back into a stage that defaults off in production (measured zero
+    # successes across every recorded run under the old, miscalibrated gate --
+    # see orchestrator.py's MAX_FIELDS_BEFORE_WEBSEARCH). Every other test file
+    # constructs Config without this flag and correctly gets Stage 6 disabled.
+    cfg = Config(
+        brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="",
+        stage6_websearch_enabled=True,
+    )
     return EnrichmentOrchestrator(cfg)
 
 
@@ -105,6 +113,43 @@ def test_fields_outside_the_dialogs_ten_are_not_counted():
     assert count_enriched_fields(lead, field_sources) == 0
 
 
+# --- count_stage6_fillable_fields: the metric that actually gates Stage 6 --
+#
+# Measured live 2026-09-08: Profile_Link was enriched 0 times across every one
+# of 32 production leads (it's the lead's own input, not something enrichment
+# resolves), and Email_Address/Contact_Number are fields Stage 6 is itself
+# forbidden from filling (WEBSEARCH_EXCLUDED_FIELDS). Counting all three in
+# the "how thin is this lead" gate meant a >5-of-10 threshold actually demanded
+# 6 of a real 7 fillable fields -- which is why Stage 6 fired for 28 of 32
+# leads (88%) with zero recorded successes.
+
+def test_profile_link_never_counts_toward_the_stage6_gate():
+    """Even if it somehow carried a non-'existing' source, Profile_Link must
+    not move this metric -- it is structurally never something Stage 6 (or any
+    stage) fills, so counting it would misjudge how thin a lead really is."""
+    lead = {"Profile_Link": "https://www.linkedin.com/in/someone"}
+    field_sources = {"Profile_Link": "brightdata"}  # a source it could never realistically carry
+    assert count_stage6_fillable_fields(lead, field_sources) == 0
+
+
+def test_contact_fields_never_count_toward_the_stage6_gate():
+    """Stage 6 is forbidden from filling these (WEBSEARCH_EXCLUDED_FIELDS), so
+    a lead that already has them must not look richer to the GATE for that
+    reason -- it isn't Stage 6 that would have filled them anyway."""
+    lead = {"Email_Address": "a@x.com", "Contact_Number": "+1 555 0100"}
+    field_sources = {"Email_Address": "brightdata", "Contact_Number": "brightdata"}
+    assert count_stage6_fillable_fields(lead, field_sources) == 0
+
+
+def test_the_gating_metric_has_seven_fields_not_ten():
+    from core.enrichment_count import STAGE6_GATING_FIELDS
+
+    assert len(STAGE6_GATING_FIELDS) == 7
+    assert "Profile_Link" not in STAGE6_GATING_FIELDS
+    assert "Email_Address" not in STAGE6_GATING_FIELDS
+    assert "Contact_Number" not in STAGE6_GATING_FIELDS
+
+
 # --- Orchestrator: threshold gate ----------------------------------------
 
 def _thin_lead():
@@ -163,6 +208,54 @@ def test_rich_lead_skips_websearch_entirely():
     result = orch.process_lead(_rich_lead(), known_field_sources=field_sources)
 
     assert calls["websearch"] == 0, "an already-enriched lead must not trigger Stage 6"
+    assert result["websearch_fallback"] is None
+
+
+def test_four_of_seven_fillable_fields_already_found_skips_websearch():
+    """The boundary case the recalibrated threshold exists for: a lead that
+    already has MOST of the gating fields (4 of 7) must not trigger Stage 6
+    just because Country or a language field is still missing -- that was
+    exactly the failure mode of the old ">5 of 10" threshold, which still
+    fired for leads this far along."""
+    calls = {"websearch": 0}
+    orch = make_orchestrator()
+    lead = {
+        "Source": "LinkedIn",
+        "Profile_Link": "https://www.linkedin.com/in/someone",
+        "Full_Name": "Jane Doe",
+        "Headline": "Senior Translator",
+        "Current_Title": "Freelance Translator",
+        "About_Snippet": "10 years of experience in AV translation.",
+        "Services": "Subtitling",
+    }
+    field_sources = {f: "brightdata" for f in ["Headline", "Current_Title", "About_Snippet", "Services"]}
+    orch.claude = stub(search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {})
+
+    result = orch.process_lead(lead, known_field_sources=field_sources)
+
+    assert calls["websearch"] == 0, "4 of 7 fillable fields already found is not a thin lead"
+    assert result["websearch_fallback"] is None
+
+
+def test_disabled_by_default_even_for_a_thin_lead():
+    """Stage 6 defaults off (config.stage6_websearch_enabled=False on a plain
+    Config) regardless of how thin the lead is -- measured zero successes
+    across every recorded production run, so it must be opted into
+    deliberately rather than inherited."""
+    from config import Config
+    from orchestrator import EnrichmentOrchestrator
+
+    calls = {"websearch": 0}
+    cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="")
+    assert cfg.stage6_websearch_enabled is False
+    orch = EnrichmentOrchestrator(cfg)
+    orch.brightdata = stub(scrape_profile=lambda url: (_ for _ in ()).throw(BrightDataError("blocked")))
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: (_ for _ in ()).throw(ParallelError("blocked")))
+    orch.claude = stub(search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {})
+
+    result = orch.process_lead(_thin_lead())
+
+    assert calls["websearch"] == 0, "Stage 6 must stay off by default even for the thinnest possible lead"
     assert result["websearch_fallback"] is None
 
 
