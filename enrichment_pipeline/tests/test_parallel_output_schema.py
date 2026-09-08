@@ -316,3 +316,90 @@ def test_preserved_original_does_not_retrigger_translation():
         "_original_language": SPANISH,
     }
     assert not _looks_non_english(translated)
+
+
+# --- the nested entry schemas ------------------------------------------------
+#
+# The bug these pin down (confirmed live 2026-09-08): experience/education/
+# languages were typed `List[Dict[str, Any]]`, which compiles to
+# `{"type": "object", "additionalProperties": true}` -- an object with NO
+# declared properties. Parallel returned the right NUMBER of rows and nothing
+# inside any of them: 107 rows across 27 leads, every one `{}`. Martin
+# Godart's profile reported 3 roles and stored 3 blank objects, and the lead
+# read "Enriched" in the UI with every deep section showing "None found".
+#
+# Nothing else catches this. The call succeeds, the payload validates, the
+# counts look right, and the data is simply absent.
+
+ENTRY_KEYS = {
+    # field -> keys the CONSUMERS already read. The enrichment dialog
+    # (client/src/components/features/enrichment-details-dialog.tsx:
+    # formatRole/formatEducation/labelOf) and drafting_service/core/leads.py
+    # (_format_role/_role_highlight/_label_of) both read these names, so the
+    # schema has to emit exactly them or the data lands where nobody looks.
+    "experience": {"title", "company", "start_date", "end_date", "summary"},
+    "education": {"institution", "degree", "field_of_study"},
+    "languages": {"language", "proficiency"},
+}
+
+
+def _item_properties(field: str) -> dict:
+    items = FIELDS[field]["items"]
+    ref = items.get("$ref")
+    assert ref, (
+        f"{field} items are a free-form object ({items}) -- Parallel has no named keys to "
+        f"fill and returns empty rows"
+    )
+    return SCHEMA["$defs"][ref.split("/")[-1]]["properties"]
+
+
+def test_nested_list_entries_declare_real_properties():
+    """A free-form object gives the extractor nowhere to put anything."""
+    for field in ENTRY_KEYS:
+        props = _item_properties(field)
+        assert props, f"{field} entries declare no properties at all"
+
+
+def test_nested_entry_keys_match_what_the_consumers_read():
+    for field, expected in ENTRY_KEYS.items():
+        props = set(_item_properties(field))
+        missing = expected - props
+        assert not missing, f"{field} entries no longer emit {sorted(missing)}, which its readers look for"
+
+
+def test_role_summary_is_asked_for_verbatim():
+    """`summary` is the field carrying quotable specifics (named clients,
+    productions, tools); a title and company alone personalise nothing."""
+    desc = (_item_properties("experience")["summary"].get("description") or "").lower()
+    assert "verbatim" in desc and "paraphras" in desc
+
+
+# --- content-free results are never banked as a success ----------------------
+
+def test_rows_with_no_data_inside_do_not_count_as_a_find():
+    """The exact stored shape from the live bug: right row counts, nothing in
+    any of them. Treating this as a success is what stamped `complete` on
+    leads that had found nothing, so they were never re-attempted."""
+    assert orchestrator_module._is_empty_parallel_result(
+        {
+            "headline": None, "current_title": None, "about_snippet": None, "country": None,
+            "experience": [{}, {}, {}], "education": [{}], "languages": [{}], "certifications": [],
+        }
+    )
+
+
+def test_a_single_real_value_anywhere_still_counts_as_a_find():
+    """Martin Godart's actual result -- Parallel did resolve country and
+    current_title, so the run must not be thrown away as empty."""
+    assert not orchestrator_module._is_empty_parallel_result(
+        {"country": "France", "current_title": "InfoGraphiste Web / Print", "experience": [{}, {}, {}]}
+    )
+    assert not orchestrator_module._is_empty_parallel_result(
+        {"headline": None, "experience": [{"title": "Traductrice"}]}
+    )
+
+
+def test_blank_strings_are_not_content():
+    assert orchestrator_module._is_empty_parallel_result(
+        {"headline": "   ", "experience": [{"title": "", "company": None}]}
+    )

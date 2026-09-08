@@ -56,6 +56,123 @@ class ParallelError(Exception):
         self.permanent = permanent
 
 
+class ExperienceEntry(BaseModel):
+    """One role from the profile's work-history section.
+
+    Declared as a real model rather than a free-form object on purpose. A
+    bare `Dict[str, Any]` compiles to a JSON Schema object with NO declared
+    properties (`{"type": "object", "additionalProperties": true}`), which
+    leaves the extractor nowhere to put anything: confirmed live 2026-09-08,
+    all 107 experience/education/language rows across 27 enriched leads came
+    back as `{}` while the row COUNTS were correct -- Martin Godart's profile
+    yielded "3 roles found", stored as three empty objects, and the lead read
+    "Enriched" in the UI with every deep section showing "None found". The
+    schema has to NAME the keys or the data has nowhere to land.
+
+    Key names match what both consumers already read -- the enrichment
+    dialog's `formatRole` and drafting_service/core/leads.py's `_format_role`
+    / `_role_highlight` -- so nothing downstream changes.
+    """
+
+    title: Optional[str] = Field(
+        None,
+        description=(
+            "The role/job title exactly as displayed for this entry, in the page's own "
+            "language. Null if the entry shows no title."
+        ),
+    )
+    company: Optional[str] = Field(
+        None,
+        description=(
+            "The employer/client/organisation name for this role, as shown. Null if the "
+            "entry names none."
+        ),
+    )
+    start_date: Optional[str] = Field(
+        None,
+        description=(
+            "Start of this role, verbatim as the page writes it (e.g. '2020', 'Mar 2020', "
+            "'2020-03'). Do not reformat and do not infer. Null if not shown."
+        ),
+    )
+    end_date: Optional[str] = Field(
+        None,
+        description=(
+            "End of this role, verbatim as the page writes it. Use the page's own wording "
+            "for a current role ('Present', 'Actual', 'Heute'). Null if not shown."
+        ),
+    )
+    summary: Optional[str] = Field(
+        None,
+        description=(
+            "The role's free-text description, verbatim in the page's own language. This is "
+            "the single most valuable field on this entry -- it carries the specific, "
+            "quotable detail (named clients, productions, tools) that a bare title and "
+            "company miss. Copy it in full rather than paraphrasing. Null if the entry has "
+            "no description."
+        ),
+    )
+
+
+class EducationEntry(BaseModel):
+    """One record from the profile's education section. Same reason as
+    ExperienceEntry for being a named model; key names match the enrichment
+    dialog's `formatEducation` and drafting's education fact-builder."""
+
+    institution: Optional[str] = Field(
+        None,
+        description=(
+            "Name of the school/university/institution, as shown on the page. Null if the "
+            "entry names none."
+        ),
+    )
+    degree: Optional[str] = Field(
+        None,
+        description=(
+            "The qualification awarded (e.g. 'BA', 'Licence', 'MSc'), verbatim in the "
+            "page's own language. Null if not shown."
+        ),
+    )
+    field_of_study: Optional[str] = Field(
+        None,
+        description=(
+            "Subject/major studied, verbatim in the page's own language. Null if not shown."
+        ),
+    )
+    start_date: Optional[str] = Field(
+        None, description="Start year/date verbatim as the page writes it. Null if not shown."
+    )
+    end_date: Optional[str] = Field(
+        None, description="End year/date verbatim as the page writes it. Null if not shown."
+    )
+
+
+class LanguageEntry(BaseModel):
+    """One language the profile explicitly lists. Same reason as
+    ExperienceEntry for being a named model; `language`/`proficiency` are the
+    keys the dialog's `labelOf` and drafting's `_label_of` already read.
+
+    Directly relevant to this product: a linguist's stated language pairs and
+    proficiency levels are the qualifying data recruiters filter on, and they
+    were among the rows arriving empty."""
+
+    language: Optional[str] = Field(
+        None,
+        description=(
+            "The language name as the page names it (e.g. 'Anglais', 'English', 'Espanol'). "
+            "Null if the entry is unreadable."
+        ),
+    )
+    proficiency: Optional[str] = Field(
+        None,
+        description=(
+            "The stated proficiency level, verbatim as shown (e.g. 'Native or bilingual "
+            "proficiency', 'Courant', 'C2'). Null if the page states none -- never guess a "
+            "level."
+        ),
+    )
+
+
 class LeadProfile(BaseModel):
     """Structured output schema for Parallel's Task Run -- the canonical
     fields this waterfall stage is responsible for filling. Kept intentionally
@@ -133,31 +250,32 @@ class LeadProfile(BaseModel):
             "like 'N/A'."
         ),
     )
-    experience: List[Dict[str, Any]] = Field(
+    experience: List[ExperienceEntry] = Field(
         default_factory=list,
         description=(
-            "One entry per role listed on the profile, each with whatever of "
-            "company/title/start_date/end_date/summary the page actually shows, in the "
-            "page's own language. Empty list if no work history is listed -- never a "
+            "One entry per role listed on the profile, in the page's own language, "
+            "filling whichever of the entry's fields the page actually shows and leaving "
+            "the rest null. Do not merge several roles into one entry, and never invent "
+            "one to fill the list. Empty list if no work history is listed -- never a "
             "sentence about its absence."
         ),
     )
-    education: List[Dict[str, Any]] = Field(
+    education: List[EducationEntry] = Field(
         default_factory=list,
         description=(
-            "One entry per education record, each with whatever of "
-            "school_name/degree/field_of_study/start_date/end_date the page shows, in the "
-            "page's own language. Empty list if none listed -- never a sentence about its "
+            "One entry per education record listed on the profile, in the page's own "
+            "language, filling whichever of the entry's fields the page shows and leaving "
+            "the rest null. Empty list if none listed -- never a sentence about its "
             "absence."
         ),
     )
-    languages: List[Dict[str, Any]] = Field(
+    languages: List[LanguageEntry] = Field(
         default_factory=list,
         description=(
-            "One entry per language explicitly listed on the profile, each with `language` "
-            "and (if shown) `proficiency`, as the page names them. Only languages the page "
-            "actually states -- do not infer from the person's location or name. Empty list "
-            "if none listed."
+            "One entry per language explicitly listed on the profile, as the page names "
+            "them. Only languages the page actually states -- never infer one from the "
+            "person's location, their name, or the language the page is written in. Empty "
+            "list if none listed."
         ),
     )
 

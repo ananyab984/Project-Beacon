@@ -180,23 +180,66 @@ def _websearch_state_is_settled(state: Optional[str]) -> Optional[str]:
     return None
 
 
+def _has_content(value: Any) -> bool:
+    """True if `value` carries actual data rather than a well-formed shell.
+
+    Recurses on purpose: "is not empty" and "contains anything" are different
+    questions, and only the second one is worth acting on. `[{}, {}, {}]` is
+    a non-empty list of three entries that each say nothing, and a plain
+    truthiness check reads it as real content.
+
+    That gap was not hypothetical. Confirmed live 2026-09-08: every one of
+    107 experience/education/language rows across 27 enriched leads was `{}`
+    (Martin Godart's profile reported "3 roles found" and stored three blank
+    objects), because the output schema declared those entries as free-form
+    objects with no properties. The row counts were right, so every check
+    that asked "did anything come back?" said yes, the result was banked as
+    `complete`, and the lead was never re-attempted -- while the recruiter
+    saw "Enriched" over a profile whose deep sections all read "None found".
+
+    Judging a payload by its structure rather than by its presence is what
+    makes that whole class of bug self-correcting: any future provider or
+    schema regression that returns shells instead of data now falls into the
+    transient-retry path instead of being recorded as a success.
+    """
+    if isinstance(value, dict):
+        # Skip our own bookkeeping keys (`_original_language`), same
+        # convention as _payload_strings above -- they are never the reason a
+        # payload counts as having found something.
+        return any(
+            _has_content(v)
+            for k, v in value.items()
+            if not (isinstance(k, str) and k.startswith("_"))
+        )
+    if isinstance(value, (list, tuple, set)):
+        return any(_has_content(v) for v in value)
+    if isinstance(value, str):
+        return bool(value.strip())
+    return value is not None
+
+
 def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
     """True if Parallel's Task Run succeeded (no exception) but found nothing
-    real -- every scalar field null/blank AND every list field empty.
+    real -- no scalar field and no list entry carrying any actual value.
 
     Confirmed live 2026-09-07: a blocked LinkedIn profile made Parallel return
     exactly `{"headline": null, "current_title": null, "about_snippet": null,
     "country": null, "experience": [], "education": [], "languages": [],
     "certifications": []}` -- a well-formed LeadProfile dict, so
     `isinstance(content, dict)` in parallel_client.py's `_run_once` never
-    raised, and this was accepted as a genuine success on the first try."""
-    scalar_fields = ("headline", "current_title", "about_snippet", "country")
-    list_fields = ("experience", "education", "languages", "certifications")
-    if any(parallel_data.get(f) for f in scalar_fields):
-        return False
-    if any(parallel_data.get(f) for f in list_fields):
-        return False
-    return True
+    raised, and this was accepted as a genuine success on the first try.
+
+    Emptiness is measured with `_has_content`, not truthiness, so the
+    near-miss version of that payload -- one whose lists hold the right
+    NUMBER of entries and no data inside any of them -- is judged the same
+    way rather than passing as a find."""
+    return not any(
+        _has_content(parallel_data.get(f))
+        for f in (
+            "headline", "current_title", "about_snippet", "country",
+            "experience", "education", "languages", "certifications",
+        )
+    )
 
 
 # Function words that are common and distinctive in the languages these
