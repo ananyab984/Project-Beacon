@@ -105,6 +105,17 @@ export interface ApiLead {
   enrichedFieldCount: number;
   /** Full-fidelity Parallel enrichment: { experience, education, languages, certifications, ... } */
   parallelData: Record<string, any> | null;
+  /** The deep profile sections, normalized to one shape and merged across
+   *  EVERY source that found them, each entry tagged with its provider.
+   *  Computed server-side on every read (see lib/profileSections.ts).
+   *
+   *  Read this instead of `parallelData` for these five sections. Parallel is
+   *  the deep tier for ProZ/Bodalgo/personal sites, but LinkedIn keeps
+   *  experience/education/languages/certifications behind its login wall, so
+   *  on LinkedIn only Bright Data can see them -- rendering `parallelData`
+   *  alone showed "None found" over 4 languages, 10 certifications and 29
+   *  courses that were sitting in the row. */
+  profileSections: ProfileSections | null;
   /** Latest Autumn re-enrichment run for this lead. Attached by the list and
    *  detail endpoints only, so it's optional on leads returned by mutations. */
   reenrichment?: ReenrichmentSummary;
@@ -112,6 +123,22 @@ export interface ApiLead {
   availabilityFromDate: string | null;
   createdAt: string;
   lastActivityAt: string | null;
+}
+
+/** One normalized profile-section entry. Keys vary by section (language/
+ *  proficiency, institution/degree, title/company/…) and always carry the
+ *  provider that found it. Mirrors server/src/lib/profileSections.ts. */
+export interface SectionEntry {
+  source: "brightdata" | "parallel";
+  [key: string]: unknown;
+}
+
+export interface ProfileSections {
+  experience: SectionEntry[];
+  education: SectionEntry[];
+  languages: SectionEntry[];
+  certifications: SectionEntry[];
+  courses: SectionEntry[];
 }
 
 export interface LeadTimelineEvent {
