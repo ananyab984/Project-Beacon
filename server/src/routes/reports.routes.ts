@@ -3,6 +3,7 @@ import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
+import { computeRecruiterScoreSnapshot } from "../jobs/scoring.job";
 
 export const reportsRouter = Router();
 
@@ -49,6 +50,21 @@ reportsRouter.get(
       where: { role: "RECRUITER" },
       select: { id: true, name: true, email: true },
     });
+
+    // Recompute every active recruiter's current-month snapshot before
+    // reading it, in parallel -- same reason as evaluation.routes.ts's
+    // GET /recruiters/:id/score: reading RecruiterScoreSnapshot rows without
+    // refreshing them first meant this dashboard could show a different
+    // (older) score for a recruiter than the roster page did, purely
+    // depending on whether someone had opened that recruiter's detail page
+    // and clicked Recalculate Score recently.
+    await Promise.all(
+      recruiters.map((r) =>
+        computeRecruiterScoreSnapshot(r.id, new Date()).catch((err) =>
+          console.warn(`[reports] on-demand score computation failed for recruiter ${r.id}:`, err)
+        )
+      )
+    );
 
     const snapshots = await prisma.recruiterScoreSnapshot.findMany({
       where: {
@@ -347,6 +363,20 @@ reportsRouter.get(
     const { type } = req.params;
 
     if (type === "recruiters.csv" || type === "scorecard") {
+      const recruiterIds = await prisma.user.findMany({
+        where: { role: "RECRUITER" },
+        select: { id: true },
+      });
+      // Same recompute-before-read as /analytics above -- an export must not
+      // hand out a score staler than what the roster page already shows.
+      await Promise.all(
+        recruiterIds.map((r) =>
+          computeRecruiterScoreSnapshot(r.id, new Date()).catch((err) =>
+            console.warn(`[reports] on-demand score computation failed for recruiter ${r.id}:`, err)
+          )
+        )
+      );
+
       const recruiters = await prisma.user.findMany({
         where: { role: "RECRUITER" },
         include: { scoreSnapshots: { orderBy: { period: "desc" }, take: 1 } },

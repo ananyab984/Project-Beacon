@@ -99,30 +99,33 @@ evaluationRouter.patch(
   })
 );
 
-// GET /api/recruiters/:id/score — latest RecruiterScoreSnapshot + its
-// RecruiterMetricSnapshot rows. Auto-computes if not yet generated.
+// GET /api/recruiters/:id/score — the recruiter's current-month
+// RecruiterScoreSnapshot + its RecruiterMetricSnapshot rows.
+//
+// Always recomputes the current month's snapshot before reading it, rather
+// than only computing when none exists yet. That "only if missing" guard
+// used to be the whole bug: once a snapshot existed for this month, it never
+// updated again on its own -- the roster page's own 10s poll of this exact
+// route just kept re-fetching the same stale row until someone opened the
+// recruiter's detail page and clicked Recalculate Score by hand. Recomputing
+// here is cheap (a handful of count/aggregate queries scoped to one
+// recruiter's current month, idempotent via the same period-keyed upsert
+// recompute-score already used below) so every poll now reflects live data.
 evaluationRouter.get(
   "/recruiters/:id/score",
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
-    let latest = await prisma.recruiterScoreSnapshot.findFirst({
+    try {
+      await computeRecruiterScoreSnapshot(req.params.id, new Date());
+    } catch (err) {
+      console.warn("[evaluation] on-demand score computation failed:", err);
+    }
+
+    const latest = await prisma.recruiterScoreSnapshot.findFirst({
       where: { recruiterId: req.params.id },
       orderBy: { period: "desc" },
       include: { metricSnapshots: true },
     });
-
-    if (!latest) {
-      try {
-        await computeRecruiterScoreSnapshot(req.params.id, new Date());
-        latest = await prisma.recruiterScoreSnapshot.findFirst({
-          where: { recruiterId: req.params.id },
-          orderBy: { period: "desc" },
-          include: { metricSnapshots: true },
-        });
-      } catch (err) {
-        console.warn("[evaluation] on-demand score computation failed:", err);
-      }
-    }
 
     if (!latest) {
       return res.json({ snapshot: null, metricSnapshots: [] });

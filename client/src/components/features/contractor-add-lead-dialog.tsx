@@ -4,14 +4,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, CheckCircle2, Upload, Download, FileSpreadsheet, Plus } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Upload, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ApiLead, LeadSource } from "@/lib/api-types";
 import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import { STANDARD_LANGUAGES as LANGUAGES } from "@/lib/languages";
-import { STANDARD_SERVICES as SERVICES } from "@/lib/services";
+import { CountrySelect, ServicePicker, resolveServiceValue, SERVICE_OTHERS_VALUE } from "@/components/features/lead-form-fields";
 import * as XLSX from "xlsx";
 
 const SOURCES = [
@@ -53,7 +53,7 @@ export function ContractorAddLeadDialog({
   const [values, setValues] = useState({
     first_name: "",
     last_name: "",
-    country_of_residence: "Germany",
+    country_of_residence: "",
     source: "LinkedIn",
     profile_link: "",
     email_address: "",
@@ -65,6 +65,7 @@ export function ContractorAddLeadDialog({
     services: "",
   });
   const [customService, setCustomService] = useState("");
+  const [customTask, setCustomTask] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [dup, setDup] = useState<{ checked: boolean; hit: boolean; matchName?: string }>({ checked: false, hit: false });
 
@@ -123,8 +124,8 @@ export function ContractorAddLeadDialog({
     const next: Record<string, string> = {};
     if (!values.last_name.trim()) next.last_name = "Last name is required";
     if (!values.source) next.source = "Source is required";
-    if (values.services === "Custom" && !customService.trim()) {
-      next.services = "Please enter custom service name";
+    if (values.services === SERVICE_OTHERS_VALUE && (!customService.trim() || !customTask.trim())) {
+      next.services = "Please enter both custom service and custom task";
     }
     if (values.email_address && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email_address)) {
       next.email_address = "Enter a valid email address";
@@ -153,7 +154,7 @@ export function ContractorAddLeadDialog({
     if (!validate()) return;
 
     const trimmed = [values.first_name.trim(), values.last_name.trim()].filter(Boolean).join(" ");
-    const resolvedService = values.services === "Custom" ? customService.trim() : values.services;
+    const resolvedService = resolveServiceValue(values.services, customService, customTask);
     // No fake fallback here -- an unselected service must stay genuinely
     // empty, not a guessed default the drafting prompt would later treat
     // as a verified fact about this candidate's real background.
@@ -418,7 +419,7 @@ export function ContractorAddLeadDialog({
           </Field>
 
           <Field label="Country of Residence" error={errors.country_of_residence}>
-            <Input value={values.country_of_residence} onChange={(e) => set("country_of_residence", e.target.value)} placeholder="Germany" />
+            <CountrySelect value={values.country_of_residence} onChange={(v) => set("country_of_residence", v)} />
           </Field>
 
           <Field label="Source *" error={errors.source}>
@@ -510,38 +511,16 @@ export function ContractorAddLeadDialog({
             </Select>
           </Field>
 
-          {/* Services Dropdown with Custom Add Option */}
+          {/* Services picker: a real service, or Others -> Custom Service + Custom Task */}
           <Field label="Services" error={errors.services}>
-            <div className="space-y-1.5">
-              <Select
-                value={values.services}
-                onValueChange={(v) => set("services", v)}
-              >
-                <SelectTrigger className="h-9 text-xs bg-card">
-                  <SelectValue placeholder="Select Service" />
-                </SelectTrigger>
-                <SelectContent>
-                  {SERVICES.map((s) => (
-                    <SelectItem key={s} value={s}>{s}</SelectItem>
-                  ))}
-                  <SelectItem value="Custom">
-                    <span className="flex items-center gap-1.5 text-primary font-semibold">
-                      <Plus className="h-3.5 w-3.5" /> + Custom / Add New Service...
-                    </span>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-
-              {values.services === "Custom" && (
-                <Input
-                  value={customService}
-                  onChange={(e) => setCustomService(e.target.value)}
-                  placeholder="Type custom service name (e.g. Dialogue Editing)..."
-                  className="h-8 text-xs bg-card border-primary/50"
-                  autoFocus
-                />
-              )}
-            </div>
+            <ServicePicker
+              value={values.services}
+              onChange={(v) => set("services", v)}
+              customService={customService}
+              onCustomServiceChange={setCustomService}
+              customTask={customTask}
+              onCustomTaskChange={setCustomTask}
+            />
           </Field>
 
           <div className="md:col-span-2">
