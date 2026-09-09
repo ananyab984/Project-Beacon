@@ -18,6 +18,7 @@ import type {
   ApiRecruiterKpiSummary,
   ApiSheetSyncConfig,
   ApiReportsAnalytics,
+  ApiEnrichmentEvaluation,
   ApiRecentReport,
   ApiRequestError,
   UserRole,
@@ -537,6 +538,12 @@ export const api = {
 
   async getReportsAnalytics(range: string = "30d"): Promise<ApiReportsAnalytics> {
     return request<ApiReportsAnalytics>(`/api/reports/analytics?range=${range}`);
+  },
+
+  /** Owner-only Enrichment Evaluation dashboard (Settings page). `platform`
+   *  "all" or omitted means no platform filter; `range` is "7d"/"30d"/"90d"/"all". */
+  async getEnrichmentEvaluation(platform: string = "all", range: string = "30d"): Promise<ApiEnrichmentEvaluation> {
+    return request<ApiEnrichmentEvaluation>(`/api/enrichment-evaluation?platform=${platform}&range=${range}`);
   },
 
   /** Real Contacted/Awaiting Reply/Replied/Negotiation/DNC counts -- replaces

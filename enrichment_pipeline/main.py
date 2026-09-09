@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from config import ConfigError, load_config
 from core.dedup import find_duplicate_candidates
 from logger import configure_logging, get_logger
-from orchestrator import EnrichmentOrchestrator
+from orchestrator import Conclusion, EnrichmentOrchestrator
 
 log = get_logger(__name__)
 
@@ -142,6 +142,17 @@ class EnrichmentResponse(BaseModel):
     audit: Dict[str, Any]
     execution_time_ms: int
     logs: List[str]
+    # Was missing here entirely -- process_lead()'s own PipelineResult
+    # (orchestrator.py) always computes this, but response_model=
+    # EnrichmentResponse silently strips any key it doesn't declare, so
+    # every real HTTP response has been returning `conclusion: undefined`
+    # to Node regardless of what the waterfall actually concluded. Confirmed
+    # live 2026-09-09: a real call returned execution_time_ms/
+    # enrichment_status intact but no conclusion key at all. This meant
+    # Node's `isComplete = conclusion !== "timed_out"` was always true --
+    # a genuine Python-side timeout was silently treated as COMPLETE,
+    # and onHoldReason=TIMEOUT could never actually fire from this path.
+    conclusion: Optional[Conclusion] = None
     duplicate_flag: Optional[Dict[str, Any]] = None
     parallel_fallback: Optional[Dict[str, Any]] = None
     websearch_fallback: Optional[Dict[str, Any]] = None

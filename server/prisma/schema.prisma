@@ -392,6 +392,12 @@ model Lead {
   enrichmentStartedAt DateTime?        @map("enrichment_started_at")
   promotedToGlobalAt DateTime?        @map("promoted_to_global_at")
   justEnrichedUntil  DateTime?        @map("just_enriched_until") // repo: transient "recently enriched" highlight window
+  // Stamped by PATCH /:id (see resolveManualFieldSources) whenever a recruiter
+  // edit adds a NEW "manual" fieldSources tag while enrichmentStatus was
+  // already COMPLETE -- i.e. a real override of an already-concluded
+  // automated run, not a pre-fill the waterfall later correctly preserved.
+  // Drives the Enrichment Evaluation dashboard's manual-override-rate metric.
+  lastManualOverrideAt DateTime?      @map("last_manual_override_at")
 
   replyCategoryId           String?               @map("reply_category_id")
   replyCategory             ReplyCategory?        @relation(fields: [replyCategoryId], references: [id], onDelete: SetNull)
@@ -485,6 +491,7 @@ model Lead {
   conversations        Conversation[]
   classificationEvents ReplyClassificationEvent[]
   reenrichmentRuns     ReenrichmentRun[]
+  enrichmentRuns       EnrichmentRun[]
 
   @@index([enrichmentStatus])
   @@index([assignedRecruiterId])
@@ -533,6 +540,51 @@ enum ReenrichmentRunStatus {
   COMPLETED
   FAILED
   TIMED_OUT
+}
+
+/// One row per automatic waterfall attempt (enrichLeadById) -- the primary
+/// /enrich pipeline's own run history, distinct from ReenrichmentRun above
+/// (the separate recruiter-triggered Autumn.ai flow). Backs the owner-only
+/// Enrichment Evaluation dashboard: enrichLeadById previously computed a
+/// per-run tier/conclusion/execution time and then discarded all of it after
+/// applying just the current-state fields to the Lead row, so nothing about
+/// past runs could be queried by platform or time range. This table is the
+/// fix -- one row written per attempt, both on a Python-concluded response
+/// and on Node's own connectivity-failure catch path.
+model EnrichmentRun {
+  id                 String                  @id @default(cuid())
+  leadId             String                  @map("lead_id")
+  lead               Lead                    @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  platform           LeadSource              // snapshot of lead.source at run time
+  conclusion         EnrichmentRunConclusion
+  /// Deepest tier that actually resolved a field this run (see
+  /// server/src/lib/enrichmentTier.ts's tierFromFieldSources) -- null
+  /// whenever nothing beyond "existing"/"manual" was resolved: always true
+  /// for SYSTEM_ERROR, but also possible on EXHAUSTED_NO_MATCH/TIMED_OUT if
+  /// the run gave up before any tier landed anything. Only meaningful (and
+  /// only ever queried) for conclusion = SHORT_CIRCUIT_SUCCESS rows.
+  tier               EnrichmentTier?
+  enrichedFieldCount Int                     @map("enriched_field_count") // countPopulatedFields() at the moment this run concluded
+  executionTimeMs    Int                     @map("execution_time_ms")
+  startedAt          DateTime                @map("started_at")
+  concludedAt        DateTime                @default(now()) @map("concluded_at")
+
+  @@index([platform, concludedAt])
+  @@index([leadId, startedAt])
+  @@map("enrichment_runs")
+}
+
+enum EnrichmentRunConclusion {
+  SHORT_CIRCUIT_SUCCESS
+  EXHAUSTED_NO_MATCH
+  TIMED_OUT
+  SYSTEM_ERROR /// Node's own catch block -- axios/network failure, retries exhausted before the pipeline ever responded
+}
+
+enum EnrichmentTier {
+  TIER_1 /// brightdata / tavily
+  TIER_2 /// parallel
+  TIER_3 /// llm_fallback (Stage 6 Claude web search)
 }
 
 /// Seed competitor list match, referenced by Enrichment_Outreach_Tool_Comparison
