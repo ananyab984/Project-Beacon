@@ -1,68 +1,122 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
+import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
-import type { ApiLead } from "@/lib/api-types";
+import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
+import type { ApiLead, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ArrowUpDown, AlertTriangle } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Search, ArrowUpDown, Upload, Download, X, Activity, Clock, AlertTriangle, Trash2, Table2, KanbanSquare } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
+import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
+import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
+import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
+import { STANDARD_SERVICES } from "@/lib/services";
 
+// Feature parity with recruiter.leads.tsx (Kanban, bulk upload/export/delete,
+// full filter bar, rich enrichment cell + retry/re-enrichment/hold toggle,
+// activity timeline, inline stage editing) MINUS the Global Leads pool --
+// contractors only ever see their own submitted leads (GET /api/leads/mine),
+// so there's no scope tab and no Recruiter filter/column (that's inherently
+// a shared-pool concept; the full recruiter roster listing is also
+// deliberately not open to the contractor role server-side).
 export const Route = createFileRoute("/contractor/leads")({
   head: () => ({
     meta: [
       { title: "My Leads — Global3 Contractor" },
-      { name: "description", content: "Every lead you've submitted. Enrichment and outreach are handled by the team." },
+      { name: "description", content: "Every lead you've submitted, with the same enrichment, outreach and management tools recruiters use." },
     ],
   }),
   component: MyLeadsPage,
 });
 
-type SortKey = "lead" | "country" | "source" | "submitted";
+const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+
+function mapToLeadSource(raw: string | undefined | null): LeadSource {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
+  return hit ?? "LINKEDIN";
+}
+
+function formatStageLabel(stage: string): string {
+  return stage.charAt(0) + stage.slice(1).toLowerCase().replace(/_/g, " ");
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return "—";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "—";
+  const diffMs = Date.now() - then;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "Just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+const STAGE_OPTIONS: LeadStage[] = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"];
+
+type SortKey = "lead" | "language" | "country" | "stage" | "activity";
 
 function MyLeadsPage() {
   const queryClient = useQueryClient();
+  const [q, setQ] = useState("");
+  const [lang, setLang] = useState("all");
+  const [country, setCountry] = useState("all");
+  const [service, setService] = useState("all");
+  const [stage, setStage] = useState<string>("all");
+  const [dateRange, setDateRange] = useState<"all" | "24h" | "7d" | "30d">("all");
+  const [sortBy, setSortBy] = useState<SortKey>("activity");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
+  const [detailsLead, setDetailsLead] = useState<ApiLead | null>(null);
+  const [mode, setMode] = useState<"table" | "board">("table");
+  const pageSize = 12;
+
   const leadsQuery = useQuery({
     queryKey: ["leads", "mine"],
     queryFn: () => api.getMyLeads(),
   });
   const all = leadsQuery.data?.leads ?? [];
 
-  const [q, setQ] = useState("");
-  const [country, setCountry] = useState("all");
-  const [source, setSource] = useState("all");
-  const [status, setStatus] = useState("all");
-  const [sortBy, setSortBy] = useState<SortKey>("submitted");
-  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
-  const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
-  const pageSize = 12;
-
-  const countries = useMemo(() => Array.from(new Set(all.map((l) => l.country).filter((v): v is string => !!v))), [all]);
-  const sources = useMemo(() => Array.from(new Set(all.map((l) => l.source).filter(Boolean))), [all]);
-
   const onHoldCount = useMemo(
-    () => all.filter((l) => l.enrichmentStatus === "PENDING" || l.dupFlagged).length,
+    () => all.filter((l) => l.enrichmentStatus !== "COMPLETE" && l.enrichmentStatus !== "IN_PROGRESS").length,
     [all],
   );
+
+  const languages = useMemo(() => Array.from(new Set(all.map((l) => l.targetLanguage).filter((v): v is string => !!v))), [all]);
+  const services = STANDARD_SERVICES;
+  const countries = useMemo(() => Array.from(new Set(all.map((l) => l.country).filter((v): v is string => !!v))), [all]);
+
+  const dateRangeCutoff = useMemo(() => {
+    const days: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30 };
+    return days[dateRange] ? Date.now() - days[dateRange] * 86_400_000 : undefined;
+  }, [dateRange]);
 
   const filtered = useMemo(() => {
     const rows = all.filter((l) => {
       const ql = q.toLowerCase();
-      const name = (l.fullName ?? "").toLowerCase();
+      const name = (l.displayName ?? l.fullName ?? "").toLowerCase();
       const email = (l.email ?? "").toLowerCase();
       return (
         (q === "" || name.includes(ql) || email.includes(ql)) &&
         (country === "all" || l.country === country) &&
-        (source === "all" || l.source === source) &&
-        (status === "all" ||
-          (status === "flagged" && l.dupFlagged) ||
-          (status === "clean" && !l.dupFlagged) ||
-          (status === "pending" && l.enrichmentStatus === "PENDING") ||
-          (status === "complete" && l.enrichmentStatus === "COMPLETE"))
+        (lang === "all" || l.targetLanguage === lang) &&
+        (service === "all" || l.services.includes(service)) &&
+        (stage === "all" || l.stage === stage) &&
+        (!dateRangeCutoff || new Date(l.createdAt).getTime() >= dateRangeCutoff)
       );
     });
     rows.sort((a, b) => {
@@ -72,50 +126,124 @@ function MyLeadsPage() {
       return va < vb ? -dir : va > vb ? dir : 0;
     });
     return rows;
-  }, [all, q, country, source, status, sortBy, sortDir]);
+  }, [all, q, country, lang, service, stage, dateRangeCutoff, sortBy, sortDir]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const view = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const pageIds = view.map((l) => l.id);
+  const allChecked = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
 
+  function toggle(id: string) {
+    const n = new Set(selected);
+    n.has(id) ? n.delete(id) : n.add(id);
+    setSelected(n);
+  }
+  function togglePage() {
+    const n = new Set(selected);
+    if (allChecked) pageIds.forEach((id) => n.delete(id));
+    else pageIds.forEach((id) => n.add(id));
+    setSelected(n);
+  }
   function sortToggle(k: SortKey) {
     if (sortBy === k) setSortDir(sortDir === "asc" ? "desc" : "asc");
     else { setSortBy(k); setSortDir("asc"); }
   }
   function clearFilters() {
-    setQ(""); setCountry("all"); setSource("all"); setStatus("all"); setPage(1);
+    setQ(""); setLang("all"); setCountry("all"); setService("all");
+    setStage("all"); setDateRange("all"); setPage(1);
   }
 
-  // Error feedback is handled by the dialog (awaits mutateAsync, shows its
-  // own contextual error) -- no onError toast here to avoid double-toasting.
+  function invalidateLeads() {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+  }
+
   const enrichMutation = useMutation({
     mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["leads", "mine"] }),
+    onSuccess: () => invalidateLeads(),
+  });
+
+  const stageMutation = useMutation({
+    mutationFn: ({ id, stage, closureReason }: { id: string; stage: string; closureReason?: string }) =>
+      api.updateLead(id, { stage, closureReason } as Partial<ApiLead>),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
+  });
+
+  const retryEnrichmentMutation = useMutation({
+    mutationFn: (id: string) => api.retryLeadEnrichment(id),
+    onSuccess: () => {
+      invalidateLeads();
+      toast.success("Queued for re-enrichment");
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to retry enrichment"),
+  });
+
+  const reenrichment = useReenrichment(invalidateLeads);
+
+  const holdMutation = useMutation({
+    mutationFn: (id: string) => api.addLeadFlag(id, "ON_HOLD"),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to put lead on hold"),
+  });
+  const unholdMutation = useMutation({
+    mutationFn: (id: string) => api.removeLeadFlag(id, "ON_HOLD"),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to take lead off hold"),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
+      const errors = res.results.filter((r) => r.status === "error").length;
+      if (succeeded === 0) {
+        toast.error(
+          errors > 0
+            ? `No leads imported — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
+            : `No leads imported — all ${duplicates} row(s) were duplicates.`
+        );
+      } else if (duplicates > 0 || errors > 0) {
+        toast.info(
+          `Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
+            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
+            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
+        );
+      } else {
+        toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
+      }
+      invalidateLeads();
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (leadIds: string[]) => api.deleteLeads(leadIds),
+    onSuccess: (data) => {
+      invalidateLeads();
+      setSelected(new Set());
+      toast.success(`Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`);
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to delete leads"),
   });
 
   const enrichLead: LeadForEnrichment | null = enrichRaw
     ? {
         id: enrichRaw.id,
-        name: enrichRaw.fullName ?? enrichRaw.displayName ?? enrichRaw.maskedLabel ?? "",
+        name: enrichRaw.displayName ?? enrichRaw.fullName ?? enrichRaw.maskedLabel ?? "",
         email: enrichRaw.email,
         phone: enrichRaw.contactNumber,
         country: enrichRaw.country,
         profile_link: enrichRaw.profileLink,
-        language: enrichRaw.targetLanguage ?? enrichRaw.sourceLanguage ?? "",
+        language: enrichRaw.targetLanguage ?? "",
         source_language: enrichRaw.sourceLanguage,
         target_language: enrichRaw.targetLanguage,
-        services: enrichRaw.services ?? [],
+        services: enrichRaw.services,
         years_experience: enrichRaw.yearsOfExperience,
         vendor_experience: enrichRaw.vendorExperience,
       }
     : null;
 
-  // Returns the mutation promise -- the dialog awaits this and only
-  // closes/toasts on success. Previously sent `fullName: updated.name`,
-  // which isn't in the PATCH /:id zod schema at all (no .strict(), so
-  // unknown keys are silently dropped) -- unlike recruiter/owner, which
-  // correctly map to `displayName`. Also previously omitted
-  // country/profileLink from the outgoing patch entirely, even though the
-  // dialog shows both.
   const handleMarkEnriched = (id: string, updated: Partial<LeadForEnrichment>) => {
     const shouldMarkComplete = updated.enrichment_status === "complete";
     return enrichMutation.mutateAsync({
@@ -123,36 +251,35 @@ function MyLeadsPage() {
       patch: {
         ...(shouldMarkComplete ? { identityResolved: true, enrichmentStatus: "COMPLETE" } : {}),
         displayName: updated.name,
-        email: updated.email,
-        contactNumber: updated.phone,
-        country: updated.country,
-        profileLink: updated.profile_link,
         services: updated.services,
         sourceLanguage: updated.source_language,
         targetLanguage: updated.target_language,
+        country: updated.country,
+        profileLink: updated.profile_link,
         yearsOfExperience: updated.years_experience,
         vendorExperience: updated.vendor_experience,
+        contactNumber: updated.phone,
+        email: updated.email,
       },
     });
   };
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-4">
-      {/* On Hold Notification Alert Banner for Contractors */}
       {onHoldCount > 0 && (
         <div className="flex items-center justify-between rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs">
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
             <span className="text-amber-100">
-              <strong className="font-semibold text-amber-300">{onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment review.</strong>{" "}
-              <span className="text-amber-200/90">Please complete missing details to verify your submitted lead.</span>
+              <strong className="font-semibold text-amber-300">{onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment.</strong>{" "}
+              <span className="text-amber-200/90">Please review missing candidate details.</span>
             </span>
           </div>
           <Button
             size="sm"
             className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
             onClick={() => {
-              const firstOnHold = all.find((l) => l.enrichmentStatus === "PENDING" || l.dupFlagged);
+              const firstOnHold = all.find((l) => l.enrichmentStatus !== "COMPLETE" && (!l.identityResolved || l.flags.includes("ON_HOLD")));
               if (firstOnHold) setEnrichRaw(firstOnHold);
             }}
           >
@@ -166,49 +293,106 @@ function MyLeadsPage() {
           <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input placeholder="Search my leads by name or email…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} className="pl-9" />
         </div>
-        <Badge variant="outline" className="text-[11px]">{all.length} submitted</Badge>
+        <div className="flex items-center gap-2">
+          <div role="tablist" aria-label="Lead view" className="inline-flex rounded-lg border border-border bg-card p-0.5">
+            <ViewTab active={mode === "table"} onClick={() => setMode("table")} label="Table" icon={Table2} />
+            <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
+          </div>
+          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
+          <Badge variant="outline" className="text-[11px]">{all.length} submitted</Badge>
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         <FilterSelect value={country} onChange={(v) => { setCountry(v); setPage(1); }} placeholder="Country" options={countries} />
-        <FilterSelect value={source} onChange={(v) => { setSource(v); setPage(1); }} placeholder="Source" options={sources} />
+        <FilterSelect value={lang} onChange={(v) => { setLang(v); setPage(1); }} placeholder="Language" options={languages} />
+        <FilterSelect value={service} onChange={(v) => { setService(v); setPage(1); }} placeholder="Service" options={services} />
+        <FilterSelect value={stage} onChange={(v) => { setStage(v); setPage(1); }} placeholder="Status" options={STAGE_OPTIONS} labelFor={formatStageLabel} />
         <FilterSelect
-          value={status}
-          onChange={(v) => { setStatus(v); setPage(1); }}
-          placeholder="Status"
-          options={["flagged", "clean", "pending", "complete"]}
-          labelFor={(v) => ({ flagged: "Duplicate flagged", clean: "Clean submissions", pending: "Enriching", complete: "Enriched" })[v] ?? v}
+          value={dateRange}
+          onChange={(v) => { setDateRange(v as typeof dateRange); setPage(1); }}
+          placeholder="Date Added"
+          options={["24h", "7d", "30d"]}
+          labelFor={(v) => ({ "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days" })[v] ?? v}
         />
-        <div />
       </div>
 
+      {mode === "table" && selected.size > 0 && (
+        <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
+          <div className="flex items-center gap-3">
+            <span className="font-medium">{selected.size} selected</span>
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
+              <X className="h-3 w-3" /> Clear
+            </Button>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => {
+                api.downloadLeadsExport({ q: q || undefined, country: country !== "all" ? country : undefined, language: lang !== "all" ? lang : undefined, service: service !== "all" ? service : undefined, stage: stage !== "all" ? stage : undefined })
+                  .catch((err) => toast.error(err instanceof Error ? err.message : "Export failed"));
+              }}
+            >
+              <Download className="h-3.5 w-3.5" /> Export
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate(Array.from(selected))}
+              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {mode === "board" && (
+        <LeadKanbanBoard
+          leads={filtered}
+          recruiters={[]}
+          isLoading={leadsQuery.isLoading}
+          onStageChange={(id, stage, closureReason) => stageMutation.mutate({ id, stage, closureReason })}
+        />
+      )}
+
+      {mode === "table" && (
       <div className="overflow-hidden rounded-2xl border border-border bg-card">
         <div className="max-h-[68vh] overflow-auto">
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-muted/80 text-left text-[11px] uppercase tracking-wide text-muted-foreground backdrop-blur">
               <tr>
+                <th className="w-10 px-4 py-3">
+                  <Checkbox checked={allChecked} onCheckedChange={togglePage} aria-label="Select page" />
+                </th>
                 <SortableTh label="Lead" k="lead" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <th className="px-4 py-3 font-semibold text-foreground">ENRICHMENT STATUS</th>
+                <SortableTh label="Language" k="language" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <SortableTh label="Source" k="source" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <th className="px-4 py-3">Contact</th>
-                <th className="px-4 py-3">Languages</th>
                 <th className="px-4 py-3">Services</th>
-                <SortableTh label="Submitted" k="submitted" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
+                <SortableTh label="Status" k="stage" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
+                <th className="px-4 py-3">Source</th>
+                <SortableTh label="Activity" k="activity" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {leadsQuery.isLoading && (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
+              {leadsQuery.isLoading && view.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
               )}
-              {leadsQuery.isError && (
-                <tr><td colSpan={8} className="px-4 py-12 text-center text-sm text-destructive">Failed to load your leads.</td></tr>
+              {leadsQuery.isError && view.length === 0 && (
+                <tr><td colSpan={9} className="px-4 py-12 text-center text-sm text-destructive">Failed to load your leads.</td></tr>
               )}
-              {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
-                const isOnHold = l.enrichmentStatus === "PENDING" || l.dupFlagged;
-                const label = l.fullName ?? l.displayName ?? l.maskedLabel ?? "—";
+              {view.map((l) => {
+                const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
+                const isSel = selected.has(l.id);
                 return (
-                  <tr key={l.id} className="transition-colors hover:bg-muted/40">
+                  <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
+                    <td className="px-4 py-3">
+                      <Checkbox checked={isSel} onCheckedChange={() => toggle(l.id)} aria-label={`Select ${label}`} />
+                    </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{label}</span>
@@ -216,45 +400,42 @@ function MyLeadsPage() {
                           <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">duplicate</Badge>
                         )}
                       </div>
-                      {l.firstName && <div className="text-[11px] text-muted-foreground">{l.firstName}</div>}
                     </td>
                     <td className="px-4 py-3">
-                      {isOnHold ? (
-                        <button
-                          onClick={() => setEnrichRaw(l)}
-                          className="font-semibold text-xs text-warning hover:underline cursor-pointer"
-                        >
-                          On Hold
-                        </button>
-                      ) : (
-                        <span className="font-semibold text-xs text-emerald-400">
-                          Enriched
-                        </span>
-                      )}
+                      <EnrichmentStatusCell
+                        lead={l}
+                        onOpenDetails={setDetailsLead}
+                        onRetry={(id) => retryEnrichmentMutation.mutate(id)}
+                        retryPending={retryEnrichmentMutation.isPending}
+                        onReenrich={reenrichment.start}
+                      />
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.country || "—"}</td>
                     <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">{l.source}</span>
+                      <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                        {l.targetLanguage ?? "—"}
+                      </span>
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.email || l.contactNumber || "—"}</td>
-                    <td className="px-4 py-3 text-foreground/80">
-                      {l.sourceLanguage && l.targetLanguage ? `${l.sourceLanguage} → ${l.targetLanguage}` : "—"}
-                    </td>
+                    <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {(l.services ?? []).map((s) => (
+                        {l.services.map((s) => (
                           <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
                         ))}
-                        {!l.services?.length && <span className="text-xs text-muted-foreground">—</span>}
                       </div>
                     </td>
-                    <td className="px-4 py-3 text-muted-foreground">{new Date(l.createdAt).toLocaleDateString()}</td>
+                    <td className="px-4 py-3">
+                      <StageCell lead={l} onChanged={invalidateLeads} />
+                    </td>
+                    <td className="px-4 py-3 text-foreground/80">{l.source}</td>
+                    <td className="px-4 py-3">
+                      <ActivityCell lead={l} />
+                    </td>
                   </tr>
                 );
               })}
-              {!leadsQuery.isLoading && !leadsQuery.isError && view.length === 0 && (
+              {view.length === 0 && !leadsQuery.isLoading && (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={9} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
                     <button className="ml-2 text-primary hover:underline" onClick={clearFilters}>Clear filters</button>
                   </td>
@@ -276,34 +457,198 @@ function MyLeadsPage() {
           </div>
         </div>
       </div>
+      )}
 
-      {/* Manual Enrichment Modal for Contractors */}
       <ManualEnrichmentDialog
         open={!!enrichLead}
         onOpenChange={(o) => !o && setEnrichRaw(null)}
         lead={enrichLead}
         onMarkEnriched={handleMarkEnriched}
       />
+
+      <EnrichmentDetailsDialog
+        open={!!detailsLead}
+        onOpenChange={(o) => !o && setDetailsLead(null)}
+        lead={detailsLead}
+        onSave={(id, patch) => enrichMutation.mutateAsync({ id, patch })}
+        onToggleHold={(id, hold) => (hold ? holdMutation : unholdMutation).mutateAsync(id)}
+      />
+
+      <ReenrichmentModal {...reenrichment.modalProps} />
     </div>
+  );
+}
+
+function ViewTab({
+  active, onClick, label, icon: Icon,
+}: { active: boolean; onClick: () => void; label: string; icon: typeof Table2 }) {
+  return (
+    <button
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+        active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" /> {label}
+    </button>
+  );
+}
+
+function StageCell({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
+  const mutation = useMutation({
+    mutationFn: (patch: { stage: string; closureReason?: string }) => api.updateLead(lead.id, patch as Partial<ApiLead>),
+    onSuccess: () => onChanged(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
+  });
+
+  function onValueChange(v: string) {
+    if (v === "COLD") {
+      const reason = window.prompt("Reason for marking this lead Cold?");
+      if (!reason || !reason.trim()) {
+        toast.info("Stage change cancelled — a reason is required for Cold");
+        return;
+      }
+      mutation.mutate({ stage: v, closureReason: reason.trim() });
+    } else {
+      mutation.mutate({ stage: v });
+    }
+  }
+
+  return (
+    <Select value={lead.stage} onValueChange={onValueChange}>
+      <SelectTrigger className="h-7 w-[135px] text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {STAGE_OPTIONS.map((s) => (
+          <SelectItem key={s} value={s} className="text-xs">{formatStageLabel(s)}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function timelineIcon(type: LeadTimelineEvent["type"]): string {
+  switch (type) {
+    case "STAGE_CHANGE": return "🟦";
+    case "FLAG": return "🚩";
+    case "INTERACTION": return "💬";
+    case "MANUAL_ACTIVITY": return "📝";
+    default: return "•";
+  }
+}
+
+function timelineTitle(e: LeadTimelineEvent): string {
+  switch (e.type) {
+    case "STAGE_CHANGE":
+      return `Stage → ${formatStageLabel(e.data.toStage ?? "")}`;
+    case "FLAG":
+      return `Flag ${e.data.action === "removed" ? "removed" : "added"}: ${e.data.flag ?? ""}`;
+    case "INTERACTION":
+      return `${e.data.direction === "OUTBOUND" ? "Outreach sent" : "Reply received"} · ${e.data.channel ?? ""}`;
+    case "MANUAL_ACTIVITY":
+      return e.data.type ?? "Manual activity";
+    default:
+      return e.type;
+  }
+}
+
+function timelineDetail(e: LeadTimelineEvent): string | undefined {
+  switch (e.type) {
+    case "STAGE_CHANGE":
+      return e.data.reason ? `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}. Reason: ${e.data.reason}` : `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}`;
+    case "FLAG":
+      return e.data.reason;
+    case "INTERACTION":
+      return e.data.occurredAt ? new Date(e.data.occurredAt).toLocaleString() : undefined;
+    case "MANUAL_ACTIVITY":
+      return [e.data.purpose, e.data.outcome, e.data.notes].filter(Boolean).join(" — ") || undefined;
+    default:
+      return undefined;
+  }
+}
+
+function ActivityCell({ lead }: { lead: ApiLead }) {
+  const [open, setOpen] = useState(false);
+  const detailQuery = useQuery({
+    queryKey: ["lead", lead.id],
+    queryFn: () => api.getLead(lead.id),
+    enabled: open,
+  });
+  const label = lead.displayName ?? lead.fullName ?? lead.maskedLabel ?? "—";
+  const timeline = [...(detailQuery.data?.timeline ?? [])].reverse();
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex items-center gap-1.5 rounded-md border border-border/70 bg-muted/40 px-2 py-1 text-[11px] font-medium text-foreground/80 transition-colors hover:border-primary/50 hover:bg-primary/10 hover:text-primary"
+        >
+          <Clock className="h-3 w-3" />
+          {relativeTime(lead.lastActivityAt)}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Activity className="h-4 w-4 text-primary" /> Activity — {label}
+          </DialogTitle>
+          <DialogDescription>Full timeline of interactions, stage changes, and enrichment events.</DialogDescription>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto pr-1">
+          {detailQuery.isLoading && <div className="py-8 text-center text-xs text-muted-foreground">Loading…</div>}
+          {detailQuery.isError && <div className="py-8 text-center text-xs text-destructive">Failed to load activity.</div>}
+          {!detailQuery.isLoading && !detailQuery.isError && (
+            <ol className="relative space-y-4 border-l border-border pl-5">
+              {timeline.map((e, i) => (
+                <li key={i} className="relative">
+                  <span className="absolute -left-[27px] flex h-5 w-5 items-center justify-center rounded-full border border-border bg-card text-[10px]">
+                    {timelineIcon(e.type)}
+                  </span>
+                  <div className="flex items-baseline justify-between gap-3">
+                    <div className="text-sm font-medium text-foreground">{timelineTitle(e)}</div>
+                    <div className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{relativeTime(e.at)}</div>
+                  </div>
+                  {timelineDetail(e) && <div className="mt-0.5 text-xs text-muted-foreground">{timelineDetail(e)}</div>}
+                </li>
+              ))}
+              {timeline.length === 0 && (
+                <li className="text-xs text-muted-foreground">No activity recorded yet.</li>
+              )}
+            </ol>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
 function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.fullName ?? l.displayName ?? l.maskedLabel ?? "";
+    case "lead": return l.displayName ?? l.fullName ?? l.maskedLabel ?? "";
+    case "language": return l.targetLanguage ?? "";
     case "country": return l.country ?? "";
-    case "source": return l.source;
-    case "submitted": return l.createdAt;
+    case "stage": return STAGE_OPTIONS.indexOf(l.stage);
+    case "activity": return l.lastActivityAt ?? "";
   }
 }
 
-function SortableTh({ label, k, sortBy, sortDir, onClick }: { label: string; k: SortKey; sortBy: SortKey; sortDir: "asc" | "desc"; onClick: (k: SortKey) => void }) {
+function SortableTh({
+  label, k, sortBy, sortDir, onClick,
+}: { label: string; k: SortKey; sortBy: SortKey; sortDir: "asc" | "desc"; onClick: (k: SortKey) => void }) {
   const active = sortBy === k;
   return (
     <th className="px-4 py-3">
       <button
         onClick={() => onClick(k)}
-        className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-wide transition-colors ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+        className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-wide transition-colors ${
+          active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+        }`}
       >
         {label}
         <ArrowUpDown className={`h-3 w-3 ${active ? "opacity-100" : "opacity-40"}`} />
@@ -313,7 +658,9 @@ function SortableTh({ label, k, sortBy, sortDir, onClick }: { label: string; k: 
   );
 }
 
-function FilterSelect({ value, onChange, placeholder, options, labelFor }: { value: string; onChange: (v: string) => void; placeholder: string; options: string[]; labelFor?: (v: string) => string }) {
+function FilterSelect({
+  value, onChange, placeholder, options, labelFor,
+}: { value: string; onChange: (v: string) => void; placeholder: string; options: string[]; labelFor?: (v: string) => string }) {
   return (
     <Select value={value} onValueChange={onChange}>
       <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
@@ -322,5 +669,198 @@ function FilterSelect({ value, onChange, placeholder, options, labelFor }: { val
         {options.map((o) => <SelectItem key={o} value={o}>{labelFor ? labelFor(o) : o}</SelectItem>)}
       </SelectContent>
     </Select>
+  );
+}
+
+function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
+    fileName: string;
+    duplicateCount: number;
+    duplicateNames: string[];
+    totalCount: number;
+    newCount: number;
+    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+  } | null>(null);
+
+  function downloadTemplate() {
+    const headers = [
+      "Reachout Date", "First Name", "Full Name",
+      "Country of Residence", "Source", "Profile_Link", "Contact Number",
+      "Email Address", "Services", "Source_Language", "Target_Language", "Secondary_Languages",
+    ];
+    const csv = headers.join(",") + "\n";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "leads_template.csv"; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function submit() {
+    if (!file) { toast.error("Choose a CSV or Excel file first"); return; }
+    const currentFile = file;
+    const isExcel = /\.xlsx?$/i.test(currentFile.name);
+    const reader = new FileReader();
+
+    const finish = async (parsed: ReturnType<typeof parseCsvLeads>) => {
+      if (parsed.length === 0) {
+        toast.info(`Uploaded ${currentFile.name}. Ensure sheet contains Name, Email, Language, or Service headers.`);
+        return;
+      }
+
+      const rows = parsed.map((l: any) => ({
+        fullName: l.display_name ?? l.masked_label,
+        source: mapToLeadSource(l.source),
+        services: l.services,
+        country: l.country || undefined,
+        profileLink: l.profile_link || undefined,
+        sourceLanguage: l.source_language || "English",
+        targetLanguage: l.target_language || l.language || "English",
+        email: l.email || undefined,
+        contactNumber: l.phone || undefined,
+        yearsOfExperience: l.years_experience || undefined,
+        vendorExperience: l.vendor_experience || undefined,
+      }));
+
+      setCheckingDuplicates(true);
+      try {
+        const dupRes = await api.checkBulkDuplicateLeads(
+          rows.map((r) => ({
+            fullName: r.fullName,
+            email: r.email ?? undefined,
+            contactNumber: r.contactNumber ?? undefined,
+            profileLink: r.profileLink ?? undefined,
+          }))
+        );
+        if (dupRes.hasDuplicates) {
+          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "…" : "");
+          toast.error(
+            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or import the rest.`,
+            { duration: 6000 }
+          );
+          setDuplicateCheckResult({
+            fileName: currentFile.name,
+            duplicateCount: dupRes.duplicateCount,
+            duplicateNames: dupRes.duplicateNames,
+            totalCount: dupRes.totalCount,
+            newCount: dupRes.newCount,
+            rows,
+          });
+        } else {
+          onSubmitRows(rows);
+          toast.success(`Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`);
+          setOpen(false);
+          setFile(null);
+        }
+      } catch {
+        onSubmitRows(rows);
+        toast.success(`Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`);
+        setOpen(false);
+        setFile(null);
+      } finally {
+        setCheckingDuplicates(false);
+      }
+    };
+
+    if (isExcel) {
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          const rawRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          const stringRows = rawRows.map((row) => row.map((cell) => String(cell ?? "")));
+          finish(mapRowsToLeads(stringRows));
+        } catch (err: any) {
+          toast.error(`Could not read ${currentFile.name} as an Excel file: ${err?.message || "unknown error"}`);
+        }
+      };
+      reader.readAsArrayBuffer(currentFile);
+    } else {
+      reader.onload = (event) => {
+        const text = (event.target?.result as string) || "";
+        finish(parseCsvLeads(text));
+      };
+      reader.readAsText(currentFile);
+    }
+  }
+
+  function importSkippingDuplicates() {
+    if (!duplicateCheckResult) return;
+    onSubmitRows(duplicateCheckResult.rows);
+    toast.success(`Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`);
+    setDuplicateCheckResult(null);
+    setOpen(false);
+    setFile(null);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm">
+          <Upload className="h-3.5 w-3.5" /> Bulk Upload
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Bulk upload leads</DialogTitle>
+          <DialogDescription>Upload a CSV or Excel file matching the SEARCH schema. Duplicates are auto-flagged.</DialogDescription>
+        </DialogHeader>
+        {duplicateCheckResult && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
+                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
+                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
+            </div>
+            <p className="text-xs text-foreground leading-relaxed">
+              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
+              <span className="font-semibold text-destructive ml-1">{duplicateCheckResult.duplicateNames.join(", ")}</span>
+              . You can upload another file or import only the <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
+            </p>
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              {duplicateCheckResult.newCount > 0 && (
+                <Button type="button" size="sm" onClick={importSkippingDuplicates} className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5">
+                  Import {duplicateCheckResult.newCount} New Lead{duplicateCheckResult.newCount === 1 ? "" : "s"} Only
+                </Button>
+              )}
+              <Button type="button" variant="ghost" size="sm" onClick={() => setDuplicateCheckResult(null)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+        <div className="space-y-4">
+          <button
+            onClick={downloadTemplate}
+            className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted"
+          >
+            <span className="flex items-center gap-2"><Download className="h-3.5 w-3.5" /> Download sample template</span>
+            <span className="text-[11px] text-muted-foreground">.csv</span>
+          </button>
+          <label className="block">
+            <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">File</span>
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setDuplicateCheckResult(null); }}
+              className="mt-1 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+            />
+            {file && <div className="mt-1 text-[11px] text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</div>}
+          </label>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button size="sm" onClick={submit} disabled={checkingDuplicates}>
+            {checkingDuplicates ? "Checking for duplicates…" : "Upload"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
