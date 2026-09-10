@@ -21,7 +21,7 @@ export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO
  * concludes cleanly. */
 export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
-export type OutreachFunnelCategory = "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc";
+export type OutreachFunnelCategory = "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc" | "onboarded";
 
 /** One row in a funnel tile's drill-down list -- deliberately lighter than
  *  ApiLead, matching what GET /reports/outreach-funnel/leads selects. */

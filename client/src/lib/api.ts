@@ -548,6 +548,7 @@ export const api = {
     replied: number;
     in_negotiation: number;
     dnc: number;
+    onboarded: number;
   }> {
     return request(`/api/reports/outreach-funnel?range=${range}`);
   },
