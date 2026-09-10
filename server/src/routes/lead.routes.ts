@@ -27,6 +27,22 @@ const LEAD_SOURCES = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREE
 const LEAD_STAGES = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"] as const;
 const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
 
+/** Shared ownership check for every single-lead action route now open to
+ * contractors (flags, activities, retry-enrichment, reenrich, ...) -- same
+ * rule PATCH /:id already enforces. A contractor may act on a lead only if
+ * they created it; everyone else (owner/recruiter) is unrestricted. Takes
+ * plain values rather than the full Express Request so it's directly unit
+ * testable without constructing a fake request object. */
+export function assertContractorOwnsLead(
+  requesterRole: string,
+  requesterId: string,
+  lead: { createdByContractorId: string | null }
+) {
+  if (requesterRole.toLowerCase() === "contractor" && lead.createdByContractorId !== requesterId) {
+    throw new ApiError(403, "FORBIDDEN", "Contractors can only act on their own submitted leads");
+  }
+}
+
 /** Best-effort mapping of a free-text/legacy source string to the LeadSource
  * enum -- same fallback rule the client's per-dialog copies of this already
  * use (mapToLeadSource in add-lead-dialog.tsx etc.): default to LINKEDIN
@@ -189,10 +205,14 @@ leadRouter.get(
   })
 );
 
-// GET /api/leads/export — CSV export honoring the current filter set
+// GET /api/leads/export — CSV export honoring the current filter set.
+// Contractors are scoped to their own submitted leads (createdByContractorId)
+// -- unlike GET / (the Global Leads pool), this has no role branch of its
+// own by default, so opening it to contractor without this scope would
+// export every lead in the pool, not just theirs.
 leadRouter.get(
   "/export",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const EXPORT_ROW_CAP = 5000;
     const where = buildLeadWhere({
@@ -204,6 +224,9 @@ leadRouter.get(
       recruiterId: req.query.recruiterId as string,
       flag: req.query.flag as string,
     });
+    if (req.user!.role.toLowerCase() === "contractor") {
+      where.createdByContractorId = req.user!.id;
+    }
     const leads = await prisma.lead.findMany({ where, take: EXPORT_ROW_CAP, orderBy: { createdAt: "desc" } });
     if (leads.length === EXPORT_ROW_CAP) {
       console.warn(`Lead export truncated at ${EXPORT_ROW_CAP} rows for filter set`, where);
@@ -623,10 +646,14 @@ leadRouter.post(
   })
 );
 
-// PATCH /api/leads/bulk — bulk stage/recruiter reassignment for the bulk-action bar
+// PATCH /api/leads/bulk — bulk stage/recruiter reassignment for the bulk-action bar.
+// Unlike GET / and GET /export, this has no per-row ownership scoping of its
+// own -- it applies to whatever ids are passed. A contractor calling this
+// must be restricted to ids they actually created, or they could
+// stage-change/reassign any lead in the system.
 leadRouter.patch(
   "/bulk",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({
       ids: z.array(z.string().uuid()).min(1).max(500),
@@ -635,6 +662,11 @@ leadRouter.patch(
     });
     const { ids, stage, recruiterId } = schema.parse(req.body);
     if (!stage && !recruiterId) throw new ApiError(400, "NO_OP", "Provide stage or recruiterId to apply");
+
+    if (req.user!.role.toLowerCase() === "contractor") {
+      const foreignCount = await prisma.lead.count({ where: { id: { in: ids }, createdByContractorId: { not: req.user!.id } } });
+      if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only bulk-update their own submitted leads");
+    }
 
     if (stage) {
       await prisma.$transaction(
@@ -945,13 +977,14 @@ leadRouter.post(
 // POST /api/leads/:id/flags — add a flag (DNC/ON_HOLD/WATCHING/HIGH_PRIORITY)
 leadRouter.post(
   "/:id/flags",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({ flag: z.enum(LEAD_FLAGS), reason: z.string().optional(), provisional: z.boolean().optional() });
     const { flag, reason, provisional } = schema.parse(req.body);
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     await prisma.leadFlagEvent.create({
       data: {
@@ -978,13 +1011,14 @@ leadRouter.post(
 // DELETE /api/leads/:id/flags/:flag — remove a flag (audit-logged, not hard-deleted)
 leadRouter.delete(
   "/:id/flags/:flag",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const flag = req.params.flag.toUpperCase();
     if (!LEAD_FLAGS.includes(flag as any)) throw new ApiError(400, "INVALID_FLAG", "Unknown flag type");
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     await prisma.leadFlagEvent.create({
       data: { leadId: lead.id, flag: flag as any, action: "REMOVED", setByRecruiterId: req.user!.id },
@@ -1004,7 +1038,7 @@ leadRouter.delete(
 // POST /api/leads/:id/activities — log a manual interview or call
 leadRouter.post(
   "/:id/activities",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.discriminatedUnion("type", [
       z.object({ type: z.literal("INTERVIEW"), scheduledAt: z.string().datetime(), notes: z.string().optional() }),
@@ -1019,6 +1053,7 @@ leadRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const activity = await prisma.manualActivityLog.create({
       data: {
@@ -1043,10 +1078,11 @@ leadRouter.post(
 // IN_PROGRESS, not two.
 leadRouter.post(
   "/:id/retry-enrichment",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     if (lead.enrichmentStatus === "IN_PROGRESS") {
       throw new ApiError(409, "ALREADY_RUNNING", "This lead's enrichment is still actively running");
@@ -1074,10 +1110,11 @@ leadRouter.post(
 // reads progress off the run row (GET /:id/reenrichment-status below).
 leadRouter.post(
   "/:id/reenrich",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     // The in-flight lock. The button is disabled client-side while a run is
     // active, but that alone can't stop a second tab, a stale page, or a
@@ -1124,8 +1161,12 @@ leadRouter.post(
 // the re-enrichment modal while it's open.
 leadRouter.get(
   "/:id/reenrichment-status",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
+
     const run = await prisma.reenrichmentRun.findFirst({
       where: { leadId: req.params.id },
       orderBy: { startedAt: "desc" },
@@ -1152,7 +1193,7 @@ leadRouter.get(
 // re-checked against the lead's live fieldSources, not the stale run.
 leadRouter.post(
   "/:id/reenrichment-resolve",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const { runId, acceptFields } = z
       .object({ runId: z.string(), acceptFields: z.array(z.string()) })
@@ -1160,6 +1201,7 @@ leadRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const run = await prisma.reenrichmentRun.findFirst({ where: { id: runId, leadId: lead.id } });
     if (!run) throw new ApiError(404, "RUN_NOT_FOUND", "Re-enrichment run not found for this lead");
@@ -1190,14 +1232,21 @@ leadRouter.post(
   })
 );
 
-// POST /api/leads/batch-delete — batch delete leads & cascade cleanup
+// POST /api/leads/batch-delete — batch delete leads & cascade cleanup.
+// Same no-ownership-check-by-default caveat as PATCH /bulk above -- a
+// contractor here must be restricted to leads they actually created.
 leadRouter.post(
   "/batch-delete",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const { leadIds } = z.object({ leadIds: z.array(z.string()) }).parse(req.body);
     if (!leadIds || leadIds.length === 0) {
       return res.json({ deletedCount: 0 });
+    }
+
+    if (req.user!.role.toLowerCase() === "contractor") {
+      const foreignCount = await prisma.lead.count({ where: { id: { in: leadIds }, createdByContractorId: { not: req.user!.id } } });
+      if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only delete their own submitted leads");
     }
 
     await prisma.$transaction([
