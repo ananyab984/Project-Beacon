@@ -77,10 +77,21 @@ FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certification
 # draft. providers/parallel_client.py's schema now instructs an empty list
 # instead, but an LLM can always regress -- this is the trust-boundary check
 # that keeps prose out of a data column regardless of how the prompt behaves.
+#
+# Originally tuned only for certification-style phrasing ("none listed",
+# "not found") -- widened when email/phone extraction was added, since a
+# model narrating contact-info absence reaches for different, equally
+# plausible wording ("No email is listed", "Not disclosed", "no email on
+# file") that the original certification-specific set didn't catch. A wrong
+# marker here is a much smaller risk than missing one: a real value would
+# have to coincidentally contain one of these exact phrases to be
+# wrongly dropped, whereas a missed absence-prose string is exactly the
+# "hallucinated fact reaches a real person" failure this guard exists for.
 _ABSENCE_PROSE_MARKERS = (
-    "no certification", "none listed", "not listed", "not available",
-    "not specified", "not provided", "no data", "none found", "not found",
-    "profile evidence", "no information",
+    "no certification", "none listed", "not listed", "isn't listed", "is listed",
+    "not available", "not specified", "not provided", "not disclosed",
+    "not shared", "not shown", "no data", "none found", "not found",
+    "no email", "no phone", "profile evidence", "no information",
 )
 
 
@@ -987,6 +998,33 @@ class EnrichmentOrchestrator:
             mapped["About_Snippet"] = parallel_data["about_snippet"]
         if parallel_data.get("country"):
             mapped["Country_of_Residence"] = parallel_data["country"]
+
+        # Email/phone: Parallel is a public-page browsing agent -- it can only
+        # ever report what's literally rendered on the page it visits, with no
+        # ability to bypass a login wall. LinkedIn deliberately locks contact
+        # info behind an authenticated "Contact info" modal that is NOT part
+        # of the publicly served profile page, so these two fields will
+        # almost always come back null for LinkedIn leads specifically. That
+        # is a real platform restriction working as intended, not a failed
+        # extraction or a regression to investigate. Non-LinkedIn platforms
+        # (ProZ, Bodalgo, ATA/ATAA, Freelancer.com) publish contact info
+        # directly on the page far more often, since that's how their users
+        # solicit work -- this is expected to actually succeed there.
+        email = parallel_data.get("email")
+        if email and not _is_absence_prose(str(email)):
+            mapped["Email_Address"] = email
+        phone = parallel_data.get("phone")
+        if phone and not _is_absence_prose(str(phone)):
+            mapped["Contact_Number"] = phone
+        if not mapped.get("Email_Address") and not mapped.get("Contact_Number"):
+            source = str(lead.get("Source", "")).strip().upper()
+            if source == "LINKEDIN":
+                logs.append(
+                    "Stage 3.5: no email/phone found via Parallel -- expected for LinkedIn, "
+                    "whose contact info is locked behind a login-gated modal not part of the "
+                    "public page a browsing agent can see, not a failed extraction"
+                )
+
         certs = parallel_data.get("certifications")
         if isinstance(certs, list):
             kept = [str(c) for c in certs if c and not _is_absence_prose(str(c))]
