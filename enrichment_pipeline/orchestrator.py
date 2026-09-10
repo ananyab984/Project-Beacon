@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import date
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, Literal, Optional, TypedDict
 
@@ -906,6 +907,70 @@ class EnrichmentOrchestrator:
         logs.append("Stage 3.5: profile wasn't in English -- normalised to English (original kept under _original_language)")
         return translated
 
+    def _years_of_experience_from_parallel_entries(self, experience: Any) -> Optional[int]:
+        """Derives a years-of-experience figure from Parallel's structured
+        `experience` list (providers/parallel_client.py's ExperienceEntry --
+        start_date/end_date/is_current) when nothing more direct was
+        extracted: career span (earliest start year to latest end year, a
+        current role counting as this year), never a count-based estimate.
+
+        Same principle parsers/linkedin_parser.py's own
+        _extract_years_of_experience already documents and rejects a
+        cheaper alternative for ("count x 2" turned an empty-shell
+        `[{}, {}, {}]` into a confident "6 years" from no real data) --
+        that comment points at POC/linkedin_poc/async_experiment.py's
+        years_from_experience() as the reference span-based approach. This
+        adapts that same idea to Parallel's cleaner, already-structured
+        start_date/end_date/is_current fields rather than BrightData's
+        looser free-text duration/subtitle shape, so it can use is_current
+        directly instead of pattern-matching for "present".
+
+        Dates are verbatim, human-written text (see ExperienceEntry's own
+        docstring) in whatever language the profile uses -- "2020",
+        "Mar 2020", "2020-03-01" -- so this only ever extracts a 4-digit
+        year via regex rather than attempting full date parsing; year-level
+        precision is all a "years of experience" figure needs anyway.
+        Returns None (never a fabricated number) when nothing parseable is
+        found.
+        """
+        if not isinstance(experience, list) or not experience:
+            return None
+
+        current_role_markers = ("present", "current", "now", "today", "actual", "heute", "presente", "atual", "aujourd'hui", "laufend")
+
+        def extract_year(text: Optional[str]) -> Optional[int]:
+            if not isinstance(text, str):
+                return None
+            match = re.search(r"(?:19|20)\d{2}", text)
+            return int(match.group()) if match else None
+
+        def is_current_marker(text: Optional[str]) -> bool:
+            return isinstance(text, str) and any(m in text.strip().lower() for m in current_role_markers)
+
+        start_years: list[int] = []
+        end_years: list[int] = []
+        for entry in experience:
+            if not isinstance(entry, dict):
+                continue
+            start_year = extract_year(entry.get("start_date"))
+            if start_year:
+                start_years.append(start_year)
+
+            if entry.get("is_current") or is_current_marker(entry.get("end_date")):
+                end_years.append(date.today().year)
+            else:
+                end_year = extract_year(entry.get("end_date"))
+                if end_year:
+                    end_years.append(end_year)
+
+        if not start_years:
+            return None
+
+        earliest_start = min(start_years)
+        latest_end = max(end_years) if end_years else max(start_years)
+        span = latest_end - earliest_start
+        return span if span >= 0 else None
+
     def _merge_parallel_fields(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], parallel_data: Dict[str, Any],
     ) -> None:
@@ -933,6 +998,18 @@ class EnrichmentOrchestrator:
                 )
             if kept:
                 mapped["Certifications"] = ", ".join(kept)
+
+        # Parallel's LeadProfile has no dedicated years-of-experience field --
+        # only the structured `experience` list. Stage 6 (LLM web search) is
+        # the other path that could fill Years_of_Exp, but it's gated to
+        # genuinely thin leads (see MAX_FIELDS_BEFORE_WEBSEARCH) and skips
+        # entirely once a lead already has several real fields -- exactly the
+        # case where Parallel found a full experience history but nothing
+        # ever turned it into a number, leaving "Not found" on a lead that
+        # visibly has everything needed to compute it.
+        derived_years = self._years_of_experience_from_parallel_entries(parallel_data.get("experience"))
+        if derived_years is not None:
+            mapped["Years_of_Exp"] = str(derived_years)
 
         # `_original_language` present means this profile was established to
         # be non-English and the values above are its translation. Whatever is
