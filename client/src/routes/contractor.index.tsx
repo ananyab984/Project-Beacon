@@ -1,10 +1,11 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { ArrowUpRight, Mail, UserPlus, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle } from "lucide-react";
-import { outreachBatch } from "@/lib/g3-mock";
-import { DateRangeToggle, useDateRange, scaleValue } from "@/components/features/date-range-toggle";
-import { useMemo } from "react";
+import { ArrowUpRight, Mail, UserPlus, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { DateRangeSelect, useDateRange } from "@/components/features/date-range-toggle";
+import { OutreachFunnelLeadsDialog } from "@/components/features/outreach-funnel-leads-dialog";
+import type { OutreachFunnelCategory } from "@/lib/api-types";
+import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/contractor/")({
   head: () => ({ meta: [{ title: "Dashboard — Global3 Contractor" }] }),
@@ -15,7 +16,17 @@ function DashboardPage() {
   const { data: myLeadsData } = useQuery({ queryKey: ["leads", "mine"], queryFn: api.getMyLeads });
   const mine = myLeadsData?.leads ?? [];
   const dupCount = mine.filter((l) => l.dupFlagged).length;
-  const { scale, label: rangeLabel } = useDateRange();
+  const { range, label: rangeLabel } = useDateRange();
+  // Same real endpoint recruiter.index.tsx uses (now open to contractor role
+  // too, scoped to the contractor's own leads server-side) -- replaces the
+  // hardcoded g3-mock outreachBatch this page used to read from, which never
+  // reflected anything real.
+  const { data: funnelData } = useQuery({
+    queryKey: ["outreach-funnel", range],
+    queryFn: () => api.getOutreachFunnel(range),
+  });
+  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0, onboarded: 0 };
+  const [funnelCategory, setFunnelCategory] = useState<OutreachFunnelCategory | null>(null);
 
   // No real backend endpoint for a contractor's own email queue exists (email
   // queue is recruiter/owner-scoped) -- this tile is left off rather than
@@ -37,18 +48,21 @@ function DashboardPage() {
             <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-accent">
               <Radio className="h-3 w-3" /> Current batch
             </div>
-            <div className="mt-0.5 text-sm font-semibold">Team outreach · {rangeLabel.toLowerCase()}</div>
+            <div className="mt-0.5 text-sm font-semibold">My outreach · {rangeLabel.toLowerCase()}</div>
           </div>
-          <DateRangeToggle />
+          <DateRangeSelect />
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <BatchTile icon={Mail} label="Contacted" value={scaleValue(outreachBatch.contacted, scale)} tone="primary" />
-          <BatchTile icon={MailOpen} label="Awaiting Reply" value={scaleValue(outreachBatch.awaiting_reply, scale)} tone="muted" />
-          <BatchTile icon={MessageSquare} label="Replied" value={scaleValue(outreachBatch.replied, scale)} tone="accent" />
-          <BatchTile icon={Handshake} label="Negotiation" value={scaleValue(outreachBatch.in_negotiation, scale)} tone="warning" />
-          <BatchTile icon={ShieldOff} label="DNC" value={scaleValue(outreachBatch.dnc, scale)} tone="destructive" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <BatchTile icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" onClick={() => setFunnelCategory("contacted")} />
+          <BatchTile icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" onClick={() => setFunnelCategory("awaiting_reply")} />
+          <BatchTile icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" onClick={() => setFunnelCategory("replied")} />
+          <BatchTile icon={Handshake} label="Negotiation" value={funnel.in_negotiation} tone="warning" onClick={() => setFunnelCategory("in_negotiation")} />
+          <BatchTile icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" onClick={() => setFunnelCategory("dnc")} />
+          <BatchTile icon={CheckCircle2} label="Onboarded" value={funnel.onboarded} tone="accent" onClick={() => setFunnelCategory("onboarded")} />
         </div>
       </section>
+
+      <OutreachFunnelLeadsDialog category={funnelCategory} range={range} onOpenChange={(open) => !open && setFunnelCategory(null)} />
 
       <div className="grid gap-4 md:grid-cols-2">
         <MetricCard label="Leads Submitted" value={mine.length} delta="+" tone="positive" />
@@ -210,7 +224,19 @@ function Stat({ n, label }: { n: number; label: string }) {
   );
 }
 
-function BatchTile({ icon: Icon, label, value, tone }: { icon: React.ComponentType<{ className?: string }>; label: string; value: number | string; tone: "primary" | "muted" | "accent" | "warning" | "destructive" }) {
+function BatchTile({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  tone: "primary" | "muted" | "accent" | "warning" | "destructive";
+  onClick: () => void;
+}) {
   const map = {
     primary: "text-primary",
     muted: "text-muted-foreground",
@@ -219,13 +245,17 @@ function BatchTile({ icon: Icon, label, value, tone }: { icon: React.ComponentTy
     destructive: "text-destructive",
   };
   return (
-    <div className="rounded-xl border border-border bg-card p-3">
+    <button
+      onClick={onClick}
+      className="rounded-xl border border-border bg-card p-3 text-left transition-colors hover:brightness-110 cursor-pointer"
+      title={`View leads in ${label}`}
+    >
       <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className={`h-3.5 w-3.5 ${map[tone]}`} />
         <span>{label}</span>
       </div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
-    </div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">{value.toLocaleString()}</div>
+    </button>
   );
 }
 

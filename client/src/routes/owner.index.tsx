@@ -16,6 +16,7 @@ import {
   AlertOctagon,
   ShieldOff,
   Gauge,
+  CheckCircle2,
 } from "lucide-react";
 import { KpiTile, ScoreRing } from "@/components/features/kpi";
 import { DateRangeSelect, useDateRange } from "@/components/features/date-range-toggle";
@@ -52,7 +53,7 @@ function Overview() {
     queryKey: ["outreach-funnel", range],
     queryFn: () => api.getOutreachFunnel(range),
   });
-  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0 };
+  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0, onboarded: 0 };
   const { data: dataHealth } = useQuery({ queryKey: ["data-health"], queryFn: api.getDataHealth });
   const { data: analytics } = useQuery({ queryKey: ["reports-analytics", range], queryFn: () => api.getReportsAnalytics(range) });
   const teamAvgScore = analytics?.summary.teamAvgScore ?? team.overall_score;
@@ -119,12 +120,13 @@ function Overview() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <OutreachBlock icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" onClick={() => setFunnelCategory("contacted")} />
           <OutreachBlock icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" onClick={() => setFunnelCategory("awaiting_reply")} />
           <OutreachBlock icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" onClick={() => setFunnelCategory("replied")} />
           <OutreachBlock icon={Handshake} label="In Negotiation" value={funnel.in_negotiation} tone="warning" onClick={() => setFunnelCategory("in_negotiation")} />
           <OutreachBlock icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" onClick={() => setFunnelCategory("dnc")} />
+          <OutreachBlock icon={CheckCircle2} label="Onboarded" value={funnel.onboarded} tone="accent" onClick={() => setFunnelCategory("onboarded")} />
         </div>
       </section>
 

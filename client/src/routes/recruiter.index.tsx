@@ -3,7 +3,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { ArrowUpRight, Mail, UserPlus, CheckCircle2, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle, Clock } from "lucide-react";
 import { DateRangeSelect, useDateRange } from "@/components/features/date-range-toggle";
-import { useMemo } from "react";
+import { OutreachFunnelLeadsDialog } from "@/components/features/outreach-funnel-leads-dialog";
+import type { OutreachFunnelCategory } from "@/lib/api-types";
+import { useMemo, useState } from "react";
 
 export const Route = createFileRoute("/recruiter/")({
   head: () => ({ meta: [{ title: "Dashboard — Global3 Recruiter" }] }),
@@ -24,11 +26,8 @@ function DashboardPage() {
     queryKey: ["outreach-funnel", range],
     queryFn: () => api.getOutreachFunnel(range),
   });
-  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0 };
-
-  // leadsOnboardedCount() was a hardcoded mock constant (124) with no real
-  // backing -- compute the real count from the recruiter's own leads instead.
-  const onboardedCount = mine.filter((l) => l.stage === "ONBOARDED").length;
+  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0, onboarded: 0 };
+  const [funnelCategory, setFunnelCategory] = useState<OutreachFunnelCategory | null>(null);
 
   // Same definition already used (and working correctly) on the Leads page's
   // own on-hold banner (recruiter.leads.tsx's onHoldCount) -- this dashboard
@@ -58,14 +57,17 @@ function DashboardPage() {
           <DateRangeSelect />
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          <BatchTile icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" />
-          <BatchTile icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" />
-          <BatchTile icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" />
-          <BatchTile icon={Handshake} label="Negotiation" value={funnel.in_negotiation} tone="warning" />
-          <BatchTile icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <BatchTile icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" onClick={() => setFunnelCategory("contacted")} />
+          <BatchTile icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" onClick={() => setFunnelCategory("awaiting_reply")} />
+          <BatchTile icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" onClick={() => setFunnelCategory("replied")} />
+          <BatchTile icon={Handshake} label="Negotiation" value={funnel.in_negotiation} tone="warning" onClick={() => setFunnelCategory("in_negotiation")} />
+          <BatchTile icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" onClick={() => setFunnelCategory("dnc")} />
+          <BatchTile icon={CheckCircle2} label="Onboarded" value={funnel.onboarded} tone="accent" onClick={() => setFunnelCategory("onboarded")} />
         </div>
       </section>
+
+      <OutreachFunnelLeadsDialog category={funnelCategory} range={range} onOpenChange={(open) => !open && setFunnelCategory(null)} />
 
       {/* Compact Escalations Summary (Full list in Notifications Tab) */}
       {dueAlerts.length > 0 && (
@@ -139,23 +141,25 @@ function DashboardPage() {
         </section>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <MetricCard label="Leads Onboarded" value={onboardedCount} delta="" tone="positive" />
-        <div className="rounded-2xl border border-border bg-card p-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="rounded-lg bg-accent/15 p-2 text-accent"><Mail className="h-4 w-4" /></div>
-              <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Email Queue</div>
-            </div>
+      {/* Leads Onboarded used to be a separate client-side count here
+          (mine.filter(l => l.stage === "ONBOARDED")) -- now folded into the
+          funnel's own "Onboarded" tile above so there's exactly one source
+          of truth for this number instead of two independently-computed
+          ones that could quietly drift apart. */}
+      <div className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="rounded-lg bg-accent/15 p-2 text-accent"><Mail className="h-4 w-4" /></div>
+            <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Email Queue</div>
           </div>
-          <div className="mt-4 flex items-baseline gap-2">
-            <div className="text-3xl font-semibold tracking-tight">{emailQueueCount}</div>
-            <div className="text-xs text-muted-foreground">pending manual review</div>
-          </div>
-          <Link to="/recruiter/email-queue" className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-border py-2 text-xs font-medium hover:bg-muted">
-            Review Queue
-          </Link>
         </div>
+        <div className="mt-4 flex items-baseline gap-2">
+          <div className="text-3xl font-semibold tracking-tight">{emailQueueCount}</div>
+          <div className="text-xs text-muted-foreground">pending manual review</div>
+        </div>
+        <Link to="/recruiter/email-queue" className="mt-4 inline-flex w-full items-center justify-center rounded-lg border border-border py-2 text-xs font-medium hover:bg-muted">
+          Review Queue
+        </Link>
       </div>
 
       {/* Language & Services Requirements Overview */}
@@ -278,28 +282,18 @@ function RecruiterMarketRequirementsSection() {
   );
 }
 
-function MetricCard({ label, value, delta, tone }: { label: string; value: number | string; delta: string; tone: "positive" | "negative" }) {
-  return (
-    <div className="rounded-2xl border border-border bg-card p-5">
-      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
-      <div className="mt-3 flex items-baseline gap-2">
-        <div className="text-3xl font-semibold tracking-tight">{value}</div>
-        <span className={`text-xs font-medium ${tone === "positive" ? "text-success" : "text-destructive"}`}>{delta}</span>
-      </div>
-    </div>
-  );
-}
-
 function BatchTile({
   icon: Icon,
   label,
   value,
   tone,
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
   value: number;
   tone: "primary" | "muted" | "accent" | "warning" | "destructive";
+  onClick: () => void;
 }) {
   const colorMap = {
     primary: "border-primary/30 bg-primary/5 text-primary",
@@ -309,13 +303,17 @@ function BatchTile({
     destructive: "border-destructive/30 bg-destructive/5 text-destructive",
   };
   return (
-    <div className={`rounded-xl border p-3.5 space-y-2 ${colorMap[tone]}`}>
+    <button
+      onClick={onClick}
+      className={`rounded-xl border p-3.5 space-y-2 text-left transition-colors hover:brightness-110 cursor-pointer ${colorMap[tone]}`}
+      title={`View leads in ${label}`}
+    >
       <div className="flex items-center justify-between">
         <Icon className="h-4 w-4" />
         <span className="text-[10px] font-semibold uppercase tracking-wider opacity-80">{label}</span>
       </div>
       <div className="text-2xl font-bold tabular-nums">{value.toLocaleString()}</div>
-    </div>
+    </button>
   );
 }
 
