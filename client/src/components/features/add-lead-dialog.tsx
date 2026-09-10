@@ -59,9 +59,9 @@ export function AddLeadDialog({
     email_address: "",
     contact_number: "",
     reachout_date: "",
-    source_language: "English",
-    target_language: "German",
-    secondary_languages: "French",
+    source_language: "",
+    target_language: "",
+    secondary_languages: "",
     services: "",
   });
   const [customService, setCustomService] = useState("");
