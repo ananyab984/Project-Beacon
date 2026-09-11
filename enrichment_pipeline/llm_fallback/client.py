@@ -316,6 +316,98 @@ class ClaudeClient:
             return []
         return [str(s).strip() for s in services if s and str(s).strip()]
 
+    # Maps each supported canonical field name to (JSON response key, kind).
+    # "list" -> comma-joined string on return; "text" -> returned as-is.
+    _MISSING_FIELD_SPECS: Dict[str, tuple] = {
+        "Current_Title": ("current_title", "text"),
+        "Tools_Software": ("tools_software", "list"),
+        "Certifications": ("certifications", "list"),
+        "Vendor_Experience": ("vendor_experience", "text"),
+    }
+
+    def extract_missing_fields(self, text: str, missing_fields: List[str]) -> Dict[str, str]:
+        """Waterfall's last tier for whichever of Current_Title/Tools_Software/
+        Certifications/Vendor_Experience are STILL empty after Bright Data,
+        Tavily, and Parallel have all had their turn -- reads whatever
+        free text the pipeline already has and fills in only what that text
+        directly supports, exactly as classify_services already does for
+        Services. Deliberately fill-only: only asked about fields the
+        caller has already confirmed are empty, and never asked to
+        reconsider a field that already has a value from any source
+        (enrichment or manual) -- this is purely a gap-filler for what
+        nothing else found, not a verification pass over existing data.
+
+        `missing_fields` must be a subset of `_MISSING_FIELD_SPECS`' keys --
+        the prompt only ever asks about exactly those, so Claude has no
+        opportunity to invent a value for a field the caller didn't request.
+        Returns a dict keyed by canonical field name (not the JSON response
+        key), containing only fields it found real support for -- omits the
+        rest rather than returning nulls/empties for them.
+        """
+        specs = {f: self._MISSING_FIELD_SPECS[f] for f in missing_fields if f in self._MISSING_FIELD_SPECS}
+        if not specs:
+            return {}
+
+        field_descriptions = {
+            "current_title": "their current job title/role (a short string, e.g. 'Freelance Subtitler'), if the text names one",
+            "tools_software": "specific tools or software they use (e.g. 'Trados', 'Adobe Audition', 'Subtitle Edit') -- not generic skills",
+            "certifications": "named certifications, diplomas, or professional credentials -- not degrees from a university unless explicitly framed as a certification",
+            "vendor_experience": "named companies/vendors/clients they've worked with or for (a short comma-separated list as one string)",
+        }
+        requested_keys = [spec[0] for spec in specs.values()]
+        schema_lines = "\n".join(f'  "{k}": {"[<string>, ...]" if kind == "list" else "<string|null>"}' for k, (_, kind) in zip(requested_keys, specs.values()))
+        asks = "\n".join(f"- {field_descriptions[k]}" for k in requested_keys)
+
+        system = (
+            "You read a linguist/media-industry recruiting profile's already-extracted text and "
+            "extract ONLY the following, when the text directly supports it:\n" + asks + "\n\n"
+            "RULES:\n"
+            "- Only report something the text directly states -- never infer or guess from vague "
+            "context.\n"
+            "- Omit/null anything the text doesn't clearly support -- never a placeholder.\n"
+            "- Do not report anything outside the fields listed above, even if the text mentions it."
+        )
+        strict_json_suffix = (
+            f'\n\nRespond with ONLY a JSON object of exactly this shape, no markdown fence, no '
+            f'commentary:\n{{\n{schema_lines}\n}}'
+        )
+        body = {
+            "model": self.config.claude_model,
+            "system": system + strict_json_suffix,
+            "messages": [{"role": "user", "content": "PROFILE TEXT:\n\n" + text[:6000]}],
+            "temperature": 0.0,
+            "max_tokens": 512,
+        }
+
+        log.info("Claude missing-fields extraction request START fields=%s", list(specs.keys()))
+
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Claude missing-fields extraction retryable failure attempt=%d/%d, retrying in %.1fs (%s)",
+                attempt + 1, self.config.max_retries, delay, exc,
+            )
+
+        try:
+            result = retry_with_backoff(lambda: self._request_once(body), policy=self._policy, on_retry=on_retry)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, ClaudeError):
+                raise cause from exc
+            raise ClaudeError(f"Claude missing-fields extraction failed after retries: {cause if cause else exc}") from exc
+
+        found: Dict[str, str] = {}
+        for canonical_field, (json_key, kind) in specs.items():
+            value = result.get(json_key)
+            if kind == "list":
+                if isinstance(value, list):
+                    items = [str(v).strip() for v in value if v and str(v).strip()]
+                    if items:
+                        found[canonical_field] = ", ".join(items)
+            else:
+                if value and str(value).strip():
+                    found[canonical_field] = str(value).strip()
+        return found
+
     def _request_once(self, body: Dict[str, Any], timeout: Optional[int] = None) -> Dict[str, Any]:
         effective_timeout = timeout if timeout is not None else self.config.request_timeout
         try:

@@ -1298,6 +1298,65 @@ class EnrichmentOrchestrator:
         field_sources["Years_of_Exp"] = "llm_fallback"
         logs.append(f"Stage 3.75: Years_of_Exp = {years} (parsed from free text -- no structured experience data was available to derive it from)")
 
+    # Fields this stage may fill, when still empty after every earlier tier.
+    # Services and Years_of_Exp are deliberately excluded -- each already has
+    # its own dedicated fill mechanism above (_infer_services_via_llm,
+    # _infer_years_of_experience_from_text), so asking about them again here
+    # would be a second, redundant Claude call for the same answer.
+    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Tools_Software", "Certifications", "Vendor_Experience")
+
+    def _infer_remaining_fields_via_llm(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Waterfall's last tier for whatever's STILL empty after Bright
+        Data/Tavily/Parallel/the two dedicated fallbacks above have all had
+        their turn -- deliberately gap-filling, not verification: only ever
+        asked about a field the caller has already confirmed is empty, so a
+        populated field (manual or otherwise) is never reconsidered or
+        second-guessed by this stage, regardless of what the text says.
+
+        Runs at most one Claude call per lead, covering every currently-
+        empty field in _REMAINING_FILL_ONLY_FIELDS at once, rather than one
+        call per field -- classify_services and the years-of-experience
+        fallback already ran by this point, so whatever's still missing here
+        is exactly the set this call needs to ask about."""
+        missing = [f for f in self._REMAINING_FILL_ONLY_FIELDS if is_empty_value(lead.get(f))]
+        if not missing:
+            return
+        if not self.claude:
+            logs.append("Stage 3.76: remaining-fields extraction skipped: CLAUDE_API_KEY isn't set")
+            return
+
+        text_blob = " | ".join(
+            str(v) for v in (
+                lead.get("Headline"), lead.get("Current_Title"),
+                lead.get("About_Snippet"), lead.get("Certifications"),
+            )
+            if v
+        )
+        if not text_blob:
+            logs.append("Stage 3.76: remaining-fields extraction skipped: no free text to read")
+            return
+
+        try:
+            found = self.claude.extract_missing_fields(text_blob, missing)
+        except ClaudeError as exc:
+            logs.append(f"Stage 3.76: remaining-fields extraction failed, leaving fields empty: {exc}")
+            return
+
+        filled_fields = []
+        for field, value in found.items():
+            if _is_absence_prose(value):
+                continue
+            lead[field] = value
+            field_sources[field] = "llm_fallback"
+            filled_fields.append(field)
+            logs.append(f"Stage 3.76: {field} = {value!r} (from llm_fallback, gap-filled from already-extracted profile text)")
+
+        still_missing = [f for f in missing if f not in filled_fields]
+        if still_missing:
+            logs.append(f"Stage 3.76: no groundable text for {still_missing}")
+
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
         lead = dict(lead_input)
@@ -1359,6 +1418,7 @@ class EnrichmentOrchestrator:
         # it. See _infer_services_via_llm's docstring for the confirmed case.
         self._infer_services_via_llm(lead, field_sources, logs)
         self._infer_years_of_experience_from_text(lead, field_sources, logs)
+        self._infer_remaining_fields_via_llm(lead, field_sources, logs)
 
         post_stage3_audit = audit_lead_fields(lead)
 

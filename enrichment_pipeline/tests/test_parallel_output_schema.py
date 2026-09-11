@@ -196,6 +196,7 @@ def test_normalisation_runs_inside_the_waterfall_and_reaches_canonical_fields():
         # harmless no-ops.
         search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
         classify_services=lambda text: [],
+        extract_missing_fields=lambda *a, **kw: {},
     )
     result = orch.process_lead(
         {"Source": "Bodalgo", "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone", "Full_Name": "Raul A"}
@@ -224,6 +225,7 @@ def test_english_text_replaces_the_stale_source_language_column():
         },
         search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
         classify_services=lambda text: [],
+        extract_missing_fields=lambda *a, **kw: {},
     )
 
     # The lead already carries source-language text from an earlier pass --
@@ -257,6 +259,7 @@ def test_forcing_is_scoped_to_the_translated_text_fields_only():
         },
         search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
         classify_services=lambda text: [],
+        extract_missing_fields=lambda *a, **kw: {},
     )
 
     lead = {
