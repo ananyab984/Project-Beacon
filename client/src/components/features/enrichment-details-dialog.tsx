@@ -30,6 +30,12 @@ const SOURCE_LABEL: Record<string, string> = {
   // `enrichedFieldCount` excludes, so the badge has to say so plainly.
   existing: "From input",
   manual: "Manual entry",
+  // Parallel is the only provider that ever resolves Country_of_Residence,
+  // and it's skipped whenever a lead has no Profile_Link -- without this the
+  // field renders as the same "Not found" a provider that actually ran and
+  // came up empty would show, which reads as a data-quality problem instead
+  // of a missing input.
+  skipped_no_profile_link: "No profile link",
 };
 
 /** Same defensive key handling as drafting_service's core/leads.py

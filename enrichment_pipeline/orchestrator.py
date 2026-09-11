@@ -585,6 +585,16 @@ class EnrichmentOrchestrator:
 
         if not profile_link:
             logs.append("Stage 3.5 skipped: no Profile_Link for Parallel to research")
+            # Country_of_Residence is set ONLY from Parallel's data (see
+            # _merge_parallel_fields) -- with Parallel skipped, the field
+            # stays permanently unset with no recorded provenance, which
+            # renders identically to "a provider looked and found nothing."
+            # Tag it so the dialog can tell the two apart. Guarded on the
+            # field being genuinely empty and untagged so this never
+            # overwrites a real value (or its real source) that arrived some
+            # other way, e.g. already populated on the CSV import row.
+            if not lead.get("Country_of_Residence") and not field_sources.get("Country_of_Residence"):
+                field_sources["Country_of_Residence"] = "skipped_no_profile_link"
             return None, None, 0
 
         settled = _parallel_state_is_settled(state)

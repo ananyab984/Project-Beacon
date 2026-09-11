@@ -48,10 +48,37 @@ const CANONICAL_BY_LOWER = new Map(STANDARD_SERVICES.map((s) => [s.toLowerCase()
  * services or synonyms is kept as-is (trimmed) rather than dropped -- this
  * normalizes what it recognizes without ever discarding real data.
  */
+// Some enrichment/CSV sources hand back a JSON-encoded array of service
+// objects (e.g. `[{"task":"Quality Control","service":"dub",...}]`) instead
+// of a plain delimited string. Splitting that on [,;/:|] shreds every key,
+// value, and brace into its own garbage token. Detect that shape first and
+// pull a real label out of it; anything that doesn't parse this way falls
+// through to the original delimiter split untouched.
+function tokenizeServiceInput(s: string): string[] {
+  const trimmed = s.trim();
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
+      if (items.length > 0 && items.every((it) => it !== null && typeof it === "object")) {
+        return items
+          .map((obj) => String(obj.task ?? obj.service ?? obj.role ?? obj.name ?? "").trim())
+          .filter(Boolean);
+      }
+      if (items.every((it) => typeof it !== "object")) {
+        return items.map((it) => String(it).trim()).filter(Boolean);
+      }
+    } catch {
+      // not valid JSON -- fall through to the delimiter split below
+    }
+  }
+  return s.split(/[,;/:|]+/);
+}
+
 export function normalizeServices(raw: string[] | string | null | undefined): string[] {
   if (!raw) return [];
   const tokens = (Array.isArray(raw) ? raw : [raw])
-    .flatMap((s) => s.split(/[,;/:|]+/))
+    .flatMap((s) => tokenizeServiceInput(s))
     .map((s) => s.trim())
     .filter(Boolean);
 

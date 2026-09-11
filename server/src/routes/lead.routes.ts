@@ -1079,6 +1079,25 @@ leadRouter.delete(
   })
 );
 
+// DELETE /api/leads/:id/services/:service — remove one entry from a lead's
+// services array. There's no fixed allowed-list here (unlike flags):
+// services is a flat String[] that can hold whatever a CSV import or
+// enrichment provider produced, including malformed tokens a recruiter needs
+// to be able to delete regardless of what they look like.
+leadRouter.delete(
+  "/:id/services/:service",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
+
+    const services = lead.services.filter((s) => s !== req.params.service);
+    const updated = await prisma.lead.update({ where: { id: lead.id }, data: { services } });
+    return res.json({ lead: withEnrichedFieldCount(updated) });
+  })
+);
+
 // POST /api/leads/:id/activities — log a manual interview or call
 leadRouter.post(
   "/:id/activities",
