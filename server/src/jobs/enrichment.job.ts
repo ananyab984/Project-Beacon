@@ -6,6 +6,15 @@ import { normalizeServices } from "../lib/normalizeServices";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
 import { mapWithConcurrency } from "../lib/mapWithConcurrency";
+import { countPopulatedFields } from "../lib/enrichmentCount";
+import { tierFromFieldSources } from "../lib/enrichmentTier";
+import type { EnrichmentRunConclusion } from "@prisma/client";
+
+const CONCLUSION_MAP: Record<string, EnrichmentRunConclusion> = {
+  short_circuit_success: "SHORT_CIRCUIT_SUCCESS",
+  exhausted_no_match: "EXHAUSTED_NO_MATCH",
+  timed_out: "TIMED_OUT",
+};
 
 function splitToArray(val: unknown): string[] | undefined {
   if (typeof val !== "string" || !val.trim()) return undefined;
@@ -34,10 +43,15 @@ export async function enrichLeadById(leadId: string) {
   const lead = await prisma.lead.findUnique({ where: { id: leadId } });
   if (!lead) return;
 
+  // Shared by both the success and catch paths below to write one
+  // EnrichmentRun row per attempt (see server/prisma/schema.prisma) -- the
+  // Enrichment Evaluation dashboard's whole data source.
+  const startedAt = new Date();
+
   try {
     await prisma.lead.update({
       where: { id: lead.id },
-      data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
+      data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: startedAt },
     });
 
     // Timeout raised again (4_000_000ms -> 4_200_000ms): the pipeline's own
@@ -275,6 +289,38 @@ export async function enrichLeadById(leadId: string) {
       },
     });
 
+    const concludedAt = new Date();
+    await prisma.enrichmentRun.create({
+      data: {
+        leadId: lead.id,
+        platform: lead.source,
+        // Defensive fallback only -- the pipeline's own PipelineResult type
+        // always sends one of the three real conclusion values on a normal
+        // response. Bucketed as SYSTEM_ERROR (not e.g. TIMED_OUT) if it ever
+        // doesn't, since "we got a response we don't recognize" is the same
+        // kind of anomaly as "we couldn't reach the service" for analytics
+        // purposes, not a genuine per-step timeout.
+        conclusion: CONCLUSION_MAP[conclusion ?? ""] ?? "SYSTEM_ERROR",
+        tier: tierFromFieldSources(mergedFieldSources),
+        enrichedFieldCount: countPopulatedFields({
+          email: enrichedEmail,
+          contactNumber: enrichedContactNumber,
+          country: enrichedCountry,
+          profileLink: lead.profileLink,
+          sourceLanguage: enrichedSourceLanguage,
+          targetLanguage: enrichedTargetLanguage,
+          services: enrichedServices,
+          headline: enrichedHeadline,
+          currentTitle: enrichedCurrentTitle,
+          aboutSnippet: enrichedAboutSnippet,
+          fieldSources: mergedFieldSources as any,
+        }),
+        executionTimeMs: typeof data?.execution_time_ms === "number" ? data.execution_time_ms : concludedAt.getTime() - startedAt.getTime(),
+        startedAt,
+        concludedAt,
+      },
+    }).catch((err) => console.error(`[enrichment.job] failed to record EnrichmentRun for lead ${lead.id}:`, err));
+
     // Keep the dashboard's service tag in sync -- previously this was only
     // ever stamped once at Add-Lead time from the manual entry and never
     // refreshed when enrichment corrected it (the reported bug). Only the
@@ -309,6 +355,25 @@ export async function enrichLeadById(leadId: string) {
       where: { id: lead.id },
       data: { enrichmentStatus: "PENDING", flags: flags as any, onHoldReason },
     }).catch(() => {});
+
+    // Same EnrichmentRun bookkeeping as the try path's success case, so a
+    // connectivity failure counts toward the Enrichment Evaluation dashboard
+    // too (Metric 1's "On Hold" bucket) -- not just leads that reached the
+    // Python pipeline. `tier` stays null: this path never got a response,
+    // so nothing could have been resolved.
+    const concludedAt = new Date();
+    await prisma.enrichmentRun.create({
+      data: {
+        leadId: lead.id,
+        platform: lead.source,
+        conclusion: "SYSTEM_ERROR",
+        tier: null,
+        enrichedFieldCount: countPopulatedFields(lead),
+        executionTimeMs: concludedAt.getTime() - startedAt.getTime(),
+        startedAt,
+        concludedAt,
+      },
+    }).catch((err) => console.error(`[enrichment.job] failed to record EnrichmentRun for lead ${lead.id}:`, err));
   }
 }
 

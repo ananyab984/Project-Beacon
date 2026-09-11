@@ -758,7 +758,23 @@ leadRouter.patch(
       (patch as any).replyClassifiedAt = new Date();
     }
 
-    (patch as any).fieldSources = resolveManualFieldSources(existing as any, req.body, patch as any);
+    const nextFieldSources = resolveManualFieldSources(existing as any, req.body, patch as any);
+    (patch as any).fieldSources = nextFieldSources;
+
+    // Stamps when a recruiter's edit genuinely OVERRODE an already-concluded
+    // automated run, for the Enrichment Evaluation dashboard's
+    // manual-override-rate metric -- distinct from a manual entry made
+    // before/during enrichment, which the waterfall was correctly protecting
+    // rather than something being overridden. Only fires when this PATCH
+    // actually added a NEW "manual" tag (not just re-saving an existing one)
+    // while the lead's automated run had already concluded.
+    const existingFieldSources = (existing.fieldSources as Record<string, string> | null) ?? {};
+    const addedNewManualTag = Object.entries(nextFieldSources).some(
+      ([key, source]) => source === "manual" && existingFieldSources[key] !== "manual"
+    );
+    if (addedNewManualTag && existing.enrichmentStatus === "COMPLETE") {
+      (patch as any).lastManualOverrideAt = new Date();
+    }
 
     // A caller sending `flags` intends to ADD to the lead's flags (e.g.
     // stacking WATCHING onto a lead already flagged DNC), not replace the

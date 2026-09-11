@@ -444,6 +444,27 @@ export interface ApiRecentReport {
   description?: string;
 }
 
+/** Same 3 tiers for every platform -- Clay (the old LinkedIn-only Tier 2)
+ *  was fully replaced by Parallel, which runs for every platform, and Tier 3
+ *  (Claude web search) is likewise platform-agnostic. Never render a
+ *  collapsed 2-tier shape for non-LinkedIn platforms. */
+export type EnrichmentTier = "TIER_1" | "TIER_2" | "TIER_3";
+export type EnrichmentRunConclusion = "SHORT_CIRCUIT_SUCCESS" | "EXHAUSTED_NO_MATCH" | "TIMED_OUT" | "SYSTEM_ERROR";
+
+export interface ApiEnrichmentEvaluation {
+  totalRuns: number;
+  enrichmentPct: { enriched: number; exhausted: number; onHold: number };
+  timeTaken: {
+    avgMs: number;
+    medianMs: number;
+    byConclusion: Record<EnrichmentRunConclusion, { avgMs: number; medianMs: number }>;
+    referenceLines: { perStepDeadlineMs: number; leadLevelCeilingMs: number };
+  };
+  tierAttribution: Record<EnrichmentTier, number>;
+  qualityByTier: Record<EnrichmentTier, number>;
+  manualOverrideRate: number;
+}
+
 /** Shape of every thrown error from the `request()` helper in api.ts. */
 export interface ApiRequestError extends Error {
   code?: string;
