@@ -17,33 +17,57 @@ emailQueueRouter.use(requireRole("owner", "recruiter", "contractor"));
 
 const CHANNELS = ["LINKEDIN", "EMAIL"] as const;
 
-// GET /api/email-queue — the recruiter's own queue (every role, owner
-// included, sees only what they personally added/were assigned -- this is a
-// self-serve outreach tool, not a cross-recruiter monitoring view).
+/** The recruiter's own queue (every role, owner included, sees only what
+ * they personally added/were assigned -- this is a self-serve outreach
+ * tool, not a cross-recruiter monitoring view). Exported so it's directly
+ * unit-testable without constructing a fake request/response. */
+export async function getEmailQueueForRecruiter(recruiterId: string) {
+  const items = await prisma.emailQueueItem.findMany({
+    where: { recruiterId },
+    include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
+  });
+
+  // Sort by most recent activity (matching how /api/conversations orders
+  // LinkedIn threads by lastMessageAt) rather than static receivedAt --
+  // otherwise a lead that just replied stays wherever it was originally
+  // added instead of surfacing to the top like an inbox does.
+  //
+  // Also pull each conversation's newest message text: `item.body` is the
+  // queue item's OWN draft, set once at draft/send time and never touched
+  // again, so a reply landing in the separate Conversation/
+  // ConversationMessage tables never reached it -- the list's preview
+  // snippet stayed frozen on the initial mail forever, even though the
+  // item itself correctly climbed to the top of the sort above. Confirmed
+  // live: "latest mail is not showing in the queue, showing only the
+  // initial mail."
+  const conversations = await prisma.conversation.findMany({
+    where: { leadId: { in: items.map((i) => i.leadId) }, recruiterId, channel: "EMAIL" },
+    select: {
+      leadId: true,
+      lastMessageAt: true,
+      messages: { orderBy: { sentAt: "desc" }, take: 1, select: { text: true } },
+    },
+  });
+  const lastMessageByLead = new Map(conversations.map((c) => [c.leadId, c.lastMessageAt]));
+  const latestMessageTextByLead = new Map(conversations.map((c) => [c.leadId, c.messages[0]?.text ?? null]));
+
+  items.sort((a, b) => {
+    const aTime = Math.max(a.receivedAt.getTime(), lastMessageByLead.get(a.leadId)?.getTime() ?? 0);
+    const bTime = Math.max(b.receivedAt.getTime(), lastMessageByLead.get(b.leadId)?.getTime() ?? 0);
+    return bTime - aTime;
+  });
+
+  return items.map((item) => ({
+    ...item,
+    latestMessageText: latestMessageTextByLead.get(item.leadId) ?? null,
+  }));
+}
+
+// GET /api/email-queue
 emailQueueRouter.get(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
-    const items = await prisma.emailQueueItem.findMany({
-      where: { recruiterId: req.user!.id },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
-    });
-
-    // Sort by most recent activity (matching how /api/conversations orders
-    // LinkedIn threads by lastMessageAt) rather than static receivedAt --
-    // otherwise a lead that just replied stays wherever it was originally
-    // added instead of surfacing to the top like an inbox does.
-    const conversations = await prisma.conversation.findMany({
-      where: { leadId: { in: items.map((i) => i.leadId) }, recruiterId: req.user!.id, channel: "EMAIL" },
-      select: { leadId: true, lastMessageAt: true },
-    });
-    const lastMessageByLead = new Map(conversations.map((c) => [c.leadId, c.lastMessageAt]));
-
-    items.sort((a, b) => {
-      const aTime = Math.max(a.receivedAt.getTime(), lastMessageByLead.get(a.leadId)?.getTime() ?? 0);
-      const bTime = Math.max(b.receivedAt.getTime(), lastMessageByLead.get(b.leadId)?.getTime() ?? 0);
-      return bTime - aTime;
-    });
-
+    const items = await getEmailQueueForRecruiter(req.user!.id);
     return res.json({ items });
   })
 );
