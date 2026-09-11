@@ -70,9 +70,32 @@ async function scanStaleLeads() {
 async function scanEmailQueueBacklog() {
   const recruiters = await prisma.user.findMany({ where: { role: "RECRUITER", isActive: true }, select: { id: true, name: true } });
   for (const r of recruiters) {
-    const backlog = await prisma.emailQueueItem.count({ where: { recruiterId: r.id } });
-    if (backlog < EMAIL_QUEUE_BACKLOG_THRESHOLD) continue;
-    if (await escalationExists("Email Queue Threshold Alert", null, r.id)) continue;
+    // addedManually: true only -- matches GET /api/email-queue's own filter
+    // (email-queue.routes.ts). lead.routes.ts used to silently auto-create
+    // an EmailQueueItem for every lead a recruiter created; those historical
+    // rows are excluded from the queue a recruiter actually sees, so
+    // counting them here produced a stale, inflated backlog escalation that
+    // never matched what the recruiter could see or act on -- confirmed
+    // live: "ananya's email queue has 25 unsent drafts" while the real,
+    // visible queue held only 2.
+    const backlog = await prisma.emailQueueItem.count({ where: { recruiterId: r.id, addedManually: true } });
+    const existing = await prisma.escalation.findFirst({
+      where: { category: "Email Queue Threshold Alert", recruiterId: r.id, status: { not: "IN_PROGRESS" } },
+    });
+
+    if (backlog < EMAIL_QUEUE_BACKLOG_THRESHOLD) {
+      // The condition that created this escalation no longer holds (drafts
+      // were sent/discarded, or -- as happened live -- the count itself was
+      // corrected). This schema has no "resolved" status and nothing else
+      // ever revisits an escalation once created (see this function's own
+      // doc comment: "this job is their only producer"), so without this an
+      // escalation keeps showing a stale count forever even after the real
+      // backlog clears.
+      if (existing) await prisma.escalation.delete({ where: { id: existing.id } });
+      continue;
+    }
+
+    if (existing) continue;
     await prisma.escalation.create({
       data: {
         priority: "P2",
