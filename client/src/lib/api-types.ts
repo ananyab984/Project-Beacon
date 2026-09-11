@@ -286,6 +286,11 @@ export interface ApiEmailQueueItem {
   receivedAt: string;
   sentAt: string | null;
   sentChannel: "LINKEDIN" | "EMAIL" | null;
+  // The most recent message text from this lead's EMAIL conversation, if
+  // any -- distinct from `body`, which is this item's own draft and never
+  // updated when the candidate replies. Only present on GET /api/email-queue
+  // (the list view); absent (undefined) on other endpoints' responses.
+  latestMessageText?: string | null;
 }
 
 export type ConversationChannel = "LINKEDIN" | "EMAIL" | "INSTAGRAM" | "WHATSAPP" | "SMS";

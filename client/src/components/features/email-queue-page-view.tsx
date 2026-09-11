@@ -39,8 +39,13 @@ function timeAgo(iso: string): string {
 }
 
 function preview(item: ApiEmailQueueItem): string {
-  if (!item.body) return "No draft yet";
-  return item.body.replace(/\s+/g, " ").trim().slice(0, 100);
+  // Prefer the lead's most recent reply over this item's own draft -- `body`
+  // is only ever this item's outgoing draft/sent text and is never updated
+  // when the candidate replies, so a queue item that had climbed to the top
+  // after a reply still showed its original outgoing mail underneath it.
+  const text = item.latestMessageText || item.body;
+  if (!text) return "No draft yet";
+  return text.replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
 export function EmailQueuePageView() {

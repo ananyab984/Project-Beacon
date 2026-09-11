@@ -412,24 +412,15 @@ leadRouter.post(
       },
     });
 
-    // 1. Auto-add to email queue if created by recruiter/owner. Body/subject
-    // start empty -- a queue item should always require an explicit
-    // "Generate Draft" click (or manual typing) before it has any content,
-    // never arrive pre-written.
+    // The Email Queue is opt-in: a recruiter puts a lead there themselves via
+    // the queue page's own "Search Lead" -> add action (POST
+    // /api/email-queue), which is the only place an EmailQueueItem should
+    // ever be created. This used to also auto-create one for every lead on
+    // creation, so every new/imported lead showed up in the queue with no
+    // explicit action taken -- confirmed live: a recruiter who had only
+    // added leads, never touched the queue, found several names already
+    // sitting in it.
     if (role !== "contractor") {
-      await prisma.emailQueueItem.create({
-        data: {
-          leadId: lead.id,
-          recruiterId: req.user!.id,
-          candidateName: lead.fullName || "Candidate",
-          candidateRole: candidateRoleOf(parsed.services, parsed.targetLanguage),
-          status: "REVIEW_NEEDED",
-          subject: "",
-          body: "",
-          aiGenerated: false,
-        },
-      }).catch((err) => console.error("Failed to auto-create email queue item:", err));
-
       // Auto-create conversation thread only for an actual LinkedIn lead --
       // `parsed.profileLink` alone used to be enough, which is the same gap
       // fixed for the explicit "Search Lead" path in conversation.routes.ts's
@@ -533,22 +524,11 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
           },
         });
 
-        // Auto-create email queue and conversation items -- body/subject
-        // start empty, same reasoning as the single-lead create above.
+        // Auto-create a conversation thread only -- NOT an EmailQueueItem, see
+        // the single-lead create above for why: the queue is opt-in via its
+        // own "Search Lead" -> add action, not something a bulk import should
+        // silently populate for the recruiter who ran it.
         if (role !== "contractor") {
-          await prisma.emailQueueItem.create({
-            data: {
-              leadId: lead.id,
-              recruiterId: userId,
-              candidateName: lead.fullName || "Candidate",
-              candidateRole: candidateRoleOf(row.services, row.targetLanguage),
-              status: "REVIEW_NEEDED",
-              subject: "",
-              body: "",
-              aiGenerated: false,
-            },
-          }).catch(() => {});
-
           const isLinkedInLead =
             row.source === "LINKEDIN" && !!row.profileLink && /linkedin\.com/i.test(row.profileLink);
           if (isLinkedInLead) {
