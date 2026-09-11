@@ -1093,6 +1093,61 @@ class EnrichmentOrchestrator:
 
         self._apply_parsed_fields(lead, field_sources, logs, "parallel", mapped, force_keys=force_keys)
 
+    def _infer_services_via_llm(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Last-resort Services classification, run once Tier 1 (BrightData/
+        Tavily) and Tier 2 (Parallel) have both had their chance and Services
+        is STILL empty. Uses only text already sitting on `lead` -- no live
+        web search -- so it can run unconditionally instead of being gated by
+        Stage 6's MAX_FIELDS_BEFORE_WEBSEARCH "reserve web search for thin
+        leads" heuristic, which is exactly what was silently blocking this
+        case: a lead with Headline/Current_Title/About/Country already
+        resolved looks well-enriched overall, so Stage 6 skips it, even
+        though Services specifically was never resolved.
+
+        Confirmed live: a real lead (Audio Engineer at VSI / Voice & Script
+        International, London-based) had a fully populated Headline/
+        Current_Title/About_Snippet from Parallel and BrightData, yet
+        Services stayed completely empty -- "Audio Engineer"/"Sound
+        Designer" isn't one of parsers/service_aliases.py's ~15 fixed
+        localization-industry aliases, so the deterministic keyword scan
+        (Tier 1 and Tier 2 both use it) had nothing to match, no matter how
+        plainly the text stated the person's actual specialty. Services can
+        be any real-world specialty, not only translation/dubbing-industry
+        terms -- ClaudeClient.classify_services has no fixed list; it reads
+        the text and reports whatever service it actually supports.
+        """
+        if not is_empty_value(lead.get("Services")):
+            return
+        if not self.claude:
+            logs.append("Stage 3.75: Services classification skipped: CLAUDE_API_KEY isn't set")
+            return
+
+        text_blob = " | ".join(
+            str(v) for v in (
+                lead.get("Headline"), lead.get("Current_Title"),
+                lead.get("About_Snippet"), lead.get("Certifications"),
+            )
+            if v
+        )
+        if not text_blob:
+            logs.append("Stage 3.75: Services classification skipped: no Headline/Current_Title/About_Snippet/Certifications text to classify")
+            return
+
+        try:
+            services = self.claude.classify_services(text_blob)
+        except ClaudeError as exc:
+            logs.append(f"Stage 3.75: Services classification failed, leaving Services empty: {exc}")
+            return
+
+        if services:
+            lead["Services"] = ", ".join(services)
+            field_sources["Services"] = "llm_fallback"
+            logs.append(f"Stage 3.75: Services = {lead['Services']!r} (from llm_fallback, classified from already-extracted profile text)")
+        else:
+            logs.append("Stage 3.75: Services classification found nothing groundable in the extracted text")
+
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
         lead = dict(lead_input)
@@ -1139,6 +1194,20 @@ class EnrichmentOrchestrator:
 
         if time.monotonic() - start_time >= LEAD_LEVEL_TIMEOUT_SECONDS:
             return self._timed_out_result(lead, field_sources, logs, start_time, "Stage 4-6 (LLM fallback)")
+
+        # Stage 3.75: local (non-websearch) Services classification -- fires
+        # whenever Services is STILL empty after both Tier 1 and Tier 2, using
+        # only text already extracted above (no live web search, so this
+        # isn't gated by MAX_FIELDS_BEFORE_WEBSEARCH the way Stage 6 is). That
+        # gate matters here specifically: a lead that already has Headline/
+        # Current_Title/About/Country resolved is exactly the case Stage 6
+        # skips as "not thin enough", even though Services alone never
+        # resolved -- because parsers/service_aliases.py's fixed keyword list
+        # only recognizes a specific set of localization-industry terms, and
+        # a real service phrased differently ("Audio Engineer", "Sound
+        # Designer") never matches it no matter how plainly the text states
+        # it. See _infer_services_via_llm's docstring for the confirmed case.
+        self._infer_services_via_llm(lead, field_sources, logs)
 
         post_stage3_audit = audit_lead_fields(lead)
 
