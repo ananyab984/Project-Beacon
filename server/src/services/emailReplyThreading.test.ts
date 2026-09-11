@@ -30,7 +30,7 @@
  */
 import assert from "node:assert";
 import { prisma } from "../prisma";
-import { UnipileService, findReplyAnchor } from "./unipile.service";
+import { UnipileService, findReplyAnchor, resolveReplySubject } from "./unipile.service";
 import { config } from "../config";
 
 const VALID_TOKEN = config.unipileWebhookPathToken;
@@ -51,6 +51,7 @@ async function cleanup() {
     await prisma.lead.delete({ where: { id: lead.id } });
   }
   await prisma.inboundMessage.deleteMany({ where: { unipileMessageId: { startsWith: "test_reply_thread_" } } });
+  await prisma.unipileWebhookEvent.deleteMany({ where: { dedupeKey: { startsWith: "test_reply_thread_subject_" } } });
   if (recruiter) {
     await prisma.connectedAccount.deleteMany({ where: { userId: recruiter.id } });
     // Defensive: this dev server's own background cron (runMonthlyScoring)
@@ -181,12 +182,72 @@ async function test4_ambiguousLeadEmailAcrossTwoConversationsRefusesToGuess() {
   assert.strictEqual(anyMatch, null, "with 2 conversations sharing this lead's email, the reply must not be silently guessed onto either one");
 }
 
+async function test5_resolveReplySubjectMatchesTheExplicitTargetNotTheMostRecentOne() {
+  // The actual reported bug: a lead sends two separate emails with two
+  // different subjects, then the recruiter replies to the OLDER one via the
+  // new per-message picker. The subject must come from that specific
+  // message's own thread, not whichever email happens to be newest.
+  const recruiter = await prisma.user.findUniqueOrThrow({ where: { email: RECRUITER_EMAIL } });
+  const lead = await prisma.lead.findFirstOrThrow({ where: { fullName: LEAD_NAME } });
+
+  await prisma.unipileWebhookEvent.create({
+    data: {
+      dedupeKey: "test_reply_thread_subject_older",
+      eventType: "mail_received",
+      payload: { event: "mail_received", email_id: "test_reply_thread_subject_msg_older", subject: "Question about the MSA process" },
+    },
+  });
+  await prisma.unipileWebhookEvent.create({
+    data: {
+      dedupeKey: "test_reply_thread_subject_newer",
+      eventType: "mail_received",
+      payload: { event: "mail_received", email_id: "test_reply_thread_subject_msg_newer", subject: "Follow-up on payment setup" },
+    },
+  });
+
+  const subjectForOlder = await resolveReplySubject(lead.id, recruiter.id, "test_reply_thread_subject_msg_older", lead.fullName!);
+  assert.strictEqual(subjectForOlder, "Re: Question about the MSA process");
+
+  const subjectForNewer = await resolveReplySubject(lead.id, recruiter.id, "test_reply_thread_subject_msg_newer", lead.fullName!);
+  assert.strictEqual(subjectForNewer, "Re: Follow-up on payment setup", "must resolve independently per message id, not always 'the latest'");
+}
+
+async function test6_resolveReplySubjectFallsBackWhenNoExplicitTargetOrMatch() {
+  const recruiter = await prisma.user.findUniqueOrThrow({ where: { email: RECRUITER_EMAIL } });
+  const lead = await prisma.lead.findFirstOrThrow({ where: { fullName: LEAD_NAME } });
+
+  const noTarget = await resolveReplySubject(lead.id, recruiter.id, undefined, "Fallback Label");
+  assert.strictEqual(noTarget, "Re: Fallback Label", "with no target and no queue item, falls back to the given label");
+
+  const unmatchedTarget = await resolveReplySubject(lead.id, recruiter.id, "no-such-email-id", "Fallback Label");
+  assert.strictEqual(unmatchedTarget, "Re: Fallback Label", "a target with no matching webhook event must also fall back cleanly");
+}
+
+async function test7_resolveReplySubjectDoesNotDoublePrefixAnAlreadyReSubject() {
+  const recruiter = await prisma.user.findUniqueOrThrow({ where: { email: RECRUITER_EMAIL } });
+  const lead = await prisma.lead.findFirstOrThrow({ where: { fullName: LEAD_NAME } });
+
+  await prisma.unipileWebhookEvent.create({
+    data: {
+      dedupeKey: "test_reply_thread_subject_already_re",
+      eventType: "mail_received",
+      payload: { event: "mail_received", email_id: "test_reply_thread_subject_msg_already_re", subject: "Re: Original question" },
+    },
+  });
+
+  const subject = await resolveReplySubject(lead.id, recruiter.id, "test_reply_thread_subject_msg_already_re", lead.fullName!);
+  assert.strictEqual(subject, "Re: Original question");
+}
+
 async function main() {
   const tests = [
     test1_findReplyAnchorReturnsTheLatestReply,
     test2_inboundReplyUnderANewChatIdStillReattachesToTheExistingConversation,
     test3_aThirdDifferentChatIdAlsoReattachesNotJustTheSecondOne,
     test4_ambiguousLeadEmailAcrossTwoConversationsRefusesToGuess,
+    test5_resolveReplySubjectMatchesTheExplicitTargetNotTheMostRecentOne,
+    test6_resolveReplySubjectFallsBackWhenNoExplicitTargetOrMatch,
+    test7_resolveReplySubjectDoesNotDoublePrefixAnAlreadyReSubject,
   ];
   let failed = 0;
   await cleanup();

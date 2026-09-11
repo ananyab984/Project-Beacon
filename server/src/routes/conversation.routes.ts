@@ -6,7 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
-import { UnipileService, findReplyAnchor } from "../services/unipile.service";
+import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
@@ -263,33 +263,12 @@ conversationRouter.post(
         // see findReplyAnchor's own doc comment for the confirmed-live
         // consequence of that.
         const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(conversation.leadId, conversation.recruiterId));
-        // Unipile validates a threaded reply's subject against the real
-        // thread it's attached to via reply_to, rejecting a mismatch with
-        // "The reply subject is invalid" -- confirmed live. EmailQueueItem's
-        // subject is NOT a reliable source for that: it can be silently
-        // regenerated after the original send (generate-draft has no guard
-        // against re-running on an already-sent item), drifting away from
-        // the subject actually delivered. The one place the real subject is
-        // always available is the inbound webhook event for the specific
-        // message being replied to -- prefer that, and only fall back to
-        // the queue item's guess when there's no prior thread to match
-        // (i.e. replyToMessageId wasn't supplied).
-        let originalSubject: string | null = null;
-        if (resolvedReplyToMessageId) {
-          const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
-            where: { eventType: "mail_received", payload: { path: ["email_id"], equals: resolvedReplyToMessageId } },
-            orderBy: { processedAt: "desc" },
-          });
-          originalSubject = (webhookEvent?.payload as any)?.subject || null;
-        }
-        if (!originalSubject) {
-          const latestQueueItem = await prisma.emailQueueItem.findFirst({
-            where: { leadId: conversation.leadId, recruiterId: conversation.recruiterId },
-            orderBy: { receivedAt: "desc" },
-          });
-          originalSubject = latestQueueItem?.subject || conversation.candidateName;
-        }
-        const replySubject = /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+        const replySubject = await resolveReplySubject(
+          conversation.leadId,
+          conversation.recruiterId,
+          resolvedReplyToMessageId,
+          conversation.candidateName
+        );
         await UnipileService.sendEmail(
           req.user!.id,
           conversation.leadId,

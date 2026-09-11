@@ -123,6 +123,47 @@ export async function findReplyAnchor(leadId: string, recruiterId: string): Prom
   return latestReply?.externalMessageId ?? undefined;
 }
 
+/** The correct `Re: <subject>` for a threaded email reply, given the exact
+ * message id it's anchored to -- ported out of conversation.routes.ts's
+ * POST /:id/messages so email-queue.routes.ts's send route can apply the
+ * same protection when a caller supplies an explicit replyToMessageId.
+ *
+ * Unipile validates a threaded reply's subject against the real thread it's
+ * attached to via `reply_to`, rejecting a mismatch with "The reply subject
+ * is invalid" -- confirmed live. EmailQueueItem's own `subject` field is NOT
+ * a reliable source for that: it can be silently regenerated after the
+ * original send (generate-draft has no guard against re-running on an
+ * already-sent item), drifting away from whatever was actually delivered on
+ * the thread being replied to -- and if the caller is replying to an OLDER
+ * message than the one that subject reflects, it may not even be that
+ * thread's subject at all. The one place the real subject is always
+ * available is the inbound webhook event for the specific message being
+ * replied to -- prefer that, and only fall back to a queue item's guess when
+ * there's no prior thread to match (i.e. `replyToMessageId` is undefined). */
+export async function resolveReplySubject(
+  leadId: string,
+  recruiterId: string,
+  replyToMessageId: string | undefined,
+  fallbackLabel: string
+): Promise<string> {
+  let originalSubject: string | null = null;
+  if (replyToMessageId) {
+    const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
+      where: { eventType: "mail_received", payload: { path: ["email_id"], equals: replyToMessageId } },
+      orderBy: { processedAt: "desc" },
+    });
+    originalSubject = (webhookEvent?.payload as any)?.subject || null;
+  }
+  if (!originalSubject) {
+    const latestQueueItem = await prisma.emailQueueItem.findFirst({
+      where: { leadId, recruiterId },
+      orderBy: { receivedAt: "desc" },
+    });
+    originalSubject = latestQueueItem?.subject || fallbackLabel;
+  }
+  return /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+}
+
 export function stripQuotedReplyHistory(text: string): string {
   let cutIndex = text.length;
   for (const pattern of QUOTE_HEADER_PATTERNS) {
