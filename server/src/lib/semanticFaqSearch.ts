@@ -1,6 +1,7 @@
 import { ClaudeClient } from "../drafting/claudeClient";
 import type { DraftingConfig } from "../drafting/config";
 import { prisma } from "../prisma";
+import { findFaqsByMessageTags } from "./faqTagMatcher";
 
 export interface SemanticFaqMatch {
   faqId: string;
@@ -142,7 +143,37 @@ Return ONLY JSON, no other text.`;
   }
 }
 
-/** Main semantic search: Two-stage (keyword → semantic verification) */
+/** Gathers Stage 1 candidates from two independent sources, merged, with no
+ * Claude call -- kept separate from semanticFaqSearch below so it's
+ * directly testable against the real DB without a live (paid, non-
+ * deterministic) LLM call. SQL-based (findKeywordCandidates) catches
+ * full-text/trigram-similar FAQs; the tag scan (see faqTagMatcher.ts -- the
+ * same mechanism the main /check handler uses) catches FAQs by their own
+ * auto-generated tags regardless of wording. Without the tag scan, a
+ * message that clears neither the SQL thresholds nor has any recognizable
+ * text overlap would never even reach Claude for consideration, even
+ * though Claude might correctly judge a tag-matched FAQ as relevant --
+ * this is the semantic fallback's own instance of the same gap the main
+ * handler had (see faqTagMatcher.ts's header comment for the original
+ * "Tell me MSA process" bug), closed the same way. Merged by id since
+ * either source can find the same FAQ; `existingMatchIds` excludes FAQs
+ * the caller already matched some other way. */
+export async function gatherFaqCandidates(
+  question: string,
+  existingMatchIds: Set<string> = new Set()
+): Promise<Array<{ id: string; question: string; answer: string }>> {
+  const [sqlCandidates, tagCandidates] = await Promise.all([
+    findKeywordCandidates(question),
+    findFaqsByMessageTags(question),
+  ]);
+  const candidatesById = new Map<string, { id: string; question: string; answer: string }>();
+  for (const c of sqlCandidates) candidatesById.set(c.id, c);
+  for (const c of tagCandidates) if (!candidatesById.has(c.id)) candidatesById.set(c.id, { id: c.id, question: c.question, answer: c.answer });
+  console.log(`[FAQ] Found ${candidatesById.size} candidates (${sqlCandidates.length} SQL, ${tagCandidates.length} tag-matched)`);
+  return Array.from(candidatesById.values()).filter((c) => !existingMatchIds.has(c.id));
+}
+
+/** Main semantic search: Two-stage (keyword+tag candidates → semantic verification) */
 export async function semanticFaqSearch(
   client: ClaudeClient,
   question: string,
@@ -150,21 +181,11 @@ export async function semanticFaqSearch(
 ): Promise<SemanticFaqMatch[]> {
   console.log(`[FAQ] Starting semantic search for: "${question.substring(0, 50)}..."`);
 
-  // Stage 1: Get keyword candidates
-  const candidates = await findKeywordCandidates(question);
-  console.log(`[FAQ] Found ${candidates.length} keyword candidates`);
-
-  if (candidates.length === 0) {
-    console.log(`[FAQ] No keyword candidates found, skipping semantic verification`);
-    return [];
-  }
-
-  // Filter out FAQs already matched by exact search
-  const uniqueCandidates = candidates.filter((c) => !existingMatchIds.has(c.id));
+  const uniqueCandidates = await gatherFaqCandidates(question, existingMatchIds);
   console.log(`[FAQ] ${uniqueCandidates.length} unique candidates after deduplication`);
 
   if (uniqueCandidates.length === 0) {
-    console.log(`[FAQ] All candidates already matched, skipping semantic verification`);
+    console.log(`[FAQ] No candidates found, skipping semantic verification`);
     return [];
   }
 
