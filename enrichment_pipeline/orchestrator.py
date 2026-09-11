@@ -93,6 +93,12 @@ _ABSENCE_PROSE_MARKERS = (
     "not available", "not specified", "not provided", "not disclosed",
     "not shared", "not shown", "no data", "none found", "not found",
     "no email", "no phone", "profile evidence", "no information",
+    # Confirmed live: Parallel's browsing agent answers a field it can't find
+    # with a sentence naming the field and the lead ("No profile headline was
+    # found for Sergio Testing.") instead of returning null -- "was found for"
+    # catches that shape specifically ("not found" above doesn't: this is
+    # "was found", not "not found").
+    "was found for",
 )
 
 
@@ -293,9 +299,23 @@ def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
     Emptiness is measured with `has_content` (core/schema.py), not truthiness, so the
     near-miss version of that payload -- one whose lists hold the right
     NUMBER of entries and no data inside any of them -- is judged the same
-    way rather than passing as a find."""
+    way rather than passing as a find.
+
+    A second near-miss shape confirmed live (the reported bug's lead):
+    `has_content` alone still says yes when every scalar field is populated
+    with the model's OWN "couldn't find this" sentence ("No profile headline
+    was found for Sergio Testing.") rather than null -- structurally a
+    non-empty string, but exactly as much of a non-find as the null/[] case
+    above, and the same absence-prose check that keeps that prose out of
+    Lead.certifications/skills (`_is_absence_prose`) is what's missing here."""
+    def _found(field: str) -> bool:
+        value = parallel_data.get(field)
+        if isinstance(value, str) and _is_absence_prose(value):
+            return False
+        return has_content(value)
+
     return not any(
-        has_content(parallel_data.get(f))
+        _found(f)
         for f in (
             "headline", "current_title", "about_snippet", "country",
             "experience", "education", "languages", "certifications",
@@ -895,6 +915,21 @@ class EnrichmentOrchestrator:
                 lead[k] = v
                 field_sources[k] = source_label
                 logs.append(f"Stage Parsed: {k} = {v!r} (from {source_label})")
+            elif isinstance(lead.get(k), str) and _is_absence_prose(lead[k]):
+                # The existing value isn't real data to protect -- it's a
+                # provider's own "couldn't find this" sentence that landed in
+                # a data column on an earlier pass (confirmed live: Parallel's
+                # Headline/Current_Title/About_Snippet for a lead whose real
+                # LinkedIn profile a later BrightData scrape then read fine,
+                # but couldn't ever land because the never-overwrite rule
+                # treated the stale prose as "already resolved"). Same rule
+                # every OTHER branch here already applies -- overwrite only
+                # when there's nothing worth protecting -- just recognizing
+                # that this "existing value" was never real data to begin
+                # with.
+                lead[k] = v
+                field_sources[k] = source_label
+                logs.append(f"Stage Parsed: {k} = {v!r} (from {source_label}, replaces a prior absence-prose placeholder)")
 
     def _merge_stage3_parsed(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
@@ -1032,14 +1067,30 @@ class EnrichmentOrchestrator:
         structured data -- no parser needed, contrast with BrightData/
         Tavily's raw-payload-plus-parser path above."""
         mapped: Dict[str, Any] = {}
-        if parallel_data.get("headline"):
-            mapped["Headline"] = parallel_data["headline"]
-        if parallel_data.get("current_title"):
-            mapped["Current_Title"] = parallel_data["current_title"]
-        if parallel_data.get("about_snippet"):
-            mapped["About_Snippet"] = parallel_data["about_snippet"]
-        if parallel_data.get("country"):
-            mapped["Country_of_Residence"] = parallel_data["country"]
+        # Headline/Current_Title/About_Snippet/Country_of_Residence had no
+        # absence-prose guard at all (unlike email/phone/certifications/
+        # skills below) -- confirmed live: a lead whose LinkedIn profile
+        # Parallel couldn't read still got Headline = "No profile headline
+        # was found for Sergio Testing." merged in as if it were real data,
+        # permanently blocking a real value from ever landing (the
+        # never-overwrite rule in _apply_parsed_fields treats non-empty as
+        # "already resolved" regardless of what the text actually says).
+        headline = parallel_data.get("headline")
+        headline = headline if headline and not _is_absence_prose(str(headline)) else None
+        if headline:
+            mapped["Headline"] = headline
+        current_title = parallel_data.get("current_title")
+        current_title = current_title if current_title and not _is_absence_prose(str(current_title)) else None
+        if current_title:
+            mapped["Current_Title"] = current_title
+        about_snippet = parallel_data.get("about_snippet")
+        about_snippet = about_snippet if about_snippet and not _is_absence_prose(str(about_snippet)) else None
+        if about_snippet:
+            mapped["About_Snippet"] = about_snippet
+        country = parallel_data.get("country")
+        country = country if country and not _is_absence_prose(str(country)) else None
+        if country:
+            mapped["Country_of_Residence"] = country
 
         # Email/phone: Parallel is a public-page browsing agent -- it can only
         # ever report what's literally rendered on the page it visits, with no
@@ -1095,14 +1146,12 @@ class EnrichmentOrchestrator:
             if kept_skills:
                 mapped["Services"] = ", ".join(kept_skills)
         if not mapped.get("Services"):
-            text_blob = " | ".join(
-                str(v) for v in (
-                    parallel_data.get("headline"),
-                    parallel_data.get("current_title"),
-                    parallel_data.get("about_snippet"),
-                )
-                if v
-            )
+            # Reuses the already-absence-prose-filtered locals above rather
+            # than re-reading parallel_data directly -- otherwise a filtered-
+            # out "No headline was found for X" sentence would still leak
+            # into this keyword scan even though it was correctly kept out
+            # of the canonical Headline field.
+            text_blob = " | ".join(str(v) for v in (headline, current_title, about_snippet) if v)
             if text_blob:
                 text_services = extract_services_from_text(text_blob)
                 if text_services:
