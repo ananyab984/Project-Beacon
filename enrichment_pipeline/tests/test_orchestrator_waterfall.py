@@ -159,7 +159,10 @@ def test_short_circuit_success_when_nothing_left_to_fill():
     round-trips a lead's persisted field_sources on every re-enrichment call."""
     orch = make_orchestrator()
     llm_calls = {"n": 0}
-    orch.claude = stub(search_missing_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {})
+    orch.claude = stub(
+        search_missing_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {},
+        extract_missing_fields=lambda *a, **kw: {},
+    )
 
     lead = {
         "Source": "Freelancer",
