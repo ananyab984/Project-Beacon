@@ -55,7 +55,7 @@ def test_infer_services_reclassifies_a_garbled_value():
         calls.append(text)
         return ["Audio Engineering"]
 
-    orch.claude = stub(classify_services=classify)
+    orch.groq_mapper = stub(classify_services=classify)
     lead = {
         "Services": "id, 1788358696814, rate, 10, task, Quality Control",
         "Headline": "Audio Engineer at VSI",
@@ -74,7 +74,7 @@ def test_infer_services_clears_garbled_value_when_nothing_groundable():
     classify from -- Claude correctly returns no services, and the garbled
     value must be cleared rather than left sitting there forever."""
     orch = make_orchestrator()
-    orch.claude = stub(classify_services=lambda text: [])
+    orch.groq_mapper = stub(classify_services=lambda text: [])
 
     lead = {
         "Services": "id, 1788358696814, rate, 10, task, Quality Control",
@@ -90,7 +90,7 @@ def test_infer_services_clears_garbled_value_when_nothing_groundable():
 def test_infer_services_leaves_a_real_value_untouched():
     orch = make_orchestrator()
     calls: list[str] = []
-    orch.claude = stub(classify_services=lambda text: calls.append(text) or ["Should not be used"])
+    orch.groq_mapper = stub(classify_services=lambda text: calls.append(text) or ["Should not be used"])
 
     lead = {"Services": "Subtitling, Dubbing", "Headline": "Localization specialist"}
     field_sources: dict[str, str] = {}
@@ -103,7 +103,7 @@ def test_infer_services_leaves_a_real_value_untouched():
 
 def test_infer_services_still_fires_on_a_genuinely_empty_value():
     orch = make_orchestrator()
-    orch.claude = stub(classify_services=lambda text: ["Translation"])
+    orch.groq_mapper = stub(classify_services=lambda text: ["Translation"])
 
     lead = {"Services": "", "Headline": "Freelance translator"}
     field_sources: dict[str, str] = {}
