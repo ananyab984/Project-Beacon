@@ -5,7 +5,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
-import { UnipileService } from "../services/unipile.service";
+import { UnipileService, findReplyAnchor } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { getDraftingOrchestrator } from "../drafting/instance";
@@ -290,7 +290,8 @@ emailQueueRouter.post(
       } else {
         target = to || item.lead.email || "";
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
-        await UnipileService.sendEmail(req.user!.id, item.leadId, target, subject || item.subject, body, accountId);
+        const replyToMessageId = await findReplyAnchor(item.leadId, req.user!.id);
+        await UnipileService.sendEmail(req.user!.id, item.leadId, target, subject || item.subject, body, accountId, replyToMessageId);
       }
     } catch (err: any) {
       throw toApiError(err);
@@ -348,7 +349,8 @@ emailQueueRouter.post(
           sentChannel = "LINKEDIN";
         } else if (item.lead.email) {
           target = item.lead.email;
-          await UnipileService.sendEmail(req.user!.id, item.leadId, target, item.subject, item.body);
+          const replyToMessageId = await findReplyAnchor(item.leadId, req.user!.id);
+          await UnipileService.sendEmail(req.user!.id, item.leadId, target, item.subject, item.body, undefined, replyToMessageId);
           sentChannel = "EMAIL";
         } else {
           results.push({ id, success: false, error: "NO_CONTACT_TARGET" });

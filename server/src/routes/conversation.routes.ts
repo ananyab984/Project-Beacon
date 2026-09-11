@@ -6,7 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
-import { UnipileService } from "../services/unipile.service";
+import { UnipileService, findReplyAnchor } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
@@ -256,6 +256,13 @@ conversationRouter.post(
       } else {
         const target = to || conversation.lead.email;
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
+        // Defensive fallback: this route's own caller (email-queue-page-
+        // view.tsx's inline "Reply to this message") already supplies a
+        // real replyToMessageId, but any future/other caller that doesn't
+        // would otherwise start a brand-new, unrelated Unipile thread --
+        // see findReplyAnchor's own doc comment for the confirmed-live
+        // consequence of that.
+        const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(conversation.leadId, conversation.recruiterId));
         // Unipile validates a threaded reply's subject against the real
         // thread it's attached to via reply_to, rejecting a mismatch with
         // "The reply subject is invalid" -- confirmed live. EmailQueueItem's
@@ -268,9 +275,9 @@ conversationRouter.post(
         // the queue item's guess when there's no prior thread to match
         // (i.e. replyToMessageId wasn't supplied).
         let originalSubject: string | null = null;
-        if (replyToMessageId) {
+        if (resolvedReplyToMessageId) {
           const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
-            where: { eventType: "mail_received", payload: { path: ["email_id"], equals: replyToMessageId } },
+            where: { eventType: "mail_received", payload: { path: ["email_id"], equals: resolvedReplyToMessageId } },
             orderBy: { processedAt: "desc" },
           });
           originalSubject = (webhookEvent?.payload as any)?.subject || null;
@@ -290,7 +297,7 @@ conversationRouter.post(
           replySubject,
           text,
           accountId,
-          replyToMessageId
+          resolvedReplyToMessageId
         );
       }
     } catch (err: any) {
