@@ -18,6 +18,7 @@ import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/fea
 import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
+import { ServicesCell } from "@/components/features/services-cell";
 import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/owner/leads")({
@@ -497,21 +498,10 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {l.services.map((s) => (
-                          <span key={s} className="inline-flex items-center gap-1 rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                            {s}
-                            <button
-                              type="button"
-                              aria-label={`Remove service ${s}`}
-                              onClick={(e) => { e.stopPropagation(); removeServiceMutation.mutate({ id: l.id, service: s }); }}
-                              className="text-accent/60 hover:text-destructive"
-                            >
-                              <X className="h-2.5 w-2.5" />
-                            </button>
-                          </span>
-                        ))}
-                      </div>
+                      <ServicesCell
+                        services={l.services}
+                        onRemove={(service) => removeServiceMutation.mutate({ id: l.id, service })}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <span className="rounded-md border border-border px-2 py-0.5 text-xs font-medium">{formatStageLabel(l.stage)}</span>
