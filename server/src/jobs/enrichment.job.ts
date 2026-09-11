@@ -148,29 +148,30 @@ export async function enrichLeadById(leadId: string) {
     let enrichedToolsSoftware = lead.toolsSoftware;
     let enrichedCertifications = lead.certifications;
 
-    // A manually-entered field (via the "Enriched"/"On Hold" dialogs' PATCH,
-    // which tags fieldSources[key] = "manual") must never be silently
-    // overwritten by a later re-enrichment result -- this used to not be
-    // checked at all (five fields were even explicitly *documented* as
-    // allowed to override a manual value), which was the real root cause of
-    // "I manually filled this in and it later vanished." Manual wins until
-    // the recruiter edits or clears it themselves.
-    const existingFieldSources = (lead.fieldSources as Record<string, string> | null) ?? {};
-    const isManual = (canonicalKey: string) => existingFieldSources[canonicalKey] === "manual";
+    // Policy (explicit product decision, reverses the prior "manual always
+    // wins" rule that used to live here): a fresh, verified enrichment
+    // result -- brightdata/tavily/parallel/llm_fallback, which is all `el.X`
+    // ever is at this point -- now overrides a manual entry too, not just an
+    // "existing"/unverified one. A manual value is only ever a placeholder
+    // or a best guess until a real provider confirms or corrects it; letting
+    // it permanently block a later correct result (confirmed live: a
+    // recruiter-typed Years_of_Exp of -6 stayed forever, immune to a real
+    // derivation from Parallel's own experience history) was judged the
+    // bigger risk than the flip side (a fresh result overwriting a
+    // deliberate manual correction) -- so this section no longer checks
+    // fieldSources for "manual" at all before merging a fresh value in.
 
     if (data?.lead) {
       const el = data.lead;
-      if (el.Email_Address && !isManual("Email_Address")) enrichedEmail = el.Email_Address;
-      if (el.Contact_Number && !isManual("Contact_Number")) enrichedContactNumber = el.Contact_Number;
-      if (el.Years_of_Exp && !isManual("Years_of_Exp")) {
+      if (el.Email_Address) enrichedEmail = el.Email_Address;
+      if (el.Contact_Number) enrichedContactNumber = el.Contact_Number;
+      if (el.Years_of_Exp) {
         const parsed = parseInt(el.Years_of_Exp, 10);
         if (!isNaN(parsed)) enrichedYearsOfExp = parsed as any;
       }
-      if (el.Vendor_Experience && !isManual("Vendor_Experience")) enrichedVendorExp = el.Vendor_Experience;
-      if (!isManual("Full_Name")) {
-        const resolvedName = String(el.Full_Name || el.First_Name || "").trim();
-        if (resolvedName) enrichedDisplayName = resolvedName;
-      }
+      if (el.Vendor_Experience) enrichedVendorExp = el.Vendor_Experience;
+      const resolvedName = String(el.Full_Name || el.First_Name || "").trim();
+      if (resolvedName) enrichedDisplayName = resolvedName;
 
       // normalizeServices both splits (on any of , ; / : | -- not just
       // commas) and maps known variants/case-differences onto the canonical
@@ -188,33 +189,26 @@ export async function enrichLeadById(leadId: string) {
       // must go through -- checked via field_sources rather than value
       // truthiness, since "" is indistinguishable from "untouched" otherwise.
       const servicesSource = (data?.field_sources as Record<string, string> | undefined)?.Services;
-      if ((el.Services || servicesSource === "llm_fallback") && !isManual("Services")) {
+      if (el.Services || servicesSource === "llm_fallback") {
         enrichedServices = normalizeServices(el.Services) ?? enrichedServices;
       }
-      if (el.Source_Language && !isManual("Source_Language")) enrichedSourceLanguage = el.Source_Language;
-      if (el.Target_Language && !isManual("Target_Language")) enrichedTargetLanguage = el.Target_Language;
+      if (el.Source_Language) enrichedSourceLanguage = el.Source_Language;
+      if (el.Target_Language) enrichedTargetLanguage = el.Target_Language;
       if (el.Secondary_Languages) enrichedSecondaryLanguages = splitToArray(el.Secondary_Languages) ?? enrichedSecondaryLanguages;
-      if (el.Country_of_Residence && !isManual("Country_of_Residence")) enrichedCountry = el.Country_of_Residence;
+      if (el.Country_of_Residence) enrichedCountry = el.Country_of_Residence;
 
-      if (el.Headline && !isManual("Headline")) enrichedHeadline = el.Headline;
-      if (el.About_Snippet && !isManual("About_Snippet")) enrichedAboutSnippet = el.About_Snippet;
-      if (el.Current_Title && !isManual("Current_Title")) enrichedCurrentTitle = el.Current_Title;
-      if (el.Tools_Software && !isManual("Tools_Software")) enrichedToolsSoftware = splitToArray(el.Tools_Software) ?? enrichedToolsSoftware;
-      if (el.Certifications && !isManual("Certifications")) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
+      if (el.Headline) enrichedHeadline = el.Headline;
+      if (el.About_Snippet) enrichedAboutSnippet = el.About_Snippet;
+      if (el.Current_Title) enrichedCurrentTitle = el.Current_Title;
+      if (el.Tools_Software) enrichedToolsSoftware = splitToArray(el.Tools_Software) ?? enrichedToolsSoftware;
+      if (el.Certifications) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
     }
 
     const returnedFieldSources = (data?.field_sources as Record<string, string> | undefined) || {};
-    // The pipeline's own field_sources response describes what IT resolved
-    // (including reporting "existing" for a field it left untouched because
-    // one was already there) -- it has no notion of "manual". Naively using
-    // it wholesale would silently clobber a "manual" tag back to "existing"
-    // even though the VALUE itself was correctly protected above, breaking
-    // protection on the *next* re-enrichment pass. Re-assert every key this
-    // lead already had tagged "manual" over whatever the pipeline reported.
+    // No longer re-asserts a stale "manual" tag over what the pipeline
+    // reports (see the policy note above) -- the pipeline's own field_sources
+    // response is now authoritative as-is.
     const mergedFieldSources: Record<string, string> = { ...(returnedFieldSources || (lead.fieldSources as any) || {}) };
-    for (const [key, source] of Object.entries(existingFieldSources)) {
-      if (source === "manual") mergedFieldSources[key] = "manual";
-    }
 
     // "Enriched" means the pipeline has reached a TERMINAL state for this
     // lead, not "we have a way to contact them" -- those are two different
