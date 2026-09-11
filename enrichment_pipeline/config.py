@@ -113,9 +113,13 @@ class Config:
     groq_base_url: str = "https://api.groq.com/openai/v1/chat/completions"
 
     claude_model: str = _DEFAULT_CLAUDE_MODEL
-    # Used only by the duplicate/identity-resolution stage (core/dedup.py) -- a separate
-    # provider choice from the rest of the pipeline, which runs on Claude.
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Used by the duplicate/identity-resolution stage (core/dedup.py) and by
+    # GroqMappingClient's local-text mapping stages (Services classification,
+    # remaining-fields fill-only extraction) -- Claude stays reserved for
+    # live web search and English normalization, which need its tool support.
+    # llama-3.3-70b-versatile was retired from Groq's catalog; confirmed live
+    # against the /models endpoint that this one is currently served.
+    groq_model: str = "openai/gpt-oss-120b"
 
     # Per-HTTP-request socket timeout (connect+read). Kept comfortably under
     # the 15s wall-clock deadline enforced in core/resilience.py so it can
@@ -206,7 +210,7 @@ def load_config(require_keys: bool = False) -> Config:
         parallel_deadline_seconds=parallel_deadline_seconds,
         claude_websearch_deadline_seconds=claude_websearch_deadline_seconds,
         stage6_websearch_enabled=(os.getenv("STAGE6_WEBSEARCH_ENABLED", "false").strip().lower() == "true"),
-        groq_model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile").strip(),
+        groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip(),
         request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
         brightdata_request_timeout=int(os.getenv("BRIGHTDATA_REQUEST_TIMEOUT", "30")),
         brightdata_deadline_seconds=float(os.getenv("BRIGHTDATA_DEADLINE_SECONDS", "60.0")),

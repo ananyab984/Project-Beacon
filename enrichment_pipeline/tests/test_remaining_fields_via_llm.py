@@ -34,7 +34,7 @@ def test_fills_only_the_fields_that_were_actually_empty():
         return {"Current_Title": "Freelance Subtitler", "Tools_Software": "Trados, Subtitle Edit"}
 
     orch = make_orchestrator()
-    orch.claude = stub(extract_missing_fields=extract)
+    orch.groq_mapper = stub(extract_missing_fields=extract)
 
     lead = {
         "Headline": "Experienced subtitler using Trados",
@@ -59,7 +59,7 @@ def test_fills_only_the_fields_that_were_actually_empty():
 def test_never_called_when_nothing_is_missing():
     calls = {"n": 0}
     orch = make_orchestrator()
-    orch.claude = stub(extract_missing_fields=lambda *a, **k: calls.__setitem__("n", calls["n"] + 1) or {})
+    orch.groq_mapper = stub(extract_missing_fields=lambda *a, **k: calls.__setitem__("n", calls["n"] + 1) or {})
 
     lead = {
         "Current_Title": "Senior Editor", "Tools_Software": "Premiere",
@@ -72,7 +72,7 @@ def test_never_called_when_nothing_is_missing():
 def test_never_called_when_no_free_text_is_available():
     calls = {"n": 0}
     orch = make_orchestrator()
-    orch.claude = stub(extract_missing_fields=lambda *a, **k: calls.__setitem__("n", calls["n"] + 1) or {})
+    orch.groq_mapper = stub(extract_missing_fields=lambda *a, **k: calls.__setitem__("n", calls["n"] + 1) or {})
 
     lead = {"Current_Title": None, "Tools_Software": None, "Certifications": None, "Vendor_Experience": None}
     orch._infer_remaining_fields_via_llm(lead, {}, [])
@@ -81,7 +81,7 @@ def test_never_called_when_no_free_text_is_available():
 
 def test_absence_prose_in_a_returned_field_is_rejected():
     orch = make_orchestrator()
-    orch.claude = stub(extract_missing_fields=lambda text, missing: {"Vendor_Experience": "Not disclosed in the available profile text."})
+    orch.groq_mapper = stub(extract_missing_fields=lambda text, missing: {"Vendor_Experience": "Not disclosed in the available profile text."})
 
     lead = {"Headline": "Freelance translator", "Vendor_Experience": None}
     field_sources: dict[str, str] = {}
@@ -92,13 +92,13 @@ def test_absence_prose_in_a_returned_field_is_rejected():
 
 
 def test_claude_error_leaves_fields_empty_without_raising():
-    from llm_fallback.client import ClaudeError
+    from llm_fallback.groq_client import GroqMappingError
 
     def boom(text, missing):
-        raise ClaudeError("network blip")
+        raise GroqMappingError("network blip")
 
     orch = make_orchestrator()
-    orch.claude = stub(extract_missing_fields=boom)
+    orch.groq_mapper = stub(extract_missing_fields=boom)
 
     lead = {"Headline": "Freelance translator", "Current_Title": None}
     field_sources: dict[str, str] = {}

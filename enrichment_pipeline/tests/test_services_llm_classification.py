@@ -1,5 +1,5 @@
 """Tests for Stage 3.75's local Services classification
-(orchestrator._infer_services_via_llm / ClaudeClient.classify_services) --
+(orchestrator._infer_services_via_llm / GroqMappingClient.classify_services) --
 added because parsers/service_aliases.py's fixed ~15-term keyword list only
 recognizes localization-industry vocabulary (Dubbing, Subtitling,
 Translation...), so a real service phrased differently ("Audio Engineer",
@@ -25,7 +25,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from config import Config
-from llm_fallback.client import ClaudeError
+from llm_fallback.groq_client import GroqMappingError
 from orchestrator import EnrichmentOrchestrator
 
 
@@ -40,7 +40,7 @@ def stub(**methods):
 
 def test_classifies_a_service_the_fixed_alias_list_cannot_recognize():
     orch = _orch()
-    orch.claude = stub(classify_services=lambda text: ["Audio Engineering"])
+    orch.groq_mapper = stub(classify_services=lambda text: ["Audio Engineering"])
     lead = {
         "Services": None,
         "Headline": "Audio Engineer at VSI / Voice & Script International",
@@ -57,7 +57,7 @@ def test_classifies_a_service_the_fixed_alias_list_cannot_recognize():
 def test_skipped_when_services_already_populated():
     orch = _orch()
     calls = {"n": 0}
-    orch.claude = stub(classify_services=lambda text: calls.__setitem__("n", calls["n"] + 1) or ["Dubbing"])
+    orch.groq_mapper = stub(classify_services=lambda text: calls.__setitem__("n", calls["n"] + 1) or ["Dubbing"])
     lead = {"Services": "Translation", "Headline": "Translator"}
     field_sources = {"Services": "brightdata"}
     logs: list = []
@@ -68,18 +68,18 @@ def test_skipped_when_services_already_populated():
 
 def test_skipped_when_claude_not_configured():
     orch = _orch()
-    assert orch.claude is None
+    assert orch.groq_mapper is None
     lead = {"Services": None, "Headline": "Audio Engineer"}
     field_sources: dict = {}
     logs: list = []
     orch._infer_services_via_llm(lead, field_sources, logs)
     assert lead.get("Services") is None
-    assert any("CLAUDE_API_KEY" in line for line in logs)
+    assert any("GROQ_API_KEY" in line for line in logs)
 
 
 def test_skipped_when_no_text_to_classify():
     orch = _orch()
-    orch.claude = stub(classify_services=lambda text: ["Dubbing"])
+    orch.groq_mapper = stub(classify_services=lambda text: ["Dubbing"])
     lead = {"Services": None}
     field_sources: dict = {}
     logs: list = []
@@ -89,7 +89,7 @@ def test_skipped_when_no_text_to_classify():
 
 def test_no_groundable_service_leaves_services_empty():
     orch = _orch()
-    orch.claude = stub(classify_services=lambda text: [])
+    orch.groq_mapper = stub(classify_services=lambda text: [])
     lead = {"Services": None, "Headline": "Business Owner", "Current_Title": "Operations"}
     field_sources: dict = {}
     logs: list = []
@@ -102,9 +102,9 @@ def test_claude_error_leaves_services_empty_not_a_crash():
     orch = _orch()
 
     def fail(text):
-        raise ClaudeError("boom")
+        raise GroqMappingError("boom")
 
-    orch.claude = stub(classify_services=fail)
+    orch.groq_mapper = stub(classify_services=fail)
     lead = {"Services": None, "Headline": "Audio Engineer"}
     field_sources: dict = {}
     logs: list = []
@@ -119,7 +119,7 @@ def test_a_title_that_recruits_for_a_specialty_is_not_treated_as_performing_it()
     # prompt explicitly guards against -- exercised here via the stub
     # returning what a correctly-behaving classification would produce.
     orch = _orch()
-    orch.claude = stub(classify_services=lambda text: [])
+    orch.groq_mapper = stub(classify_services=lambda text: [])
     lead = {"Services": None, "Current_Title": "Localization Recruiter", "Headline": "Recruiter"}
     field_sources: dict = {}
     logs: list = []

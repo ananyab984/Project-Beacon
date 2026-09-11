@@ -15,6 +15,7 @@ from core.field_audit import audit_lead_fields
 from core.schema import has_content, is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
+from llm_fallback.groq_client import GroqMappingClient, GroqMappingError
 from llm_fallback.verifier import filter_web_search_result
 from logger import get_logger
 from providers.brightdata_client import BrightDataClient, BrightDataError
@@ -493,6 +494,14 @@ class EnrichmentOrchestrator:
         self.brightdata = BrightDataClient(config) if config.brightdata_api_key else None
         self.tavily = TavilyClient(config) if config.tavily_api_key else None
         self.claude = ClaudeClient(config) if config.claude_api_key else None
+        # Services classification and the remaining-fields fill-only
+        # extraction both only ever read text the pipeline already has (no
+        # live web search) -- moved to Groq, which is faster/cheaper for
+        # that shape of call and is already used elsewhere in this pipeline
+        # for the same kind of structured-extraction work (core/dedup_client.py).
+        # Claude stays on Stage 6's live web search and English
+        # normalization, since Groq has no equivalent web-search tool.
+        self.groq_mapper = GroqMappingClient(config) if config.groq_api_key else None
         self.parallel = ParallelClient(config) if config.parallel_api_key else None
 
         self.parsers = {
@@ -1211,8 +1220,8 @@ class EnrichmentOrchestrator:
         (Tier 1 and Tier 2 both use it) had nothing to match, no matter how
         plainly the text stated the person's actual specialty. Services can
         be any real-world specialty, not only translation/dubbing-industry
-        terms -- ClaudeClient.classify_services has no fixed list; it reads
-        the text and reports whatever service it actually supports.
+        terms -- GroqMappingClient.classify_services has no fixed list; it
+        reads the text and reports whatever service it actually supports.
 
         The garbled branch is the recovery path for leads whose Services
         were shredded from a JSON object before normalizeServices.ts learned
@@ -1224,8 +1233,8 @@ class EnrichmentOrchestrator:
         """
         if not is_empty_value(lead.get("Services")) and not _looks_garbled(lead.get("Services")):
             return
-        if not self.claude:
-            logs.append("Stage 3.75: Services classification skipped: CLAUDE_API_KEY isn't set")
+        if not self.groq_mapper:
+            logs.append("Stage 3.75: Services classification skipped: GROQ_API_KEY isn't set")
             return
 
         text_blob = " | ".join(
@@ -1240,8 +1249,8 @@ class EnrichmentOrchestrator:
             return
 
         try:
-            services = self.claude.classify_services(text_blob)
-        except ClaudeError as exc:
+            services = self.groq_mapper.classify_services(text_blob)
+        except GroqMappingError as exc:
             logs.append(f"Stage 3.75: Services classification failed, leaving Services empty: {exc}")
             return
 
@@ -1323,8 +1332,8 @@ class EnrichmentOrchestrator:
         missing = [f for f in self._REMAINING_FILL_ONLY_FIELDS if is_empty_value(lead.get(f))]
         if not missing:
             return
-        if not self.claude:
-            logs.append("Stage 3.76: remaining-fields extraction skipped: CLAUDE_API_KEY isn't set")
+        if not self.groq_mapper:
+            logs.append("Stage 3.76: remaining-fields extraction skipped: GROQ_API_KEY isn't set")
             return
 
         text_blob = " | ".join(
@@ -1339,8 +1348,8 @@ class EnrichmentOrchestrator:
             return
 
         try:
-            found = self.claude.extract_missing_fields(text_blob, missing)
-        except ClaudeError as exc:
+            found = self.groq_mapper.extract_missing_fields(text_blob, missing)
+        except GroqMappingError as exc:
             logs.append(f"Stage 3.76: remaining-fields extraction failed, leaving fields empty: {exc}")
             return
 
