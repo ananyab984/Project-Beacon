@@ -422,7 +422,7 @@ export const api = {
     });
   },
 
-  async sendEmailQueueItem(id: string, payload: { to?: string; subject?: string; body: string; channel: "LINKEDIN" | "EMAIL"; accountId?: string }) {
+  async sendEmailQueueItem(id: string, payload: { to?: string; subject?: string; body: string; channel: "LINKEDIN" | "EMAIL"; accountId?: string; replyToMessageId?: string }) {
     return request<{ success: true }>(`/api/email-queue/${id}/send`, { method: "POST", body: JSON.stringify(payload) });
   },
 

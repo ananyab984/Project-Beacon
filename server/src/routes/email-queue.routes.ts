@@ -5,7 +5,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
-import { UnipileService, findReplyAnchor } from "../services/unipile.service";
+import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { getDraftingOrchestrator } from "../drafting/instance";
@@ -272,8 +272,15 @@ emailQueueRouter.post(
       body: z.string().min(1),
       channel: z.enum(CHANNELS),
       accountId: z.string().optional(),
+      // The specific inbound ConversationMessage.externalMessageId this send
+      // is answering (EMAIL only) -- same param, same purpose as
+      // conversation.routes.ts's POST /:id/messages. Lets the composer say
+      // exactly which of a lead's several pending emails this reply is for,
+      // instead of always falling back to findReplyAnchor's "most recent"
+      // guess, which is wrong whenever more than one is still unanswered.
+      replyToMessageId: z.string().optional(),
     });
-    const { to, subject, body, channel, accountId } = schema.parse(req.body);
+    const { to, subject, body, channel, accountId, replyToMessageId } = schema.parse(req.body);
 
     const item = await prisma.emailQueueItem.findFirst({
       where: { id: req.params.id, recruiterId: req.user!.id },
@@ -290,8 +297,18 @@ emailQueueRouter.post(
       } else {
         target = to || item.lead.email || "";
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
-        const replyToMessageId = await findReplyAnchor(item.leadId, req.user!.id);
-        await UnipileService.sendEmail(req.user!.id, item.leadId, target, subject || item.subject, body, accountId, replyToMessageId);
+        const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(item.leadId, req.user!.id));
+        // When the recruiter explicitly picked which message this reply
+        // answers, the subject must match THAT thread, not whatever's
+        // sitting in the composer (the queue item's own possibly-stale/
+        // regenerated subject) -- see resolveReplySubject's doc comment for
+        // why a mismatch gets hard-rejected by Unipile. Left untouched when
+        // no explicit target was given, preserving the existing
+        // subject-editing behavior on that (unchanged) path.
+        const finalSubject = replyToMessageId
+          ? await resolveReplySubject(item.leadId, req.user!.id, resolvedReplyToMessageId, item.candidateName)
+          : subject || item.subject;
+        await UnipileService.sendEmail(req.user!.id, item.leadId, target, finalSubject, body, accountId, resolvedReplyToMessageId);
       }
     } catch (err: any) {
       throw toApiError(err);
