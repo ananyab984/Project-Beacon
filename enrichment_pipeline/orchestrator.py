@@ -1195,6 +1195,18 @@ class EnrichmentOrchestrator:
             lead["Services"] = ", ".join(services)
             field_sources["Services"] = "llm_fallback"
             logs.append(f"Stage 3.75: Services = {lead['Services']!r} (from llm_fallback, classified from already-extracted profile text)")
+        elif _looks_garbled(lead.get("Services")):
+            # Nothing groundable, but the field can't be left as it was --
+            # unlike the genuinely-empty case (nothing to lose), the current
+            # value here is shredded JSON, not real data. A profile with no
+            # real headline/title/about text to classify from (e.g. a scrape
+            # that only returned "No X was found" placeholders) means there's
+            # no honest way to derive a real service, so clear it rather than
+            # leave garbage sitting in what the UI renders as this lead's
+            # services.
+            lead["Services"] = ""
+            field_sources["Services"] = "llm_fallback"
+            logs.append("Stage 3.75: Services classification found nothing groundable -- cleared the garbled value rather than keep shredded tokens")
         else:
             logs.append("Stage 3.75: Services classification found nothing groundable in the extracted text")
 

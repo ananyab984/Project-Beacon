@@ -177,7 +177,20 @@ export async function enrichLeadById(leadId: string) {
       // service list, so a raw scraped value like "Sub:Dubbing:Audio
       // Description" becomes ["Subtitling","Dubbing","Audio Description"]
       // instead of surviving as one colon-delimited garbage string.
-      if (el.Services && !isManual("Services")) enrichedServices = normalizeServices(el.Services) ?? enrichedServices;
+      //
+      // Every other field in this block treats a falsy `el.X` as "the
+      // pipeline didn't touch this field, keep what's there" -- true for all
+      // of them, since enrichment only ever fills a field in, never clears
+      // one. Services is the one exception: orchestrator.py's
+      // _infer_services_via_llm can legitimately resolve a garbled value to
+      // "" when nothing groundable exists to reclassify from (a test/
+      // placeholder lead with no real profile text), and that explicit clear
+      // must go through -- checked via field_sources rather than value
+      // truthiness, since "" is indistinguishable from "untouched" otherwise.
+      const servicesSource = (data?.field_sources as Record<string, string> | undefined)?.Services;
+      if ((el.Services || servicesSource === "llm_fallback") && !isManual("Services")) {
+        enrichedServices = normalizeServices(el.Services) ?? enrichedServices;
+      }
       if (el.Source_Language && !isManual("Source_Language")) enrichedSourceLanguage = el.Source_Language;
       if (el.Target_Language && !isManual("Target_Language")) enrichedTargetLanguage = el.Target_Language;
       if (el.Secondary_Languages) enrichedSecondaryLanguages = splitToArray(el.Secondary_Languages) ?? enrichedSecondaryLanguages;
