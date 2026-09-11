@@ -22,8 +22,13 @@ const CHANNELS = ["LINKEDIN", "EMAIL"] as const;
  * tool, not a cross-recruiter monitoring view). Exported so it's directly
  * unit-testable without constructing a fake request/response. */
 export async function getEmailQueueForRecruiter(recruiterId: string) {
+  // addedManually excludes historical rows lead.routes.ts used to silently
+  // auto-create for every lead a recruiter created, before that side effect
+  // was removed -- without this, the queue kept showing (and counting)
+  // leads the recruiter never actually chose to add via this page's own
+  // "Search Lead" -> add action.
   const items = await prisma.emailQueueItem.findMany({
-    where: { recruiterId },
+    where: { recruiterId, addedManually: true },
     include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
   });
 
@@ -72,40 +77,66 @@ emailQueueRouter.get(
   })
 );
 
+const EMAIL_QUEUE_ITEM_INCLUDE_LEAD = {
+  lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } },
+};
+
+/** Add a lead to the recruiter's queue via this page's own "Search Lead" ->
+ * add action -- the only path left that creates an EmailQueueItem, now that
+ * lead.routes.ts's auto-add-on-lead-creation side effect is gone. Exported
+ * so it's directly unit-testable without constructing a fake request/
+ * response. */
+export async function addLeadToEmailQueue(leadId: string, recruiterId: string) {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+  const existing = await prisma.emailQueueItem.findFirst({
+    where: { leadId, recruiterId },
+    include: EMAIL_QUEUE_ITEM_INCLUDE_LEAD,
+  });
+  if (existing) {
+    // A row can already exist here with addedManually: false -- this same
+    // lead was silently auto-added before that side effect was removed
+    // from lead.routes.ts, and it's excluded from GET's list until now. The
+    // recruiter explicitly choosing to add it here is exactly the real
+    // intent addedManually is meant to capture, so promote the existing row
+    // (keeping whatever draft/status history it already has) rather than
+    // leaving it hidden or creating a duplicate.
+    if (existing.addedManually) return existing;
+    return prisma.emailQueueItem.update({
+      where: { id: existing.id },
+      data: { addedManually: true },
+      include: EMAIL_QUEUE_ITEM_INCLUDE_LEAD,
+    });
+  }
+
+  // Body/subject start empty -- a lead landing in the queue should always
+  // require an explicit "Generate Draft" click (or manual typing) before it
+  // has any content, never arrive pre-written. The real AI-personalized
+  // draft only ever comes from POST /:id/generate-draft below.
+  return prisma.emailQueueItem.create({
+    data: {
+      leadId: lead.id,
+      recruiterId,
+      candidateName: lead.displayName || lead.fullName || "Candidate",
+      candidateRole: candidateRoleOf(lead.services, lead.targetLanguage),
+      status: "REVIEW_NEEDED",
+      subject: "",
+      body: "",
+      aiGenerated: false,
+      addedManually: true,
+    },
+    include: EMAIL_QUEUE_ITEM_INCLUDE_LEAD,
+  });
+}
+
 // POST /api/email-queue — add a lead to recruiter's queue
 emailQueueRouter.post(
   "/",
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({ leadId: z.string().uuid() });
     const { leadId } = schema.parse(req.body);
-
-    const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
-
-    const existing = await prisma.emailQueueItem.findFirst({
-      where: { leadId, recruiterId: req.user!.id },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
-    });
-    if (existing) return res.json({ item: existing });
-
-    // Body/subject start empty -- a lead landing in the queue should always
-    // require an explicit "Generate Draft" click (or manual typing) before
-    // it has any content, never arrive pre-written. The real AI-personalized
-    // draft only ever comes from POST /:id/generate-draft below.
-    const item = await prisma.emailQueueItem.create({
-      data: {
-        leadId: lead.id,
-        recruiterId: req.user!.id,
-        candidateName: lead.displayName || lead.fullName || "Candidate",
-        candidateRole: candidateRoleOf(lead.services, lead.targetLanguage),
-        status: "REVIEW_NEEDED",
-        subject: "",
-        body: "",
-        aiGenerated: false,
-      },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
-    });
-
+    const item = await addLeadToEmailQueue(leadId, req.user!.id);
     return res.status(201).json({ item });
   })
 );
