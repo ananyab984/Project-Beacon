@@ -20,6 +20,7 @@ const FAQ_KEYWORDS = [
   "benefits",
   "job type",
   "work type",
+  "msa",
 ];
 
 /** Extract individual questions from a lead's message.
