@@ -8,6 +8,7 @@ import re
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from parsers.base import BaseParser
+from parsers.service_aliases import extract_services_from_text
 
 
 def _clean_text(val: Any) -> Optional[str]:
@@ -232,40 +233,6 @@ def _extract_tools_software(text_blob: str) -> Optional[str]:
         if tool.lower() in lowered and tool not in matched:
             matched.append(tool)
     return ", ".join(matched) if matched else None
-
-
-# Canonical linguist service category -> the surface phrases/synonyms a bio
-# might use for it. Scanned against headline/About text as a deterministic
-# fallback when BrightData returns no structured `skills` list (confirmed to
-# happen for most profiles in production) -- this is what lets Stage 3 itself
-# resolve Services correctly most of the time, instead of needing the LLM
-# fallback for every single lead.
-_SERVICE_ALIASES: Dict[str, List[str]] = {
-    "Audio Description": ["audio description"],
-    "Subtitling": ["subtitling", "subtitler", "subtitles"],
-    "Closed Captioning": ["closed captioning", "closed caption"],
-    "Captioning": ["captioning"],
-    "Dubbing": ["dubbing", "dubbing artist", "dubbing director"],
-    "Voice-over": ["voice-over", "voice over", "voiceover"],
-    "Interpretation": ["interpretation", "interpreter", "interpreting"],
-    "Translation": ["translation", "translator"],
-    "Localization": ["localization", "localisation"],
-    "Transcription": ["transcription", "transcriber"],
-    "Proofreading": ["proofreading", "proofreader"],
-    "Transcreation": ["transcreation"],
-    "Copywriting": ["copywriting", "copywriter"],
-    "Linguistic QA": ["linguistic qa", "lqa"],
-    "Post-Editing": ["post-editing", "post editing", "mtpe"],
-}
-
-
-def _extract_services_from_text(text_blob: str) -> List[str]:
-    lowered = text_blob.lower()
-    matched: List[str] = []
-    for canonical, aliases in _SERVICE_ALIASES.items():
-        if canonical not in matched and any(alias in lowered for alias in aliases):
-            matched.append(canonical)
-    return matched
 
 
 # Common language names a linguist bio states a working pair in (e.g.
@@ -531,7 +498,7 @@ class LinkedInParser(BaseParser):
         free_text = _about_text_blob(profile)
 
         if not result.get("Services"):
-            text_services = _extract_services_from_text(free_text)
+            text_services = extract_services_from_text(free_text)
             if text_services:
                 result["Services"] = ", ".join(text_services)
 
