@@ -68,6 +68,25 @@ def test_infer_services_reclassifies_a_garbled_value():
     assert field_sources["Services"] == "llm_fallback"
 
 
+def test_infer_services_clears_garbled_value_when_nothing_groundable():
+    """A test/placeholder lead whose scrape only returned "No X was found"
+    text (confirmed live on the reported bug's lead) has nothing real to
+    classify from -- Claude correctly returns no services, and the garbled
+    value must be cleared rather than left sitting there forever."""
+    orch = make_orchestrator()
+    orch.claude = stub(classify_services=lambda text: [])
+
+    lead = {
+        "Services": "id, 1788358696814, rate, 10, task, Quality Control",
+        "Headline": "No profile headline was found for this lead.",
+    }
+    field_sources: dict[str, str] = {}
+    orch._infer_services_via_llm(lead, field_sources, [])
+
+    assert lead["Services"] == ""
+    assert field_sources["Services"] == "llm_fallback"
+
+
 def test_infer_services_leaves_a_real_value_untouched():
     orch = make_orchestrator()
     calls: list[str] = []
