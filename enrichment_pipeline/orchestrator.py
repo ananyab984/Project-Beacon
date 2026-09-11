@@ -101,6 +101,11 @@ _ABSENCE_PROSE_MARKERS = (
     "was found for",
 )
 
+# Matches "18+ years", "18 years", "18yrs", "18+ yrs" -- a duration stated in
+# plain prose, distinct from _years_of_experience_from_parallel_entries'
+# structured-experience-list derivation. See _infer_years_of_experience_from_text.
+_YEARS_OF_EXPERIENCE_FREE_TEXT = re.compile(r"\b(\d{1,2})\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
+
 
 # Values `field_sources["_parallel_fallback"]` can hold, and the re-attempt
 # policy they encode. The marker is round-tripped by the caller on every
@@ -1259,6 +1264,40 @@ class EnrichmentOrchestrator:
         else:
             logs.append("Stage 3.75: Services classification found nothing groundable in the extracted text")
 
+    def _infer_years_of_experience_from_text(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Companion to _years_of_experience_from_parallel_entries (used in
+        _merge_parallel_fields): that one only ever reads Parallel's
+        structured `experience` list, so a lead with no dated entries there
+        stays permanently unresolved even when a duration is stated in plain
+        text elsewhere on the profile. Confirmed live: a lead whose Headline
+        read "Hybrid Localization Pro, 18+ years" -- a real, unambiguous
+        number -- never got Years_of_Exp filled, because nothing in the
+        pipeline ever looked at Headline/About/Current_Title for this.
+
+        Deterministic (a regex, not a Claude call) since "N years"/"N+ yrs"
+        is an exact, low-ambiguity pattern -- no reason to pay for an LLM
+        call to read a number already spelled out in the text. Runs after
+        _infer_services_via_llm reads the same fields, so it costs nothing
+        extra to build the text_blob's equivalent here."""
+        if not is_empty_value(lead.get("Years_of_Exp")):
+            return
+        text_blob = " | ".join(
+            str(v) for v in (lead.get("Headline"), lead.get("Current_Title"), lead.get("About_Snippet")) if v
+        )
+        if not text_blob:
+            return
+        match = _YEARS_OF_EXPERIENCE_FREE_TEXT.search(text_blob)
+        if not match:
+            return
+        years = int(match.group(1))
+        if not (0 < years <= 60):
+            return
+        lead["Years_of_Exp"] = str(years)
+        field_sources["Years_of_Exp"] = "llm_fallback"
+        logs.append(f"Stage 3.75: Years_of_Exp = {years} (parsed from free text -- no structured experience data was available to derive it from)")
+
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
         lead = dict(lead_input)
@@ -1319,6 +1358,7 @@ class EnrichmentOrchestrator:
         # Designer") never matches it no matter how plainly the text states
         # it. See _infer_services_via_llm's docstring for the confirmed case.
         self._infer_services_via_llm(lead, field_sources, logs)
+        self._infer_years_of_experience_from_text(lead, field_sources, logs)
 
         post_stage3_audit = audit_lead_fields(lead)
 
