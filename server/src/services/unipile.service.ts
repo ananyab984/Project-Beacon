@@ -100,6 +100,29 @@ const QUOTE_HEADER_PATTERNS: RegExp[] = [
   /^From:\s.+\r?\nSent:\s.+\r?\nTo:\s.+\r?\n(Cc:\s.+\r?\n)?Subject:\s.+$/im,
 ];
 
+/** Finds the specific message id (Unipile's own, or the provider's -- either
+ * works per their docs) an outbound EMAIL send should thread under, when the
+ * caller doesn't already know which exact message it's replying to: the
+ * lead's most recent reply in this conversation, if any.
+ *
+ * sendEmail's own doc comment already established that Unipile needs a real
+ * message id as `reply_to` -- a thread-id guess was tried live and Unipile
+ * silently ignored it, starting a brand-new unrelated thread instead.
+ * Sending with NO reply_to at all has the identical effect. Confirmed live:
+ * a real conversation fragmented across several different Unipile-side
+ * thread ids because more than one outbound send in the same exchange went
+ * out with nothing to thread under, and several of the lead's genuine
+ * replies to those fragments then had no way back to the Conversation the
+ * app displays. */
+export async function findReplyAnchor(leadId: string, recruiterId: string): Promise<string | undefined> {
+  const latestReply = await prisma.conversationMessage.findFirst({
+    where: { conversation: { leadId, recruiterId, channel: "EMAIL" }, sender: "THEM" },
+    orderBy: { sentAt: "desc" },
+    select: { externalMessageId: true },
+  });
+  return latestReply?.externalMessageId ?? undefined;
+}
+
 export function stripQuotedReplyHistory(text: string): string {
   let cutIndex = text.length;
   for (const pattern of QUOTE_HEADER_PATTERNS) {
@@ -1243,14 +1266,29 @@ export class UnipileService {
         // for. Positively identify the Conversation via the lead's own stored
         // email address matching who this reply came from (from_attendee),
         // the same certainty guarantee as the account nonce match: an email
-        // address is who sent it, not a guess. Only ever fires for genuinely
-        // inbound mail (isOutbound false) with no chat id match yet.
+        // address is who sent it, not a guess.
+        //
+        // Deliberately NOT scoped to `unipileChatId: null` (i.e. "only the
+        // first time"): confirmed live, Unipile does not keep one stable
+        // chat_id for the life of an email exchange the way it does for
+        // LinkedIn -- an outbound send with no reply_to anchor (see
+        // findReplyAnchor) starts a logically new thread from Unipile's side
+        // even though it's the same real conversation, so a single lead
+        // legitimately produced several different chat_ids over time. The
+        // old `unipileChatId: null` guard meant only the FIRST-ever id could
+        // ever be learned; every later reply that arrived under a different
+        // (but equally genuine) id had no path back to the Conversation and
+        // was silently dropped into InboundMessage-only, invisible in the
+        // Conversations/Email Queue UI despite being a real, correctly-
+        // delivered reply. Re-matching on every miss instead of only once
+        // makes this self-healing: whichever chat_id Unipile is currently
+        // using for this lead's thread gets picked up, not just whichever
+        // one happened to arrive first.
         if (!conversation && chatId && !isOutbound && connAcc && inboundChannel === InboundChannel.EMAIL && fromIdentity) {
           const candidates = await prisma.conversation.findMany({
             where: {
               recruiterId: connAcc.userId,
               channel: ConversationChannel.EMAIL,
-              unipileChatId: null,
               lead: { email: { equals: fromIdentity, mode: "insensitive" } },
             },
           });
@@ -1259,7 +1297,7 @@ export class UnipileService {
               where: { id: candidates[0].id },
               data: { unipileChatId: chatId },
             });
-            console.log(`[unipile webhook] Backfilled chat id ${chatId} onto conversation ${conversation.id} via lead-email match.`);
+            console.log(`[unipile webhook] Matched inbound email to conversation ${conversation.id} via lead-email identity (chatId=${chatId}).`);
           } else if (candidates.length > 1) {
             console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${fromIdentity} -- refusing to guess.`);
           }
