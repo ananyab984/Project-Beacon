@@ -7,9 +7,13 @@
  *
  * Covers the systemic fix for the reported bug ("Tell me MSA process"
  * returned no match despite real MSA FAQs existing): the per-term tag scan
- * (findFaqsByMessageTags) now runs as a fallback for any term the SQL
- * search misses, catching a FAQ by its own tags regardless of message
- * punctuation or wording -- not a hardcoded keyword list entry per topic.
+ * (matchFaqsByMessageTags, against a FAQ list fetched once per request via
+ * loadActiveFaqTagCandidates -- not once per term) now runs as a fallback
+ * for any term the SQL search misses, catching a FAQ by its own tags
+ * regardless of message punctuation or wording -- not a hardcoded keyword
+ * list entry per topic. See faqTagMatcher.test.ts for the stopword-exclusion
+ * regression (a tag that's itself a common English word, e.g. "us", must
+ * not false-positive on ordinary casual text).
  *
  * Also covers the correctness fix this uncovered along the way: a term
  * must never appear in BOTH matchedFaqs and unansweredQuestions for the
@@ -23,7 +27,7 @@
 import assert from "node:assert";
 import { prisma } from "../prisma";
 import { extractQuestions, extractKeywords, deduplicateMatches } from "../lib/questionExtractor";
-import { findFaqsByMessageTags } from "../lib/faqTagMatcher";
+import { loadActiveFaqTagCandidates, matchFaqsByMessageTags } from "../lib/faqTagMatcher";
 
 interface MatchEntry {
   originalQuestion: string;
@@ -40,6 +44,7 @@ async function runFaqCheck(leadMessage: string): Promise<{ matchedFaqs: any[]; u
   const extractedKeywords = extractKeywords(leadMessage);
   const searchTerms = [...extractedQuestions, ...extractedKeywords];
   const allMatches: MatchEntry[] = [];
+  const faqTagCandidates = await loadActiveFaqTagCandidates();
 
   for (const question of searchTerms) {
     const matches = await prisma.$queryRaw<Array<{ id: string; question: string; answer: string; rank: number; sim: number; tag_match: number }>>`
@@ -64,7 +69,7 @@ async function runFaqCheck(leadMessage: string): Promise<{ matchedFaqs: any[]; u
       continue;
     }
 
-    const tagMatches = await findFaqsByMessageTags(question);
+    const tagMatches = matchFaqsByMessageTags(question, faqTagCandidates);
     if (tagMatches.length > 0) {
       for (const m of tagMatches) allMatches.push({ originalQuestion: question, faqId: m.id, question: m.question, answer: m.answer });
     } else {

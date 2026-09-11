@@ -10,7 +10,7 @@ import { semanticFaqSearch, detectLanguage, type SemanticFaqMatch } from "../lib
 import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
 import { extractQuestions, extractKeywords, deduplicateMatches } from "../lib/questionExtractor";
-import { findFaqsByMessageTags } from "../lib/faqTagMatcher";
+import { loadActiveFaqTagCandidates, matchFaqsByMessageTags } from "../lib/faqTagMatcher";
 
 export const faqRouter = Router();
 
@@ -51,6 +51,15 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
 
     // Combine questions and keywords for searching
     const searchTerms = [...extractedQuestions, ...extractedKeywords];
+
+    // Fetched ONCE per request, not once per term -- matchFaqsByMessageTags
+    // below is called per term but does no DB access itself, so this avoids
+    // re-fetching the whole FAQ table on every term of a multi-question
+    // message. A DB failure here degrades to "no tag candidates this
+    // request" (see loadActiveFaqTagCandidates's own try/catch) rather
+    // than failing the whole /check request, matching findKeywordCandidates'
+    // established self-contained-resilience convention in semanticFaqSearch.ts.
+    const faqTagCandidates = await loadActiveFaqTagCandidates();
 
     for (const question of searchTerms) {
       try {
@@ -114,7 +123,7 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
         // FAQ whose own tags contain that word, and any FAQ created after
         // this code was written is findable immediately, by its own tags,
         // with zero code changes ever required.
-        const tagMatches = await findFaqsByMessageTags(question);
+        const tagMatches = matchFaqsByMessageTags(question, faqTagCandidates);
         if (tagMatches.length > 0) {
           console.log(`[FAQ] Tag scan matched term "${question}" to ${tagMatches.length} FAQ(s): [${tagMatches.map((m) => m.matchedTag).join(", ")}]`);
           for (const m of tagMatches) {
