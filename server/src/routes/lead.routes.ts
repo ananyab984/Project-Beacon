@@ -760,7 +760,10 @@ leadRouter.patch(
       profileLink: z.string().nullable().optional(),
       email: z.string().trim().transform((val) => (val === "" ? null : val)).nullable().refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
       contactNumber: z.string().nullable().optional(),
-      yearsOfExperience: z.number().nullable().optional(),
+      // Same bounds as createLeadSchema below -- this PATCH path (the
+      // Enrichment Details dialog's manual-entry Save) had none at all,
+      // which is how a negative Years_of_Exp reached a lead undetected.
+      yearsOfExperience: z.number().min(0).max(99).nullable().optional(),
       vendorExperience: z.string().nullable().optional(),
       headline: z.string().nullable().optional(),
       currentTitle: z.string().nullable().optional(),

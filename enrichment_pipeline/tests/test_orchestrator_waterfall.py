@@ -260,6 +260,50 @@ def test_parallel_absence_prose_never_reaches_a_data_field():
     assert any("dropped 1 non-data" in line for line in result["logs"]), "the drop should be logged, not silent"
 
 
+def test_stale_absence_prose_is_overridden_by_a_later_real_value():
+    """A field already holding a provider's own "couldn't find this"
+    sentence from an earlier pass (not a real value, and not manually typed)
+    must not permanently block a later pass's real answer -- the
+    never-overwrite rule exists to protect real data, and this was never
+    that."""
+    orch = make_orchestrator()
+    lead = {"Headline": "No profile headline was found for Jane Doe."}
+    field_sources: dict[str, str] = {"Headline": "parallel"}
+
+    orch._apply_parsed_fields(lead, field_sources, [], "brightdata", {"Headline": "Senior Audio Engineer at VSI"})
+
+    assert lead["Headline"] == "Senior Audio Engineer at VSI"
+    assert field_sources["Headline"] == "brightdata"
+
+
+def test_parallel_absence_prose_also_kept_out_of_headline_title_about_country():
+    """Same class of bug as the certifications case above, but for the four
+    fields that previously had NO absence-prose guard at all: confirmed live
+    on the reported bug's lead, Parallel answered Headline/Current_Title/
+    About_Snippet with "No <field> was found for Sergio Testing." sentences
+    that then merged in as real data (name interpolated, so the substring
+    itself is unique per lead -- the guard has to catch the shape, not the
+    literal string)."""
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "headline": "No profile headline was found for Sergio Testing.",
+            "current_title": "No current role title was found for Sergio Testing.",
+            "about_snippet": "No About, Bio, Summary, or Profile Overview text was found for Sergio Testing.",
+            "country": "No country was found for Sergio Testing.",
+        }
+    )
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Sergio Testing"}
+    result = orch.process_lead(lead)
+
+    for field in ("Headline", "Current_Title", "About_Snippet", "Country_of_Residence"):
+        value = result["lead"].get(field)
+        assert not value, f"{field} must stay empty rather than hold absence prose, got {value!r}"
+    # The same prose must not leak into the Services keyword-scan fallback either.
+    assert not result["lead"].get("Services")
+
+
 # --- Tier 2 re-attempt policy -------------------------------------------
 #
 # Replaces a plain truthy check that treated ANY marker value -- including
@@ -352,6 +396,33 @@ def test_empty_but_well_formed_result_is_retried_not_stamped_complete():
     r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
     assert calls["parallel"] == 2, "capped at 2 attempts even for repeated empty results"
     assert r3["parallel_fallback"]["called"] is False
+
+
+def test_result_of_only_absence_prose_is_retried_not_stamped_complete():
+    """The reported bug's actual lead: Parallel's Task Run succeeds and every
+    scalar field is POPULATED, but with the model's own "couldn't find this"
+    sentence rather than null -- has_content alone says yes (non-empty
+    strings), so this used to be stamped complete on the first attempt just
+    like the null/[] case above, permanently blocking Headline/Current_Title/
+    About_Snippet with prose that no later pass could ever retry past."""
+    calls = {"parallel": 0}
+    prose_result = {
+        "headline": "No profile headline was found for Sergio Testing.",
+        "current_title": "No current role title was found for Sergio Testing.",
+        "about_snippet": "No About, Bio, Summary, or Profile Overview text was found for Sergio Testing.",
+        "country": None, "experience": [], "education": [], "languages": [], "certifications": [],
+    }
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(prose_result))
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1", (
+        f"an all-absence-prose result must not be stamped complete, got {r1['field_sources'].get('_parallel_fallback')!r}"
+    )
+    assert not r1["lead"].get("Headline"), "absence prose must never land in the canonical field either"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "a real second attempt must actually happen, not be skipped as 'already complete'"
 
 
 def test_empty_result_that_succeeds_on_retry_stops_retrying():
