@@ -26,6 +26,20 @@ const METRIC_UNITS = ["COUNT", "PCT", "DAYS", "ATTEMPTS"] as const;
 
 const METRIC_DIRECTIONS = ["HIGHER_IS_BETTER", "LOWER_IS_BETTER"] as const;
 
+/** Recruiters and owners get full cross-user oversight on these routes --
+ * that's the whole point of the roster page (an owner clicking any
+ * recruiter, a recruiter's "Contractors" page clicking any contractor).
+ * A contractor gets none of that: they may only ever view or recompute
+ * their OWN score. Takes plain values rather than the full Express
+ * Request so it's directly unit testable without constructing a fake
+ * request object -- same pattern as lead.routes.ts's
+ * assertContractorOwnsLead. */
+export function assertContractorViewsOwnScore(requesterRole: string, requesterId: string, subjectId: string) {
+  if (requesterRole.toLowerCase() === "contractor" && requesterId !== subjectId) {
+    throw new ApiError(403, "FORBIDDEN_NOT_OWN_SCORE", "Contractors may only view or recompute their own performance");
+  }
+}
+
 /** KpiConfig is versioned (@@unique([metricKey, effectiveDate])) — "current"
  *  means, per metricKey, the row with the latest effectiveDate. Fetch all
  *  ordered by effectiveDate desc and take the first row seen per metricKey. */
@@ -44,7 +58,7 @@ function latestPerMetricKey(rows: KpiConfig[]): KpiConfig[] {
 // GET /api/kpi-config — current (latest effectiveDate) row per metricKey
 evaluationRouter.get(
   "/kpi-config",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (_req: Request, res: Response) => {
     const rows = await prisma.kpiConfig.findMany({ orderBy: { effectiveDate: "desc" } });
     const current = latestPerMetricKey(rows);
@@ -113,8 +127,9 @@ evaluationRouter.patch(
 // recompute-score already used below) so every poll now reflects live data.
 evaluationRouter.get(
   "/recruiters/:id/score",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
+    assertContractorViewsOwnScore(req.user!.role, req.user!.id, req.params.id);
     try {
       await computeRecruiterScoreSnapshot(req.params.id, new Date());
     } catch (err) {
@@ -140,8 +155,9 @@ evaluationRouter.get(
 // recalculation of the recruiter's score snapshot and KPI summary.
 evaluationRouter.post(
   "/recruiters/:id/recompute-score",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
+    assertContractorViewsOwnScore(req.user!.role, req.user!.id, req.params.id);
     const snapshot = await computeRecruiterScoreSnapshot(req.params.id, new Date());
     const full = await prisma.recruiterScoreSnapshot.findUnique({
       where: { id: snapshot.id },
@@ -155,8 +171,9 @@ evaluationRouter.post(
 // No summary yet is a normal state, so return 200 with null rather than 404.
 evaluationRouter.get(
   "/recruiters/:id/kpi-summary",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
+    assertContractorViewsOwnScore(req.user!.role, req.user!.id, req.params.id);
     const summary = await prisma.recruiterKpiSummary.findUnique({
       where: { recruiterId: req.params.id },
     });

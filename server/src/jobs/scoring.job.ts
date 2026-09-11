@@ -586,17 +586,22 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
   return snapshot;
 }
 
-/** Runs the monthly snapshot for every active recruiter. */
+/** Runs the monthly snapshot for every active recruiter AND contractor --
+ * both share the identical rubric/scoring computation (computeRecruiterScoreSnapshot
+ * takes any user id, no role check of its own), so a contractor's card on
+ * the recruiter's Contractors page has a snapshot ready before anyone opens
+ * it, the same way a recruiter's roster card does, rather than only ever
+ * computing on-demand the first time someone reads it. */
 export async function runMonthlyScoring(period: Date = new Date()) {
-  const recruiters = await prisma.user.findMany({
-    where: { role: "RECRUITER", isActive: true },
+  const subjects = await prisma.user.findMany({
+    where: { role: { in: ["RECRUITER", "CONTRACTOR"] }, isActive: true },
     select: { id: true },
   });
-  for (const r of recruiters) {
+  for (const s of subjects) {
     try {
-      await computeRecruiterScoreSnapshot(r.id, period);
+      await computeRecruiterScoreSnapshot(s.id, period);
     } catch (err) {
-      console.error(`[scoring.job] failed for recruiter ${r.id}:`, err);
+      console.error(`[scoring.job] failed for user ${s.id}:`, err);
     }
   }
 }

@@ -23,7 +23,7 @@ const nav: NavItem[] = [
   { to: "/contractor/requirements", label: "Requirements", icon: ClipboardList },
   { to: "/contractor/email-queue", label: "Email Queue", icon: Mail },
   { to: "/contractor/conversations", label: "Conversations", icon: MessagesSquare },
-  { to: "/contractor/performance", label: "Lead Performance", icon: LineChart },
+  { to: "/contractor/performance", label: "My Performance", icon: LineChart },
   { to: "/contractor/settings", label: "Settings", icon: SettingsIcon },
 ];
 
