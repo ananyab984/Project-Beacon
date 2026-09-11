@@ -10,6 +10,7 @@ import { semanticFaqSearch, detectLanguage, type SemanticFaqMatch } from "../lib
 import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
 import { extractQuestions, extractKeywords, deduplicateMatches } from "../lib/questionExtractor";
+import { findFaqsByMessageTags } from "../lib/faqTagMatcher";
 
 export const faqRouter = Router();
 
@@ -98,6 +99,27 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
           sim: top.sim,
           tag_match: top.tag_match,
         });
+        continue;
+      }
+
+        // Systemic tag match: does ANY active FAQ's own (auto-generated) tag
+        // appear as a whole word inside THIS term? The SQL tag_match above
+        // only ever fires when the whole TERM appears inside the tags
+        // string -- useless for a long or punctuation-free term/message,
+        // since tags are always short. This checks the reverse direction
+        // (a short TAG inside the term), so term length doesn't matter --
+        // it's what actually closes the gap a hardcoded keyword list can't:
+        // a message using a topic word extractKeywords was never taught
+        // about (the original "Tell me MSA process" bug) still finds any
+        // FAQ whose own tags contain that word, and any FAQ created after
+        // this code was written is findable immediately, by its own tags,
+        // with zero code changes ever required.
+        const tagMatches = await findFaqsByMessageTags(question);
+        if (tagMatches.length > 0) {
+          console.log(`[FAQ] Tag scan matched term "${question}" to ${tagMatches.length} FAQ(s): [${tagMatches.map((m) => m.matchedTag).join(", ")}]`);
+          for (const m of tagMatches) {
+            allMatches.push({ originalQuestion: question, faqId: m.id, question: m.question, answer: m.answer });
+          }
         } else {
           // No match for this question
           allMatches.push({ originalQuestion: question });
@@ -115,6 +137,12 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
     // Deduplicate: same FAQ matching multiple questions shows only once
     const deduped = deduplicateMatches(allMatches);
     const matchedFaqs = Array.from(deduped.values());
+    // A term can produce BOTH a failed entry (pushed before the tag scan
+    // ran) and a successful one (from the tag scan) only if it hit the
+    // catch block above after a partial push -- doesn't happen here, every
+    // branch pushes exactly one outcome per term, so a plain per-term check
+    // is enough (no cross-term text-matching needed, unlike an earlier
+    // version of this fix that scanned the whole raw message separately).
     const unansweredQuestions = allMatches.filter((m) => !m.faqId).map((m) => m.originalQuestion);
 
     // No exact matches - try semantic fallback
