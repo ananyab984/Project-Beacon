@@ -957,6 +957,15 @@ model EmailQueueItem {
   receivedAt    DateTime         @default(now()) @map("received_at")
   sentAt        DateTime?        @map("sent_at")
   sentChannel   String?          @map("sent_channel")
+  // True for every row from here on -- POST /api/email-queue (the "Search
+  // Lead" -> add action) is the only path left that creates one, after
+  // lead.routes.ts's auto-add-on-lead-creation side effect was removed.
+  // Defaults true so that route needn't set it explicitly, but the
+  // pre-existing rows this migration backfills from that removed auto-add
+  // are set false, so the queue can show/count only what a recruiter
+  // genuinely added themselves instead of everything that bug silently
+  // dropped in.
+  addedManually Boolean          @default(true) @map("added_manually")
 
   @@index([leadId])
   @@index([status])

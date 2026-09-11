@@ -314,7 +314,7 @@ export function EmailQueuePageView() {
   return (
     <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl overflow-hidden rounded-2xl border border-border bg-card">
       <div className="grid h-full grid-cols-1 md:grid-cols-[340px_1fr]">
-        <div className="border-r border-border flex flex-col h-full">
+        <div className="border-r border-border flex min-h-0 flex-col h-full">
           <div className="border-b border-border p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Queue <span className="text-muted-foreground font-normal">({emailQueue.length})</span></div>
