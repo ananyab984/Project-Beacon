@@ -351,6 +351,19 @@ class LeadProfile(BaseModel):
             "placeholder like 'N/A'."
         ),
     )
+    skills: List[str] = Field(
+        default_factory=list,
+        description=(
+            "The person's listed skills, specialties, or service offerings -- a platform "
+            "'Skills' section (e.g. LinkedIn), a 'Specialties'/'Services' block, or a list of "
+            "service-tags/badges shown on the profile, one string per skill/specialty exactly "
+            "as named on the page. This is a distinct section from the free-text About/Bio and "
+            "from job titles -- only capture what appears in an actual skills/specialties "
+            "listing, not something you infer from reading a role description. Capture ALL of "
+            "them, wherever on the page they appear. Return an EMPTY LIST if the page has no "
+            "such section -- never a sentence explaining its absence."
+        ),
+    )
     experience: List[ExperienceEntry] = Field(
         default_factory=list,
         description=(

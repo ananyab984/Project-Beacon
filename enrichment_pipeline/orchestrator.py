@@ -29,6 +29,7 @@ from parsers.bodalgo_parser import BodalgoParser
 from parsers.generic_parser import GenericParser
 from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
+from parsers.service_aliases import extract_services_from_text
 
 log = get_logger(__name__)
 
@@ -1036,6 +1037,35 @@ class EnrichmentOrchestrator:
                 )
             if kept:
                 mapped["Certifications"] = ", ".join(kept)
+
+        # Services: same precedence as Stage 3's BrightData/LinkedIn parser --
+        # a structured skills/specialties section verbatim first, then a
+        # deterministic keyword scan of headline/title/about text against the
+        # same canonical service-category aliases, only when the structured
+        # section came back empty. Added because Parallel previously mapped
+        # nothing into Services at all: leads whose Tier 1 scrape returned no
+        # structured `skills` (the common case) and no free-text match stayed
+        # permanently un-serviced even though Parallel's own headline/about
+        # payload for that same lead plainly named a service (confirmed live:
+        # e.g. "Voice & Dubbing Artist Punjabi Hindi" never reached Services).
+        skills = parallel_data.get("skills")
+        if isinstance(skills, list):
+            kept_skills = [str(s) for s in skills if s and not _is_absence_prose(str(s))]
+            if kept_skills:
+                mapped["Services"] = ", ".join(kept_skills)
+        if not mapped.get("Services"):
+            text_blob = " | ".join(
+                str(v) for v in (
+                    parallel_data.get("headline"),
+                    parallel_data.get("current_title"),
+                    parallel_data.get("about_snippet"),
+                )
+                if v
+            )
+            if text_blob:
+                text_services = extract_services_from_text(text_blob)
+                if text_services:
+                    mapped["Services"] = ", ".join(text_services)
 
         # Parallel's LeadProfile has no dedicated years-of-experience field --
         # only the structured `experience` list. Stage 6 (LLM web search) is
