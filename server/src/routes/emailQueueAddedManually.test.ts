@@ -26,9 +26,10 @@ const RECRUITER_EMAIL = "test_email_queue_added_manually_recruiter@example.com";
 const LEAD_AUTO_ADDED = "Test EmailQueue AddedManually Auto Lead";
 const LEAD_EXPLICIT = "Test EmailQueue AddedManually Explicit Lead";
 const LEAD_PROMOTED = "Test EmailQueue AddedManually Promoted Lead";
+const LEAD_CONCURRENT = "Test EmailQueue AddedManually Concurrent Lead";
 
 async function cleanup() {
-  const leads = await prisma.lead.findMany({ where: { fullName: { in: [LEAD_AUTO_ADDED, LEAD_EXPLICIT, LEAD_PROMOTED] } }, select: { id: true } });
+  const leads = await prisma.lead.findMany({ where: { fullName: { in: [LEAD_AUTO_ADDED, LEAD_EXPLICIT, LEAD_PROMOTED, LEAD_CONCURRENT] } }, select: { id: true } });
   const leadIds = leads.map((l) => l.id);
   if (leadIds.length) {
     // Defensive: a lead here is genuinely never given a conversation by
@@ -41,7 +42,7 @@ async function cleanup() {
     await prisma.conversation.deleteMany({ where: { leadId: { in: leadIds } } });
     await prisma.emailQueueItem.deleteMany({ where: { leadId: { in: leadIds } } });
   }
-  await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_AUTO_ADDED, LEAD_EXPLICIT, LEAD_PROMOTED] } } });
+  await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_AUTO_ADDED, LEAD_EXPLICIT, LEAD_PROMOTED, LEAD_CONCURRENT] } } });
   const recruiter = await prisma.user.findUnique({ where: { email: RECRUITER_EMAIL } });
   if (recruiter) await prisma.conversation.deleteMany({ where: { recruiterId: recruiter.id } });
   await prisma.user.deleteMany({ where: { email: RECRUITER_EMAIL } });
@@ -105,12 +106,32 @@ async function test4_reAddingAHiddenAutoAddedLeadPromotesItIntoView() {
   assert.strictEqual(count, 1, "promoting must never create a second row for the same lead");
 }
 
+async function test5_concurrentAddsOfTheSameLeadNeverCreateTwoRows() {
+  // The actual race the (leadId, recruiterId) unique constraint + upsert
+  // fix closes: two requests to add the same lead landing close enough
+  // together that a plain findFirst-then-create would let both see "not
+  // found" before either commits. Fired via Promise.all rather than
+  // sequential awaits so both really are in flight concurrently.
+  const recruiter = await prisma.user.findUniqueOrThrow({ where: { email: RECRUITER_EMAIL } });
+  const lead = await prisma.lead.create({ data: { fullName: LEAD_CONCURRENT, source: "LINKEDIN", createdByRecruiterId: recruiter.id } });
+
+  const [first, second] = await Promise.all([
+    addLeadToEmailQueue(lead.id, recruiter.id, "recruiter"),
+    addLeadToEmailQueue(lead.id, recruiter.id, "recruiter"),
+  ]);
+  assert.strictEqual(first.id, second.id, "both concurrent calls must resolve to the same row");
+
+  const count = await prisma.emailQueueItem.count({ where: { leadId: lead.id, recruiterId: recruiter.id } });
+  assert.strictEqual(count, 1, "concurrent adds of the same lead must never create two queue items");
+}
+
 async function main() {
   const tests = [
     test1_autoAddedHistoricalRowIsExcludedFromTheList,
     test2_explicitlyAddedRowIsIncludedInTheList,
     test3_countReflectsOnlyExplicitlyAddedLeads,
     test4_reAddingAHiddenAutoAddedLeadPromotesItIntoView,
+    test5_concurrentAddsOfTheSameLeadNeverCreateTwoRows,
   ];
   let failed = 0;
   await cleanup();

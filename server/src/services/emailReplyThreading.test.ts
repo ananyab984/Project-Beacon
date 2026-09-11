@@ -43,8 +43,11 @@ const ACCOUNT_ID = "test_reply_thread_unipile_acc";
 
 async function cleanup() {
   const recruiter = await prisma.user.findUnique({ where: { email: RECRUITER_EMAIL } });
-  const lead = await prisma.lead.findFirst({ where: { fullName: LEAD_NAME } });
-  if (lead) {
+  // startsWith, not an exact match -- also catches test4's second lead
+  // ("<LEAD_NAME> (duplicate email)"), which exists solely to exercise the
+  // two-different-leads-share-an-email ambiguity path.
+  const leads = await prisma.lead.findMany({ where: { fullName: { startsWith: LEAD_NAME } } });
+  for (const lead of leads) {
     const conversations = await prisma.conversation.findMany({ where: { leadId: lead.id }, select: { id: true } });
     await prisma.conversationMessage.deleteMany({ where: { conversationId: { in: conversations.map((c) => c.id) } } });
     await prisma.conversation.deleteMany({ where: { leadId: lead.id } });
@@ -159,11 +162,19 @@ async function test4_ambiguousLeadEmailAcrossTwoConversationsRefusesToGuess() {
   const recruiter = await prisma.user.findUniqueOrThrow({ where: { email: RECRUITER_EMAIL } });
   const lead = await prisma.lead.findFirstOrThrow({ where: { fullName: LEAD_NAME } });
 
-  // A second EMAIL conversation for the exact same recruiter+lead pair --
-  // an edge case, but the identity match must still refuse rather than
-  // guessing which of the two this reply belongs to.
+  // The real ambiguity this guards against is two DIFFERENT leads that
+  // happen to share an email address (a data-quality edge case, not
+  // something the (leadId, recruiterId, channel) unique constraint touches
+  // -- that constraint is scoped per-leadId, so it has no opinion on two
+  // distinct leads). A second conversation for the SAME leadId is no longer
+  // constructible at all as of that constraint -- correctly so, since that
+  // was the real thread-fragmentation bug, not a legitimate state to defend
+  // against forever.
+  const secondLead = await prisma.lead.create({
+    data: { fullName: `${LEAD_NAME} (duplicate email)`, source: "LINKEDIN", email: LEAD_EMAIL, createdByRecruiterId: recruiter.id },
+  });
   await prisma.conversation.create({
-    data: { leadId: lead.id, recruiterId: recruiter.id, candidateName: lead.fullName!, channel: "EMAIL" },
+    data: { leadId: secondLead.id, recruiterId: recruiter.id, candidateName: secondLead.fullName!, channel: "EMAIL" },
   });
 
   const result = await UnipileService.handleWebhookEvent(VALID_TOKEN, VALID_SECRET, {

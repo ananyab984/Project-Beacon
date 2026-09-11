@@ -879,37 +879,35 @@ export class UnipileService {
       const candidateName = lead?.fullName || lead?.firstName || "Candidate";
       const conversationChannel = channel === "LINKEDIN" ? ConversationChannel.LINKEDIN : ConversationChannel.EMAIL;
 
-      // BUG FIX: this lookup was missing a channel filter, so a lead already
-      // having a LINKEDIN conversation meant every EMAIL send for that same
-      // lead silently reused (and mutated) the LinkedIn conversation instead
-      // of creating its own -- confirmed live, an outreach email's body ended
-      // up appended into the candidate's LinkedIn thread. LinkedIn and Email
-      // are always distinct Conversation rows per lead+recruiter.
-      let conv = await prisma.conversation.findFirst({
-        where: { leadId, recruiterId, channel: conversationChannel },
+      // LinkedIn and Email are always distinct Conversation rows per
+      // lead+recruiter (confirmed live: a missing channel filter here once
+      // let an outreach email's body get appended into the candidate's
+      // LinkedIn thread). Existence-or-create is now one atomic upsert
+      // (enforced by the (leadId, recruiterId, channel) unique constraint)
+      // instead of a findFirst-then-create/update -- two messages for the
+      // same lead+channel arriving milliseconds apart could otherwise both
+      // see "no conversation yet" and both create one, fragmenting history
+      // exactly like the chat_id-rotation bug this file already guards
+      // against elsewhere.
+      const conv = await prisma.conversation.upsert({
+        where: { leadId_recruiterId_channel: { leadId, recruiterId, channel: conversationChannel } },
+        update: { lastMessageAt: new Date() },
+        create: {
+          leadId,
+          recruiterId,
+          candidateName,
+          channel: conversationChannel,
+          lastMessageAt: new Date(),
+          unipileChatId: unipileChatId || undefined,
+        },
       });
-
-      if (!conv) {
-        conv = await prisma.conversation.create({
-          data: {
-            leadId,
-            recruiterId,
-            candidateName,
-            channel: conversationChannel,
-            lastMessageAt: new Date(),
-            unipileChatId: unipileChatId || undefined,
-          },
-        });
-      } else {
-        await prisma.conversation.update({
-          where: { id: conv.id },
-          data: {
-            lastMessageAt: new Date(),
-            // Backfill the chat id the first time we actually learn it (e.g. the
-            // first message went via invite with no chat id, a later one succeeds).
-            ...(unipileChatId && !conv.unipileChatId ? { unipileChatId } : {}),
-          },
-        });
+      // Backfill the chat id the first time we actually learn it (e.g. the
+      // first message went via invite with no chat id, a later one
+      // succeeds) -- kept as a separate follow-up write rather than folded
+      // into the upsert's `update`, since Prisma's upsert can't
+      // conditionally reference the row's own pre-existing value.
+      if (unipileChatId && !conv.unipileChatId) {
+        await prisma.conversation.update({ where: { id: conv.id }, data: { unipileChatId } });
       }
 
       await prisma.conversationMessage.create({
@@ -955,6 +953,13 @@ export class UnipileService {
     const bodyStr = JSON.stringify(body || {});
     const dedupeKey = crypto.createHash("sha256").update(bodyStr).digest("hex");
 
+    // Cheap up-front check for the common case (an exact retry) -- not what
+    // actually closes the race, since two near-simultaneous deliveries of
+    // the same webhook could both see "not found" here before either
+    // commits. The dedupeKey unique constraint is what's actually atomic:
+    // attempt the create, and treat a conflict on it exactly like the
+    // already-processed case rather than letting the second delivery
+    // duplicate-process (double-count a reply, double-fire an auto-reply).
     const existing = await prisma.unipileWebhookEvent.findUnique({ where: { dedupeKey } });
     if (existing) {
       return { status: "already_processed", id: existing.id };
@@ -962,13 +967,21 @@ export class UnipileService {
 
     const eventType = body.event || body.AccountStatus?.message || body.status || "unknown_event";
 
-    await prisma.unipileWebhookEvent.create({
-      data: {
-        dedupeKey,
-        eventType,
-        payload: body,
-      },
-    });
+    try {
+      await prisma.unipileWebhookEvent.create({
+        data: {
+          dedupeKey,
+          eventType,
+          payload: body,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2002") {
+        const raced = await prisma.unipileWebhookEvent.findUniqueOrThrow({ where: { dedupeKey } });
+        return { status: "already_processed", id: raced.id };
+      }
+      throw err;
+    }
 
     // 1. Account status webhook handling
     const accountId = body.AccountStatus?.account_id ?? body.account_id ?? null;
