@@ -221,6 +221,10 @@ export const api = {
     return request(`/api/leads/${id}/flags/${flag}`, { method: "DELETE" });
   },
 
+  async removeLeadService(id: string, service: string): Promise<{ lead: ApiLead }> {
+    return request(`/api/leads/${id}/services/${encodeURIComponent(service)}`, { method: "DELETE" });
+  },
+
   async logLeadActivity(id: string, activity: { type: "INTERVIEW"; scheduledAt: string; notes?: string } | { type: "CALL"; scheduledAt: string; purpose?: string; outcome?: string }) {
     return request(`/api/leads/${id}/activities`, { method: "POST", body: JSON.stringify(activity) });
   },

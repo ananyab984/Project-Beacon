@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import type { ApiLead, ApiUser, LeadPriority, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Mail, Link2, Phone, MapPin, Clock } from "lucide-react";
+import { Mail, Link2, Phone, MapPin, Clock, X } from "lucide-react";
 
 const STAGES: LeadStage[] = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"];
 
@@ -57,9 +57,10 @@ interface LeadKanbanBoardProps {
   recruiters: ApiUser[];
   isLoading?: boolean;
   onStageChange: (id: string, stage: LeadStage, closureReason?: string) => void;
+  onRemoveService?: (leadId: string, service: string) => void;
 }
 
-export function LeadKanbanBoard({ leads, recruiters, isLoading, onStageChange }: LeadKanbanBoardProps) {
+export function LeadKanbanBoard({ leads, recruiters, isLoading, onStageChange, onRemoveService }: LeadKanbanBoardProps) {
   const [detailLead, setDetailLead] = useState<ApiLead | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 8 } }));
 
@@ -103,6 +104,7 @@ export function LeadKanbanBoard({ leads, recruiters, isLoading, onStageChange }:
               leads={byStage[stage]}
               recruiters={recruiters}
               onCardClick={setDetailLead}
+              onRemoveService={onRemoveService}
             />
           ))}
         </div>
@@ -113,8 +115,14 @@ export function LeadKanbanBoard({ leads, recruiters, isLoading, onStageChange }:
 }
 
 function KanbanColumn({
-  stage, leads, recruiters, onCardClick,
-}: { stage: LeadStage; leads: ApiLead[]; recruiters: ApiUser[]; onCardClick: (l: ApiLead) => void }) {
+  stage, leads, recruiters, onCardClick, onRemoveService,
+}: {
+  stage: LeadStage;
+  leads: ApiLead[];
+  recruiters: ApiUser[];
+  onCardClick: (l: ApiLead) => void;
+  onRemoveService?: (leadId: string, service: string) => void;
+}) {
   const { setNodeRef, isOver } = useDroppable({ id: stage });
   const meta = STAGE_META[stage];
 
@@ -136,7 +144,13 @@ function KanbanColumn({
       </div>
       <div className="flex min-h-[60px] flex-col gap-2 overflow-y-auto px-0.5 py-1" style={{ maxHeight: "calc(100vh - 320px)" }}>
         {leads.map((lead) => (
-          <KanbanCard key={lead.id} lead={lead} recruiter={recruiters.find((r) => r.id === lead.assignedRecruiterId)} onClick={() => onCardClick(lead)} />
+          <KanbanCard
+            key={lead.id}
+            lead={lead}
+            recruiter={recruiters.find((r) => r.id === lead.assignedRecruiterId)}
+            onClick={() => onCardClick(lead)}
+            onRemoveService={onRemoveService}
+          />
         ))}
         {leads.length === 0 && (
           <div className="rounded-lg border border-dashed border-border/70 px-2 py-4 text-center text-[11px] text-muted-foreground">
@@ -148,7 +162,14 @@ function KanbanColumn({
   );
 }
 
-function KanbanCard({ lead, recruiter, onClick }: { lead: ApiLead; recruiter?: ApiUser; onClick: () => void }) {
+function KanbanCard({
+  lead, recruiter, onClick, onRemoveService,
+}: {
+  lead: ApiLead;
+  recruiter?: ApiUser;
+  onClick: () => void;
+  onRemoveService?: (leadId: string, service: string) => void;
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: lead.id });
   const style = transform ? { transform: CSS.Translate.toString(transform) } : undefined;
   const label = lead.displayName ?? lead.fullName ?? lead.maskedLabel ?? "—";
@@ -179,7 +200,24 @@ function KanbanCard({ lead, recruiter, onClick }: { lead: ApiLead; recruiter?: A
           <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">{lead.targetLanguage}</span>
         )}
         {visibleServices.map((s) => (
-          <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
+          <span key={s} className="inline-flex items-center gap-1 rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+            {s}
+            {onRemoveService && (
+              <button
+                type="button"
+                aria-label={`Remove service ${s}`}
+                // Stop the pointer event here too, not just onClick -- the
+                // card's outer div spreads dnd-kit's drag listeners across
+                // the whole card, so without this a tap on the X starts a
+                // drag instead of firing the click.
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => { e.stopPropagation(); onRemoveService(lead.id, s); }}
+                className="text-accent/60 hover:text-destructive"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            )}
+          </span>
         ))}
         {extraServices > 0 && (
           <span className="rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">+{extraServices}</span>
