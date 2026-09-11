@@ -10,6 +10,7 @@ import { UnipileService } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
+import { assertContractorOwnsLead } from "./lead.routes";
 
 export const conversationRouter = Router();
 
@@ -110,6 +111,15 @@ conversationRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    // Security fix: this had no ownership check at all -- a contractor could
+    // pass any leadId (found by guessing/knowing it, since nothing here
+    // validated it) and a conversation would be created with THEM as its
+    // recruiterId, from which every later route (GET /:id, POST /:id/
+    // messages) checks ownership against -- so it would trust them as the
+    // legitimate owner from that point on and let them message a lead that
+    // was never theirs. Same guard lead.routes.ts already uses for every
+    // other single-lead action; recruiter/owner keep full-pool access.
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     // This page only ever creates LINKEDIN-channel conversations -- confirmed
     // live, a ProZ lead ended up here with its proz.com profileLink shown in

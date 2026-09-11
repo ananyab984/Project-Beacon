@@ -9,6 +9,7 @@ import { UnipileService } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { getDraftingOrchestrator } from "../drafting/instance";
+import { assertContractorOwnsLead } from "./lead.routes";
 
 export const emailQueueRouter = Router();
 
@@ -85,10 +86,21 @@ const EMAIL_QUEUE_ITEM_INCLUDE_LEAD = {
  * add action -- the only path left that creates an EmailQueueItem, now that
  * lead.routes.ts's auto-add-on-lead-creation side effect is gone. Exported
  * so it's directly unit-testable without constructing a fake request/
- * response. */
-export async function addLeadToEmailQueue(leadId: string, recruiterId: string) {
+ * response.
+ *
+ * Security fix: this used to accept ANY leadId with no ownership check at
+ * all -- a contractor could pass a lead they never created (found by
+ * guessing/knowing its id, since nothing here validated it) and it would be
+ * silently added to THEIR OWN queue, from which they could then generate a
+ * draft and send a real email to that lead. Confirmed live via a direct
+ * call to this function: contractor A successfully queued contractor B's
+ * lead. assertContractorOwnsLead is the same guard lead.routes.ts already
+ * uses for every other single-lead action -- recruiter/owner are
+ * unaffected (they retain full-pool access, same as everywhere else). */
+export async function addLeadToEmailQueue(leadId: string, recruiterId: string, requesterRole: string) {
   const lead = await prisma.lead.findUnique({ where: { id: leadId } });
   if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+  assertContractorOwnsLead(requesterRole, recruiterId, lead);
 
   const existing = await prisma.emailQueueItem.findFirst({
     where: { leadId, recruiterId },
@@ -136,7 +148,7 @@ emailQueueRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({ leadId: z.string().uuid() });
     const { leadId } = schema.parse(req.body);
-    const item = await addLeadToEmailQueue(leadId, req.user!.id);
+    const item = await addLeadToEmailQueue(leadId, req.user!.id, req.user!.role);
     return res.status(201).json({ item });
   })
 );

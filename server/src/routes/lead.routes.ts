@@ -43,6 +43,55 @@ export function assertContractorOwnsLead(
   }
 }
 
+/** Resolves what assignedRecruiterId/assignedAt to store on a newly created
+ * lead (single or bulk), given the creating role, their own id, and
+ * whatever assignedRecruiterId the request body supplied.
+ *
+ * Security fix: a contractor's request body could carry an arbitrary
+ * assignedRecruiterId with no role restriction of its own, letting them
+ * stamp it onto their own new lead -- contractors don't have an "assign"
+ * concept at all (they submit, routing is owner/recruiter's job), so it's
+ * always ignored for that role regardless of what's sent. Recruiter
+ * auto-assigns to themself when the body didn't specify one; owner may set
+ * it explicitly or leave it unset. Exported so it's directly unit-testable
+ * without constructing a fake request/response. */
+export function resolveLeadAssignment(
+  role: string,
+  requesterId: string,
+  requestedRecruiterId: string | undefined
+): { assignedRecruiterId: string | undefined; assignedAt: Date | undefined } {
+  const normalizedRole = role.toLowerCase();
+  if (normalizedRole === "contractor") {
+    return { assignedRecruiterId: undefined, assignedAt: undefined };
+  }
+  const assignedRecruiterId = requestedRecruiterId ?? (normalizedRole === "recruiter" ? requesterId : undefined);
+  const assignedAt = requestedRecruiterId || normalizedRole === "recruiter" ? new Date() : undefined;
+  return { assignedRecruiterId, assignedAt };
+}
+
+/** How many of the given lead ids are NOT owned by this contractor --
+ * PATCH /bulk and POST /batch-delete both use this to reject a batch that
+ * reaches outside the contractor's own submissions.
+ *
+ * Security fix: the original check here was `createdByContractorId: { not:
+ * requesterId } }` alone. SQL's three-valued logic means a row where that
+ * column is NULL (any recruiter- or owner-sourced lead, which is most of
+ * them) satisfies neither `= requesterId` NOR `<> requesterId` -- so it was
+ * silently excluded from the "foreign" count instead of counting as
+ * foreign, and a contractor could bulk-update or batch-delete ANY
+ * recruiter/owner lead as long as it had never been contractor-sourced.
+ * Confirmed live via a direct query: `{ not: X }` alone returned
+ * foreignCount=0 for a lead with createdByContractorId=null. Explicitly
+ * OR-ing in `createdByContractorId: null` closes that gap. */
+async function countForeignLeadsForContractor(contractorId: string, leadIds: string[]): Promise<number> {
+  return prisma.lead.count({
+    where: {
+      id: { in: leadIds },
+      OR: [{ createdByContractorId: null }, { createdByContractorId: { not: contractorId } }],
+    },
+  });
+}
+
 /** Best-effort mapping of a free-text/legacy source string to the LeadSource
  * enum -- same fallback rule the client's per-dialog copies of this already
  * use (mapToLeadSource in add-lead-dialog.tsx etc.): default to LINKEDIN
@@ -405,8 +454,7 @@ leadRouter.post(
         createdByContractorId: role === "contractor" ? req.user!.id : undefined,
         createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
         isSelfSourced: role !== "contractor",
-        assignedRecruiterId: parsed.assignedRecruiterId ?? (role === "recruiter" ? req.user!.id : undefined),
-        assignedAt: parsed.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
+        ...resolveLeadAssignment(role, req.user!.id, parsed.assignedRecruiterId),
         dupFlagged: false,
         dupFlaggedField: undefined,
       },
@@ -517,8 +565,7 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
             createdByContractorId: role === "contractor" ? userId : undefined,
             createdByRecruiterId: role !== "contractor" ? userId : undefined,
             isSelfSourced: role !== "contractor",
-            assignedRecruiterId: row.assignedRecruiterId ?? (role === "recruiter" ? userId : undefined),
-            assignedAt: row.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
+            ...resolveLeadAssignment(role, userId, row.assignedRecruiterId),
             dupFlagged: false,
             dupFlaggedField: undefined,
           },
@@ -626,6 +673,26 @@ leadRouter.post(
   })
 );
 
+/** Bulk-action guard for contractor role, shared by nothing else since
+ * PATCH /bulk is the only route that operates on an arbitrary caller-chosen
+ * id list. Two independent restrictions: (1) every id must be a lead the
+ * contractor actually created -- otherwise they could stage-change/
+ * reassign any lead in the system; (2) a contractor can never supply
+ * `recruiterId` at all, even for leads they fully own -- contractors don't
+ * have an "assign" concept, that's owner/recruiter's job. Exported so it's
+ * directly unit-testable without constructing a fake request/response. */
+export async function assertContractorBulkUpdateAllowed(
+  requesterRole: string,
+  requesterId: string,
+  ids: string[],
+  recruiterId: string | undefined
+) {
+  if (requesterRole.toLowerCase() !== "contractor") return;
+  const foreignCount = await countForeignLeadsForContractor(requesterId, ids);
+  if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only bulk-update their own submitted leads");
+  if (recruiterId) throw new ApiError(403, "FORBIDDEN", "Contractors cannot reassign leads to a recruiter");
+}
+
 // PATCH /api/leads/bulk — bulk stage/recruiter reassignment for the bulk-action bar.
 // Unlike GET / and GET /export, this has no per-row ownership scoping of its
 // own -- it applies to whatever ids are passed. A contractor calling this
@@ -643,10 +710,7 @@ leadRouter.patch(
     const { ids, stage, recruiterId } = schema.parse(req.body);
     if (!stage && !recruiterId) throw new ApiError(400, "NO_OP", "Provide stage or recruiterId to apply");
 
-    if (req.user!.role.toLowerCase() === "contractor") {
-      const foreignCount = await prisma.lead.count({ where: { id: { in: ids }, createdByContractorId: { not: req.user!.id } } });
-      if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only bulk-update their own submitted leads");
-    }
+    await assertContractorBulkUpdateAllowed(req.user!.role, req.user!.id, ids, recruiterId);
 
     if (stage) {
       await prisma.$transaction(
@@ -1225,7 +1289,7 @@ leadRouter.post(
     }
 
     if (req.user!.role.toLowerCase() === "contractor") {
-      const foreignCount = await prisma.lead.count({ where: { id: { in: leadIds }, createdByContractorId: { not: req.user!.id } } });
+      const foreignCount = await countForeignLeadsForContractor(req.user!.id, leadIds);
       if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only delete their own submitted leads");
     }
 

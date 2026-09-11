@@ -95,7 +95,7 @@ async function test4_reAddingAHiddenAutoAddedLeadPromotesItIntoView() {
 
   assert.ok(!(await getEmailQueueForRecruiter(recruiter.id)).some((i) => i.leadId === lead.id), "must start hidden");
 
-  const promoted = await addLeadToEmailQueue(lead.id, recruiter.id);
+  const promoted = await addLeadToEmailQueue(lead.id, recruiter.id, "recruiter");
   assert.strictEqual(promoted.id, original.id, "must reuse the existing row, not create a duplicate");
   assert.strictEqual(promoted.body, "Already drafted before this fix.", "existing draft/status history must survive the promotion");
 
