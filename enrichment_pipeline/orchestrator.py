@@ -218,6 +218,37 @@ def _websearch_state_is_settled(state: Optional[str]) -> Optional[str]:
     return None
 
 
+# Tokens that only ever show up when a Services value was shredded from a
+# JSON object (`[{"id":..., "task":"Quality Control", ...}]`) via a naive
+# delimiter split instead of JSON.parse -- normalizeServices.ts (Node side)
+# now parses that shape correctly for anything ingested from here on, but
+# leads already stored with the shredded tokens need their own path back to
+# a real classification, since neither Tier 1/2's deterministic keyword scan
+# nor _infer_services_via_llm below will touch a field that already holds
+# *something*, however bogus.
+_GARBLED_SERVICE_TOKENS = {"id", "rate", "min_rate", "task", "service", "source_language", "target_language"}
+
+
+def _looks_garbled(services_value: Optional[str]) -> bool:
+    """True if a comma-joined Services string contains a token that could
+    only have come from shredding a JSON object -- a bare number (an id or a
+    rate), a leftover brace/bracket, or one of the object's own key names
+    surviving as if it were a service."""
+    if not services_value:
+        return False
+    for raw_token in services_value.split(","):
+        token = raw_token.strip()
+        if not token:
+            continue
+        if token.isdigit():
+            return True
+        if any(c in token for c in "{}[]"):
+            return True
+        if token.lower() in _GARBLED_SERVICE_TOKENS:
+            return True
+    return False
+
+
 def _tier1_skip_reason(env_var: str, profile_link: str, client: Any) -> str:
     """Why Stage 3 (Tier 1) did not run, named precisely enough to act on.
 
@@ -1108,13 +1139,14 @@ class EnrichmentOrchestrator:
     ) -> None:
         """Last-resort Services classification, run once Tier 1 (BrightData/
         Tavily) and Tier 2 (Parallel) have both had their chance and Services
-        is STILL empty. Uses only text already sitting on `lead` -- no live
-        web search -- so it can run unconditionally instead of being gated by
-        Stage 6's MAX_FIELDS_BEFORE_WEBSEARCH "reserve web search for thin
-        leads" heuristic, which is exactly what was silently blocking this
-        case: a lead with Headline/Current_Title/About/Country already
-        resolved looks well-enriched overall, so Stage 6 skips it, even
-        though Services specifically was never resolved.
+        is STILL empty OR looks garbled (see _looks_garbled). Uses only text
+        already sitting on `lead` -- no live web search -- so it can run
+        unconditionally instead of being gated by Stage 6's
+        MAX_FIELDS_BEFORE_WEBSEARCH "reserve web search for thin leads"
+        heuristic, which is exactly what was silently blocking this case: a
+        lead with Headline/Current_Title/About/Country already resolved
+        looks well-enriched overall, so Stage 6 skips it, even though
+        Services specifically was never resolved.
 
         Confirmed live: a real lead (Audio Engineer at VSI / Voice & Script
         International, London-based) had a fully populated Headline/
@@ -1127,8 +1159,16 @@ class EnrichmentOrchestrator:
         be any real-world specialty, not only translation/dubbing-industry
         terms -- ClaudeClient.classify_services has no fixed list; it reads
         the text and reports whatever service it actually supports.
+
+        The garbled branch is the recovery path for leads whose Services
+        were shredded from a JSON object before normalizeServices.ts learned
+        to parse that shape (a bare "empty" check would leave those leads
+        stuck forever, since Tier 1/2's keyword scan and this stage both
+        otherwise treat ANY non-empty value as already resolved) -- a
+        re-classify replaces the garbage outright rather than merging with
+        it, which is correct precisely because it wasn't real data.
         """
-        if not is_empty_value(lead.get("Services")):
+        if not is_empty_value(lead.get("Services")) and not _looks_garbled(lead.get("Services")):
             return
         if not self.claude:
             logs.append("Stage 3.75: Services classification skipped: CLAUDE_API_KEY isn't set")
