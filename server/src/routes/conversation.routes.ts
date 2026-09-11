@@ -145,8 +145,17 @@ conversationRouter.post(
     });
     if (existing) return res.json({ conversation: existing });
 
-    const conversation = await prisma.conversation.create({
-      data: {
+    // The findFirst above is a fast path for the common case, not what
+    // closes the race -- two near-simultaneous requests to open the same
+    // lead's conversation could both see "not found" before either
+    // commits. upsert (backed by the (leadId, recruiterId, channel) unique
+    // constraint) makes the actual existence-or-create atomic; `update: {}`
+    // is a deliberate no-op for the rare case where the race is lost, just
+    // returning whatever the winner already created.
+    const conversation = await prisma.conversation.upsert({
+      where: { leadId_recruiterId_channel: { leadId, recruiterId: req.user!.id, channel: ConversationChannel.LINKEDIN } },
+      update: {},
+      create: {
         leadId: lead.id,
         recruiterId: req.user!.id,
         // displayName (the enrichment-verified name) wins once it exists --
@@ -263,6 +272,18 @@ conversationRouter.post(
         // see findReplyAnchor's own doc comment for the confirmed-live
         // consequence of that.
         const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(conversation.leadId, conversation.recruiterId));
+        if (!resolvedReplyToMessageId) {
+          // Unlike the Email Queue composer's send routes, this endpoint is
+          // ALWAYS replying within an existing conversation, never a first
+          // cold-outreach send -- so no resolvable anchor here specifically
+          // means Unipile is about to silently start a brand-new thread for
+          // what the recruiter believes is a reply (see findReplyAnchor's
+          // own doc comment for why that's not a loud failure on Unipile's
+          // side). Worth knowing about; not worth failing the send over.
+          console.warn(
+            `[conversation reply] Sending with no resolved anchor for conversation ${conversation.id} (lead ${conversation.leadId}) -- Unipile will start a new thread instead of continuing this one.`
+          );
+        }
         const replySubject = await resolveReplySubject(
           conversation.leadId,
           conversation.recruiterId,

@@ -967,6 +967,11 @@ model EmailQueueItem {
   // dropped in.
   addedManually Boolean          @default(true) @map("added_manually")
 
+  // A lead has at most one queue item per recruiter -- was only enforced by
+  // an application-level findFirst-then-create in addLeadToEmailQueue, a
+  // non-atomic check-then-act that a double-click/duplicate request could
+  // race past. Confirmed no existing rows violate this before adding it.
+  @@unique([leadId, recruiterId])
   @@index([leadId])
   @@index([status])
   @@map("email_queue_items")
@@ -999,8 +1004,17 @@ model Conversation {
 
   messages ConversationMessage[]
 
+  // One conversation per lead+recruiter+channel -- was only enforced by an
+  // application-level findFirst-then-create in syncToConversation and
+  // conversation.routes.ts's POST /, a non-atomic check-then-act that two
+  // inbound messages arriving milliseconds apart could race past, each
+  // creating their own Conversation row and fragmenting history exactly
+  // like the chat_id-rotation bug this same file already guards against
+  // elsewhere. Confirmed no existing rows violate this before adding it.
+  @@unique([leadId, recruiterId, channel])
   @@index([leadId])
   @@index([recruiterId])
+  @@index([lastMessageAt])
   @@map("conversations")
 }
 
@@ -1013,7 +1027,11 @@ model ConversationMessage {
   sentAt            DateTime      @default(now()) @map("sent_at")
   externalMessageId String?       @map("external_message_id")
 
-  @@index([conversationId])
+  // Composite index (not a separate single-column one) since it's a strict
+  // leftmost-prefix superset of a plain conversationId lookup -- covers both
+  // findReplyAnchor's own filter (conversationId + sender, ordered by
+  // sentAt) and any query that only needs conversationId.
+  @@index([conversationId, sender, sentAt])
   @@index([externalMessageId])
   @@map("conversation_messages")
 }

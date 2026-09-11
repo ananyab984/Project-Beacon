@@ -102,32 +102,34 @@ export async function addLeadToEmailQueue(leadId: string, recruiterId: string, r
   if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
   assertContractorOwnsLead(requesterRole, recruiterId, lead);
 
+  // Fast path: already explicitly in the queue, nothing to change -- avoids
+  // an unnecessary write on the by-far most common case (re-adding a lead
+  // that's already there). The upsert below -- not this check -- is what
+  // actually closes the race: a plain findFirst-then-create/update here let
+  // two concurrent adds of the same lead both see "not found" and both
+  // try to create, violating the (leadId, recruiterId) constraint for
+  // whichever lost.
   const existing = await prisma.emailQueueItem.findFirst({
     where: { leadId, recruiterId },
     include: EMAIL_QUEUE_ITEM_INCLUDE_LEAD,
   });
-  if (existing) {
-    // A row can already exist here with addedManually: false -- this same
-    // lead was silently auto-added before that side effect was removed
-    // from lead.routes.ts, and it's excluded from GET's list until now. The
-    // recruiter explicitly choosing to add it here is exactly the real
-    // intent addedManually is meant to capture, so promote the existing row
-    // (keeping whatever draft/status history it already has) rather than
-    // leaving it hidden or creating a duplicate.
-    if (existing.addedManually) return existing;
-    return prisma.emailQueueItem.update({
-      where: { id: existing.id },
-      data: { addedManually: true },
-      include: EMAIL_QUEUE_ITEM_INCLUDE_LEAD,
-    });
-  }
+  if (existing?.addedManually) return existing;
 
-  // Body/subject start empty -- a lead landing in the queue should always
-  // require an explicit "Generate Draft" click (or manual typing) before it
-  // has any content, never arrive pre-written. The real AI-personalized
-  // draft only ever comes from POST /:id/generate-draft below.
-  return prisma.emailQueueItem.create({
-    data: {
+  // A row can already exist here with addedManually: false -- this same
+  // lead was silently auto-added before that side effect was removed from
+  // lead.routes.ts, and it's excluded from GET's list until now. The
+  // recruiter explicitly choosing to add it here is exactly the real intent
+  // addedManually is meant to capture, so promote the existing row (keeping
+  // whatever draft/status history it already has) rather than leaving it
+  // hidden or creating a duplicate. Body/subject start empty on a genuine
+  // create -- a lead landing in the queue should always require an explicit
+  // "Generate Draft" click (or manual typing) before it has any content,
+  // never arrive pre-written; the real AI-personalized draft only ever
+  // comes from POST /:id/generate-draft below.
+  return prisma.emailQueueItem.upsert({
+    where: { leadId_recruiterId: { leadId, recruiterId } },
+    update: { addedManually: true },
+    create: {
       leadId: lead.id,
       recruiterId,
       candidateName: lead.displayName || lead.fullName || "Candidate",
@@ -352,6 +354,14 @@ emailQueueRouter.post(
         });
         if (!item) {
           results.push({ id, success: false, error: "EMAIL_QUEUE_ITEM_NOT_FOUND" });
+          continue;
+        }
+        // An already-delivered item has nothing left to send -- re-sending
+        // it would re-thread onto whatever findReplyAnchor currently
+        // resolves to (which has likely moved on since the original send),
+        // firing a duplicate, out-of-context message at the lead.
+        if (item.status === "SENT") {
+          results.push({ id, success: false, error: "ALREADY_SENT" });
           continue;
         }
 
