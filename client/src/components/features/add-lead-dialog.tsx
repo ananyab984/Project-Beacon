@@ -29,6 +29,21 @@ const SOURCES = [
 
 const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
 
+const INITIAL_VALUES = {
+  first_name: "",
+  last_name: "",
+  country_of_residence: "",
+  source: "LinkedIn",
+  profile_link: "",
+  email_address: "",
+  contact_number: "",
+  reachout_date: "",
+  source_language: "",
+  target_language: "",
+  secondary_languages: "",
+  services: "",
+};
+
 /** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
 function mapToLeadSource(raw: string | undefined | null): LeadSource {
   if (!raw) return "LINKEDIN";
@@ -50,20 +65,7 @@ export function AddLeadDialog({
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledSetOpen ?? setInternalOpen;
-  const [values, setValues] = useState({
-    first_name: "",
-    last_name: "",
-    country_of_residence: "",
-    source: "LinkedIn",
-    profile_link: "",
-    email_address: "",
-    contact_number: "",
-    reachout_date: "",
-    source_language: "",
-    target_language: "",
-    secondary_languages: "",
-    services: "",
-  });
+  const [values, setValues] = useState(INITIAL_VALUES);
   const [customService, setCustomService] = useState("");
   const [customTask, setCustomTask] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -72,12 +74,25 @@ export function AddLeadDialog({
     queryClient.invalidateQueries({ queryKey: ["leads"] });
   }
 
+  // Without this, the dialog kept showing the just-submitted lead's data the
+  // next time it was opened -- component state persists across open/close
+  // since the dialog never unmounts, so a recruiter adding several leads in a
+  // row would see the previous one's name/profile link still sitting in the
+  // form instead of a blank one.
+  function resetForm() {
+    setValues(INITIAL_VALUES);
+    setCustomService("");
+    setCustomTask("");
+    setErrors({});
+  }
+
   const createMutation = useMutation({
     mutationFn: (lead: Partial<ApiLead> & { fullName: string; source: string }) => api.createLead(lead),
     onSuccess: (_res, lead) => {
       toast.success(`Lead ${lead.fullName} added to My Leads!`);
       invalidateLeads();
       setOpen(false);
+      resetForm();
     },
     onError: (err: any) => toast.error(err?.message ?? "Failed to add lead"),
   });
