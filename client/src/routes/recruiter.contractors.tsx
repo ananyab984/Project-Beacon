@@ -1,8 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { ApiUser } from "@/lib/api-types";
 import { Mail, Clock, Loader2 } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { EvaluationDashboard } from "@/components/features/evaluation-dashboard";
 
 export const Route = createFileRoute("/recruiter/contractors")({
   head: () => ({
@@ -14,12 +17,24 @@ export const Route = createFileRoute("/recruiter/contractors")({
   component: RecruiterContractorsPage,
 });
 
+/** ApiUser has no avatar_hue field — derive a stable per-user hue
+ *  deterministically from the id, same as owner.recruiters.tsx's
+ *  avatarHue, so a contractor's evaluation drawer looks consistent with
+ *  the owner-facing one for the identical rubric. */
+function avatarHue(id: string): number {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) % 360;
+  return hash;
+}
+
 function RecruiterContractorsPage() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["users", "CONTRACTOR"],
     queryFn: () => api.getUsers("CONTRACTOR"),
   });
   const contractors = data?.users ?? [];
+  const [openId, setOpenId] = useState<string | null>(null);
+  const active = contractors.find((c) => c.id === openId) ?? null;
 
   return (
     <div className="mx-auto max-w-6xl space-y-6">
@@ -46,7 +61,7 @@ function RecruiterContractorsPage() {
           </div>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {contractors.map((c) => (
-              <ContractorCard key={c.id} c={c} />
+              <ContractorCard key={c.id} c={c} onOpen={() => setOpenId(c.id)} />
             ))}
             {contractors.length === 0 && (
               <div className="col-span-full rounded-xl border border-dashed border-border p-12 text-center text-xs text-muted-foreground">
@@ -56,13 +71,47 @@ function RecruiterContractorsPage() {
           </div>
         </section>
       )}
+
+      {/* Slide-out evaluation drawer -- identical rubric/scoring component the
+          owner's Recruiters page uses for every recruiter and contractor
+          card, so a contractor's evaluation here is the same framework, not
+          a separate one. */}
+      <Sheet open={!!active} onOpenChange={(o) => !o && setOpenId(null)}>
+        <SheetContent className="w-full sm:max-w-4xl overflow-auto border-l border-border bg-background p-6">
+          {active && (
+            <div className="space-y-6">
+              <SheetHeader className="pb-4 border-b border-border">
+                <SheetTitle className="flex items-center gap-3">
+                  <div
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-base font-semibold text-white shrink-0 shadow-xs"
+                    style={{ background: `oklch(0.55 0.16 ${avatarHue(active.id)})` }}
+                  >
+                    {active.name.charAt(0)}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 text-lg font-bold">
+                      <span>{active.name}</span>
+                    </div>
+                    <div className="text-xs font-normal text-muted-foreground">Contractor Evaluation</div>
+                  </div>
+                </SheetTitle>
+              </SheetHeader>
+
+              <EvaluationDashboard subjectId={active.id} subjectName={active.name} roleLabel="Contractor" />
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-function ContractorCard({ c }: { c: ApiUser }) {
+function ContractorCard({ c, onOpen }: { c: ApiUser; onOpen: () => void }) {
   return (
-    <div className="flex flex-col justify-between gap-3 rounded-2xl border border-border bg-card p-4 transition-all hover:border-accent/40 hover:shadow-lg">
+    <div
+      onClick={onOpen}
+      className="flex cursor-pointer flex-col justify-between gap-3 rounded-2xl border border-border bg-card p-4 transition-all hover:border-accent/40 hover:shadow-lg"
+    >
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold text-foreground">
           {c.name.charAt(0)}
