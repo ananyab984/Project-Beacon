@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { checkFaqAndAutofill } from "@/lib/faq";
 import type { ApiEmailQueueItem, ApiConversationMessage, EmailQueueStatus } from "@/lib/api-types";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
@@ -50,6 +51,7 @@ function preview(item: ApiEmailQueueItem): string {
 
 export function EmailQueuePageView() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["email-queue"],
     queryFn: api.getEmailQueue,
@@ -60,9 +62,14 @@ export function EmailQueuePageView() {
   });
   const emailQueue = data?.items ?? [];
 
+  // GET /api/leads (the global pool) is owner/recruiter only -- this page
+  // also renders for contractor (contractor.email-queue.tsx), for whom that
+  // call 403s outright, so the inline "Search lead to add to queue" box
+  // below never found their own leads. Same fix as search-lead-dialog.tsx:
+  // contractors search their own submissions via GET /api/leads/mine.
   const { data: leadsData } = useQuery({
-    queryKey: ["leads"],
-    queryFn: () => api.getLeads({ limit: 100 }),
+    queryKey: user?.role === "contractor" ? ["leads", "mine"] : ["leads"],
+    queryFn: () => (user?.role === "contractor" ? api.getMyLeads() : api.getLeads({ limit: 100 })),
   });
   const availableLeads = leadsData?.leads ?? [];
 
