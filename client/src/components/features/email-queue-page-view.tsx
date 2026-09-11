@@ -372,7 +372,7 @@ export function EmailQueuePageView() {
               )}
             </div>
           </div>
-          <div className="divide-y divide-border overflow-y-auto">
+          <div className="flex-1 min-h-0 divide-y divide-border overflow-y-auto">
             {isLoading && (
               <div className="p-6 text-center text-xs text-muted-foreground">
                 <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" /> Loading email queue…
