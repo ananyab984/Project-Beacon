@@ -190,9 +190,12 @@ def test_normalisation_runs_inside_the_waterfall_and_reaches_canonical_fields():
             "about_snippet": "I have a slightly husky, distinctive voice",
             "certifications": [],
         },
-        # This lead is thin enough to also trigger Stage 6 -- irrelevant to
-        # what this test checks (translation), so stubbed to a harmless no-op.
+        # This lead is thin enough to also trigger Stage 6, and Services is
+        # empty enough to trigger Stage 3.75's classification -- both
+        # irrelevant to what this test checks (translation), so stubbed to
+        # harmless no-ops.
         search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
+        classify_services=lambda text: [],
     )
     result = orch.process_lead(
         {"Source": "Bodalgo", "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone", "Full_Name": "Raul A"}
@@ -220,6 +223,7 @@ def test_english_text_replaces_the_stale_source_language_column():
             "certifications": [],
         },
         search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
+        classify_services=lambda text: [],
     )
 
     # The lead already carries source-language text from an earlier pass --
@@ -252,6 +256,7 @@ def test_forcing_is_scoped_to_the_translated_text_fields_only():
             "certifications": [],
         },
         search_missing_fields=lambda *a, **kw: {"could_not_find_anything": True, "sources_used": []},
+        classify_services=lambda text: [],
     )
 
     lead = {

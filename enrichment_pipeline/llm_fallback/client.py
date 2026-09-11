@@ -1,5 +1,6 @@
-"""Claude (Anthropic) REST API client: English normalization (translate_to_english)
-and Tier 3's web-search fallback (search_missing_fields)."""
+"""Claude (Anthropic) REST API client: English normalization (translate_to_english),
+Tier 3's web-search fallback (search_missing_fields), and a local (no web search)
+Services classification (classify_services)."""
 
 from __future__ import annotations
 
@@ -234,6 +235,86 @@ class ClaudeClient:
             if isinstance(cause, ClaudeError):
                 raise cause from exc
             raise ClaudeError(f"Claude translation failed after retries: {cause if cause else exc}") from exc
+
+    def classify_services(self, profile_text: str) -> List[str]:
+        """Identify the real professional service(s)/specialty a person
+        provides, from already-extracted profile text (headline, current
+        title, about/bio, certifications) -- no live web search, just a local
+        read of text the pipeline already has.
+
+        Exists because Services can be ANY real-world specialty (audio
+        engineering, sound design, casting, voice direction... not just the
+        fixed set of localization-industry terms
+        parsers/service_aliases.py's keyword list recognizes), so a profile
+        whose service is phrased in vocabulary that list doesn't cover would
+        otherwise never get a Services value, however plainly the text states
+        it. Confirmed live: an "Audio Engineer at VSI / Voice & Script
+        International" profile with a fully populated Headline/Current_Title/
+        About from Parallel and BrightData still had a completely empty
+        Services field, because "Audio Engineer"/"Sound Designer" isn't one
+        of the ~15 fixed aliases -- and orchestrator.py's Stage 6 web-search
+        fallback never got a chance to fix it either, since that stage is
+        gated on overall lead thinness (MAX_FIELDS_BEFORE_WEBSEARCH), not on
+        whether Services specifically is still missing.
+
+        Raises ClaudeError on failure -- the caller treats that identically
+        to "found nothing": Services stays empty, exactly as if this step
+        hadn't run.
+        """
+        system = (
+            "You read a linguist/media-industry recruiting profile's already-extracted text and "
+            "identify the real professional SERVICE(S) or SPECIALTY this person actually performs "
+            "or offers -- e.g. Dubbing, Subtitling, Voice-over, Translation, Audio Engineering, "
+            "Sound Design, Voice Direction, Casting, Video Editing, ADR, Localization, "
+            "Interpretation, Copywriting, Project Management, or anything else a real profile "
+            "could state. This is NOT limited to a fixed list -- report whatever the text actually "
+            "supports, as short, concise service-category names (2-4 words each).\n\n"
+            "RULES:\n"
+            "- Only report a service the text directly supports (a stated job title, a described "
+            "specialty, or explicit skills) -- never infer one from an employer's industry alone.\n"
+            "- A title that MANAGES or RECRUITS FOR a specialty is not the same as PERFORMING it: "
+            "'Localization Recruiter' or 'Dubbing Project Manager' do not mean the person dubs or "
+            "localizes content themselves -- report a service only when the text shows the person "
+            "does the work, not merely coordinates or hires for it. When genuinely ambiguous, "
+            "prefer returning nothing over guessing.\n"
+            "- Return SHORT names, not full sentences (e.g. 'Audio Engineering', not 'an audio "
+            "engineer with 10 years of experience').\n"
+            "- Return an EMPTY LIST if nothing in the text clearly supports a specific service -- "
+            "never a placeholder, and never a guess from vague context alone (e.g. 'Business "
+            "Owner' or 'Operations' do not name a real service on their own)."
+        )
+        strict_json_suffix = (
+            '\n\nRespond with ONLY a JSON object of exactly this shape, no markdown fence, no '
+            'commentary: {"services": [<string>, ...]}'
+        )
+        body = {
+            "model": self.config.claude_model,
+            "system": system + strict_json_suffix,
+            "messages": [{"role": "user", "content": "PROFILE TEXT:\n\n" + profile_text[:6000]}],
+            "temperature": 0.0,
+            "max_tokens": 512,
+        }
+
+        log.info("Claude Services classification request START")
+
+        def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
+            log.warning(
+                "Claude Services classification retryable failure attempt=%d/%d, retrying in %.1fs (%s)",
+                attempt + 1, self.config.max_retries, delay, exc,
+            )
+
+        try:
+            result = retry_with_backoff(lambda: self._request_once(body), policy=self._policy, on_retry=on_retry)
+        except RetryExhaustedError as exc:
+            cause = exc.cause
+            if isinstance(cause, ClaudeError):
+                raise cause from exc
+            raise ClaudeError(f"Claude Services classification failed after retries: {cause if cause else exc}") from exc
+
+        services = result.get("services")
+        if not isinstance(services, list):
+            return []
+        return [str(s).strip() for s in services if s and str(s).strip()]
 
     def _request_once(self, body: Dict[str, Any], timeout: Optional[int] = None) -> Dict[str, Any]:
         effective_timeout = timeout if timeout is not None else self.config.request_timeout
