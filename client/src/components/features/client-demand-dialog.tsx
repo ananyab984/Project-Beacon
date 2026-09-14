@@ -138,6 +138,18 @@ const createEmptyServiceRow = (): ServiceRow => ({
 function findMappedRecruiterId(lang: string, allUsers: ApiUser[]): string | undefined {
   if (!lang || lang === "Custom...") return undefined;
   const clean = lang.trim();
+
+  // DB-registered language coverage (owner-managed via Recruiter Language Profiles)
+  // takes priority over the hardcoded fallback mapping below.
+  const cleanLower = clean.toLowerCase();
+  const found = allUsers.find((u) =>
+    (u.languages ?? []).some((l) => {
+      const target = l.trim().toLowerCase();
+      return target === cleanLower || cleanLower.includes(target) || target.includes(cleanLower);
+    })
+  );
+  if (found) return found.id;
+
   const mapping = REGION_LANGUAGE_MAPPINGS[clean];
   if (mapping) {
     const targetName = (mapping.recruiter || mapping.contractor || "").toLowerCase();
@@ -146,14 +158,7 @@ function findMappedRecruiterId(lang: string, allUsers: ApiUser[]): string | unde
       if (match) return match.id;
     }
   }
-  const cleanLower = clean.toLowerCase();
-  const found = allUsers.find((u) =>
-    (u.languages ?? []).some((l) => {
-      const target = l.trim().toLowerCase();
-      return target === cleanLower || cleanLower.includes(target) || target.includes(cleanLower);
-    })
-  );
-  return found?.id;
+  return undefined;
 }
 
 export function ClientDemandDialog() {
