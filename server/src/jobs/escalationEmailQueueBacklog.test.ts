@@ -29,6 +29,10 @@ async function cleanup() {
   if (recruiter) {
     await prisma.escalation.deleteMany({ where: { recruiterId: recruiter.id } });
     await prisma.emailQueueItem.deleteMany({ where: { recruiterId: recruiter.id } });
+    // scanForEscalations now also mirrors each new Escalation into the
+    // unified Notification feed (recipientId FK, RESTRICT) -- must clear
+    // those too before the user delete below, same as the two tables above.
+    await prisma.notification.deleteMany({ where: { recipientId: recruiter.id } });
   }
   // seedQueueItems creates a fresh Lead per queue item -- must be cleaned up
   // by name pattern, independent of the recruiter row, since Lead has no

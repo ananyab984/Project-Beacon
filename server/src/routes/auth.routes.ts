@@ -31,6 +31,7 @@ authRouter.get("/me", authenticateJwt, async (req: Request, res: Response) => {
         name: user.name,
         role: user.role.toLowerCase() as "owner" | "recruiter" | "contractor",
         emailVerified: user.emailVerified,
+        slackMemberId: user.slackMemberId,
       },
     });
   } catch (err) {
@@ -73,6 +74,7 @@ authRouter.post("/profile", async (req: Request, res: Response) => {
         name: user.name,
         role: user.role.toLowerCase() as "owner" | "recruiter" | "contractor",
         emailVerified: user.emailVerified,
+        slackMemberId: user.slackMemberId,
       },
     });
   } catch (err) {
@@ -105,6 +107,7 @@ authRouter.patch("/me", authenticateJwt, async (req: Request, res: Response) => 
         name: user.name,
         role: user.role.toLowerCase() as "owner" | "recruiter" | "contractor",
         emailVerified: user.emailVerified,
+        slackMemberId: user.slackMemberId,
       },
     });
   } catch (err) {

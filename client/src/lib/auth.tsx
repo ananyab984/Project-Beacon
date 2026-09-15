@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { authClient, getNeonToken, getNeonTokenResult } from "./neon-auth";
 
@@ -10,6 +18,7 @@ export type AuthUser = {
   name: string;
   role: Role;
   emailVerified: boolean;
+  slackMemberId?: string | null;
 };
 
 // Strip a trailing slash from VITE_API_BASE_URL before appending "/api/auth"
@@ -31,7 +40,10 @@ function pendingRoleKey(email: string) {
 
 type AuthError = Error & { code?: string; status?: number; email?: string };
 
-function toError(message: string, extra?: { code?: string; status?: number; email?: string }): AuthError {
+function toError(
+  message: string,
+  extra?: { code?: string; status?: number; email?: string },
+): AuthError {
   const err = new Error(message) as AuthError;
   if (extra?.code) err.code = extra.code;
   if (extra?.status) err.status = extra.status;
@@ -73,7 +85,10 @@ async function postProfile(token: string, body: { role?: Role; name?: string }):
   const data = await res.json();
   if (!res.ok) {
     console.error("[auth] POST /api/auth/profile failed:", res.status, data);
-    throw toError(data?.message || `Could not finish setting up your account (${res.status})`, { code: data?.error, status: res.status });
+    throw toError(data?.message || `Could not finish setting up your account (${res.status})`, {
+      code: data?.error,
+      status: res.status,
+    });
   }
   return data.user as AuthUser;
 }
@@ -117,16 +132,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * screen with no way to tell what actually went wrong.
    */
   const resolveProfile = useCallback(async (): Promise<
-    { status: "ok"; user: AuthUser } | { status: "no_profile" } | { status: "error"; detail: string }
+    | { status: "ok"; user: AuthUser }
+    | { status: "no_profile" }
+    | { status: "error"; detail: string }
   > => {
     const { token, errorDetail } = await getNeonTokenResult();
     if (!token) {
-      return { status: "error", detail: `Couldn't get a session token from Neon Auth: ${errorDetail || "unknown reason"}` };
+      return {
+        status: "error",
+        detail: `Couldn't get a session token from Neon Auth: ${errorDetail || "unknown reason"}`,
+      };
     }
 
     const result = await fetchAppProfile(token);
     if (result === null) {
-      return { status: "error", detail: "Couldn't reach Global3's server to check your account. Check the browser console for details." };
+      return {
+        status: "error",
+        detail:
+          "Couldn't reach Global3's server to check your account. Check the browser console for details.",
+      };
     }
     if (result !== "NO_PROFILE") {
       return { status: "ok", user: result };
@@ -137,7 +161,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // didn't get a chance to run or failed transiently.
     const { data: sessionData } = await authClient.getSession();
     const email = sessionData?.user?.email;
-    const pendingRole = email ? (sessionStorage.getItem(pendingRoleKey(email)) as Role | null) : null;
+    const pendingRole = email
+      ? (sessionStorage.getItem(pendingRoleKey(email)) as Role | null)
+      : null;
 
     if (email && pendingRole) {
       try {
@@ -145,7 +171,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         sessionStorage.removeItem(pendingRoleKey(email));
         return { status: "ok", user: linked };
       } catch (err) {
-        return { status: "error", detail: err instanceof Error ? err.message : "Could not finish setting up your profile" };
+        return {
+          status: "error",
+          detail: err instanceof Error ? err.message : "Could not finish setting up your profile",
+        };
       }
     }
 
@@ -168,46 +197,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await withTimeout(
-      authClient.signIn.email({ email, password }),
-      SIGN_IN_TIMEOUT_MS,
-      "Sign-in is taking longer than expected. Check your connection and try again."
-    );
-    if (error) {
-      // Better Auth's email/password plugin returns this code when "Verify
-      // at Sign-up" is enabled and the account hasn't verified yet.
-      throw toError(error.message || "Invalid email or password", { code: error.code, status: error.status, email });
-    }
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      const { error } = await withTimeout(
+        authClient.signIn.email({ email, password }),
+        SIGN_IN_TIMEOUT_MS,
+        "Sign-in is taking longer than expected. Check your connection and try again.",
+      );
+      if (error) {
+        // Better Auth's email/password plugin returns this code when "Verify
+        // at Sign-up" is enabled and the account hasn't verified yet.
+        throw toError(error.message || "Invalid email or password", {
+          code: error.code,
+          status: error.status,
+          email,
+        });
+      }
 
-    const resolution = await withTimeout(
-      resolveProfile(),
-      SIGN_IN_TIMEOUT_MS,
-      "Signed in, but finishing setup is taking longer than expected. Try again in a moment."
-    );
-    if (resolution.status === "ok") {
-      // Discard anything cached under the previous identity (this tab's own
-      // sign-out already clears it, but a session expiring and a different
-      // person signing back in on the same tab wouldn't otherwise go through
-      // that path) before this recruiter's own data starts loading in.
-      queryClient.clear();
+      const resolution = await withTimeout(
+        resolveProfile(),
+        SIGN_IN_TIMEOUT_MS,
+        "Signed in, but finishing setup is taking longer than expected. Try again in a moment.",
+      );
+      if (resolution.status === "ok") {
+        // Discard anything cached under the previous identity (this tab's own
+        // sign-out already clears it, but a session expiring and a different
+        // person signing back in on the same tab wouldn't otherwise go through
+        // that path) before this recruiter's own data starts loading in.
+        queryClient.clear();
+        setNeedsRoleSetup(false);
+        setUser(resolution.user);
+        return resolution.user;
+      }
+      if (resolution.status === "no_profile") {
+        setNeedsRoleSetup(true);
+        throw toError(
+          "This account isn't set up in Global3 yet. Choose a role to finish setting up.",
+          { code: "NO_PROFILE", email },
+        );
+      }
       setNeedsRoleSetup(false);
-      setUser(resolution.user);
-      return resolution.user;
-    }
-    if (resolution.status === "no_profile") {
-      setNeedsRoleSetup(true);
-      throw toError("This account isn't set up in Global3 yet. Choose a role to finish setting up.", { code: "NO_PROFILE", email });
-    }
-    setNeedsRoleSetup(false);
-    throw toError(resolution.detail, { code: "PROFILE_CHECK_FAILED", email });
-  }, [resolveProfile, queryClient]);
+      throw toError(resolution.detail, { code: "PROFILE_CHECK_FAILED", email });
+    },
+    [resolveProfile, queryClient],
+  );
 
-  const signUp = useCallback(async ({ name, email, password, role }: { name: string; email: string; password: string; role: Role }) => {
-    const { error } = await authClient.signUp.email({ email, password, name });
-    if (error) throw toError(error.message || "Sign-up failed", { code: error.code, status: error.status });
-    sessionStorage.setItem(pendingRoleKey(email), role);
-  }, []);
+  const signUp = useCallback(
+    async ({
+      name,
+      email,
+      password,
+      role,
+    }: {
+      name: string;
+      email: string;
+      password: string;
+      role: Role;
+    }) => {
+      const { error } = await authClient.signUp.email({ email, password, name });
+      if (error)
+        throw toError(error.message || "Sign-up failed", {
+          code: error.code,
+          status: error.status,
+        });
+      sessionStorage.setItem(pendingRoleKey(email), role);
+    },
+    [],
+  );
 
   const signOut = useCallback(async () => {
     await authClient.signOut();
@@ -221,7 +277,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [queryClient]);
 
   const requestPasswordReset = useCallback(async (email: string) => {
-    const { error } = await authClient.requestPasswordReset({ email, redirectTo: `${window.location.origin}/reset-password` });
+    const { error } = await authClient.requestPasswordReset({
+      email,
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
     if (error) throw toError(error.message || "Could not send reset link");
   }, []);
 
@@ -231,7 +290,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sendVerificationOtp = useCallback(async (email: string) => {
-    const { error } = await authClient.emailOtp.sendVerificationOtp({ email, type: "email-verification" });
+    const { error } = await authClient.emailOtp.sendVerificationOtp({
+      email,
+      type: "email-verification",
+    });
     if (error) throw toError(error.message || "Could not send verification code");
   }, []);
 
@@ -255,17 +317,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } catch (err) {
           // Not fatal here -- sign-in's own resolveProfile() will retry the
           // same pending role (still in sessionStorage) as a fallback.
-          console.error("[auth] Could not finish profile setup right after verification, will retry at sign-in:", err);
+          console.error(
+            "[auth] Could not finish profile setup right after verification, will retry at sign-in:",
+            err,
+          );
         }
       } else {
-        console.error("[auth] Verified, but no session token was available to finish profile setup -- will retry at sign-in.");
+        console.error(
+          "[auth] Verified, but no session token was available to finish profile setup -- will retry at sign-in.",
+        );
       }
     }
   }, []);
 
   const completeProfile = useCallback(async (role: Role) => {
     const { token, errorDetail } = await getNeonTokenResult();
-    if (!token) throw toError(`Couldn't get a session token from Neon Auth: ${errorDetail || "unknown reason"}`);
+    if (!token)
+      throw toError(
+        `Couldn't get a session token from Neon Auth: ${errorDetail || "unknown reason"}`,
+      );
     const profile = await postProfile(token, { role });
     setNeedsRoleSetup(false);
     setUser(profile);
@@ -279,10 +349,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<AuthCtx>(
     () => ({
-      user, isHydrating, needsRoleSetup, signIn, signUp, signOut,
-      requestPasswordReset, resetPassword, sendVerificationOtp, verifyEmailOtp, completeProfile, changePassword,
+      user,
+      isHydrating,
+      needsRoleSetup,
+      signIn,
+      signUp,
+      signOut,
+      requestPasswordReset,
+      resetPassword,
+      sendVerificationOtp,
+      verifyEmailOtp,
+      completeProfile,
+      changePassword,
     }),
-    [user, isHydrating, needsRoleSetup, signIn, signUp, signOut, requestPasswordReset, resetPassword, sendVerificationOtp, verifyEmailOtp, completeProfile, changePassword],
+    [
+      user,
+      isHydrating,
+      needsRoleSetup,
+      signIn,
+      signUp,
+      signOut,
+      requestPasswordReset,
+      resetPassword,
+      sendVerificationOtp,
+      verifyEmailOtp,
+      completeProfile,
+      changePassword,
+    ],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

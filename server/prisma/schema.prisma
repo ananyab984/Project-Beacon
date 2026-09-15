@@ -286,6 +286,7 @@ model User {
   role              UserRole
   workStatus        WorkStatus @default(PERMANENT) @map("work_status")
   languages         String[]   @default([])
+  slackMemberId     String?    @map("slack_member_id") // pasted by the user from their Slack profile; notifications no-op if unset
   emailVerified     Boolean    @default(false) @map("email_verified")
   startDate         DateTime   @default(now()) @map("start_date") // determines 3-month trend baseline eligibility
   isActive          Boolean    @default(true) @map("is_active")
@@ -323,6 +324,11 @@ model User {
   requirementsAssigned         Requirement[]            @relation("RequirementAssignee")
   requirementAssignmentsAsRec  RequirementAssignment[]  @relation("RequirementAssignmentRecruiter")
   requirementAssignmentsMade   RequirementAssignment[]  @relation("RequirementAssignedBy")
+
+  // Notifications
+  notifications             Notification[]
+  notificationPreferences   NotificationPreference[]
+  leadNotificationSubscriptions LeadNotificationSubscription[]
 
   @@map("users")
 }
@@ -495,6 +501,7 @@ model Lead {
   conversations        Conversation[]
   classificationEvents ReplyClassificationEvent[]
   reenrichmentRuns     ReenrichmentRun[]
+  notificationSubscriptions LeadNotificationSubscription[]
 
   @@index([enrichmentStatus])
   @@index([assignedRecruiterId])
@@ -1156,6 +1163,70 @@ model Escalation {
   @@index([status])
   @@index([priority])
   @@map("escalations")
+}
+
+// ----------------------------------------------------------------------------
+// NOTIFICATIONS — unified in-app/email/Slack feed
+// (recruiter-notifications-popover.tsx, escalations.tsx bells). One funnel,
+// NotificationService.createNotification, writes every row; scanForEscalations
+// also mirrors each new Escalation into this table so both bells read one
+// feed instead of two parallel systems.
+// ----------------------------------------------------------------------------
+
+enum NotificationType {
+  NEW_LEAD
+  TASK_ASSIGNMENT
+  DUE_DATE_REMINDER
+  LEAD_RESPONSE
+  ESCALATION
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  recipient   User             @relation(fields: [recipientId], references: [id])
+  type        NotificationType
+  title       String
+  body        String
+  link        String? // route to deep-link into (lead/requirement/escalation); resolved by the caller, not a typed FK -- mirrors Escalation's soft leadId/clientId references above
+  read        Boolean          @default(false)
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@index([recipientId, read, createdAt])
+  @@map("notifications")
+}
+
+/// Per-user, per-type channel opt-in for email/Slack. The in-app bell is
+/// always on for NEW_LEAD/TASK_ASSIGNMENT/DUE_DATE_REMINDER/ESCALATION and
+/// isn't a toggle, so it has no column here.
+model NotificationPreference {
+  id           String           @id @default(uuid())
+  userId       String           @map("user_id")
+  user         User             @relation(fields: [userId], references: [id])
+  type         NotificationType
+  emailEnabled Boolean          @default(false) @map("email_enabled")
+  slackEnabled Boolean          @default(false) @map("slack_enabled")
+
+  @@unique([userId, type])
+  @@map("notification_preferences")
+}
+
+/// The per-lead "Notify me on response" bell (lead-card.tsx). Plain manual
+/// on/off toggle -- deliberately no auto-deactivation after firing (confirmed
+/// with the user; diverges from the original PDF spec's "fires once, resets"
+/// behavior in favor of a simpler always-on-until-switched-off subscription).
+model LeadNotificationSubscription {
+  id          String   @id @default(uuid())
+  leadId      String   @map("lead_id")
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recruiterId String   @map("recruiter_id")
+  recruiter   User     @relation(fields: [recruiterId], references: [id])
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([leadId, recruiterId])
+  @@map("lead_notification_subscriptions")
 }
 
 // ----------------------------------------------------------------------------
