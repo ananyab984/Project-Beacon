@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, X, Activity, Clock, AlertTriangle, Trash2, Table2, KanbanSquare } from "lucide-react";
+import { Search, ArrowUpDown, Upload, Download, X, Activity, Clock, AlertTriangle, Table2, KanbanSquare } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -217,16 +217,6 @@ function MyLeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
   });
 
-  const deleteMutation = useMutation({
-    mutationFn: (leadIds: string[]) => api.deleteLeads(leadIds),
-    onSuccess: (data) => {
-      invalidateLeads();
-      setSelected(new Set());
-      toast.success(`Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`);
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to delete leads"),
-  });
-
   const enrichLead: LeadForEnrichment | null = enrichRaw
     ? {
         id: enrichRaw.id,
@@ -337,15 +327,7 @@ function MyLeadsPage() {
             >
               <Download className="h-3.5 w-3.5" /> Export
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate(Array.from(selected))}
-              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
-            </Button>
+            {/* Delete lives only in the Global Leads page -- contractors never get it, here or via the API. */}
           </div>
         </div>
       )}

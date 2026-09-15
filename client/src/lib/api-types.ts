@@ -149,6 +149,19 @@ export interface ApiLead {
   replyClassifiedAt: string | null;
   createdAt: string;
   lastActivityAt: string | null;
+  /** Set once this lead is soft-deleted into the Global Leads recycle bin
+   *  (POST /batch-delete); cleared on restore. Normal list/export endpoints
+   *  never return a lead with this set -- only GET /api/leads/bin does. */
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+}
+
+/** GET /api/leads/bin row: an ApiLead plus its own recycle-bin countdown
+ *  (see server/src/lib/recycleBin.ts -- each item ages out independently,
+ *  Windows Recycle Bin style, not on one bin-wide clock). */
+export interface ApiBinLead extends ApiLead {
+  purgeAt: string;
+  daysUntilPurge: number;
 }
 
 /** One normalized profile-section entry. Keys vary by section (language/

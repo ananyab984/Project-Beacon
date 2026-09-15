@@ -19,6 +19,7 @@ import { EnrichmentDetailsDialog } from "@/components/features/enrichment-detail
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 import { ServicesCell } from "@/components/features/services-cell";
+import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
 import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/owner/leads")({
@@ -351,6 +352,7 @@ function LeadsPage() {
             <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
           </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} onSheetImportComplete={invalidateLeads} />
+          <RecycleBinDialog />
           <AddLeadDialog
             trigger={
               <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">

@@ -301,6 +301,7 @@ model User {
   flagEventsSet       LeadFlagEvent[]     @relation("SetBy")
   flagEventsConfirmed LeadFlagEvent[]     @relation("ConfirmedBy")
   interactionsSent    InteractionEvent[]  @relation("SentBy")
+  leadsDeleted        Lead[]              @relation("DeletedBy")
   manualActivities    ManualActivityLog[]
   emailQueueItems     EmailQueueItem[]
   conversations       Conversation[]
@@ -475,6 +476,15 @@ model Lead {
   createdAt      DateTime  @default(now()) @map("created_at")
   lastActivityAt DateTime? @map("last_activity_at") // repo: last_activity, rendered as relative time
 
+  // --- recycle bin (soft delete) ---
+  // Global Leads only: batch-delete moves a lead here instead of hard-
+  // deleting it. Each lead gets its own 30-day countdown from its own
+  // deletedAt (Windows Recycle Bin semantics, not a single bin-wide expiry) --
+  // see lib/recycleBin.ts for the retention window and purge job.
+  deletedAt       DateTime? @map("deleted_at")
+  deletedByUserId String?   @map("deleted_by_user_id")
+  deletedBy       User?     @relation("DeletedBy", fields: [deletedByUserId], references: [id])
+
   // relations
   vendorMatches        LeadVendorMatch[]
   stageHistory         StageHistory[]
@@ -491,6 +501,7 @@ model Lead {
   @@index([claimedByRecruiterId])
   @@index([stage])
   @@index([country])
+  @@index([deletedAt])
   @@map("leads")
 }
 

@@ -18,6 +18,7 @@ import { EnrichmentDetailsDialog } from "@/components/features/enrichment-detail
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 import { ServicesCell } from "@/components/features/services-cell";
+import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
 import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/recruiter/leads")({
@@ -391,6 +392,8 @@ function LeadsPage() {
             <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
           </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
+          {/* Delete lives only in the Global Leads scope -- this is its recycle bin. */}
+          {scope === "global" && <RecycleBinDialog />}
           {/* Toggle replaces owner's Export slot */}
           <div role="tablist" aria-label="Lead scope" className="inline-flex rounded-lg border border-border bg-card p-0.5">
             <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalLeads.length} />
@@ -442,15 +445,18 @@ function LeadsPage() {
             >
               <Download className="h-3.5 w-3.5" /> Export
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate(Array.from(selected))}
-              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
-            </Button>
+            {/* Delete lives only in the Global Leads scope, never "My Leads". */}
+            {scope === "global" && (
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(Array.from(selected))}
+                className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
+              </Button>
+            )}
           </div>
         </div>
       )}
