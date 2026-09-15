@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Trash2 } from "lucide-react";
 import { RecycleBinList } from "@/components/features/recycle-bin-list";
 
-export const Route = createFileRoute("/owner/leads/recycle-bin")({
+export const Route = createFileRoute("/owner/leads_/recycle-bin")({
   head: () => ({
     meta: [
       { title: "Recycle Bin — Global3 Owner" },
