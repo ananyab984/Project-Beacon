@@ -18,6 +18,7 @@ import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFie
 import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
+import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
 import { createNotification } from "../services/notification.service";
 
 export const leadRouter = Router();
@@ -239,10 +240,12 @@ leadRouter.get(
     const role = req.user!.role.toLowerCase() as Role;
     const userId = req.user!.id;
 
+    // Soft-deleted leads (Global Leads recycle bin) never show up here either.
     const where =
       role === "contractor"
-        ? { createdByContractorId: userId }
+        ? { createdByContractorId: userId, deletedAt: null }
         : {
+            deletedAt: null,
             OR: [
               { assignedRecruiterId: userId },
               { claimedByRecruiterId: userId },
@@ -400,6 +403,28 @@ leadRouter.post(
       duplicates,
       totalCount,
       newCount,
+    });
+  })
+);
+
+// GET /api/leads/bin — Global Leads recycle bin: leads soft-deleted via
+// POST /batch-delete, each carrying its own purgeAt/daysUntilPurge (see
+// lib/recycleBin.ts) rather than one bin-wide expiry. Must be registered
+// before GET /:id so "/bin" isn't swallowed as an :id param.
+leadRouter.get(
+  "/bin",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (_req: Request, res: Response) => {
+    const leads = await prisma.lead.findMany({
+      where: { deletedAt: { not: null } },
+      orderBy: { deletedAt: "asc" },
+    });
+    return res.json({
+      leads: leads.map((lead) => ({
+        ...lead,
+        purgeAt: computePurgeAt(lead.deletedAt!),
+        daysUntilPurge: daysUntilPurge(lead.deletedAt!),
+      })),
     });
   })
 );
@@ -1355,32 +1380,45 @@ leadRouter.get(
   })
 );
 
-// POST /api/leads/batch-delete — batch delete leads & cascade cleanup.
-// Same no-ownership-check-by-default caveat as PATCH /bulk above -- a
-// contractor here must be restricted to leads they actually created.
+// POST /api/leads/batch-delete — Global Leads only. Moves leads to the
+// recycle bin (soft delete) instead of hard-deleting them; a background job
+// (recycleBinPurge.job.ts) permanently removes each one 30 days after ITS
+// OWN deletedAt. Contractors never get here at all -- delete lives only in
+// the Global Leads page, never the contractor's own-leads view.
 leadRouter.post(
   "/batch-delete",
-  requireRole("owner", "recruiter", "contractor"),
+  requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
     const { leadIds } = z.object({ leadIds: z.array(z.string()) }).parse(req.body);
     if (!leadIds || leadIds.length === 0) {
       return res.json({ deletedCount: 0 });
     }
 
-    if (req.user!.role.toLowerCase() === "contractor") {
-      const foreignCount = await countForeignLeadsForContractor(req.user!.id, leadIds);
-      if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only delete their own submitted leads");
-    }
+    const result = await prisma.lead.updateMany({
+      where: { id: { in: leadIds }, deletedAt: null },
+      data: { deletedAt: new Date(), deletedByUserId: req.user!.id },
+    });
 
-    await prisma.$transaction([
-      prisma.emailQueueItem.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.conversationMessage.deleteMany({ where: { conversation: { leadId: { in: leadIds } } } }),
-      prisma.conversation.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.leadFlagEvent.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.interactionEvent.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.lead.deleteMany({ where: { id: { in: leadIds } } }),
-    ]);
+    return res.json({ deletedCount: result.count });
+  })
+);
 
-    return res.json({ deletedCount: leadIds.length });
+// POST /api/leads/:id/restore — Windows-Recycle-Bin-style undo: pulls one
+// lead back out of the bin (clears deletedAt/deletedByUserId) as long as its
+// own 30-day window hasn't already elapsed -- past that, recycleBinPurge.job.ts
+// may have already hard-deleted it, so this can legitimately 404.
+leadRouter.post(
+  "/:id/restore",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    if (!lead.deletedAt) throw new ApiError(400, "LEAD_NOT_IN_BIN", "This lead is not in the recycle bin");
+
+    const restored = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { deletedAt: null, deletedByUserId: null },
+    });
+    return res.json({ lead: withEnrichedFieldCount(restored) });
   })
 );

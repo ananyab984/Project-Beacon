@@ -49,6 +49,7 @@ import { EnrichmentDetailsDialog } from "@/components/features/enrichment-detail
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 import { ServicesCell } from "@/components/features/services-cell";
+import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
 import { LeadNotifyBell } from "@/components/features/lead-notify-bell";
 import { STANDARD_SERVICES } from "@/lib/services";
 
@@ -495,6 +496,8 @@ function LeadsPage() {
             />
           </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
+          {/* Delete lives only in the Global Leads scope -- this is its recycle bin. */}
+          {scope === "global" && <RecycleBinDialog />}
           {/* Toggle replaces owner's Export slot */}
           <div
             role="tablist"
@@ -617,15 +620,18 @@ function LeadsPage() {
             >
               <Download className="h-3.5 w-3.5" /> Export
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate(Array.from(selected))}
-              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
-            </Button>
+            {/* Delete lives only in the Global Leads scope, never "My Leads". */}
+            {scope === "global" && (
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(Array.from(selected))}
+                className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
+              </Button>
+            )}
           </div>
         </div>
       )}

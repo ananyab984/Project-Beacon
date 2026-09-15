@@ -1,5 +1,6 @@
 import type {
   ApiLead,
+  ApiBinLead,
   ReenrichmentRun,
   OutreachFunnelCategory,
   OutreachFunnelLead,
@@ -237,6 +238,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ leadIds }),
     });
+  },
+
+  /** Global Leads recycle bin -- leads soft-deleted via deleteLeads above. */
+  async getBinLeads(): Promise<{ leads: ApiBinLead[] }> {
+    return request("/api/leads/bin");
+  },
+
+  async restoreLead(id: string): Promise<{ lead: ApiLead }> {
+    return request(`/api/leads/${id}/restore`, { method: "POST" });
   },
 
   async claimLead(id: string): Promise<{ lead: ApiLead }> {

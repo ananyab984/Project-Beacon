@@ -3,6 +3,7 @@ import { pollPendingEnrichment, stallOverdueEnrichments } from "./enrichment.job
 import { runMonthlyScoring } from "./scoring.job";
 import { scanForEscalations } from "./escalation.job";
 import { runDueDateReminders } from "./due-date-reminder.job";
+import { purgeExpiredRecycleBinLeads } from "./recycleBinPurge.job";
 
 /** Starts all recurring background work in-process (node-cron). No queue/Redis
  *  needed at current scale -- see the backend plan for why. */
@@ -31,5 +32,11 @@ export function startBackgroundJobs() {
     runDueDateReminders().catch((err) => console.error("[jobs] due-date reminder scan failed:", err));
   });
 
-  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, due-date reminders: daily, scoring: monthly)");
+  // Daily, 2am: permanently purge Global Leads recycle-bin items whose own
+  // 30-day window has elapsed.
+  cron.schedule("0 2 * * *", () => {
+    purgeExpiredRecycleBinLeads().catch((err) => console.error("[jobs] recycle bin purge failed:", err));
+  });
+
+  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, due-date reminders: daily, recycle bin purge: daily, scoring: monthly)");
 }
