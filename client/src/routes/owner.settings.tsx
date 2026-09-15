@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
+import { EnrichmentEvaluationDialog } from "@/components/features/enrichment-evaluation-dialog";
 import {
   Linkedin,
   Mail,
@@ -35,6 +36,7 @@ export const Route = createFileRoute("/owner/settings")({
 
 function SettingsPage() {
   const [showAI, setShowAI] = useState(false);
+  const [enrichmentEvalOpen, setEnrichmentEvalOpen] = useState(false);
   const queryClient = useQueryClient();
   const { data } = useQuery({
     queryKey: ["users", "RECRUITER"],
@@ -91,12 +93,23 @@ function SettingsPage() {
 
       <ConnectedAccountsSection />
 
+      <button type="button" onClick={() => setEnrichmentEvalOpen(true)} className="w-full text-left">
+        <Section
+          title="Enrichment Evaluation"
+          desc="Live metrics on the automatic enrichment waterfall -- enrichment rate, time taken, tier attribution, quality by tier, and manual override rate. Click to open."
+        >
+          <div className="text-xs font-medium text-primary">View evaluation table →</div>
+        </Section>
+      </button>
+      <EnrichmentEvaluationDialog open={enrichmentEvalOpen} setOpen={setEnrichmentEvalOpen} />
+
       <NotificationSystemSection />
 
       <Section
         title="Recruiters & Connected Outreach Accounts Mapping"
         desc="Live mapping of recruiters and their connected LinkedIn & Email Unipile accounts."
       >
+
         <div className="divide-y divide-border">
           {recruiters.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">
