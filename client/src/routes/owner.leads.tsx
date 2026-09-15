@@ -1,6 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import * as XLSX from "xlsx";
-import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
 import type { ApiLead, ApiUser, LeadSource, LeadStage } from "@/lib/api-types";
@@ -9,9 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Trash2, Table2, KanbanSquare, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Search, ArrowUpDown, Download, Mail, UserPlus, X, Trash2, Table2, KanbanSquare, ChevronDown, Plus } from "lucide-react";
 import { AddLeadDialog } from "@/components/features/add-lead-dialog";
-import { useMemo, useState, useRef } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
@@ -19,7 +23,6 @@ import { EnrichmentDetailsDialog } from "@/components/features/enrichment-detail
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 import { ServicesCell } from "@/components/features/services-cell";
-import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
 import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/owner/leads")({
@@ -39,15 +42,6 @@ export const Route = createFileRoute("/owner/leads")({
   component: LeadsPage,
 });
 
-const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
-
-/** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
-function mapToLeadSource(raw: string | undefined | null): LeadSource {
-  if (!raw) return "LINKEDIN";
-  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
-  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
-  return hit ?? "LINKEDIN";
-}
 
 /** "NEGOTIATING" -> "Negotiating"; "INVITE_SENT" -> "Invite sent". */
 function formatStageLabel(stage: string): string {
@@ -260,37 +254,6 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to assign leads"),
   });
 
-  const bulkCreateMutation = useMutation({
-    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
-    onSuccess: (res) => {
-      const succeeded = res.results.filter((r) => !!r.leadId).length;
-      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
-      const errors = res.results.filter((r) => r.status === "error").length;
-      // Zero leads actually created must never read as a success toast --
-      // this used to only branch on `duplicates > 0`, so 0 succeeded + 0
-      // duplicates (e.g. every row failing validation) fell through to
-      // toast.success("Imported 0 unique leads."), which reads as "added"
-      // when nothing was.
-      if (succeeded === 0) {
-        toast.error(
-          errors > 0
-            ? `No leads imported — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
-            : `No leads imported — all ${duplicates} row(s) were duplicates.`
-        );
-      } else if (duplicates > 0 || errors > 0) {
-        toast.info(
-          `Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
-            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
-            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
-        );
-      } else {
-        toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
-      }
-      invalidateLeads();
-    },
-    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
-  });
-
   const enrichLead: LeadForEnrichment | null = enrichRaw
     ? {
         id: enrichRaw.id,
@@ -347,12 +310,29 @@ function LeadsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <div role="tablist" aria-label="Lead view" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <ViewTab active={mode === "table"} onClick={() => setMode("table")} label="Table" icon={Table2} />
-            <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
-          </div>
-          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} onSheetImportComplete={invalidateLeads} />
-          <RecycleBinDialog />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                {mode === "table" ? <Table2 className="h-3.5 w-3.5" /> : <KanbanSquare className="h-3.5 w-3.5" />}
+                {mode === "table" ? "Table" : "Board"}
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setMode("table")}>
+                <Table2 className="h-3.5 w-3.5" /> Table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setMode("board")}>
+                <KanbanSquare className="h-3.5 w-3.5" /> Board
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <Button asChild variant="outline" size="icon" className="h-8 w-8" title="Recycle Bin">
+            <Link to="/owner/leads/recycle-bin">
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="sr-only">Recycle Bin</span>
+            </Link>
+          </Button>
           <AddLeadDialog
             trigger={
               <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">
@@ -584,23 +564,6 @@ function LeadsPage() {
   );
 }
 
-function ViewTab({
-  active, onClick, label, icon: Icon,
-}: { active: boolean; onClick: () => void; label: string; icon: typeof Table2 }) {
-  return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" /> {label}
-    </button>
-  );
-}
-
 function AssignRecruiterDialog({
   open, onOpenChange, recruiters, onAssign, pending,
 }: {
@@ -696,244 +659,3 @@ function sortVal(l: ApiLead, k: SortKey): string | number {
   }
 }
 
-/** Shared by both the CSV and XLSX branches -- maps parseCsvLeads'/
- * mapRowsToLeads' intermediate Lead shape into the bulk-create request shape. */
-function toBulkRows(parsed: any[]): Array<Partial<ApiLead> & { fullName: string; source: string }> {
-  return parsed.map((l: any) => ({
-    fullName: l.display_name ?? l.masked_label,
-    source: mapToLeadSource(l.source),
-    services: l.services,
-    country: l.country || undefined,
-    profileLink: l.profile_link || undefined,
-    sourceLanguage: l.source_language || "English",
-    targetLanguage: l.target_language || l.language || "English",
-    email: l.email || undefined,
-    contactNumber: l.phone || undefined,
-    yearsOfExperience: l.years_experience || undefined,
-    vendorExperience: l.vendor_experience || undefined,
-  }));
-}
-
-function BulkUploadDialog({
-  onSubmitRows,
-  onSheetImportComplete,
-}: {
-  onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void;
-  onSheetImportComplete: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [sheetUrl, setSheetUrl] = useState("");
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Same precheck pattern as add-lead-dialog.tsx / contractor-add-lead-dialog.tsx's
-  // "Add a Lead" bulk upload -- this dialog just never had it, so duplicates
-  // silently landed in the plain "Imported X of Y rows" toast with no way to
-  // tell how many of the difference was duplicates vs. some other failure.
-  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
-  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
-    fileName: string;
-    duplicateCount: number;
-    duplicateNames: string[];
-    totalCount: number;
-    newCount: number;
-    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
-  } | null>(null);
-
-  const sheetImportMutation = useMutation({
-    mutationFn: (url: string) => api.importLeadsFromSheet(url),
-    onSuccess: (res) => {
-      if (res.results.length === 0) {
-        toast.info(res.message || "No matching rows found in that sheet.");
-        return;
-      }
-      const succeeded = res.results.filter((r) => !!r.leadId).length;
-      toast.success(`Imported ${succeeded} of ${res.results.length} rows from Google Sheet`);
-      onSheetImportComplete();
-      setSheetUrl("");
-      setOpen(false);
-    },
-    onError: (err: any) => toast.error(err?.message ?? "Failed to import from Google Sheet"),
-  });
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const isExcel = /\.xlsx?$/i.test(file.name);
-    const reader = new FileReader();
-    setDuplicateCheckResult(null);
-
-    const finish = async (parsed: ReturnType<typeof parseCsvLeads>, headersMatched: boolean) => {
-      if (parsed.length === 0) {
-        if (headersMatched) {
-          toast.info(`Uploaded ${file.name}, but every row was missing a Name -- nothing to import.`);
-        } else {
-          toast.info(`Uploaded ${file.name}. Ensure the file has a Name, Email, Language, or Service column header.`);
-        }
-        return;
-      }
-
-      const rows = toBulkRows(parsed);
-      setCheckingDuplicates(true);
-      try {
-        const dupRes = await api.checkBulkDuplicateLeads(
-          rows.map((r) => ({
-            fullName: r.fullName,
-            email: r.email ?? undefined,
-            contactNumber: r.contactNumber ?? undefined,
-            profileLink: r.profileLink ?? undefined,
-          }))
-        );
-        if (dupRes.hasDuplicates) {
-          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "…" : "");
-          toast.error(
-            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or import the rest.`,
-            { duration: 6000 }
-          );
-          setDuplicateCheckResult({
-            fileName: file.name,
-            duplicateCount: dupRes.duplicateCount,
-            duplicateNames: dupRes.duplicateNames,
-            totalCount: dupRes.totalCount,
-            newCount: dupRes.newCount,
-            rows,
-          });
-        } else {
-          onSubmitRows(rows);
-          toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
-          setOpen(false);
-        }
-      } catch {
-        // Precheck is a non-blocking convenience -- if it fails (network
-        // glitch), fall back to the plain import rather than blocking the
-        // recruiter entirely; /api/leads/bulk still does its own real
-        // duplicate check server-side either way.
-        onSubmitRows(rows);
-        toast.success(`Uploaded ${file.name}. Importing ${parsed.length} candidate leads…`);
-        setOpen(false);
-      } finally {
-        setCheckingDuplicates(false);
-        e.target.value = "";
-      }
-    };
-
-    if (isExcel) {
-      reader.onload = (event) => {
-        try {
-          const buffer = event.target?.result as ArrayBuffer;
-          const workbook = XLSX.read(buffer, { type: "array" });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          // header: 1 -> array-of-arrays (header row + data rows), the same
-          // shape parseCsvLeads already tokenizes CSV text into -- lets both
-          // formats share mapRowsToLeads instead of drifting apart. Cell
-          // values coerced to strings since numeric-looking cells (e.g.
-          // phone numbers, years of experience) come back as `number`.
-          const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-          const stringRows = rows.map((row) => row.map((cell) => String(cell ?? "")));
-          const parsed = mapRowsToLeads(stringRows);
-          finish(parsed, stringRows.length > 1);
-        } catch (err: any) {
-          toast.error(`Could not read ${file.name} as an Excel file: ${err?.message || "unknown error"}`);
-        }
-      };
-      reader.readAsArrayBuffer(file);
-    } else {
-      reader.onload = (event) => {
-        const text = (event.target?.result as string) || "";
-        const parsed = parseCsvLeads(text);
-        finish(parsed, text.split(/\r?\n/).filter((l) => l.trim()).length > 1);
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const handleImportSkippingDuplicates = () => {
-    if (!duplicateCheckResult) return;
-    onSubmitRows(duplicateCheckResult.rows);
-    toast.success(`Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`);
-    setDuplicateCheckResult(null);
-    setOpen(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Upload className="h-3.5 w-3.5" /> Bulk Upload
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Bulk Upload Leads</DialogTitle>
-          <DialogDescription>Upload a CSV or Excel sheet, or import from a public Google Sheet.</DialogDescription>
-        </DialogHeader>
-
-        {duplicateCheckResult && (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
-                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
-                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
-              </div>
-              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
-            </div>
-            <p className="text-xs text-foreground leading-relaxed">
-              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
-              <span className="font-semibold text-destructive ml-1">{duplicateCheckResult.duplicateNames.join(", ")}</span>
-              . You can upload another file or import only the <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
-            </p>
-            <div className="flex items-center gap-2 pt-1 flex-wrap">
-              <label className="cursor-pointer">
-                <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
-                <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors border border-border">
-                  <Upload className="h-3.5 w-3.5" /> Upload Another File
-                </div>
-              </label>
-              {duplicateCheckResult.newCount > 0 && (
-                <Button type="button" size="sm" onClick={handleImportSkippingDuplicates} className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5">
-                  Import {duplicateCheckResult.newCount} New Lead{duplicateCheckResult.newCount === 1 ? "" : "s"} Only
-                </Button>
-              )}
-              <Button type="button" variant="ghost" size="sm" onClick={() => setDuplicateCheckResult(null)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
-                Dismiss
-              </Button>
-            </div>
-          </div>
-        )}
-
-        <label className="cursor-pointer block border-2 border-dashed border-border rounded-xl p-8 text-center space-y-2 hover:border-primary/50 transition-colors">
-          <input ref={fileInputRef} type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
-          <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
-          <div className="text-xs font-semibold">
-            {checkingDuplicates ? "Checking for database duplicates…" : "Click to select or drop CSV/XLSX file here"}
-          </div>
-          <div className="text-[11px] text-muted-foreground">Supported fields: name, email, language, country, services, source</div>
-        </label>
-        <div className="flex items-center gap-2 text-[10px] uppercase tracking-widest text-muted-foreground">
-          <div className="h-px flex-1 bg-border" /> or <div className="h-px flex-1 bg-border" />
-        </div>
-        <div className="space-y-1.5">
-          <label className="text-[11px] font-medium text-muted-foreground">Import from Google Sheet</label>
-          <div className="flex gap-2">
-            <Input
-              value={sheetUrl}
-              onChange={(e) => setSheetUrl(e.target.value)}
-              placeholder="Paste a public Google Sheet URL…"
-              className="h-9 text-xs"
-            />
-            <Button
-              size="sm"
-              disabled={!sheetUrl.trim() || sheetImportMutation.isPending}
-              onClick={() => sheetImportMutation.mutate(sheetUrl.trim())}
-            >
-              {sheetImportMutation.isPending ? "Importing…" : "Import"}
-            </Button>
-          </div>
-          <div className="text-[11px] text-muted-foreground">Sheet must be shared as "Anyone with the link can view."</div>
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}

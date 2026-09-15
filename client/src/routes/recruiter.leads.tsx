@@ -1,6 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
-import * as XLSX from "xlsx";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
 import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
@@ -24,9 +22,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Search,
   ArrowUpDown,
-  Upload,
   Download,
   Mail,
   UserPlus,
@@ -37,6 +41,7 @@ import {
   Trash2,
   Table2,
   KanbanSquare,
+  ChevronDown,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -49,7 +54,6 @@ import { EnrichmentDetailsDialog } from "@/components/features/enrichment-detail
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
 import { ServicesCell } from "@/components/features/services-cell";
-import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
 import { LeadNotifyBell } from "@/components/features/lead-notify-bell";
 import { STANDARD_SERVICES } from "@/lib/services";
 
@@ -70,23 +74,6 @@ export const Route = createFileRoute("/recruiter/leads")({
   component: LeadsPage,
 });
 
-const VALID_SOURCES: LeadSource[] = [
-  "LINKEDIN",
-  "PROZ",
-  "ADA",
-  "ATA",
-  "ATAA",
-  "BODALGO",
-  "FREELANCER",
-  "APOLLO",
-];
-
-function mapToLeadSource(raw: string | undefined | null): LeadSource {
-  if (!raw) return "LINKEDIN";
-  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
-  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
-  return hit ?? "LINKEDIN";
-}
 
 function formatStageLabel(stage: string): string {
   return stage.charAt(0) + stage.slice(1).toLowerCase().replace(/_/g, " ");
@@ -322,38 +309,6 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to remove service"),
   });
 
-  const bulkCreateMutation = useMutation({
-    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) =>
-      api.bulkCreateLeads(rows),
-    onSuccess: (res) => {
-      const succeeded = res.results.filter((r) => !!r.leadId).length;
-      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
-      const errors = res.results.filter((r) => r.status === "error").length;
-      // Zero leads actually created must never read as a success toast --
-      // this used to only branch on `duplicates > 0`, so 0 succeeded + 0
-      // duplicates (e.g. every row failing validation) fell through to
-      // toast.success("Imported 0 unique leads."), which reads as "added"
-      // when nothing was.
-      if (succeeded === 0) {
-        toast.error(
-          errors > 0
-            ? `No leads imported — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
-            : `No leads imported — all ${duplicates} row(s) were duplicates.`,
-        );
-      } else if (duplicates > 0 || errors > 0) {
-        toast.info(
-          `Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
-            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
-            (errors > 0 ? ` ${errors} row(s) had errors.` : ""),
-        );
-      } else {
-        toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
-      }
-      invalidateLeads();
-    },
-    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
-  });
-
   const claimMutation = useMutation({
     mutationFn: async (ids: string[]) => {
       const results = await Promise.allSettled(ids.map((id) => api.claimLead(id)));
@@ -477,54 +432,65 @@ function LeadsPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <div
-            role="tablist"
-            aria-label="Lead view"
-            className="inline-flex rounded-lg border border-border bg-card p-0.5"
-          >
-            <ViewTab
-              active={mode === "table"}
-              onClick={() => setMode("table")}
-              label="Table"
-              icon={Table2}
-            />
-            <ViewTab
-              active={mode === "board"}
-              onClick={() => setMode("board")}
-              label="Board"
-              icon={KanbanSquare}
-            />
-          </div>
-          <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                {mode === "table" ? <Table2 className="h-3.5 w-3.5" /> : <KanbanSquare className="h-3.5 w-3.5" />}
+                {mode === "table" ? "Table" : "Board"}
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => setMode("table")}>
+                <Table2 className="h-3.5 w-3.5" /> Table
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setMode("board")}>
+                <KanbanSquare className="h-3.5 w-3.5" /> Board
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
           {/* Delete lives only in the Global Leads scope -- this is its recycle bin. */}
-          {scope === "global" && <RecycleBinDialog />}
-          {/* Toggle replaces owner's Export slot */}
-          <div
-            role="tablist"
-            aria-label="Lead scope"
-            className="inline-flex rounded-lg border border-border bg-card p-0.5"
-          >
-            <ScopeTab
-              active={scope === "global"}
-              onClick={() => {
-                setScope("global");
-                setPage(1);
-                setSelected(new Set());
-              }}
-              label="Global Leads"
-              count={globalLeads.length}
-            />
-            <ScopeTab
-              active={scope === "mine"}
-              onClick={() => {
-                setScope("mine");
-                setPage(1);
-                setSelected(new Set());
-              }}
-              label="My Leads"
-              count={mineCount}
-            />
-          </div>
+          {scope === "global" && (
+            <Button asChild variant="outline" size="icon" className="h-8 w-8" title="Recycle Bin">
+              <Link to="/recruiter/leads/recycle-bin">
+                <Trash2 className="h-3.5 w-3.5" />
+                <span className="sr-only">Recycle Bin</span>
+              </Link>
+            </Button>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                {scope === "global" ? "Global Leads" : "My Leads"}
+                <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] tabular-nums">
+                  {scope === "global" ? globalLeads.length : mineCount}
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => {
+                  setScope("global");
+                  setPage(1);
+                  setSelected(new Set());
+                }}
+              >
+                Global Leads
+                <DropdownMenuShortcut>{globalLeads.length}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => {
+                  setScope("mine");
+                  setPage(1);
+                  setSelected(new Set());
+                }}
+              >
+                My Leads
+                <DropdownMenuShortcut>{mineCount}</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -909,65 +875,6 @@ function LeadsPage() {
   );
 }
 
-function ViewTab({
-  active,
-  onClick,
-  label,
-  icon: Icon,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  icon: typeof Table2;
-}) {
-  return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "bg-primary text-primary-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <Icon className="h-3.5 w-3.5" /> {label}
-    </button>
-  );
-}
-
-function ScopeTab({
-  active,
-  onClick,
-  label,
-  count,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count: number;
-}) {
-  return (
-    <button
-      role="tab"
-      aria-selected={active}
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        active
-          ? "bg-primary text-primary-foreground shadow-sm"
-          : "text-muted-foreground hover:text-foreground"
-      }`}
-    >
-      <span>{label}</span>
-      <span
-        className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${active ? "bg-primary-foreground/20" : "bg-muted"}`}
-      >
-        {count}
-      </span>
-    </button>
-  );
-}
-
 function StageCell({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
   const mutation = useMutation({
     mutationFn: (patch: { stage: string; closureReason?: string }) =>
@@ -1206,267 +1113,3 @@ function FilterSelect({
   );
 }
 
-function BulkUploadDialog({
-  onSubmitRows,
-}: {
-  onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  // Same precheck pattern as add-lead-dialog.tsx's "Add a Lead" bulk upload
-  // -- this dialog never had it, so duplicates silently landed inside the
-  // plain "Imported X of Y rows" toast with no way to tell how many of the
-  // difference was duplicates vs. some other failure.
-  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
-  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
-    fileName: string;
-    duplicateCount: number;
-    duplicateNames: string[];
-    totalCount: number;
-    newCount: number;
-    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
-  } | null>(null);
-
-  function downloadTemplate() {
-    const headers = [
-      "Reachout Date",
-      "First Name",
-      "Full Name",
-      "Country of Residence",
-      "Source",
-      "Profile_Link",
-      "Contact Number",
-      "Email Address",
-      "Services",
-      "Source_Language",
-      "Target_Language",
-      "Secondary_Languages",
-    ];
-    const csv = headers.join(",") + "\n";
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "leads_template.csv";
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function submit() {
-    if (!file) {
-      toast.error("Choose a CSV or Excel file first");
-      return;
-    }
-    const currentFile = file;
-    const isExcel = /\.xlsx?$/i.test(currentFile.name);
-    const reader = new FileReader();
-
-    const finish = async (parsed: ReturnType<typeof parseCsvLeads>) => {
-      if (parsed.length === 0) {
-        toast.info(
-          `Uploaded ${currentFile.name}. Ensure sheet contains Name, Email, Language, or Service headers.`,
-        );
-        return;
-      }
-
-      const rows = parsed.map((l: any) => ({
-        fullName: l.display_name ?? l.masked_label,
-        source: mapToLeadSource(l.source),
-        services: l.services,
-        country: l.country || undefined,
-        profileLink: l.profile_link || undefined,
-        sourceLanguage: l.source_language || "English",
-        targetLanguage: l.target_language || l.language || "English",
-        email: l.email || undefined,
-        contactNumber: l.phone || undefined,
-        yearsOfExperience: l.years_experience || undefined,
-        vendorExperience: l.vendor_experience || undefined,
-      }));
-
-      setCheckingDuplicates(true);
-      try {
-        const dupRes = await api.checkBulkDuplicateLeads(
-          rows.map((r) => ({
-            fullName: r.fullName,
-            email: r.email ?? undefined,
-            contactNumber: r.contactNumber ?? undefined,
-            profileLink: r.profileLink ?? undefined,
-          })),
-        );
-        if (dupRes.hasDuplicates) {
-          const namesList =
-            dupRes.duplicateNames.slice(0, 3).join(", ") +
-            (dupRes.duplicateNames.length > 3 ? "…" : "");
-          toast.error(
-            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or import the rest.`,
-            { duration: 6000 },
-          );
-          setDuplicateCheckResult({
-            fileName: currentFile.name,
-            duplicateCount: dupRes.duplicateCount,
-            duplicateNames: dupRes.duplicateNames,
-            totalCount: dupRes.totalCount,
-            newCount: dupRes.newCount,
-            rows,
-          });
-        } else {
-          onSubmitRows(rows);
-          toast.success(
-            `Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`,
-          );
-          setOpen(false);
-          setFile(null);
-        }
-      } catch {
-        // Precheck is a non-blocking convenience -- /api/leads/bulk still
-        // does its own real duplicate check server-side either way.
-        onSubmitRows(rows);
-        toast.success(`Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`);
-        setOpen(false);
-        setFile(null);
-      } finally {
-        setCheckingDuplicates(false);
-      }
-    };
-
-    if (isExcel) {
-      reader.onload = (event) => {
-        try {
-          const buffer = event.target?.result as ArrayBuffer;
-          const workbook = XLSX.read(buffer, { type: "array" });
-          const sheet = workbook.Sheets[workbook.SheetNames[0]];
-          // A .xlsx/.xls file is a binary zip archive -- reading it with
-          // readAsText() (as this used to, unconditionally) produces garbled
-          // binary noise in every field instead of delimited text. Decode it
-          // properly with the `xlsx` package into the same header-row +
-          // data-rows shape parseCsvLeads tokenizes CSV text into.
-          const rawRows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-          const stringRows = rawRows.map((row) => row.map((cell) => String(cell ?? "")));
-          finish(mapRowsToLeads(stringRows));
-        } catch (err: any) {
-          toast.error(
-            `Could not read ${currentFile.name} as an Excel file: ${err?.message || "unknown error"}`,
-          );
-        }
-      };
-      reader.readAsArrayBuffer(currentFile);
-    } else {
-      reader.onload = (event) => {
-        const text = (event.target?.result as string) || "";
-        finish(parseCsvLeads(text));
-      };
-      reader.readAsText(currentFile);
-    }
-  }
-
-  function importSkippingDuplicates() {
-    if (!duplicateCheckResult) return;
-    onSubmitRows(duplicateCheckResult.rows);
-    toast.success(
-      `Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`,
-    );
-    setDuplicateCheckResult(null);
-    setOpen(false);
-    setFile(null);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">
-          <Upload className="h-3.5 w-3.5" /> Bulk Upload
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Bulk upload leads</DialogTitle>
-          <DialogDescription>
-            Upload a CSV or Excel file matching the SEARCH schema. Duplicates are auto-flagged.
-          </DialogDescription>
-        </DialogHeader>
-        {duplicateCheckResult && (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
-                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
-                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
-              </div>
-              <span className="text-[11px] font-medium text-muted-foreground">
-                {duplicateCheckResult.fileName}
-              </span>
-            </div>
-            <p className="text-xs text-foreground leading-relaxed">
-              <strong>{duplicateCheckResult.duplicateCount}</strong> out of{" "}
-              <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
-              <span className="font-semibold text-destructive ml-1">
-                {duplicateCheckResult.duplicateNames.join(", ")}
-              </span>
-              . You can upload another file or import only the{" "}
-              <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
-            </p>
-            <div className="flex items-center gap-2 pt-1 flex-wrap">
-              {duplicateCheckResult.newCount > 0 && (
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={importSkippingDuplicates}
-                  className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5"
-                >
-                  Import {duplicateCheckResult.newCount} New Lead
-                  {duplicateCheckResult.newCount === 1 ? "" : "s"} Only
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => setDuplicateCheckResult(null)}
-                className="h-8 text-xs text-muted-foreground hover:text-foreground"
-              >
-                Dismiss
-              </Button>
-            </div>
-          </div>
-        )}
-        <div className="space-y-4">
-          <button
-            onClick={downloadTemplate}
-            className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted"
-          >
-            <span className="flex items-center gap-2">
-              <Download className="h-3.5 w-3.5" /> Download sample template
-            </span>
-            <span className="text-[11px] text-muted-foreground">.csv</span>
-          </button>
-          <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
-              File
-            </span>
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              onChange={(e) => {
-                setFile(e.target.files?.[0] ?? null);
-                setDuplicateCheckResult(null);
-              }}
-              className="mt-1 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-            />
-            {file && (
-              <div className="mt-1 text-[11px] text-muted-foreground">
-                {file.name} · {(file.size / 1024).toFixed(1)} KB
-              </div>
-            )}
-          </label>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button size="sm" onClick={submit} disabled={checkingDuplicates}>
-            {checkingDuplicates ? "Checking for duplicates…" : "Upload"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
