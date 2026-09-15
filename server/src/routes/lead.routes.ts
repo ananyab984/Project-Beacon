@@ -18,6 +18,7 @@ import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFie
 import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
+import { createNotification } from "../services/notification.service";
 
 export const leadRouter = Router();
 
@@ -493,6 +494,16 @@ leadRouter.post(
       enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
     });
 
+    if (lead.assignedRecruiterId) {
+      await createNotification({
+        recipientId: lead.assignedRecruiterId,
+        type: "NEW_LEAD",
+        title: `New lead: ${lead.fullName || lead.maskedLabel}`,
+        body: `A new lead was added and assigned to you.`,
+        link: `/recruiter/leads`,
+      }).catch((err) => console.error("[notifications] new lead notify failed:", err));
+    }
+
     return res.status(201).json({ lead: withEnrichedFieldCount(lead), duplicateWarning: dup.isDuplicate ? dup : null });
   })
 );
@@ -594,6 +605,16 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
         setImmediate(() => {
           enrichLeadById(lead.id).catch((err) => console.error("Immediate bulk enrichment error:", err));
         });
+
+        if (lead.assignedRecruiterId) {
+          createNotification({
+            recipientId: lead.assignedRecruiterId,
+            type: "NEW_LEAD",
+            title: `New lead: ${lead.fullName || lead.maskedLabel}`,
+            body: `A new lead was imported and assigned to you.`,
+            link: `/recruiter/leads`,
+          }).catch((err) => console.error("[notifications] new lead notify failed:", err));
+        }
 
         results.push({ index: i, status: dup.isDuplicate ? "duplicate" : "accepted", leadId: lead.id });
       } catch (err: any) {
@@ -1295,6 +1316,42 @@ leadRouter.post(
 
     const [withStatus] = await attachReenrichmentStatus([withEnrichedFieldCount(updated)]);
     return res.json({ lead: withStatus, appliedFields: writtenFields });
+  })
+);
+
+// PATCH /api/leads/:id/notify-subscription — the per-lead "Notify me on
+// response" bell. Plain manual on/off toggle scoped to (lead, recruiter) --
+// turning it on for yourself doesn't affect any other recruiter's switch on
+// the same lead, and it stays on (fires on every future reply from this
+// lead) until switched off, no auto-deactivation.
+leadRouter.patch(
+  "/:id/notify-subscription",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { active } = z.object({ active: z.boolean() }).parse(req.body);
+
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+    const subscription = await prisma.leadNotificationSubscription.upsert({
+      where: { leadId_recruiterId: { leadId: lead.id, recruiterId: req.user!.id } },
+      create: { leadId: lead.id, recruiterId: req.user!.id, active },
+      update: { active },
+    });
+
+    return res.json({ subscription });
+  })
+);
+
+// GET /api/leads/:id/notify-subscription — this recruiter's own toggle state for this lead
+leadRouter.get(
+  "/:id/notify-subscription",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const subscription = await prisma.leadNotificationSubscription.findUnique({
+      where: { leadId_recruiterId: { leadId: req.params.id, recruiterId: req.user!.id } },
+    });
+    return res.json({ active: subscription?.active ?? false });
   })
 );
 

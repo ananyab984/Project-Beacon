@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { createNotification } from "../services/notification.service";
 
 const SLA_BREACH_HOURS = 24;
 const STALE_ON_HOLD_DAYS = 5;
@@ -28,18 +29,23 @@ async function scanSlaBreaches() {
   for (const b of breaches) {
     if (await escalationExists("SLA Breach", b.leadId)) continue;
     const hoursOverdue = (Date.now() - b.occurredAt.getTime()) / 3600_000 - SLA_BREACH_HOURS;
+    const title = `Unanswered high-priority reply — ${b.lead.fullName ?? b.lead.maskedLabel}`;
+    const detail = `Lead replied ${Math.round((Date.now() - b.occurredAt.getTime()) / 3600_000)}h ago and hasn't been responded to.`;
     await prisma.escalation.create({
       data: {
         priority: "P1",
         category: "SLA Breach",
-        title: `Unanswered high-priority reply — ${b.lead.fullName ?? b.lead.maskedLabel}`,
-        detail: `Lead replied ${Math.round((Date.now() - b.occurredAt.getTime()) / 3600_000)}h ago and hasn't been responded to.`,
+        title,
+        detail,
         recommendedAction: "Respond to this lead immediately to avoid losing engagement momentum.",
         slaHoursRemaining: -Math.round(hoursOverdue),
         leadId: b.leadId,
         recruiterId: b.lead.assignedRecruiterId,
       },
     });
+    if (b.lead.assignedRecruiterId) {
+      await mirrorEscalationNotification(b.lead.assignedRecruiterId, title, detail, "/recruiter/leads");
+    }
   }
 }
 
@@ -53,17 +59,22 @@ async function scanStaleLeads() {
   for (const lead of stale) {
     if (await escalationExists("Recruiter Performance", lead.id)) continue;
     const ageDays = Math.round((Date.now() - lead.createdAt.getTime()) / 86_400_000);
+    const title = `Lead stuck On Hold for ${ageDays}d — ${lead.fullName ?? lead.maskedLabel}`;
+    const detail = "This lead has not had its identity resolved / manual enrichment completed.";
     await prisma.escalation.create({
       data: {
         priority: ageDays > STALE_ON_HOLD_DAYS * 2 ? "P2" : "P3",
         category: "Recruiter Performance",
-        title: `Lead stuck On Hold for ${ageDays}d — ${lead.fullName ?? lead.maskedLabel}`,
-        detail: "This lead has not had its identity resolved / manual enrichment completed.",
+        title,
+        detail,
         recommendedAction: "Complete manual enrichment to promote this lead to the Global pool, or close it out.",
         leadId: lead.id,
         recruiterId: lead.assignedRecruiterId,
       },
     });
+    if (lead.assignedRecruiterId) {
+      await mirrorEscalationNotification(lead.assignedRecruiterId, title, detail, "/recruiter/performance");
+    }
   }
 }
 
@@ -96,15 +107,35 @@ async function scanEmailQueueBacklog() {
     }
 
     if (existing) continue;
+    const title = `${r.name}'s email queue has ${backlog} unsent drafts`;
+    const detail = `Backlog exceeds the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold.`;
     await prisma.escalation.create({
       data: {
         priority: "P2",
         category: "Email Queue Threshold Alert",
-        title: `${r.name}'s email queue has ${backlog} unsent drafts`,
-        detail: `Backlog exceeds the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold.`,
+        title,
+        detail,
         recommendedAction: "Review and send or discard queued drafts to keep outreach timely.",
         recruiterId: r.id,
       },
     });
+    await mirrorEscalationNotification(r.id, title, detail, "/recruiter/email-queue");
   }
+}
+
+// Mirrors a newly created Escalation into the unified Notification feed so
+// the recruiter's bell picks it up too (matching the old popover's
+// category -> route heuristic). Only fires when there's an individual
+// recruiter to notify -- Escalation.ownerUserId ("System"-owned escalations)
+// has no single deterministic recipient to target, so those stay
+// Escalation-table-only; the owner's EscalationsBell reads that table
+// directly and is unaffected either way.
+async function mirrorEscalationNotification(recruiterId: string, title: string, detail: string, link: string) {
+  await createNotification({
+    recipientId: recruiterId,
+    type: "ESCALATION",
+    title,
+    body: detail,
+    link,
+  }).catch((err) => console.error("[notifications] escalation mirror failed:", err));
 }

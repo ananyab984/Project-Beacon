@@ -6,6 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
+import { createNotification } from "../services/notification.service";
 
 export const requirementRouter = Router();
 
@@ -132,6 +133,17 @@ requirementRouter.post(
       }
       return rows;
     });
+
+    for (const requirement of created) {
+      if (!requirement.recruiterId) continue;
+      await createNotification({
+        recipientId: requirement.recruiterId,
+        type: "TASK_ASSIGNMENT",
+        title: `Assigned: ${requirement.title}`,
+        body: `You've been assigned to "${requirement.title}" (${requirement.language}, ${requirement.service}).`,
+        link: `/recruiter/clients`,
+      }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
+    }
 
     return res.status(201).json({ requirements: created });
   })
@@ -269,6 +281,18 @@ requirementRouter.post(
         },
       }),
     ]);
+
+    // Unassign (recruiterId: null) fires nothing -- only a real assignment
+    // is a "task assignment" someone needs to be told about.
+    if (recruiterId) {
+      await createNotification({
+        recipientId: recruiterId,
+        type: "TASK_ASSIGNMENT",
+        title: `Assigned: ${updated.title}`,
+        body: `You've been assigned to "${updated.title}" (${updated.language}, ${updated.service}).`,
+        link: `/recruiter/clients`,
+      }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
+    }
 
     return res.json({ requirement: updated });
   })

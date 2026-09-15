@@ -130,4 +130,17 @@ export const config = {
   // explicitly opted into (UNIPILE_ALLOW_LIVE_SENDS=true) for a deliberate
   // local/staging test window -- never left on as a standing default.
   unipileLiveSendsEnabled: isProduction || (process.env.UNIPILE_ALLOW_LIVE_SENDS || "").trim().toLowerCase() === "true",
+
+  // Notifications -- the Slack bot token and the notification-email account
+  // id are owner-configurable in-app now (SystemConfig, via
+  // system-settings.service.ts's getSystemSetting), not read from this
+  // config object directly. Both channels remain optional: until either is
+  // set (here or in-app), that one delivery channel silently no-ops (see
+  // notification.service.ts) rather than blocking the whole server, or the
+  // in-app bell, from working.
+  // How many days out a Requirement's deadline must be before it triggers a
+  // due-date reminder. Placeholder default pending G3 sign-off (see plan's
+  // "Deliverables needed from Global3" #4) -- override via env in the
+  // meantime rather than hardcoding.
+  dueDateReminderWindowDays: parseInt(process.env.DUE_DATE_REMINDER_WINDOW_DAYS || "3", 10),
 };
