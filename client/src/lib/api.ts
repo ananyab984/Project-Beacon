@@ -12,6 +12,9 @@ import type {
   ApiConversation,
   ApiConversationMessage,
   ApiEscalation,
+  ApiNotification,
+  ApiNotificationPreference,
+  NotificationType,
   ApiKpiConfig,
   ApiRecruiterScoreSnapshot,
   ApiRecruiterMetricSnapshot,
@@ -50,7 +53,9 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
   const data = isJson ? await res.json().catch(() => ({})) : await res.text();
 
   if (!res.ok) {
-    const err = new Error((isJson && data.message) || `Request failed (${res.status})`) as ApiRequestError;
+    const err = new Error(
+      (isJson && data.message) || `Request failed (${res.status})`,
+    ) as ApiRequestError;
     err.code = isJson ? data.error : undefined;
     err.status = res.status;
     throw err;
@@ -59,9 +64,14 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
 }
 
 function qs(params: Record<string, string | number | undefined | null>): string {
-  const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  const entries = Object.entries(params).filter(
+    ([, v]) => v !== undefined && v !== null && v !== "",
+  );
   if (entries.length === 0) return "";
-  return "?" + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join("&");
+  return (
+    "?" +
+    entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join("&")
+  );
 }
 
 // -------------------- FAQ types --------------------
@@ -133,10 +143,20 @@ export interface UpdateReplyCategoryInput {
 export const api = {
   // -------------------- leads --------------------
 
-  async getLeads(filters: {
-    q?: string; stage?: string; language?: string; country?: string; service?: string;
-    recruiterId?: string; flag?: string; dateRange?: "24h" | "7d" | "30d"; cursor?: string; limit?: number;
-  } = {}): Promise<{ leads: ApiLead[]; nextCursor: string | null }> {
+  async getLeads(
+    filters: {
+      q?: string;
+      stage?: string;
+      language?: string;
+      country?: string;
+      service?: string;
+      recruiterId?: string;
+      flag?: string;
+      dateRange?: "24h" | "7d" | "30d";
+      cursor?: string;
+      limit?: number;
+    } = {},
+  ): Promise<{ leads: ApiLead[]; nextCursor: string | null }> {
     return request(`/api/leads${qs(filters)}`);
   },
 
@@ -148,28 +168,39 @@ export const api = {
     return request(`/api/leads/${id}`);
   },
 
-  async createLead(lead: Partial<ApiLead> & { fullName: string; source: string }): Promise<{ lead: ApiLead; duplicateWarning: any }> {
+  async createLead(
+    lead: Partial<ApiLead> & { fullName: string; source: string },
+  ): Promise<{ lead: ApiLead; duplicateWarning: any }> {
     return request("/api/leads", { method: "POST", body: JSON.stringify(lead) });
   },
 
   async bulkCreateLeads(
     leads: Array<Partial<ApiLead> & { fullName: string; source: string }>,
-    options: { skipDuplicates?: boolean } = {}
+    options: { skipDuplicates?: boolean } = {},
   ) {
-    return request<{ results: Array<{ index: number; status: string; leadId?: string; message?: string }> }>(
-      "/api/leads/bulk",
-      { method: "POST", body: JSON.stringify({ leads, skipDuplicates: options.skipDuplicates }) }
-    );
+    return request<{
+      results: Array<{ index: number; status: string; leadId?: string; message?: string }>;
+    }>("/api/leads/bulk", {
+      method: "POST",
+      body: JSON.stringify({ leads, skipDuplicates: options.skipDuplicates }),
+    });
   },
 
   async importLeadsFromSheet(sheetUrl: string) {
-    return request<{ results: Array<{ index: number; status: string; leadId?: string; message?: string }>; message?: string }>(
-      "/api/leads/import-from-sheet",
-      { method: "POST", body: JSON.stringify({ sheetUrl }) }
-    );
+    return request<{
+      results: Array<{ index: number; status: string; leadId?: string; message?: string }>;
+      message?: string;
+    }>("/api/leads/import-from-sheet", { method: "POST", body: JSON.stringify({ sheetUrl }) });
   },
 
-  async checkBulkDuplicateLeads(leads: Array<{ fullName?: string; email?: string; contactNumber?: string; profileLink?: string }>) {
+  async checkBulkDuplicateLeads(
+    leads: Array<{
+      fullName?: string;
+      email?: string;
+      contactNumber?: string;
+      profileLink?: string;
+    }>,
+  ) {
     return request<{
       hasDuplicates: boolean;
       duplicateCount: number;
@@ -195,26 +226,45 @@ export const api = {
   },
 
   async bulkUpdateLeads(ids: string[], patch: { stage?: string; recruiterId?: string }) {
-    return request<{ updated: number }>("/api/leads/bulk", { method: "PATCH", body: JSON.stringify({ ids, ...patch }) });
+    return request<{ updated: number }>("/api/leads/bulk", {
+      method: "PATCH",
+      body: JSON.stringify({ ids, ...patch }),
+    });
   },
 
   async deleteLeads(leadIds: string[]): Promise<{ deletedCount: number }> {
-    return request("/api/leads/batch-delete", { method: "POST", body: JSON.stringify({ leadIds }) });
+    return request("/api/leads/batch-delete", {
+      method: "POST",
+      body: JSON.stringify({ leadIds }),
+    });
   },
 
   async claimLead(id: string): Promise<{ lead: ApiLead }> {
     return request(`/api/leads/${id}/claim`, { method: "POST" });
   },
 
-  async checkDuplicateLead(input: { email?: string; contactNumber?: string; fullName?: string; profileLink?: string }) {
+  async checkDuplicateLead(input: {
+    email?: string;
+    contactNumber?: string;
+    fullName?: string;
+    profileLink?: string;
+  }) {
     return request<{ isDuplicate: boolean; matchedField: string | null; leadId: string | null }>(
       "/api/leads/check-duplicate",
-      { method: "POST", body: JSON.stringify(input) }
+      { method: "POST", body: JSON.stringify(input) },
     );
   },
 
-  async addLeadFlag(id: string, flag: string, reason?: string, provisional?: boolean): Promise<{ lead: ApiLead }> {
-    return request(`/api/leads/${id}/flags`, { method: "POST", body: JSON.stringify({ flag, reason, provisional }) });
+  async addLeadFlag(
+    id: string,
+    flag: string,
+    reason?: string,
+    provisional?: boolean,
+  ): Promise<{ lead: ApiLead }> {
+    return request(`/api/leads/${id}/flags`, {
+      method: "POST",
+      body: JSON.stringify({ flag, reason, provisional }),
+    });
   },
 
   async removeLeadFlag(id: string, flag: string): Promise<{ lead: ApiLead }> {
@@ -222,11 +272,21 @@ export const api = {
   },
 
   async removeLeadService(id: string, service: string): Promise<{ lead: ApiLead }> {
-    return request(`/api/leads/${id}/services/${encodeURIComponent(service)}`, { method: "DELETE" });
+    return request(`/api/leads/${id}/services/${encodeURIComponent(service)}`, {
+      method: "DELETE",
+    });
   },
 
-  async logLeadActivity(id: string, activity: { type: "INTERVIEW"; scheduledAt: string; notes?: string } | { type: "CALL"; scheduledAt: string; purpose?: string; outcome?: string }) {
-    return request(`/api/leads/${id}/activities`, { method: "POST", body: JSON.stringify(activity) });
+  async logLeadActivity(
+    id: string,
+    activity:
+      | { type: "INTERVIEW"; scheduledAt: string; notes?: string }
+      | { type: "CALL"; scheduledAt: string; purpose?: string; outcome?: string },
+  ) {
+    return request(`/api/leads/${id}/activities`, {
+      method: "POST",
+      body: JSON.stringify(activity),
+    });
   },
 
   async retryLeadEnrichment(id: string): Promise<{ lead: ApiLead }> {
@@ -235,7 +295,9 @@ export const api = {
 
   // Dispatches an Autumn.ai research task and returns immediately -- the run
   // itself takes minutes, so progress is read back via getReenrichmentStatus.
-  async reenrichLead(id: string): Promise<{ run: { id: string; status: string; startedAt: string } }> {
+  async reenrichLead(
+    id: string,
+  ): Promise<{ run: { id: string; status: string; startedAt: string } }> {
     return request(`/api/leads/${id}/reenrich`, { method: "POST" });
   },
 
@@ -245,7 +307,11 @@ export const api = {
 
   // Applies only the conflicting fields the recruiter chose to take from
   // Autumn; everything else keeps the lead's current value.
-  async resolveReenrichment(id: string, runId: string, acceptFields: string[]): Promise<{ lead: ApiLead; appliedFields: string[] }> {
+  async resolveReenrichment(
+    id: string,
+    runId: string,
+    acceptFields: string[],
+  ): Promise<{ lead: ApiLead; appliedFields: string[] }> {
     return request(`/api/leads/${id}/reenrichment-resolve`, {
       method: "POST",
       body: JSON.stringify({ runId, acceptFields }),
@@ -277,8 +343,17 @@ export const api = {
     return request(`/api/users${qs({ role })}`);
   },
 
-  async createUser(input: { name: string; email: string; role: UserRole; workStatus?: WorkStatus; languages?: string[] }) {
-    return request<{ user: ApiUser }>("/api/users", { method: "POST", body: JSON.stringify(input) });
+  async createUser(input: {
+    name: string;
+    email: string;
+    role: UserRole;
+    workStatus?: WorkStatus;
+    languages?: string[];
+  }) {
+    return request<{ user: ApiUser }>("/api/users", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 
   async deactivateUser(id: string): Promise<{ user: ApiUser }> {
@@ -286,11 +361,17 @@ export const api = {
   },
 
   async updateUserLanguages(id: string, languages: string[]): Promise<{ user: ApiUser }> {
-    return request(`/api/users/${id}/languages`, { method: "PATCH", body: JSON.stringify({ languages }) });
+    return request(`/api/users/${id}/languages`, {
+      method: "PATCH",
+      body: JSON.stringify({ languages }),
+    });
   },
 
   async assignContractor(contractorId: string, recruiterId?: string) {
-    return request(`/api/users/${contractorId}/contractor-assignment`, { method: "POST", body: JSON.stringify({ recruiterId }) });
+    return request(`/api/users/${contractorId}/contractor-assignment`, {
+      method: "POST",
+      body: JSON.stringify({ recruiterId }),
+    });
   },
 
   async unassignContractor(contractorId: string) {
@@ -307,19 +388,44 @@ export const api = {
     return request(`/api/clients/${id}`);
   },
 
-  async createClient(input: { name: string; industry?: string; contactName?: string; contactEmail?: string; notes?: string }) {
-    return request<{ client: ApiClient }>("/api/clients", { method: "POST", body: JSON.stringify(input) });
+  async createClient(input: {
+    name: string;
+    industry?: string;
+    contactName?: string;
+    contactEmail?: string;
+    notes?: string;
+  }) {
+    return request<{ client: ApiClient }>("/api/clients", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
   },
 
-  async updateClient(id: string, patch: Partial<{ name: string; industry: string; contactName: string; contactEmail: string; notes: string }>) {
-    return request<{ client: ApiClient }>(`/api/clients/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  async updateClient(
+    id: string,
+    patch: Partial<{
+      name: string;
+      industry: string;
+      contactName: string;
+      contactEmail: string;
+      notes: string;
+    }>,
+  ) {
+    return request<{ client: ApiClient }>(`/api/clients/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
   },
 
   async deleteClient(id: string) {
-    return request<{ success: boolean; message: string }>(`/api/clients/${id}`, { method: "DELETE" });
+    return request<{ success: boolean; message: string }>(`/api/clients/${id}`, {
+      method: "DELETE",
+    });
   },
 
-  async getRequirements(filters: { clientId?: string; status?: string; priority?: string; q?: string } = {}) {
+  async getRequirements(
+    filters: { clientId?: string; status?: string; priority?: string; q?: string } = {},
+  ) {
     return request<{ requirements: ApiRequirement[] }>(`/api/requirements${qs(filters)}`);
   },
 
@@ -331,22 +437,52 @@ export const api = {
     return request(`/api/requirements/${id}/history`);
   },
 
-  async createRequirements(clientId: string, items: Array<{
-    title: string; language: string; service: string; region?: string; projectName?: string;
-    headcountNeeded: number; priority: string; recruiterId?: string; deadline?: string; notes?: string;
-  }>) {
-    return request<{ requirements: ApiRequirement[] }>("/api/requirements", { method: "POST", body: JSON.stringify({ clientId, items }) });
+  async createRequirements(
+    clientId: string,
+    items: Array<{
+      title: string;
+      language: string;
+      service: string;
+      region?: string;
+      projectName?: string;
+      headcountNeeded: number;
+      priority: string;
+      recruiterId?: string;
+      deadline?: string;
+      notes?: string;
+    }>,
+  ) {
+    return request<{ requirements: ApiRequirement[] }>("/api/requirements", {
+      method: "POST",
+      body: JSON.stringify({ clientId, items }),
+    });
   },
 
-  async updateRequirement(id: string, patch: {
-    title?: string; language?: string; service?: string; region?: string; projectName?: string;
-    headcountNeeded?: number; priority?: string; status?: string; deadline?: string; notes?: string;
-  }) {
-    return request<{ requirement: ApiRequirement }>(`/api/requirements/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  async updateRequirement(
+    id: string,
+    patch: {
+      title?: string;
+      language?: string;
+      service?: string;
+      region?: string;
+      projectName?: string;
+      headcountNeeded?: number;
+      priority?: string;
+      status?: string;
+      deadline?: string;
+      notes?: string;
+    },
+  ) {
+    return request<{ requirement: ApiRequirement }>(`/api/requirements/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
   },
 
   async deleteRequirement(id: string) {
-    return request<{ success: boolean; message: string }>(`/api/requirements/${id}`, { method: "DELETE" });
+    return request<{ success: boolean; message: string }>(`/api/requirements/${id}`, {
+      method: "DELETE",
+    });
   },
 
   async assignRequirement(id: string, recruiterId: string | null, note?: string) {
@@ -367,24 +503,43 @@ export const api = {
   },
 
   async createClientDemand(input: {
-    clientName: string; projectName?: string; language: string; services: Array<{ service: string; needed: number }>;
-    priority: string; deadline?: string; contactName?: string; contactEmail?: string; notes?: string;
+    clientName: string;
+    projectName?: string;
+    language: string;
+    services: Array<{ service: string; needed: number }>;
+    priority: string;
+    deadline?: string;
+    contactName?: string;
+    contactEmail?: string;
+    notes?: string;
   }) {
     return request<{ clientDemand: ApiClientDemand; requirements: ApiRequirement[] }>(
       "/api/client-demands",
-      { method: "POST", body: JSON.stringify(input) }
+      { method: "POST", body: JSON.stringify(input) },
     );
   },
 
-  async updateClientDemand(id: string, patch: {
-    priority?: string; deadline?: string | null; contactName?: string | null;
-    contactEmail?: string | null; notes?: string | null; headcountNeeded?: number;
-  }) {
-    return request<{ clientDemand: ApiClientDemand }>(`/api/client-demands/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+  async updateClientDemand(
+    id: string,
+    patch: {
+      priority?: string;
+      deadline?: string | null;
+      contactName?: string | null;
+      contactEmail?: string | null;
+      notes?: string | null;
+      headcountNeeded?: number;
+    },
+  ) {
+    return request<{ clientDemand: ApiClientDemand }>(`/api/client-demands/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
   },
 
   async deleteClientDemand(id: string) {
-    return request<{ success: boolean; message: string }>(`/api/client-demands/${id}`, { method: "DELETE" });
+    return request<{ success: boolean; message: string }>(`/api/client-demands/${id}`, {
+      method: "DELETE",
+    });
   },
 
   // -------------------- sheet sync --------------------
@@ -412,7 +567,10 @@ export const api = {
   },
 
   async updateEmailQueueItem(id: string, patch: { subject?: string; body?: string; to?: string }) {
-    return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+    return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
   },
 
   async generateEmailDraft(id: string, to?: string) {
@@ -422,20 +580,35 @@ export const api = {
     });
   },
 
-  async sendEmailQueueItem(id: string, payload: { to?: string; subject?: string; body: string; channel: "LINKEDIN" | "EMAIL"; accountId?: string; replyToMessageId?: string }) {
-    return request<{ success: true }>(`/api/email-queue/${id}/send`, { method: "POST", body: JSON.stringify(payload) });
+  async sendEmailQueueItem(
+    id: string,
+    payload: {
+      to?: string;
+      subject?: string;
+      body: string;
+      channel: "LINKEDIN" | "EMAIL";
+      accountId?: string;
+      replyToMessageId?: string;
+    },
+  ) {
+    return request<{ success: true }>(`/api/email-queue/${id}/send`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 
   async batchSendEmailQueue(ids: string[]) {
     return request<{ results: Array<{ id: string; success: boolean; error?: string }> }>(
       "/api/email-queue/batch-send",
-      { method: "POST", body: JSON.stringify({ ids }) }
+      { method: "POST", body: JSON.stringify({ ids }) },
     );
   },
 
   // -------------------- conversations --------------------
 
-  async getConversations(opts: { scope?: "own" } = {}): Promise<{ conversations: ApiConversation[] }> {
+  async getConversations(
+    opts: { scope?: "own" } = {},
+  ): Promise<{ conversations: ApiConversation[] }> {
     return request(`/api/conversations${qs(opts)}`);
   },
 
@@ -448,14 +621,28 @@ export const api = {
   },
 
   async generateLinkedInDraft(id: string) {
-    return request<{ draft: { body: string } }>(`/api/conversations/${id}/generate-draft`, { method: "POST" });
+    return request<{ draft: { body: string } }>(`/api/conversations/${id}/generate-draft`, {
+      method: "POST",
+    });
   },
 
-  async sendConversationMessage(id: string, text: string, accountId?: string, to?: string, replyToMessageId?: string) {
-    return request(`/api/conversations/${id}/messages`, { method: "POST", body: JSON.stringify({ text, accountId, to, replyToMessageId }) });
+  async sendConversationMessage(
+    id: string,
+    text: string,
+    accountId?: string,
+    to?: string,
+    replyToMessageId?: string,
+  ) {
+    return request(`/api/conversations/${id}/messages`, {
+      method: "POST",
+      body: JSON.stringify({ text, accountId, to, replyToMessageId }),
+    });
   },
 
-  async getConversationByLead(leadId: string, channel?: string): Promise<{ conversation: ApiConversation | null; messages: ApiConversationMessage[] }> {
+  async getConversationByLead(
+    leadId: string,
+    channel?: string,
+  ): Promise<{ conversation: ApiConversation | null; messages: ApiConversationMessage[] }> {
     const qs = channel ? `?channel=${encodeURIComponent(channel)}` : "";
     return request(`/api/conversations/by-lead/${leadId}${qs}`);
   },
@@ -467,7 +654,67 @@ export const api = {
   },
 
   async updateEscalation(id: string, patch: { status?: string; assignToMe?: boolean }) {
-    return request<{ escalation: ApiEscalation }>(`/api/escalations/${id}`, { method: "PATCH", body: JSON.stringify(patch) });
+    return request<{ escalation: ApiEscalation }>(`/api/escalations/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
+  },
+
+  // -------------------- notifications --------------------
+
+  async getNotifications(
+    params: { cursor?: string; take?: number } = {},
+  ): Promise<{ notifications: ApiNotification[]; nextCursor: string | null }> {
+    return request(`/api/notifications${qs(params)}`);
+  },
+
+  async getUnreadNotificationCount(): Promise<{ count: number }> {
+    return request("/api/notifications/unread-count");
+  },
+
+  async markNotificationRead(id: string) {
+    return request<{ notification: ApiNotification }>(`/api/notifications/${id}/read`, {
+      method: "POST",
+    });
+  },
+
+  async markAllNotificationsRead() {
+    return request<{ success: true }>("/api/notifications/read-all", { method: "POST" });
+  },
+
+  async getNotificationPreferences(): Promise<{
+    preferences: ApiNotificationPreference[];
+    alwaysOnBellTypes: NotificationType[];
+  }> {
+    return request("/api/notifications/preferences");
+  },
+
+  async updateNotificationPreference(
+    type: NotificationType,
+    patch: { emailEnabled?: boolean; slackEnabled?: boolean },
+  ) {
+    return request<{ preference: ApiNotificationPreference }>(
+      `/api/notifications/preferences/${type}`,
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+  },
+
+  async getLeadNotifySubscription(leadId: string): Promise<{ active: boolean }> {
+    return request(`/api/leads/${leadId}/notify-subscription`);
+  },
+
+  async setLeadNotifySubscription(leadId: string, active: boolean) {
+    return request<{ subscription: { active: boolean } }>(
+      `/api/leads/${leadId}/notify-subscription`,
+      { method: "PATCH", body: JSON.stringify({ active }) },
+    );
+  },
+
+  async updateSlackMemberId(userId: string, slackMemberId: string | null) {
+    return request<{ user: ApiUser }>(`/api/users/${userId}/slack-member-id`, {
+      method: "PATCH",
+      body: JSON.stringify({ slackMemberId }),
+    });
   },
 
   // -------------------- evaluation / scoring --------------------
@@ -476,33 +723,59 @@ export const api = {
     return request("/api/kpi-config");
   },
 
-  async updateKpiConfig(metricKey: string, patch: Partial<Pick<ApiKpiConfig, "weight" | "target" | "goodBand" | "direction" | "group" | "label" | "unit" | "scored" | "notes">>) {
-    return request<{ kpiConfig: ApiKpiConfig }>(`/api/kpi-config/${metricKey}`, { method: "PATCH", body: JSON.stringify(patch) });
+  async updateKpiConfig(
+    metricKey: string,
+    patch: Partial<
+      Pick<
+        ApiKpiConfig,
+        | "weight"
+        | "target"
+        | "goodBand"
+        | "direction"
+        | "group"
+        | "label"
+        | "unit"
+        | "scored"
+        | "notes"
+      >
+    >,
+  ) {
+    return request<{ kpiConfig: ApiKpiConfig }>(`/api/kpi-config/${metricKey}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    });
   },
 
   async getRecruiterScore(recruiterId: string) {
-    return request<{ snapshot: ApiRecruiterScoreSnapshot | null; metricSnapshots: ApiRecruiterMetricSnapshot[] }>(
-      `/api/recruiters/${recruiterId}/score`
-    );
+    return request<{
+      snapshot: ApiRecruiterScoreSnapshot | null;
+      metricSnapshots: ApiRecruiterMetricSnapshot[];
+    }>(`/api/recruiters/${recruiterId}/score`);
   },
 
   async recomputeRecruiterScore(recruiterId: string) {
     return request<{ success: boolean; snapshot: ApiRecruiterScoreSnapshot }>(
       `/api/recruiters/${recruiterId}/recompute-score`,
-      { method: "POST" }
+      { method: "POST" },
     );
   },
 
   async getRecruiterKpiSummary(recruiterId: string) {
-    return request<{ summary: ApiRecruiterKpiSummary | null }>(`/api/recruiters/${recruiterId}/kpi-summary`);
+    return request<{ summary: ApiRecruiterKpiSummary | null }>(
+      `/api/recruiters/${recruiterId}/kpi-summary`,
+    );
   },
 
   // -------------------- Unipile / outreach --------------------
 
   /** Mint hosted auth link for connecting accounts */
   async connectAccount(provider: string, clientUrl?: string): Promise<{ url: string }> {
-    const origin = clientUrl || (typeof window !== "undefined" ? window.location.origin : undefined);
-    return request("/api/unipile/connect", { method: "POST", body: JSON.stringify({ provider, clientUrl: origin }) });
+    const origin =
+      clientUrl || (typeof window !== "undefined" ? window.location.origin : undefined);
+    return request("/api/unipile/connect", {
+      method: "POST",
+      body: JSON.stringify({ provider, clientUrl: origin }),
+    });
   },
 
   /** Get user's connected Unipile accounts */
@@ -522,7 +795,47 @@ export const api = {
 
   /** Clear this user's own outstanding connect attempt (idempotent) */
   async cancelPendingConnection(provider: string): Promise<{ success: boolean }> {
-    return request("/api/unipile/cancel-pending", { method: "POST", body: JSON.stringify({ provider }) });
+    return request("/api/unipile/cancel-pending", {
+      method: "POST",
+      body: JSON.stringify({ provider }),
+    });
+  },
+
+  /** Owner-only: disconnect any recruiter's outreach account on their behalf */
+  async disconnectUserAccount(userId: string, accountId: string): Promise<{ success: boolean }> {
+    return request(`/api/users/${userId}/connected-accounts/${accountId}`, { method: "DELETE" });
+  },
+
+  // -------------------- system settings (owner-only) --------------------
+
+  async getSystemNotificationSettings(): Promise<{
+    slackBotTokenConfigured: boolean;
+    notificationAccount: {
+      unipileAccountId: string;
+      accountName: string | null;
+      provider: string;
+      status: string;
+    } | null;
+  }> {
+    return request("/api/system-settings/notifications");
+  },
+
+  async setSlackBotToken(token: string | null): Promise<{ configured: boolean }> {
+    return request("/api/system-settings/slack-bot-token", {
+      method: "PATCH",
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  async setNotificationEmailAccount(unipileAccountId: string): Promise<{ success: boolean }> {
+    return request("/api/system-settings/notification-email-account", {
+      method: "POST",
+      body: JSON.stringify({ unipileAccountId }),
+    });
+  },
+
+  async removeNotificationEmailAccount(): Promise<{ success: boolean }> {
+    return request("/api/system-settings/notification-email-account", { method: "DELETE" });
   },
 
   /** Send outreach via Unipile (LinkedIn DM or Tracked Email) */
@@ -561,7 +874,10 @@ export const api = {
    *  click-to-drill-down. Always consistent with getOutreachFunnel's count
    *  for the same category+range, since the server computes both from the
    *  same id set. */
-  async getOutreachFunnelLeads(category: OutreachFunnelCategory, range: string = "30d"): Promise<{
+  async getOutreachFunnelLeads(
+    category: OutreachFunnelCategory,
+    range: string = "30d",
+  ): Promise<{
     category: string;
     range: string;
     leads: OutreachFunnelLead[];
@@ -597,7 +913,7 @@ export const api = {
     options?: {
       conversationHistory?: Array<{ role: "user" | "assistant"; text: string }>;
       includeConversationContext?: boolean;
-    }
+    },
   ): Promise<FaqCheckResponse> {
     return request<FaqCheckResponse>("/api/faq/check", {
       method: "POST",
@@ -620,7 +936,9 @@ export const api = {
   },
 
   /** Create an FAQ entry (owner only); keywords are auto-generated server-side */
-  async createFaq(data: CreateFaqInput): Promise<{ faqEntry: FaqEntry; keywordsGenerated: boolean }> {
+  async createFaq(
+    data: CreateFaqInput,
+  ): Promise<{ faqEntry: FaqEntry; keywordsGenerated: boolean }> {
     return request("/api/faq", {
       method: "POST",
       body: JSON.stringify(data),
@@ -645,12 +963,17 @@ export const api = {
   /** List all active reply categories, plus the feature's single kill
    *  switch (`featureEnabled`) -- every UI surface that needs to know
    *  whether classification is on reads it off this same response. */
-  async listReplyCategories(): Promise<{ replyCategories: ReplyCategory[]; featureEnabled: boolean }> {
+  async listReplyCategories(): Promise<{
+    replyCategories: ReplyCategory[];
+    featureEnabled: boolean;
+  }> {
     return request("/api/reply-categories");
   },
 
   /** Create a reply category (owner only) */
-  async createReplyCategory(data: CreateReplyCategoryInput): Promise<{ replyCategory: ReplyCategory }> {
+  async createReplyCategory(
+    data: CreateReplyCategoryInput,
+  ): Promise<{ replyCategory: ReplyCategory }> {
     return request("/api/reply-categories", {
       method: "POST",
       body: JSON.stringify(data),
@@ -658,7 +981,10 @@ export const api = {
   },
 
   /** Update a reply category (owner only) */
-  async updateReplyCategory(id: string, data: UpdateReplyCategoryInput): Promise<{ replyCategory: ReplyCategory }> {
+  async updateReplyCategory(
+    id: string,
+    data: UpdateReplyCategoryInput,
+  ): Promise<{ replyCategory: ReplyCategory }> {
     return request(`/api/reply-categories/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),

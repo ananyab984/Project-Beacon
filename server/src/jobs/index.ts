@@ -2,6 +2,7 @@ import cron from "node-cron";
 import { pollPendingEnrichment, stallOverdueEnrichments } from "./enrichment.job";
 import { runMonthlyScoring } from "./scoring.job";
 import { scanForEscalations } from "./escalation.job";
+import { runDueDateReminders } from "./due-date-reminder.job";
 
 /** Starts all recurring background work in-process (node-cron). No queue/Redis
  *  needed at current scale -- see the backend plan for why. */
@@ -25,5 +26,10 @@ export function startBackgroundJobs() {
     runMonthlyScoring().catch((err) => console.error("[jobs] monthly scoring failed:", err));
   });
 
-  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, scoring: monthly)");
+  // Daily, 8am: due-date reminders for assigned Requirements nearing deadline.
+  cron.schedule("0 8 * * *", () => {
+    runDueDateReminders().catch((err) => console.error("[jobs] due-date reminder scan failed:", err));
+  });
+
+  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, due-date reminders: daily, scoring: monthly)");
 }

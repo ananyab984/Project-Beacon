@@ -6,22 +6,37 @@
 export type UserRole = "OWNER" | "RECRUITER" | "CONTRACTOR";
 export type WorkStatus = "PERMANENT" | "CONTRACTOR";
 
-export type LeadStage = "NEW" | "CONTACTED" | "REPLIED" | "NEGOTIATING" | "INVITE_SENT" | "ONBOARDED" | "COLD";
+export type LeadStage =
+  "NEW" | "CONTACTED" | "REPLIED" | "NEGOTIATING" | "INVITE_SENT" | "ONBOARDED" | "COLD";
 export type LeadStatus =
-  | "NEW" | "CONTACTED" | "AWAITING_REPLY" | "REPLIED" | "SCREENING" | "INTERVIEW_SCHEDULED"
-  | "INTERVIEW_COMPLETED" | "NEGOTIATION" | "OFFERED" | "PLACED" | "ON_HOLD" | "CLOSED" | "REJECTED";
+  | "NEW"
+  | "CONTACTED"
+  | "AWAITING_REPLY"
+  | "REPLIED"
+  | "SCREENING"
+  | "INTERVIEW_SCHEDULED"
+  | "INTERVIEW_COMPLETED"
+  | "NEGOTIATION"
+  | "OFFERED"
+  | "PLACED"
+  | "ON_HOLD"
+  | "CLOSED"
+  | "REJECTED";
 export type LeadPriority = "P0" | "P1" | "P2" | "P3";
 export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
 export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
-export type EnrichmentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
-export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
+export type EnrichmentStatus =
+  "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
+export type LeadSource =
+  "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
 /** Why the ON_HOLD flag is currently set -- purely descriptive, doesn't
  * drive ON_HOLD by itself. MANUAL only clears via the flags toggle;
  * TIMEOUT/SYSTEM_ERROR auto-clear the next time a re-enrichment run
  * concludes cleanly. */
 export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
-export type OutreachFunnelCategory = "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc" | "onboarded";
+export type OutreachFunnelCategory =
+  "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc" | "onboarded";
 
 /** One row in a funnel tile's drill-down list -- deliberately lighter than
  *  ApiLead, matching what GET /reports/outreach-funnel/leads selects. */
@@ -180,6 +195,7 @@ export interface ApiUser {
   role: UserRole;
   workStatus: WorkStatus;
   languages: string[];
+  slackMemberId?: string | null;
   emailVerified: boolean;
   isActive: boolean;
   startDate: string;
@@ -330,6 +346,29 @@ export interface ApiConversation {
 
 export type EscalationPriority = "P1" | "P2" | "P3";
 export type EscalationStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS";
+
+export type NotificationType =
+  "NEW_LEAD" | "TASK_ASSIGNMENT" | "DUE_DATE_REMINDER" | "LEAD_RESPONSE" | "ESCALATION";
+
+export interface ApiNotification {
+  id: string;
+  recipientId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiNotificationPreference {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+}
 
 export interface ApiEscalation {
   id: string;

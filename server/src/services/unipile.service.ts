@@ -16,6 +16,8 @@ import {
   InboundChannel,
 } from "@prisma/client";
 import { processInboundMessage } from "./processInboundMessage";
+import { createNotification } from "./notification.service";
+import { getSystemSetting } from "./system-settings.service";
 
 // Exact, known Unipile account-status strings -> our AccountStatus enum.
 // Deliberately an exact-match table, not substring matching: a status like
@@ -864,6 +866,48 @@ export class UnipileService {
   }
 
   /**
+   * Send a plain system/transactional email (e.g. a notification to a
+   * recruiter about their own lead/requirement) via one dedicated,
+   * pre-connected Unipile mailbox (UNIPILE_SYSTEM_ACCOUNT_ID) -- NOT a
+   * recruiter's own outreach account. Deliberately skips everything
+   * candidate-outreach-specific that sendEmail() above does: no leadId (a
+   * task/due-date notification has no candidate to attach one to), no
+   * InteractionEvent/Conversation writes (this isn't a real outreach
+   * interaction, and writing one would corrupt SLA/response-time tracking
+   * that reads those tables), and no assertLiveSendsAllowed gate (that's a
+   * safety switch for real candidate-facing sends, not system mail). No-ops
+   * if the system mailbox isn't configured yet, matching the notification
+   * feature's "email/Slack channels no-op until provisioned" design.
+   */
+  static async sendSystemEmail(toEmail: string, subject: string, body: string): Promise<void> {
+    // Owner-configurable in-app (see system-settings.routes.ts) rather than
+    // env-var-only, so G3 can connect/change the notification mailbox
+    // themselves without an engineering redeploy.
+    const accountId = await getSystemSetting("UNIPILE_SYSTEM_ACCOUNT_ID");
+    if (!accountId) {
+      console.warn("[unipile] Notification email account not configured -- skipping system notification email");
+      return;
+    }
+
+    const unipileBaseUrl = this.getUnipileBaseUrl();
+    const payload = {
+      account_id: accountId,
+      to: [{ identifier: toEmail.trim(), display_name: "" }],
+      subject,
+      body: plainTextToEmailHtml(body),
+    };
+
+    await retryWithBackoff(
+      (signal) =>
+        axios.post(`${unipileBaseUrl}/emails`, payload, {
+          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+          signal,
+        }),
+      { retries: 0, deadlineMs: 15000 }
+    );
+  }
+
+  /**
    * Helper to sync outbound message to Conversation & ConversationMessage models
    */
   private static async syncToConversation(
@@ -1463,6 +1507,24 @@ export class UnipileService {
                 lastMessageAt: eventTimestamp,
               },
             });
+
+            // "Notify me on response" -- a plain per-lead subscription, left
+            // active after firing (see LeadNotificationSubscription doc
+            // comment in schema.prisma), so it fires again on every future
+            // reply from this lead until the recruiter turns it off.
+            const subs = await prisma.leadNotificationSubscription.findMany({
+              where: { leadId: conversation.leadId, active: true },
+            });
+            if (subs.length > 0) {
+              const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+              for (const sub of subs) createNotification({
+                recipientId: sub.recruiterId,
+                type: "LEAD_RESPONSE",
+                title: `${lead?.fullName ?? lead?.maskedLabel ?? "A lead"} replied`,
+                body: messageText.slice(0, 200),
+                link: `/recruiter/leads`,
+              }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+            }
           }
         }
       }

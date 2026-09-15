@@ -8,14 +8,27 @@ import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
-import { Linkedin, Mail, Trash2, Plus, ShieldCheck, User, Settings as SettingsIcon, CheckCircle2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Linkedin, Mail, Trash2, Plus, ShieldCheck, User, Bell, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import type { NotificationType } from "@/lib/api-types";
+
+const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  NEW_LEAD: "New lead application",
+  TASK_ASSIGNMENT: "Task assignment",
+  DUE_DATE_REMINDER: "Project due-date reminder",
+  LEAD_RESPONSE: "Lead response (per-lead bell, set on each lead's row)",
+  ESCALATION: "Escalated items",
+};
 
 export const Route = createFileRoute("/recruiter/settings")({
   head: () => ({
     meta: [
       { title: "Recruiter Settings — Global3" },
-      { name: "description", content: "Recruiter settings: Outreach accounts, connected IDs, profile preferences." },
+      {
+        name: "description",
+        content: "Recruiter settings: Outreach accounts, connected IDs, profile preferences.",
+      },
     ],
   }),
   component: RecruiterSettingsPage,
@@ -44,13 +57,43 @@ function RecruiterSettingsPage() {
 
   const activeAccounts = accounts.filter((a: any) => a.status !== "DISCONNECTED");
 
+  const { data: prefsData } = useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: api.getNotificationPreferences,
+  });
+
+  const updatePrefMutation = useMutation({
+    mutationFn: ({
+      type,
+      patch,
+    }: {
+      type: NotificationType;
+      patch: { emailEnabled?: boolean; slackEnabled?: boolean };
+    }) => api.updateNotificationPreference(type, patch),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
+    onError: (err: any) => toast.error(err?.message || "Failed to update notification preference"),
+  });
+
+  const [slackMemberId, setSlackMemberId] = useState(user?.slackMemberId ?? "");
+  const slackMutation = useMutation({
+    mutationFn: () => api.updateSlackMemberId(user!.id, slackMemberId.trim() || null),
+    onSuccess: () => toast.success("Slack member ID saved"),
+    onError: (err: any) => toast.error(err?.message || "Failed to save Slack member ID"),
+  });
+
+  const preferences = prefsData?.preferences ?? [];
+  const alwaysOnBellTypes = new Set(prefsData?.alwaysOnBellTypes ?? []);
+
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <div>
-        <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Preferences & Integrations</div>
+        <div className="text-[11px] font-medium uppercase tracking-widest text-accent">
+          Preferences & Integrations
+        </div>
         <h2 className="mt-0.5 text-2xl font-semibold tracking-tight">Recruiter Settings</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage your connected LinkedIn and Email outreach accounts, credentials, and profile settings.
+          Manage your connected LinkedIn and Email outreach accounts, credentials, and profile
+          settings.
         </p>
       </div>
 
@@ -62,7 +105,8 @@ function RecruiterSettingsPage() {
               <ShieldCheck className="h-5 w-5 text-primary" /> Connected Outreach Accounts
             </h3>
             <p className="mt-1 text-xs text-muted-foreground">
-              Link your LinkedIn or Email via Unipile Hosted Auth to send DMs & tracked emails directly from Global3.
+              Link your LinkedIn or Email via Unipile Hosted Auth to send DMs & tracked emails
+              directly from Global3.
             </p>
           </div>
           <Button
@@ -108,7 +152,10 @@ function RecruiterSettingsPage() {
                       {acc.accountName || acc.unipileAccountId}
                     </div>
                     <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground mt-0.5">
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 font-semibold gap-1">
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 font-semibold gap-1"
+                      >
                         <CheckCircle2 className="h-2.5 w-2.5" /> {acc.status || "CONNECTED"}
                       </Badge>
                       <span>• {acc.provider}</span>
@@ -146,7 +193,100 @@ function RecruiterSettingsPage() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs">Role</Label>
-            <Input value="Recruiter — Candidate Oversight & Sourcing" disabled className="bg-muted/30 text-xs" />
+            <Input
+              value="Recruiter — Candidate Oversight & Sourcing"
+              disabled
+              className="bg-muted/30 text-xs"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Notification Preferences Section */}
+      <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+        <div>
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <Bell className="h-5 w-5 text-primary" /> Notification Preferences
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The in-app bell is always on for new leads, task assignments, due-date reminders, and
+            escalations. Turn on email or Slack for any type below.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="py-2 pr-4 font-medium">Type</th>
+                <th className="py-2 px-4 font-medium">Bell</th>
+                <th className="py-2 px-4 font-medium">Email</th>
+                <th className="py-2 px-4 font-medium">Slack</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {preferences.map((p) => (
+                <tr key={p.type}>
+                  <td className="py-3 pr-4 font-medium text-foreground">
+                    {NOTIFICATION_TYPE_LABELS[p.type]}
+                  </td>
+                  <td className="py-3 px-4">
+                    {alwaysOnBellTypes.has(p.type) ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    <Switch
+                      checked={p.emailEnabled}
+                      onCheckedChange={(checked) =>
+                        updatePrefMutation.mutate({
+                          type: p.type,
+                          patch: { emailEnabled: checked },
+                        })
+                      }
+                    />
+                  </td>
+                  <td className="py-3 px-4">
+                    <Switch
+                      checked={p.slackEnabled}
+                      onCheckedChange={(checked) =>
+                        updatePrefMutation.mutate({
+                          type: p.type,
+                          patch: { slackEnabled: checked },
+                        })
+                      }
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-1.5 border-t border-border pt-4">
+          <Label className="text-xs">Slack Member ID</Label>
+          <p className="text-[11px] text-muted-foreground">
+            Copy your member ID from your Slack profile and paste it here to receive Slack
+            notifications.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              value={slackMemberId}
+              onChange={(e) => setSlackMemberId(e.target.value)}
+              placeholder="U0XXXXXXX"
+              className="text-xs max-w-xs"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={slackMutation.isPending}
+              onClick={() => slackMutation.mutate()}
+              className="text-xs"
+            >
+              Save
+            </Button>
           </div>
         </div>
       </section>
