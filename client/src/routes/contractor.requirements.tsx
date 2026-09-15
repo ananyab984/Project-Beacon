@@ -1,110 +1,207 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import { useMemo, useState } from "react";
+import type { ApiRequirement } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
-import { Search } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, UserCheck, AlertCircle, Clock, CheckCircle2, Globe, ClipboardList } from "lucide-react";
+import { useState, useMemo } from "react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { LeadCard } from "@/components/features/lead-card";
+import { useAuth } from "@/lib/auth";
 
+// Same requirement-level detail recruiter.clients.tsx gives recruiters
+// (search/filter by language/service/status, priority, deadline risk,
+// assigned recruiter, headcount/filled/gap, candidate-pool drill-down) --
+// EXCEPT client identity, which the backing API already never sends to this
+// role (GET /api/requirements redacts the `client` key server-side for
+// contractors, see requirement.routes.ts's redactClientIfContractor). This
+// is a fresh page, not a shared-component extraction of recruiter.clients.tsx,
+// since that file also owns Client CRUD -- a contractor must never reach that.
+// The candidate-pool drill-down is scoped to the contractor's own leads
+// (GET /api/leads/mine), not the Global Leads pool.
 export const Route = createFileRoute("/contractor/requirements")({
   head: () => ({
     meta: [
       { title: "Requirements — Global3 Contractor" },
-      { name: "description", content: "Current language hiring requirements showing required, filled, and remaining headcount." },
+      { name: "description", content: "Market demand by language and service, same detail recruiters see." },
     ],
   }),
-  component: RequirementsPage,
+  component: ContractorRequirementsPage,
 });
 
-function RequirementsPage() {
-  const { data, isLoading, error } = useQuery({ queryKey: ["client-demands"], queryFn: () => api.getClientDemands() });
-  const clientDemands = data?.clientDemands ?? [];
+function titleCase(s: string): string {
+  return s.length ? s[0] + s.slice(1).toLowerCase() : s;
+}
+
+function ContractorRequirementsPage() {
+  const { user } = useAuth();
+
+  const { data: allReqData } = useQuery({
+    queryKey: ["requirements", "all"],
+    queryFn: () => api.getRequirements(),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
+  });
+  const allRequirements = allReqData?.requirements ?? [];
+
+  const { data: myLeadsData } = useQuery({ queryKey: ["leads", "mine"], queryFn: () => api.getMyLeads() });
+  const myLeads = myLeadsData?.leads ?? [];
+
+  const [viewTab, setViewTab] = useState<"assigned" | "all">("assigned");
   const [q, setQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [drill, setDrill] = useState<string | null>(null);
 
-  // Aggregate by language (sum across clients — contractors don't need per-client breakdown)
-  const byLanguage = useMemo(() => {
-    const map = new Map<string, { needed: number; filled: number; gap: number }>();
-    for (const d of clientDemands.filter(d => d.status !== "PAUSED")) {
-      const cur = map.get(d.language) ?? { needed: 0, filled: 0, gap: 0 };
-      map.set(d.language, {
-        needed: cur.needed + d.headcountNeeded,
-        filled: cur.filled + d.filled,
-        gap: cur.gap + d.gap,
-      });
-    }
-    return Array.from(map, ([language, v]) => ({ language, ...v })).sort((a, b) => b.gap - a.gap);
-  }, [clientDemands]);
-
-  const filtered = byLanguage.filter(r =>
-    q === "" || r.language.toLowerCase().includes(q.toLowerCase())
+  const myRequirements = useMemo(
+    () => allRequirements.filter((r) => r.recruiterId === user?.id),
+    [allRequirements, user],
   );
 
-  const totalNeeded = filtered.reduce((s, r) => s + r.needed, 0);
-  const totalFilled = filtered.reduce((s, r) => s + r.filled, 0);
-  const totalGap = filtered.reduce((s, r) => s + r.gap, 0);
+  const filteredRequirements = useMemo(() => {
+    const base = viewTab === "assigned" ? myRequirements : allRequirements;
+    return base.filter((r) => {
+      const matchQ =
+        q === "" ||
+        r.title.toLowerCase().includes(q.toLowerCase()) ||
+        r.language.toLowerCase().includes(q.toLowerCase()) ||
+        r.service.toLowerCase().includes(q.toLowerCase());
+      const matchStatus = statusFilter === "all" || r.status === statusFilter;
+      return matchQ && matchStatus;
+    }).sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+  }, [viewTab, myRequirements, allRequirements, q, statusFilter]);
+
+  const activeReq = allRequirements.find((r) => r.id === drill);
+  const coveringLeads = useMemo(
+    () => (activeReq ? myLeads.filter((l) => l.targetLanguage === activeReq.language).slice(0, 6) : []),
+    [activeReq, myLeads],
+  );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
-      {/* Header description */}
-      <div className="rounded-2xl border border-border bg-gradient-to-br from-primary/[0.04] via-accent/[0.04] to-transparent px-6 py-5">
-        <div className="text-[11px] font-medium uppercase tracking-widest text-accent">Current hiring requirements</div>
-        <h2 className="mt-1 text-xl font-semibold tracking-tight">Language headcount requirements</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Active hiring targets across all languages. Focus your outreach on languages with the highest remaining headcount.
-        </p>
+    <div className="mx-auto max-w-7xl space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-foreground">Requirements</h2>
+          <p className="text-xs text-muted-foreground">
+            Company-wide market demand by language and service, and your assigned workflow.
+          </p>
+        </div>
+
+        <div className="flex gap-1 rounded-xl border border-border bg-muted/30 p-1">
+          <button
+            onClick={() => setViewTab("assigned")}
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              viewTab === "assigned" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <UserCheck className="h-3.5 w-3.5 text-primary" />
+            My Projects ({myRequirements.length})
+          </button>
+          <button
+            onClick={() => setViewTab("all")}
+            className={`flex items-center gap-1.5 rounded-lg px-3.5 py-1.5 text-xs font-medium transition-colors ${
+              viewTab === "all" ? "bg-card text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Globe className="h-3.5 w-3.5 text-accent" />
+            All Market Demand ({allRequirements.length})
+          </button>
+        </div>
       </div>
 
-      {/* Summary tiles */}
-      <div className="grid grid-cols-3 gap-3">
-        <SummaryTile label="Total Required" value={totalNeeded} />
-        <SummaryTile label="Total Filled" value={totalFilled} tone="ok" />
-        <SummaryTile label="Total Remaining" value={totalGap} tone={totalGap > 0 ? "warn" : "ok"} />
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative flex-1 min-w-64">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Filter by title, language, service…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            className="pl-9 h-8 text-xs bg-card"
+          />
+        </div>
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-36 h-8 text-xs bg-card">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="UNASSIGNED">Unassigned</SelectItem>
+            <SelectItem value="ACTIVE">Active</SelectItem>
+            <SelectItem value="FULFILLED">Fulfilled</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Filter by language…" value={q} onChange={e => setQ(e.target.value)} className="pl-9" />
-      </div>
-
-      {/* Requirements table */}
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
+      <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-xs">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-left text-[11px] uppercase tracking-wide text-muted-foreground">
             <tr>
-              <th className="px-5 py-3 font-medium">Language</th>
-              <th className="px-5 py-3 font-medium text-right">Required</th>
+              <th className="px-5 py-3 font-medium">Project</th>
+              <th className="px-5 py-3 font-medium">Language — Service</th>
+              <th className="px-5 py-3 font-medium">Assigned Recruiter</th>
+              <th className="px-5 py-3 font-medium">Priority</th>
+              <th className="px-5 py-3 font-medium">Due Date &amp; Risk Alert</th>
+              <th className="px-5 py-3 font-medium text-right">Needed</th>
               <th className="px-5 py-3 font-medium text-right">Filled</th>
-              <th className="px-5 py-3 font-medium text-right">Remaining</th>
-              <th className="px-5 py-3 font-medium w-40">Progress</th>
+              <th className="px-5 py-3 font-medium text-right">Gap</th>
+              <th className="px-5 py-3 font-medium w-28">Progress</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filtered.map(r => {
-              const pct = r.needed ? Math.min(100, (r.filled / r.needed) * 100) : 100;
-              const complete = r.gap === 0;
+            {filteredRequirements.map((req) => {
+              const isMine = req.recruiterId === user?.id;
+              const pct = req.headcountNeeded > 0 ? Math.min(100, (req.filled / req.headcountNeeded) * 100) : 0;
+
               return (
-                <tr key={r.language} className="transition-colors hover:bg-muted/30">
-                  <td className="px-5 py-4">
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-foreground">{r.language}</span>
-                      {complete && (
-                        <span className="rounded-md bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">Complete ✓</span>
-                      )}
-                    </div>
+                <tr
+                  key={req.id}
+                  onClick={() => setDrill(req.id)}
+                  className={`cursor-pointer transition-colors hover:bg-muted/40 ${isMine ? "bg-primary/3" : ""}`}
+                >
+                  <td className="px-5 py-3.5">
+                    <div className="font-semibold text-foreground">{req.title}</div>
+                    {req.projectName && <div className="text-[11px] text-muted-foreground">{req.projectName}</div>}
                   </td>
-                  <td className="px-5 py-4 text-right tabular-nums font-medium">{r.needed}</td>
-                  <td className="px-5 py-4 text-right tabular-nums">{r.filled}</td>
-                  <td className={`px-5 py-4 text-right tabular-nums font-semibold ${r.gap > 5 ? "text-warning" : r.gap > 0 ? "text-foreground" : "text-[oklch(0.5_0.14_155)]"}`}>
-                    {r.gap > 0 ? r.gap : "—"}
+
+                  <td className="px-5 py-3.5">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-accent/12 px-2.5 py-1 text-xs font-semibold text-accent">
+                      {req.language} — {req.service}
+                    </span>
                   </td>
-                  <td className="px-5 py-4">
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={`h-full rounded-full transition-all ${complete ? "bg-[oklch(0.62_0.14_155)]" : "bg-accent"}`}
-                        style={{ width: `${pct}%` }}
-                      />
+
+                  <td className="px-5 py-3.5">
+                    {req.recruiter?.name ? (
+                      <span className="text-xs font-medium text-foreground">
+                        {req.recruiter.name}
+                        {isMine && <span className="ml-1 text-[10px] text-primary font-semibold">(You)</span>}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[11px] font-medium text-warning">
+                        <AlertCircle className="h-3 w-3" /> Unassigned
+                      </span>
+                    )}
+                  </td>
+
+                  <td className="px-5 py-3.5"><PriorityPill priority={req.priority} /></td>
+
+                  <td className="px-5 py-3.5" onClick={(e) => e.stopPropagation()}>
+                    {req.deadline ? (
+                      <span className="text-xs font-medium text-foreground tabular-nums">
+                        {new Date(req.deadline).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                      </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground italic">No due date</span>
+                    )}
+                  </td>
+                  <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">{req.headcountNeeded}</td>
+                  <td className="px-5 py-3.5 text-right tabular-nums text-foreground font-medium">{req.filled}</td>
+                  <td className={`px-5 py-3.5 text-right tabular-nums font-semibold ${req.gap > 3 ? "text-warning" : req.gap > 0 ? "text-foreground" : "text-accent"}`}>
+                    {req.gap}
+                  </td>
+                  <td className="px-5 py-3.5">
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className={`h-full rounded-full ${pct === 100 ? "bg-accent" : "bg-primary"}`} style={{ width: `${pct}%` }} />
                     </div>
-                    <div className="mt-1 text-[10px] text-muted-foreground tabular-nums">{Math.round(pct)}%</div>
                   </td>
                 </tr>
               );
@@ -112,34 +209,108 @@ function RequirementsPage() {
           </tbody>
         </table>
 
-        {isLoading && (
-          <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-            Loading requirements…
-          </div>
-        )}
-
-        {!isLoading && error && (
-          <div className="px-5 py-10 text-center text-sm text-destructive">
-            {(error as any)?.message || "Failed to load requirements"}
-          </div>
-        )}
-
-        {!isLoading && !error && filtered.length === 0 && (
-          <div className="px-5 py-10 text-center text-sm text-muted-foreground">
-            No requirements match your filter.
+        {filteredRequirements.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+            <ClipboardList className="h-8 w-8 mb-2 opacity-30" />
+            <p className="text-sm">No requirements match the current filters</p>
           </div>
         )}
       </div>
+
+      <Sheet open={!!activeReq} onOpenChange={(o) => !o && setDrill(null)}>
+        <SheetContent className="w-full sm:max-w-2xl overflow-auto">
+          {activeReq && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="text-left">{activeReq.title}</SheetTitle>
+                <p className="text-xs text-muted-foreground">{activeReq.language} — {activeReq.service}</p>
+              </SheetHeader>
+
+              <div className="mt-4 grid grid-cols-3 gap-3">
+                <Tile label="Needed" value={activeReq.headcountNeeded} />
+                <Tile label="Filled" value={activeReq.filled} tone="ok" />
+                <Tile label="Gap" value={activeReq.gap} tone={activeReq.gap > 3 ? "warn" : activeReq.gap > 0 ? "muted" : "ok"} />
+              </div>
+
+              <dl className="mt-4 grid grid-cols-2 gap-y-2 rounded-xl border border-border bg-muted/20 p-3 text-[11px]">
+                <dt className="text-muted-foreground">Assigned Recruiter</dt>
+                <dd className="font-medium">
+                  {activeReq.recruiter?.name ? (
+                    <span className="flex items-center gap-1.5">
+                      {activeReq.recruiter.name}
+                      {activeReq.recruiterId === user?.id && <span className="text-[10px] text-primary font-semibold">(You)</span>}
+                    </span>
+                  ) : (
+                    <span className="text-warning">Unassigned</span>
+                  )}
+                </dd>
+                <dt className="text-muted-foreground">Priority</dt>
+                <dd><PriorityPill priority={activeReq.priority} /></dd>
+                <dt className="text-muted-foreground">Status</dt>
+                <dd><StatusBadge status={activeReq.status} /></dd>
+                {activeReq.deadline && (
+                  <>
+                    <dt className="text-muted-foreground">Deadline</dt>
+                    <dd className="font-medium tabular-nums">
+                      {new Date(activeReq.deadline).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })}
+                    </dd>
+                  </>
+                )}
+              </dl>
+
+              <h3 className="mt-6 text-sm font-semibold">Matching Leads (yours)</h3>
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {coveringLeads.map((l) => (
+                  <LeadCard key={l.id} lead={l} compact />
+                ))}
+                {coveringLeads.length === 0 && (
+                  <p className="text-xs text-muted-foreground">None of your submitted leads match this language yet.</p>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
-function SummaryTile({ label, value, tone }: { label: string; value: number; tone?: "ok" | "warn" }) {
-  const color = tone === "ok" ? "text-[oklch(0.55_0.14_155)]" : tone === "warn" ? "text-warning" : "text-foreground";
+function Tile({ label, value, tone }: { label: string; value: number; tone?: "ok" | "warn" | "muted" }) {
+  const color = tone === "ok" ? "text-accent" : tone === "warn" ? "text-warning" : "text-foreground";
   return (
     <div className="rounded-xl border border-border bg-card px-4 py-3">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className={`mt-1 text-2xl font-semibold tabular-nums ${color}`}>{value}</div>
     </div>
+  );
+}
+
+function PriorityPill({ priority }: { priority: ApiRequirement["priority"] }) {
+  const map: Record<string, string> = {
+    CRITICAL: "bg-destructive/15 text-destructive",
+    HIGH: "bg-warning/15 text-warning",
+    STANDARD: "bg-muted text-muted-foreground",
+  };
+  return <span className={`rounded-md px-2 py-0.5 text-[10px] font-semibold ${map[priority]}`}>{titleCase(priority)}</span>;
+}
+
+function StatusBadge({ status }: { status: ApiRequirement["status"] }) {
+  const map: Record<string, string> = {
+    UNASSIGNED: "bg-warning/15 text-warning",
+    ACTIVE: "bg-accent/15 text-accent",
+    FULFILLED: "bg-[oklch(0.62_0.14_155)]/15 text-[oklch(0.42_0.14_155)]",
+    PAUSED: "bg-muted text-muted-foreground",
+  };
+  const icons: Record<string, typeof AlertCircle> = {
+    UNASSIGNED: AlertCircle,
+    ACTIVE: Clock,
+    FULFILLED: CheckCircle2,
+    PAUSED: Clock,
+  };
+  const Icon = icons[status] ?? Clock;
+  return (
+    <span className={`flex w-fit items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-semibold ${map[status]}`}>
+      <Icon className="h-3 w-3" /> {titleCase(status)}
+    </span>
   );
 }

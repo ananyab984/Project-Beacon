@@ -6,10 +6,11 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
-import { UnipileService } from "../services/unipile.service";
+import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
+import { assertContractorOwnsLead } from "./lead.routes";
 
 export const conversationRouter = Router();
 
@@ -110,6 +111,15 @@ conversationRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    // Security fix: this had no ownership check at all -- a contractor could
+    // pass any leadId (found by guessing/knowing it, since nothing here
+    // validated it) and a conversation would be created with THEM as its
+    // recruiterId, from which every later route (GET /:id, POST /:id/
+    // messages) checks ownership against -- so it would trust them as the
+    // legitimate owner from that point on and let them message a lead that
+    // was never theirs. Same guard lead.routes.ts already uses for every
+    // other single-lead action; recruiter/owner keep full-pool access.
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     // This page only ever creates LINKEDIN-channel conversations -- confirmed
     // live, a ProZ lead ended up here with its proz.com profileLink shown in
@@ -135,8 +145,17 @@ conversationRouter.post(
     });
     if (existing) return res.json({ conversation: existing });
 
-    const conversation = await prisma.conversation.create({
-      data: {
+    // The findFirst above is a fast path for the common case, not what
+    // closes the race -- two near-simultaneous requests to open the same
+    // lead's conversation could both see "not found" before either
+    // commits. upsert (backed by the (leadId, recruiterId, channel) unique
+    // constraint) makes the actual existence-or-create atomic; `update: {}`
+    // is a deliberate no-op for the rare case where the race is lost, just
+    // returning whatever the winner already created.
+    const conversation = await prisma.conversation.upsert({
+      where: { leadId_recruiterId_channel: { leadId, recruiterId: req.user!.id, channel: ConversationChannel.LINKEDIN } },
+      update: {},
+      create: {
         leadId: lead.id,
         recruiterId: req.user!.id,
         // displayName (the enrichment-verified name) wins once it exists --
@@ -246,33 +265,31 @@ conversationRouter.post(
       } else {
         const target = to || conversation.lead.email;
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
-        // Unipile validates a threaded reply's subject against the real
-        // thread it's attached to via reply_to, rejecting a mismatch with
-        // "The reply subject is invalid" -- confirmed live. EmailQueueItem's
-        // subject is NOT a reliable source for that: it can be silently
-        // regenerated after the original send (generate-draft has no guard
-        // against re-running on an already-sent item), drifting away from
-        // the subject actually delivered. The one place the real subject is
-        // always available is the inbound webhook event for the specific
-        // message being replied to -- prefer that, and only fall back to
-        // the queue item's guess when there's no prior thread to match
-        // (i.e. replyToMessageId wasn't supplied).
-        let originalSubject: string | null = null;
-        if (replyToMessageId) {
-          const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
-            where: { eventType: "mail_received", payload: { path: ["email_id"], equals: replyToMessageId } },
-            orderBy: { processedAt: "desc" },
-          });
-          originalSubject = (webhookEvent?.payload as any)?.subject || null;
+        // Defensive fallback: this route's own caller (email-queue-page-
+        // view.tsx's inline "Reply to this message") already supplies a
+        // real replyToMessageId, but any future/other caller that doesn't
+        // would otherwise start a brand-new, unrelated Unipile thread --
+        // see findReplyAnchor's own doc comment for the confirmed-live
+        // consequence of that.
+        const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(conversation.leadId, conversation.recruiterId));
+        if (!resolvedReplyToMessageId) {
+          // Unlike the Email Queue composer's send routes, this endpoint is
+          // ALWAYS replying within an existing conversation, never a first
+          // cold-outreach send -- so no resolvable anchor here specifically
+          // means Unipile is about to silently start a brand-new thread for
+          // what the recruiter believes is a reply (see findReplyAnchor's
+          // own doc comment for why that's not a loud failure on Unipile's
+          // side). Worth knowing about; not worth failing the send over.
+          console.warn(
+            `[conversation reply] Sending with no resolved anchor for conversation ${conversation.id} (lead ${conversation.leadId}) -- Unipile will start a new thread instead of continuing this one.`
+          );
         }
-        if (!originalSubject) {
-          const latestQueueItem = await prisma.emailQueueItem.findFirst({
-            where: { leadId: conversation.leadId, recruiterId: conversation.recruiterId },
-            orderBy: { receivedAt: "desc" },
-          });
-          originalSubject = latestQueueItem?.subject || conversation.candidateName;
-        }
-        const replySubject = /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+        const replySubject = await resolveReplySubject(
+          conversation.leadId,
+          conversation.recruiterId,
+          resolvedReplyToMessageId,
+          conversation.candidateName
+        );
         await UnipileService.sendEmail(
           req.user!.id,
           conversation.leadId,
@@ -280,7 +297,7 @@ conversationRouter.post(
           replySubject,
           text,
           accountId,
-          replyToMessageId
+          resolvedReplyToMessageId
         );
       }
     } catch (err: any) {

@@ -1,5 +1,9 @@
-"""Claude (Anthropic) REST API client: English normalization (translate_to_english)
-and Tier 3's web-search fallback (search_missing_fields)."""
+"""Claude (Anthropic) REST API client: English normalization
+(translate_to_english) and Tier 3's live web-search fallback
+(search_missing_fields) -- the two stages Groq has no equivalent for (no
+web-search tool). The other local-text mapping stages (Services
+classification, the remaining-fields fill-only extraction) moved to
+llm_fallback/groq_client.py's GroqMappingClient."""
 
 from __future__ import annotations
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import date
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, Literal, Optional, TypedDict
 
@@ -14,6 +15,7 @@ from core.field_audit import audit_lead_fields
 from core.schema import has_content, is_empty_value
 from core.source_router import route_lead
 from llm_fallback.client import ClaudeClient, ClaudeError
+from llm_fallback.groq_client import GroqMappingClient, GroqMappingError
 from llm_fallback.verifier import filter_web_search_result
 from logger import get_logger
 from providers.brightdata_client import BrightDataClient, BrightDataError
@@ -28,6 +30,7 @@ from parsers.bodalgo_parser import BodalgoParser
 from parsers.generic_parser import GenericParser
 from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
+from parsers.service_aliases import extract_services_from_text
 
 log = get_logger(__name__)
 
@@ -76,11 +79,33 @@ FILL_ONLY_ENRICHABLE_FIELDS = ["Current_Title", "Tools_Software", "Certification
 # draft. providers/parallel_client.py's schema now instructs an empty list
 # instead, but an LLM can always regress -- this is the trust-boundary check
 # that keeps prose out of a data column regardless of how the prompt behaves.
+#
+# Originally tuned only for certification-style phrasing ("none listed",
+# "not found") -- widened when email/phone extraction was added, since a
+# model narrating contact-info absence reaches for different, equally
+# plausible wording ("No email is listed", "Not disclosed", "no email on
+# file") that the original certification-specific set didn't catch. A wrong
+# marker here is a much smaller risk than missing one: a real value would
+# have to coincidentally contain one of these exact phrases to be
+# wrongly dropped, whereas a missed absence-prose string is exactly the
+# "hallucinated fact reaches a real person" failure this guard exists for.
 _ABSENCE_PROSE_MARKERS = (
-    "no certification", "none listed", "not listed", "not available",
-    "not specified", "not provided", "no data", "none found", "not found",
-    "profile evidence", "no information",
+    "no certification", "none listed", "not listed", "isn't listed", "is listed",
+    "not available", "not specified", "not provided", "not disclosed",
+    "not shared", "not shown", "no data", "none found", "not found",
+    "no email", "no phone", "profile evidence", "no information",
+    # Confirmed live: Parallel's browsing agent answers a field it can't find
+    # with a sentence naming the field and the lead ("No profile headline was
+    # found for Sergio Testing.") instead of returning null -- "was found for"
+    # catches that shape specifically ("not found" above doesn't: this is
+    # "was found", not "not found").
+    "was found for",
 )
+
+# Matches "18+ years", "18 years", "18yrs", "18+ yrs" -- a duration stated in
+# plain prose, distinct from _years_of_experience_from_parallel_entries'
+# structured-experience-list derivation. See _infer_years_of_experience_from_text.
+_YEARS_OF_EXPERIENCE_FREE_TEXT = re.compile(r"\b(\d{1,2})\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
 
 
 # Values `field_sources["_parallel_fallback"]` can hold, and the re-attempt
@@ -205,6 +230,37 @@ def _websearch_state_is_settled(state: Optional[str]) -> Optional[str]:
     return None
 
 
+# Tokens that only ever show up when a Services value was shredded from a
+# JSON object (`[{"id":..., "task":"Quality Control", ...}]`) via a naive
+# delimiter split instead of JSON.parse -- normalizeServices.ts (Node side)
+# now parses that shape correctly for anything ingested from here on, but
+# leads already stored with the shredded tokens need their own path back to
+# a real classification, since neither Tier 1/2's deterministic keyword scan
+# nor _infer_services_via_llm below will touch a field that already holds
+# *something*, however bogus.
+_GARBLED_SERVICE_TOKENS = {"id", "rate", "min_rate", "task", "service", "source_language", "target_language"}
+
+
+def _looks_garbled(services_value: Optional[str]) -> bool:
+    """True if a comma-joined Services string contains a token that could
+    only have come from shredding a JSON object -- a bare number (an id or a
+    rate), a leftover brace/bracket, or one of the object's own key names
+    surviving as if it were a service."""
+    if not services_value:
+        return False
+    for raw_token in services_value.split(","):
+        token = raw_token.strip()
+        if not token:
+            continue
+        if token.isdigit():
+            return True
+        if any(c in token for c in "{}[]"):
+            return True
+        if token.lower() in _GARBLED_SERVICE_TOKENS:
+            return True
+    return False
+
+
 def _tier1_skip_reason(env_var: str, profile_link: str, client: Any) -> str:
     """Why Stage 3 (Tier 1) did not run, named precisely enough to act on.
 
@@ -249,9 +305,23 @@ def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
     Emptiness is measured with `has_content` (core/schema.py), not truthiness, so the
     near-miss version of that payload -- one whose lists hold the right
     NUMBER of entries and no data inside any of them -- is judged the same
-    way rather than passing as a find."""
+    way rather than passing as a find.
+
+    A second near-miss shape confirmed live (the reported bug's lead):
+    `has_content` alone still says yes when every scalar field is populated
+    with the model's OWN "couldn't find this" sentence ("No profile headline
+    was found for Sergio Testing.") rather than null -- structurally a
+    non-empty string, but exactly as much of a non-find as the null/[] case
+    above, and the same absence-prose check that keeps that prose out of
+    Lead.certifications/skills (`_is_absence_prose`) is what's missing here."""
+    def _found(field: str) -> bool:
+        value = parallel_data.get(field)
+        if isinstance(value, str) and _is_absence_prose(value):
+            return False
+        return has_content(value)
+
     return not any(
-        has_content(parallel_data.get(f))
+        _found(f)
         for f in (
             "headline", "current_title", "about_snippet", "country",
             "experience", "education", "languages", "certifications",
@@ -424,6 +494,14 @@ class EnrichmentOrchestrator:
         self.brightdata = BrightDataClient(config) if config.brightdata_api_key else None
         self.tavily = TavilyClient(config) if config.tavily_api_key else None
         self.claude = ClaudeClient(config) if config.claude_api_key else None
+        # Services classification and the remaining-fields fill-only
+        # extraction both only ever read text the pipeline already has (no
+        # live web search) -- moved to Groq, which is faster/cheaper for
+        # that shape of call and is already used elsewhere in this pipeline
+        # for the same kind of structured-extraction work (core/dedup_client.py).
+        # Claude stays on Stage 6's live web search and English
+        # normalization, since Groq has no equivalent web-search tool.
+        self.groq_mapper = GroqMappingClient(config) if config.groq_api_key else None
         self.parallel = ParallelClient(config) if config.parallel_api_key else None
 
         self.parsers = {
@@ -572,6 +650,16 @@ class EnrichmentOrchestrator:
 
         if not profile_link:
             logs.append("Stage 3.5 skipped: no Profile_Link for Parallel to research")
+            # Country_of_Residence is set ONLY from Parallel's data (see
+            # _merge_parallel_fields) -- with Parallel skipped, the field
+            # stays permanently unset with no recorded provenance, which
+            # renders identically to "a provider looked and found nothing."
+            # Tag it so the dialog can tell the two apart. Guarded on the
+            # field being genuinely empty and untagged so this never
+            # overwrites a real value (or its real source) that arrived some
+            # other way, e.g. already populated on the CSV import row.
+            if not lead.get("Country_of_Residence") and not field_sources.get("Country_of_Residence"):
+                field_sources["Country_of_Residence"] = "skipped_no_profile_link"
             return None, None, 0
 
         settled = _parallel_state_is_settled(state)
@@ -841,6 +929,21 @@ class EnrichmentOrchestrator:
                 lead[k] = v
                 field_sources[k] = source_label
                 logs.append(f"Stage Parsed: {k} = {v!r} (from {source_label})")
+            elif isinstance(lead.get(k), str) and _is_absence_prose(lead[k]):
+                # The existing value isn't real data to protect -- it's a
+                # provider's own "couldn't find this" sentence that landed in
+                # a data column on an earlier pass (confirmed live: Parallel's
+                # Headline/Current_Title/About_Snippet for a lead whose real
+                # LinkedIn profile a later BrightData scrape then read fine,
+                # but couldn't ever land because the never-overwrite rule
+                # treated the stale prose as "already resolved"). Same rule
+                # every OTHER branch here already applies -- overwrite only
+                # when there's nothing worth protecting -- just recognizing
+                # that this "existing value" was never real data to begin
+                # with.
+                lead[k] = v
+                field_sources[k] = source_label
+                logs.append(f"Stage Parsed: {k} = {v!r} (from {source_label}, replaces a prior absence-prose placeholder)")
 
     def _merge_stage3_parsed(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
@@ -906,6 +1009,70 @@ class EnrichmentOrchestrator:
         logs.append("Stage 3.5: profile wasn't in English -- normalised to English (original kept under _original_language)")
         return translated
 
+    def _years_of_experience_from_parallel_entries(self, experience: Any) -> Optional[int]:
+        """Derives a years-of-experience figure from Parallel's structured
+        `experience` list (providers/parallel_client.py's ExperienceEntry --
+        start_date/end_date/is_current) when nothing more direct was
+        extracted: career span (earliest start year to latest end year, a
+        current role counting as this year), never a count-based estimate.
+
+        Same principle parsers/linkedin_parser.py's own
+        _extract_years_of_experience already documents and rejects a
+        cheaper alternative for ("count x 2" turned an empty-shell
+        `[{}, {}, {}]` into a confident "6 years" from no real data) --
+        that comment points at POC/linkedin_poc/async_experiment.py's
+        years_from_experience() as the reference span-based approach. This
+        adapts that same idea to Parallel's cleaner, already-structured
+        start_date/end_date/is_current fields rather than BrightData's
+        looser free-text duration/subtitle shape, so it can use is_current
+        directly instead of pattern-matching for "present".
+
+        Dates are verbatim, human-written text (see ExperienceEntry's own
+        docstring) in whatever language the profile uses -- "2020",
+        "Mar 2020", "2020-03-01" -- so this only ever extracts a 4-digit
+        year via regex rather than attempting full date parsing; year-level
+        precision is all a "years of experience" figure needs anyway.
+        Returns None (never a fabricated number) when nothing parseable is
+        found.
+        """
+        if not isinstance(experience, list) or not experience:
+            return None
+
+        current_role_markers = ("present", "current", "now", "today", "actual", "heute", "presente", "atual", "aujourd'hui", "laufend")
+
+        def extract_year(text: Optional[str]) -> Optional[int]:
+            if not isinstance(text, str):
+                return None
+            match = re.search(r"(?:19|20)\d{2}", text)
+            return int(match.group()) if match else None
+
+        def is_current_marker(text: Optional[str]) -> bool:
+            return isinstance(text, str) and any(m in text.strip().lower() for m in current_role_markers)
+
+        start_years: list[int] = []
+        end_years: list[int] = []
+        for entry in experience:
+            if not isinstance(entry, dict):
+                continue
+            start_year = extract_year(entry.get("start_date"))
+            if start_year:
+                start_years.append(start_year)
+
+            if entry.get("is_current") or is_current_marker(entry.get("end_date")):
+                end_years.append(date.today().year)
+            else:
+                end_year = extract_year(entry.get("end_date"))
+                if end_year:
+                    end_years.append(end_year)
+
+        if not start_years:
+            return None
+
+        earliest_start = min(start_years)
+        latest_end = max(end_years) if end_years else max(start_years)
+        span = latest_end - earliest_start
+        return span if span >= 0 else None
+
     def _merge_parallel_fields(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], parallel_data: Dict[str, Any],
     ) -> None:
@@ -914,14 +1081,57 @@ class EnrichmentOrchestrator:
         structured data -- no parser needed, contrast with BrightData/
         Tavily's raw-payload-plus-parser path above."""
         mapped: Dict[str, Any] = {}
-        if parallel_data.get("headline"):
-            mapped["Headline"] = parallel_data["headline"]
-        if parallel_data.get("current_title"):
-            mapped["Current_Title"] = parallel_data["current_title"]
-        if parallel_data.get("about_snippet"):
-            mapped["About_Snippet"] = parallel_data["about_snippet"]
-        if parallel_data.get("country"):
-            mapped["Country_of_Residence"] = parallel_data["country"]
+        # Headline/Current_Title/About_Snippet/Country_of_Residence had no
+        # absence-prose guard at all (unlike email/phone/certifications/
+        # skills below) -- confirmed live: a lead whose LinkedIn profile
+        # Parallel couldn't read still got Headline = "No profile headline
+        # was found for Sergio Testing." merged in as if it were real data,
+        # permanently blocking a real value from ever landing (the
+        # never-overwrite rule in _apply_parsed_fields treats non-empty as
+        # "already resolved" regardless of what the text actually says).
+        headline = parallel_data.get("headline")
+        headline = headline if headline and not _is_absence_prose(str(headline)) else None
+        if headline:
+            mapped["Headline"] = headline
+        current_title = parallel_data.get("current_title")
+        current_title = current_title if current_title and not _is_absence_prose(str(current_title)) else None
+        if current_title:
+            mapped["Current_Title"] = current_title
+        about_snippet = parallel_data.get("about_snippet")
+        about_snippet = about_snippet if about_snippet and not _is_absence_prose(str(about_snippet)) else None
+        if about_snippet:
+            mapped["About_Snippet"] = about_snippet
+        country = parallel_data.get("country")
+        country = country if country and not _is_absence_prose(str(country)) else None
+        if country:
+            mapped["Country_of_Residence"] = country
+
+        # Email/phone: Parallel is a public-page browsing agent -- it can only
+        # ever report what's literally rendered on the page it visits, with no
+        # ability to bypass a login wall. LinkedIn deliberately locks contact
+        # info behind an authenticated "Contact info" modal that is NOT part
+        # of the publicly served profile page, so these two fields will
+        # almost always come back null for LinkedIn leads specifically. That
+        # is a real platform restriction working as intended, not a failed
+        # extraction or a regression to investigate. Non-LinkedIn platforms
+        # (ProZ, Bodalgo, ATA/ATAA, Freelancer.com) publish contact info
+        # directly on the page far more often, since that's how their users
+        # solicit work -- this is expected to actually succeed there.
+        email = parallel_data.get("email")
+        if email and not _is_absence_prose(str(email)):
+            mapped["Email_Address"] = email
+        phone = parallel_data.get("phone")
+        if phone and not _is_absence_prose(str(phone)):
+            mapped["Contact_Number"] = phone
+        if not mapped.get("Email_Address") and not mapped.get("Contact_Number"):
+            source = str(lead.get("Source", "")).strip().upper()
+            if source == "LINKEDIN":
+                logs.append(
+                    "Stage 3.5: no email/phone found via Parallel -- expected for LinkedIn, "
+                    "whose contact info is locked behind a login-gated modal not part of the "
+                    "public page a browsing agent can see, not a failed extraction"
+                )
+
         certs = parallel_data.get("certifications")
         if isinstance(certs, list):
             kept = [str(c) for c in certs if c and not _is_absence_prose(str(c))]
@@ -933,6 +1143,45 @@ class EnrichmentOrchestrator:
                 )
             if kept:
                 mapped["Certifications"] = ", ".join(kept)
+
+        # Services: same precedence as Stage 3's BrightData/LinkedIn parser --
+        # a structured skills/specialties section verbatim first, then a
+        # deterministic keyword scan of headline/title/about text against the
+        # same canonical service-category aliases, only when the structured
+        # section came back empty. Added because Parallel previously mapped
+        # nothing into Services at all: leads whose Tier 1 scrape returned no
+        # structured `skills` (the common case) and no free-text match stayed
+        # permanently un-serviced even though Parallel's own headline/about
+        # payload for that same lead plainly named a service (confirmed live:
+        # e.g. "Voice & Dubbing Artist Punjabi Hindi" never reached Services).
+        skills = parallel_data.get("skills")
+        if isinstance(skills, list):
+            kept_skills = [str(s) for s in skills if s and not _is_absence_prose(str(s))]
+            if kept_skills:
+                mapped["Services"] = ", ".join(kept_skills)
+        if not mapped.get("Services"):
+            # Reuses the already-absence-prose-filtered locals above rather
+            # than re-reading parallel_data directly -- otherwise a filtered-
+            # out "No headline was found for X" sentence would still leak
+            # into this keyword scan even though it was correctly kept out
+            # of the canonical Headline field.
+            text_blob = " | ".join(str(v) for v in (headline, current_title, about_snippet) if v)
+            if text_blob:
+                text_services = extract_services_from_text(text_blob)
+                if text_services:
+                    mapped["Services"] = ", ".join(text_services)
+
+        # Parallel's LeadProfile has no dedicated years-of-experience field --
+        # only the structured `experience` list. Stage 6 (LLM web search) is
+        # the other path that could fill Years_of_Exp, but it's gated to
+        # genuinely thin leads (see MAX_FIELDS_BEFORE_WEBSEARCH) and skips
+        # entirely once a lead already has several real fields -- exactly the
+        # case where Parallel found a full experience history but nothing
+        # ever turned it into a number, leaving "Not found" on a lead that
+        # visibly has everything needed to compute it.
+        derived_years = self._years_of_experience_from_parallel_entries(parallel_data.get("experience"))
+        if derived_years is not None:
+            mapped["Years_of_Exp"] = str(derived_years)
 
         # `_original_language` present means this profile was established to
         # be non-English and the values above are its translation. Whatever is
@@ -947,6 +1196,175 @@ class EnrichmentOrchestrator:
             force_keys = {"Headline", "Current_Title", "About_Snippet", "Country_of_Residence"}
 
         self._apply_parsed_fields(lead, field_sources, logs, "parallel", mapped, force_keys=force_keys)
+
+    def _infer_services_via_llm(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Last-resort Services classification, run once Tier 1 (BrightData/
+        Tavily) and Tier 2 (Parallel) have both had their chance and Services
+        is STILL empty OR looks garbled (see _looks_garbled). Uses only text
+        already sitting on `lead` -- no live web search -- so it can run
+        unconditionally instead of being gated by Stage 6's
+        MAX_FIELDS_BEFORE_WEBSEARCH "reserve web search for thin leads"
+        heuristic, which is exactly what was silently blocking this case: a
+        lead with Headline/Current_Title/About/Country already resolved
+        looks well-enriched overall, so Stage 6 skips it, even though
+        Services specifically was never resolved.
+
+        Confirmed live: a real lead (Audio Engineer at VSI / Voice & Script
+        International, London-based) had a fully populated Headline/
+        Current_Title/About_Snippet from Parallel and BrightData, yet
+        Services stayed completely empty -- "Audio Engineer"/"Sound
+        Designer" isn't one of parsers/service_aliases.py's ~15 fixed
+        localization-industry aliases, so the deterministic keyword scan
+        (Tier 1 and Tier 2 both use it) had nothing to match, no matter how
+        plainly the text stated the person's actual specialty. Services can
+        be any real-world specialty, not only translation/dubbing-industry
+        terms -- GroqMappingClient.classify_services has no fixed list; it
+        reads the text and reports whatever service it actually supports.
+
+        The garbled branch is the recovery path for leads whose Services
+        were shredded from a JSON object before normalizeServices.ts learned
+        to parse that shape (a bare "empty" check would leave those leads
+        stuck forever, since Tier 1/2's keyword scan and this stage both
+        otherwise treat ANY non-empty value as already resolved) -- a
+        re-classify replaces the garbage outright rather than merging with
+        it, which is correct precisely because it wasn't real data.
+        """
+        if not is_empty_value(lead.get("Services")) and not _looks_garbled(lead.get("Services")):
+            return
+        if not self.groq_mapper:
+            logs.append("Stage 3.75: Services classification skipped: GROQ_API_KEY isn't set")
+            return
+
+        text_blob = " | ".join(
+            str(v) for v in (
+                lead.get("Headline"), lead.get("Current_Title"),
+                lead.get("About_Snippet"), lead.get("Certifications"),
+            )
+            if v
+        )
+        if not text_blob:
+            logs.append("Stage 3.75: Services classification skipped: no Headline/Current_Title/About_Snippet/Certifications text to classify")
+            return
+
+        try:
+            services = self.groq_mapper.classify_services(text_blob)
+        except GroqMappingError as exc:
+            logs.append(f"Stage 3.75: Services classification failed, leaving Services empty: {exc}")
+            return
+
+        if services:
+            lead["Services"] = ", ".join(services)
+            field_sources["Services"] = "llm_fallback"
+            logs.append(f"Stage 3.75: Services = {lead['Services']!r} (from llm_fallback, classified from already-extracted profile text)")
+        elif _looks_garbled(lead.get("Services")):
+            # Nothing groundable, but the field can't be left as it was --
+            # unlike the genuinely-empty case (nothing to lose), the current
+            # value here is shredded JSON, not real data. A profile with no
+            # real headline/title/about text to classify from (e.g. a scrape
+            # that only returned "No X was found" placeholders) means there's
+            # no honest way to derive a real service, so clear it rather than
+            # leave garbage sitting in what the UI renders as this lead's
+            # services.
+            lead["Services"] = ""
+            field_sources["Services"] = "llm_fallback"
+            logs.append("Stage 3.75: Services classification found nothing groundable -- cleared the garbled value rather than keep shredded tokens")
+        else:
+            logs.append("Stage 3.75: Services classification found nothing groundable in the extracted text")
+
+    def _infer_years_of_experience_from_text(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Companion to _years_of_experience_from_parallel_entries (used in
+        _merge_parallel_fields): that one only ever reads Parallel's
+        structured `experience` list, so a lead with no dated entries there
+        stays permanently unresolved even when a duration is stated in plain
+        text elsewhere on the profile. Confirmed live: a lead whose Headline
+        read "Hybrid Localization Pro, 18+ years" -- a real, unambiguous
+        number -- never got Years_of_Exp filled, because nothing in the
+        pipeline ever looked at Headline/About/Current_Title for this.
+
+        Deterministic (a regex, not a Claude call) since "N years"/"N+ yrs"
+        is an exact, low-ambiguity pattern -- no reason to pay for an LLM
+        call to read a number already spelled out in the text. Runs after
+        _infer_services_via_llm reads the same fields, so it costs nothing
+        extra to build the text_blob's equivalent here."""
+        if not is_empty_value(lead.get("Years_of_Exp")):
+            return
+        text_blob = " | ".join(
+            str(v) for v in (lead.get("Headline"), lead.get("Current_Title"), lead.get("About_Snippet")) if v
+        )
+        if not text_blob:
+            return
+        match = _YEARS_OF_EXPERIENCE_FREE_TEXT.search(text_blob)
+        if not match:
+            return
+        years = int(match.group(1))
+        if not (0 < years <= 60):
+            return
+        lead["Years_of_Exp"] = str(years)
+        field_sources["Years_of_Exp"] = "llm_fallback"
+        logs.append(f"Stage 3.75: Years_of_Exp = {years} (parsed from free text -- no structured experience data was available to derive it from)")
+
+    # Fields this stage may fill, when still empty after every earlier tier.
+    # Services and Years_of_Exp are deliberately excluded -- each already has
+    # its own dedicated fill mechanism above (_infer_services_via_llm,
+    # _infer_years_of_experience_from_text), so asking about them again here
+    # would be a second, redundant Claude call for the same answer.
+    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Tools_Software", "Certifications", "Vendor_Experience")
+
+    def _infer_remaining_fields_via_llm(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Waterfall's last tier for whatever's STILL empty after Bright
+        Data/Tavily/Parallel/the two dedicated fallbacks above have all had
+        their turn -- deliberately gap-filling, not verification: only ever
+        asked about a field the caller has already confirmed is empty, so a
+        populated field (manual or otherwise) is never reconsidered or
+        second-guessed by this stage, regardless of what the text says.
+
+        Runs at most one Claude call per lead, covering every currently-
+        empty field in _REMAINING_FILL_ONLY_FIELDS at once, rather than one
+        call per field -- classify_services and the years-of-experience
+        fallback already ran by this point, so whatever's still missing here
+        is exactly the set this call needs to ask about."""
+        missing = [f for f in self._REMAINING_FILL_ONLY_FIELDS if is_empty_value(lead.get(f))]
+        if not missing:
+            return
+        if not self.groq_mapper:
+            logs.append("Stage 3.76: remaining-fields extraction skipped: GROQ_API_KEY isn't set")
+            return
+
+        text_blob = " | ".join(
+            str(v) for v in (
+                lead.get("Headline"), lead.get("Current_Title"),
+                lead.get("About_Snippet"), lead.get("Certifications"),
+            )
+            if v
+        )
+        if not text_blob:
+            logs.append("Stage 3.76: remaining-fields extraction skipped: no free text to read")
+            return
+
+        try:
+            found = self.groq_mapper.extract_missing_fields(text_blob, missing)
+        except GroqMappingError as exc:
+            logs.append(f"Stage 3.76: remaining-fields extraction failed, leaving fields empty: {exc}")
+            return
+
+        filled_fields = []
+        for field, value in found.items():
+            if _is_absence_prose(value):
+                continue
+            lead[field] = value
+            field_sources[field] = "llm_fallback"
+            filled_fields.append(field)
+            logs.append(f"Stage 3.76: {field} = {value!r} (from llm_fallback, gap-filled from already-extracted profile text)")
+
+        still_missing = [f for f in missing if f not in filled_fields]
+        if still_missing:
+            logs.append(f"Stage 3.76: no groundable text for {still_missing}")
 
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
@@ -994,6 +1412,22 @@ class EnrichmentOrchestrator:
 
         if time.monotonic() - start_time >= LEAD_LEVEL_TIMEOUT_SECONDS:
             return self._timed_out_result(lead, field_sources, logs, start_time, "Stage 4-6 (LLM fallback)")
+
+        # Stage 3.75: local (non-websearch) Services classification -- fires
+        # whenever Services is STILL empty after both Tier 1 and Tier 2, using
+        # only text already extracted above (no live web search, so this
+        # isn't gated by MAX_FIELDS_BEFORE_WEBSEARCH the way Stage 6 is). That
+        # gate matters here specifically: a lead that already has Headline/
+        # Current_Title/About/Country resolved is exactly the case Stage 6
+        # skips as "not thin enough", even though Services alone never
+        # resolved -- because parsers/service_aliases.py's fixed keyword list
+        # only recognizes a specific set of localization-industry terms, and
+        # a real service phrased differently ("Audio Engineer", "Sound
+        # Designer") never matches it no matter how plainly the text states
+        # it. See _infer_services_via_llm's docstring for the confirmed case.
+        self._infer_services_via_llm(lead, field_sources, logs)
+        self._infer_years_of_experience_from_text(lead, field_sources, logs)
+        self._infer_remaining_fields_via_llm(lead, field_sources, logs)
 
         post_stage3_audit = audit_lead_fields(lead)
 

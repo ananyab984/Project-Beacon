@@ -158,7 +158,7 @@ reportsRouter.get(
   })
 );
 
-const FUNNEL_CATEGORIES = ["contacted", "awaiting_reply", "replied", "in_negotiation", "dnc"] as const;
+const FUNNEL_CATEGORIES = ["contacted", "awaiting_reply", "replied", "in_negotiation", "dnc", "onboarded"] as const;
 type FunnelCategory = (typeof FUNNEL_CATEGORIES)[number];
 
 /**
@@ -166,28 +166,42 @@ type FunnelCategory = (typeof FUNNEL_CATEGORIES)[number];
  * computation -- both the tile counts and the "view these leads" drill-down
  * read the exact same sets, so a count and its list can never disagree.
  */
-async function getOutreachFunnelLeadIds(
-  req: Request,
+export async function getOutreachFunnelLeadIds(
+  requesterRole: string,
+  requesterId: string,
   range: string
 ): Promise<Record<FunnelCategory, string[]>> {
   const since = getSinceDate(range);
-  const isOwner = req.user!.role.toLowerCase() === "owner";
+  const role = requesterRole.toLowerCase();
+  const isOwner = role === "owner";
+  const isContractor = role === "contractor";
 
   const interactionWhere: any = { occurredAt: { gte: since } };
-  if (!isOwner) interactionWhere.recruiterId = req.user!.id;
+  if (!isOwner) interactionWhere.recruiterId = requesterId;
 
-  // Same lead-ownership definition GET /api/leads/mine already uses.
+  // Same lead-ownership definition GET /api/leads/mine already uses --
+  // branched three ways, not two: a contractor's leads are scoped by
+  // createdByContractorId, not the recruiter-assignment fields below. Opening
+  // this endpoint to contractor without this branch would have fallen
+  // through to the recruiter shape (matching nothing, since a contractor's
+  // own id is never assignedRecruiterId/claimedByRecruiterId/
+  // createdByRecruiterId) or, worse, some other unscoped shape -- either
+  // silently empty or a Global-Leads-style leak, depending on how it was
+  // written. Contractors must only ever see their own leads here, same as
+  // everywhere else.
   const leadWhere: any = isOwner
     ? {}
-    : {
-        OR: [
-          { assignedRecruiterId: req.user!.id },
-          { claimedByRecruiterId: req.user!.id },
-          { createdByRecruiterId: req.user!.id },
-        ],
-      };
+    : isContractor
+      ? { createdByContractorId: requesterId }
+      : {
+          OR: [
+            { assignedRecruiterId: requesterId },
+            { claimedByRecruiterId: requesterId },
+            { createdByRecruiterId: requesterId },
+          ],
+        };
 
-  const [outboundEvents, inboundEvents, negotiating, dnc] = await Promise.all([
+  const [outboundEvents, inboundEvents, negotiating, dnc, onboarded] = await Promise.all([
     prisma.interactionEvent.findMany({
       where: { ...interactionWhere, direction: "OUTBOUND" },
       select: { leadId: true },
@@ -203,6 +217,7 @@ async function getOutreachFunnelLeadIds(
     // already trusted directly elsewhere in the app (e.g. the ON_HOLD
     // checks in recruiter.leads.tsx), not re-derived from the event log here.
     prisma.lead.findMany({ where: { ...leadWhere, flags: { has: "DNC" } }, select: { id: true } }),
+    prisma.lead.findMany({ where: { ...leadWhere, stage: "ONBOARDED" }, select: { id: true } }),
   ]);
 
   const repliedLeadIds = new Set(inboundEvents.map((e) => e.leadId));
@@ -214,6 +229,7 @@ async function getOutreachFunnelLeadIds(
     replied: [...repliedLeadIds],
     in_negotiation: negotiating.map((l) => l.id),
     dnc: dnc.map((l) => l.id),
+    onboarded: onboarded.map((l) => l.id),
   };
 }
 
@@ -223,10 +239,10 @@ async function getOutreachFunnelLeadIds(
 // only their own; owners see the whole org (same pattern as /analytics).
 reportsRouter.get(
   "/outreach-funnel",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const range = (req.query.range as string) || "30d";
-    const ids = await getOutreachFunnelLeadIds(req, range);
+    const ids = await getOutreachFunnelLeadIds(req.user!.role, req.user!.id, range);
     return res.json({
       range,
       contacted: ids.contacted.length,
@@ -234,6 +250,7 @@ reportsRouter.get(
       replied: ids.replied.length,
       in_negotiation: ids.in_negotiation.length,
       dnc: ids.dnc.length,
+      onboarded: ids.onboarded.length,
     });
   })
 );
@@ -244,7 +261,7 @@ reportsRouter.get(
 // count shown on the tile that opened it.
 reportsRouter.get(
   "/outreach-funnel/leads",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const range = (req.query.range as string) || "30d";
     const category = req.query.category as string;
@@ -252,7 +269,7 @@ reportsRouter.get(
       return res.status(400).json({ error: `category must be one of: ${FUNNEL_CATEGORIES.join(", ")}` });
     }
 
-    const ids = await getOutreachFunnelLeadIds(req, range);
+    const ids = await getOutreachFunnelLeadIds(req.user!.role, req.user!.id, range);
     const leadIds = ids[category as FunnelCategory];
     // Order follows the id list above (interaction-recency for the three
     // event-derived categories), not an independent createdAt sort -- so the

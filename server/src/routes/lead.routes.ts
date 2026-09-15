@@ -18,6 +18,8 @@ import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFie
 import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
+import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
+import { createNotification } from "../services/notification.service";
 
 export const leadRouter = Router();
 
@@ -26,6 +28,71 @@ leadRouter.use(authenticateJwt);
 const LEAD_SOURCES = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"] as const;
 const LEAD_STAGES = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"] as const;
 const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
+
+/** Shared ownership check for every single-lead action route now open to
+ * contractors (flags, activities, retry-enrichment, reenrich, ...) -- same
+ * rule PATCH /:id already enforces. A contractor may act on a lead only if
+ * they created it; everyone else (owner/recruiter) is unrestricted. Takes
+ * plain values rather than the full Express Request so it's directly unit
+ * testable without constructing a fake request object. */
+export function assertContractorOwnsLead(
+  requesterRole: string,
+  requesterId: string,
+  lead: { createdByContractorId: string | null }
+) {
+  if (requesterRole.toLowerCase() === "contractor" && lead.createdByContractorId !== requesterId) {
+    throw new ApiError(403, "FORBIDDEN", "Contractors can only act on their own submitted leads");
+  }
+}
+
+/** Resolves what assignedRecruiterId/assignedAt to store on a newly created
+ * lead (single or bulk), given the creating role, their own id, and
+ * whatever assignedRecruiterId the request body supplied.
+ *
+ * Security fix: a contractor's request body could carry an arbitrary
+ * assignedRecruiterId with no role restriction of its own, letting them
+ * stamp it onto their own new lead -- contractors don't have an "assign"
+ * concept at all (they submit, routing is owner/recruiter's job), so it's
+ * always ignored for that role regardless of what's sent. Recruiter
+ * auto-assigns to themself when the body didn't specify one; owner may set
+ * it explicitly or leave it unset. Exported so it's directly unit-testable
+ * without constructing a fake request/response. */
+export function resolveLeadAssignment(
+  role: string,
+  requesterId: string,
+  requestedRecruiterId: string | undefined
+): { assignedRecruiterId: string | undefined; assignedAt: Date | undefined } {
+  const normalizedRole = role.toLowerCase();
+  if (normalizedRole === "contractor") {
+    return { assignedRecruiterId: undefined, assignedAt: undefined };
+  }
+  const assignedRecruiterId = requestedRecruiterId ?? (normalizedRole === "recruiter" ? requesterId : undefined);
+  const assignedAt = requestedRecruiterId || normalizedRole === "recruiter" ? new Date() : undefined;
+  return { assignedRecruiterId, assignedAt };
+}
+
+/** How many of the given lead ids are NOT owned by this contractor --
+ * PATCH /bulk and POST /batch-delete both use this to reject a batch that
+ * reaches outside the contractor's own submissions.
+ *
+ * Security fix: the original check here was `createdByContractorId: { not:
+ * requesterId } }` alone. SQL's three-valued logic means a row where that
+ * column is NULL (any recruiter- or owner-sourced lead, which is most of
+ * them) satisfies neither `= requesterId` NOR `<> requesterId` -- so it was
+ * silently excluded from the "foreign" count instead of counting as
+ * foreign, and a contractor could bulk-update or batch-delete ANY
+ * recruiter/owner lead as long as it had never been contractor-sourced.
+ * Confirmed live via a direct query: `{ not: X }` alone returned
+ * foreignCount=0 for a lead with createdByContractorId=null. Explicitly
+ * OR-ing in `createdByContractorId: null` closes that gap. */
+async function countForeignLeadsForContractor(contractorId: string, leadIds: string[]): Promise<number> {
+  return prisma.lead.count({
+    where: {
+      id: { in: leadIds },
+      OR: [{ createdByContractorId: null }, { createdByContractorId: { not: contractorId } }],
+    },
+  });
+}
 
 /** Best-effort mapping of a free-text/legacy source string to the LeadSource
  * enum -- same fallback rule the client's per-dialog copies of this already
@@ -173,10 +240,12 @@ leadRouter.get(
     const role = req.user!.role.toLowerCase() as Role;
     const userId = req.user!.id;
 
+    // Soft-deleted leads (Global Leads recycle bin) never show up here either.
     const where =
       role === "contractor"
-        ? { createdByContractorId: userId }
+        ? { createdByContractorId: userId, deletedAt: null }
         : {
+            deletedAt: null,
             OR: [
               { assignedRecruiterId: userId },
               { claimedByRecruiterId: userId },
@@ -189,10 +258,14 @@ leadRouter.get(
   })
 );
 
-// GET /api/leads/export — CSV export honoring the current filter set
+// GET /api/leads/export — CSV export honoring the current filter set.
+// Contractors are scoped to their own submitted leads (createdByContractorId)
+// -- unlike GET / (the Global Leads pool), this has no role branch of its
+// own by default, so opening it to contractor without this scope would
+// export every lead in the pool, not just theirs.
 leadRouter.get(
   "/export",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const EXPORT_ROW_CAP = 5000;
     const where = buildLeadWhere({
@@ -204,6 +277,9 @@ leadRouter.get(
       recruiterId: req.query.recruiterId as string,
       flag: req.query.flag as string,
     });
+    if (req.user!.role.toLowerCase() === "contractor") {
+      where.createdByContractorId = req.user!.id;
+    }
     const leads = await prisma.lead.findMany({ where, take: EXPORT_ROW_CAP, orderBy: { createdAt: "desc" } });
     if (leads.length === EXPORT_ROW_CAP) {
       console.warn(`Lead export truncated at ${EXPORT_ROW_CAP} rows for filter set`, where);
@@ -331,6 +407,28 @@ leadRouter.post(
   })
 );
 
+// GET /api/leads/bin — Global Leads recycle bin: leads soft-deleted via
+// POST /batch-delete, each carrying its own purgeAt/daysUntilPurge (see
+// lib/recycleBin.ts) rather than one bin-wide expiry. Must be registered
+// before GET /:id so "/bin" isn't swallowed as an :id param.
+leadRouter.get(
+  "/bin",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (_req: Request, res: Response) => {
+    const leads = await prisma.lead.findMany({
+      where: { deletedAt: { not: null } },
+      orderBy: { deletedAt: "asc" },
+    });
+    return res.json({
+      leads: leads.map((lead) => ({
+        ...lead,
+        purgeAt: computePurgeAt(lead.deletedAt!),
+        daysUntilPurge: daysUntilPurge(lead.deletedAt!),
+      })),
+    });
+  })
+);
+
 // GET /api/leads/:id — single lead + merged activity timeline
 leadRouter.get(
   "/:id",
@@ -382,31 +480,21 @@ leadRouter.post(
         createdByContractorId: role === "contractor" ? req.user!.id : undefined,
         createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
         isSelfSourced: role !== "contractor",
-        assignedRecruiterId: parsed.assignedRecruiterId ?? (role === "recruiter" ? req.user!.id : undefined),
-        assignedAt: parsed.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
+        ...resolveLeadAssignment(role, req.user!.id, parsed.assignedRecruiterId),
         dupFlagged: false,
         dupFlaggedField: undefined,
       },
     });
 
-    // 1. Auto-add to email queue if created by recruiter/owner. Body/subject
-    // start empty -- a queue item should always require an explicit
-    // "Generate Draft" click (or manual typing) before it has any content,
-    // never arrive pre-written.
+    // The Email Queue is opt-in: a recruiter puts a lead there themselves via
+    // the queue page's own "Search Lead" -> add action (POST
+    // /api/email-queue), which is the only place an EmailQueueItem should
+    // ever be created. This used to also auto-create one for every lead on
+    // creation, so every new/imported lead showed up in the queue with no
+    // explicit action taken -- confirmed live: a recruiter who had only
+    // added leads, never touched the queue, found several names already
+    // sitting in it.
     if (role !== "contractor") {
-      await prisma.emailQueueItem.create({
-        data: {
-          leadId: lead.id,
-          recruiterId: req.user!.id,
-          candidateName: lead.fullName || "Candidate",
-          candidateRole: candidateRoleOf(parsed.services, parsed.targetLanguage),
-          status: "REVIEW_NEEDED",
-          subject: "",
-          body: "",
-          aiGenerated: false,
-        },
-      }).catch((err) => console.error("Failed to auto-create email queue item:", err));
-
       // Auto-create conversation thread only for an actual LinkedIn lead --
       // `parsed.profileLink` alone used to be enough, which is the same gap
       // fixed for the explicit "Search Lead" path in conversation.routes.ts's
@@ -430,6 +518,16 @@ leadRouter.post(
     setImmediate(() => {
       enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
     });
+
+    if (lead.assignedRecruiterId) {
+      await createNotification({
+        recipientId: lead.assignedRecruiterId,
+        type: "NEW_LEAD",
+        title: `New lead: ${lead.fullName || lead.maskedLabel}`,
+        body: `A new lead was added and assigned to you.`,
+        link: `/recruiter/leads`,
+      }).catch((err) => console.error("[notifications] new lead notify failed:", err));
+    }
 
     return res.status(201).json({ lead: withEnrichedFieldCount(lead), duplicateWarning: dup.isDuplicate ? dup : null });
   })
@@ -503,29 +601,17 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
             createdByContractorId: role === "contractor" ? userId : undefined,
             createdByRecruiterId: role !== "contractor" ? userId : undefined,
             isSelfSourced: role !== "contractor",
-            assignedRecruiterId: row.assignedRecruiterId ?? (role === "recruiter" ? userId : undefined),
-            assignedAt: row.assignedRecruiterId || role === "recruiter" ? new Date() : undefined,
+            ...resolveLeadAssignment(role, userId, row.assignedRecruiterId),
             dupFlagged: false,
             dupFlaggedField: undefined,
           },
         });
 
-        // Auto-create email queue and conversation items -- body/subject
-        // start empty, same reasoning as the single-lead create above.
+        // Auto-create a conversation thread only -- NOT an EmailQueueItem, see
+        // the single-lead create above for why: the queue is opt-in via its
+        // own "Search Lead" -> add action, not something a bulk import should
+        // silently populate for the recruiter who ran it.
         if (role !== "contractor") {
-          await prisma.emailQueueItem.create({
-            data: {
-              leadId: lead.id,
-              recruiterId: userId,
-              candidateName: lead.fullName || "Candidate",
-              candidateRole: candidateRoleOf(row.services, row.targetLanguage),
-              status: "REVIEW_NEEDED",
-              subject: "",
-              body: "",
-              aiGenerated: false,
-            },
-          }).catch(() => {});
-
           const isLinkedInLead =
             row.source === "LINKEDIN" && !!row.profileLink && /linkedin\.com/i.test(row.profileLink);
           if (isLinkedInLead) {
@@ -544,6 +630,16 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
         setImmediate(() => {
           enrichLeadById(lead.id).catch((err) => console.error("Immediate bulk enrichment error:", err));
         });
+
+        if (lead.assignedRecruiterId) {
+          createNotification({
+            recipientId: lead.assignedRecruiterId,
+            type: "NEW_LEAD",
+            title: `New lead: ${lead.fullName || lead.maskedLabel}`,
+            body: `A new lead was imported and assigned to you.`,
+            link: `/recruiter/leads`,
+          }).catch((err) => console.error("[notifications] new lead notify failed:", err));
+        }
 
         results.push({ index: i, status: dup.isDuplicate ? "duplicate" : "accepted", leadId: lead.id });
       } catch (err: any) {
@@ -623,10 +719,34 @@ leadRouter.post(
   })
 );
 
-// PATCH /api/leads/bulk — bulk stage/recruiter reassignment for the bulk-action bar
+/** Bulk-action guard for contractor role, shared by nothing else since
+ * PATCH /bulk is the only route that operates on an arbitrary caller-chosen
+ * id list. Two independent restrictions: (1) every id must be a lead the
+ * contractor actually created -- otherwise they could stage-change/
+ * reassign any lead in the system; (2) a contractor can never supply
+ * `recruiterId` at all, even for leads they fully own -- contractors don't
+ * have an "assign" concept, that's owner/recruiter's job. Exported so it's
+ * directly unit-testable without constructing a fake request/response. */
+export async function assertContractorBulkUpdateAllowed(
+  requesterRole: string,
+  requesterId: string,
+  ids: string[],
+  recruiterId: string | undefined
+) {
+  if (requesterRole.toLowerCase() !== "contractor") return;
+  const foreignCount = await countForeignLeadsForContractor(requesterId, ids);
+  if (foreignCount > 0) throw new ApiError(403, "FORBIDDEN", "Contractors can only bulk-update their own submitted leads");
+  if (recruiterId) throw new ApiError(403, "FORBIDDEN", "Contractors cannot reassign leads to a recruiter");
+}
+
+// PATCH /api/leads/bulk — bulk stage/recruiter reassignment for the bulk-action bar.
+// Unlike GET / and GET /export, this has no per-row ownership scoping of its
+// own -- it applies to whatever ids are passed. A contractor calling this
+// must be restricted to ids they actually created, or they could
+// stage-change/reassign any lead in the system.
 leadRouter.patch(
   "/bulk",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({
       ids: z.array(z.string().uuid()).min(1).max(500),
@@ -635,6 +755,8 @@ leadRouter.patch(
     });
     const { ids, stage, recruiterId } = schema.parse(req.body);
     if (!stage && !recruiterId) throw new ApiError(400, "NO_OP", "Provide stage or recruiterId to apply");
+
+    await assertContractorBulkUpdateAllowed(req.user!.role, req.user!.id, ids, recruiterId);
 
     if (stage) {
       await prisma.$transaction(
@@ -684,7 +806,10 @@ leadRouter.patch(
       profileLink: z.string().nullable().optional(),
       email: z.string().trim().transform((val) => (val === "" ? null : val)).nullable().refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
       contactNumber: z.string().nullable().optional(),
-      yearsOfExperience: z.number().nullable().optional(),
+      // Same bounds as createLeadSchema below -- this PATCH path (the
+      // Enrichment Details dialog's manual-entry Save) had none at all,
+      // which is how a negative Years_of_Exp reached a lead undetected.
+      yearsOfExperience: z.number().min(0).max(99).nullable().optional(),
       vendorExperience: z.string().nullable().optional(),
       headline: z.string().nullable().optional(),
       currentTitle: z.string().nullable().optional(),
@@ -961,13 +1086,14 @@ leadRouter.post(
 // POST /api/leads/:id/flags — add a flag (DNC/ON_HOLD/WATCHING/HIGH_PRIORITY)
 leadRouter.post(
   "/:id/flags",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({ flag: z.enum(LEAD_FLAGS), reason: z.string().optional(), provisional: z.boolean().optional() });
     const { flag, reason, provisional } = schema.parse(req.body);
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     await prisma.leadFlagEvent.create({
       data: {
@@ -994,13 +1120,14 @@ leadRouter.post(
 // DELETE /api/leads/:id/flags/:flag — remove a flag (audit-logged, not hard-deleted)
 leadRouter.delete(
   "/:id/flags/:flag",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const flag = req.params.flag.toUpperCase();
     if (!LEAD_FLAGS.includes(flag as any)) throw new ApiError(400, "INVALID_FLAG", "Unknown flag type");
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     await prisma.leadFlagEvent.create({
       data: { leadId: lead.id, flag: flag as any, action: "REMOVED", setByRecruiterId: req.user!.id },
@@ -1017,10 +1144,29 @@ leadRouter.delete(
   })
 );
 
+// DELETE /api/leads/:id/services/:service — remove one entry from a lead's
+// services array. There's no fixed allowed-list here (unlike flags):
+// services is a flat String[] that can hold whatever a CSV import or
+// enrichment provider produced, including malformed tokens a recruiter needs
+// to be able to delete regardless of what they look like.
+leadRouter.delete(
+  "/:id/services/:service",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
+
+    const services = lead.services.filter((s) => s !== req.params.service);
+    const updated = await prisma.lead.update({ where: { id: lead.id }, data: { services } });
+    return res.json({ lead: withEnrichedFieldCount(updated) });
+  })
+);
+
 // POST /api/leads/:id/activities — log a manual interview or call
 leadRouter.post(
   "/:id/activities",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.discriminatedUnion("type", [
       z.object({ type: z.literal("INTERVIEW"), scheduledAt: z.string().datetime(), notes: z.string().optional() }),
@@ -1035,6 +1181,7 @@ leadRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const activity = await prisma.manualActivityLog.create({
       data: {
@@ -1059,10 +1206,11 @@ leadRouter.post(
 // IN_PROGRESS, not two.
 leadRouter.post(
   "/:id/retry-enrichment",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     if (lead.enrichmentStatus === "IN_PROGRESS") {
       throw new ApiError(409, "ALREADY_RUNNING", "This lead's enrichment is still actively running");
@@ -1090,10 +1238,11 @@ leadRouter.post(
 // reads progress off the run row (GET /:id/reenrichment-status below).
 leadRouter.post(
   "/:id/reenrich",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     // The in-flight lock. The button is disabled client-side while a run is
     // active, but that alone can't stop a second tab, a stale page, or a
@@ -1140,8 +1289,12 @@ leadRouter.post(
 // the re-enrichment modal while it's open.
 leadRouter.get(
   "/:id/reenrichment-status",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
+
     const run = await prisma.reenrichmentRun.findFirst({
       where: { leadId: req.params.id },
       orderBy: { startedAt: "desc" },
@@ -1168,7 +1321,7 @@ leadRouter.get(
 // re-checked against the lead's live fieldSources, not the stale run.
 leadRouter.post(
   "/:id/reenrichment-resolve",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const { runId, acceptFields } = z
       .object({ runId: z.string(), acceptFields: z.array(z.string()) })
@@ -1176,6 +1329,7 @@ leadRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const run = await prisma.reenrichmentRun.findFirst({ where: { id: runId, leadId: lead.id } });
     if (!run) throw new ApiError(404, "RUN_NOT_FOUND", "Re-enrichment run not found for this lead");
@@ -1206,7 +1360,47 @@ leadRouter.post(
   })
 );
 
-// POST /api/leads/batch-delete — batch delete leads & cascade cleanup
+// PATCH /api/leads/:id/notify-subscription — the per-lead "Notify me on
+// response" bell. Plain manual on/off toggle scoped to (lead, recruiter) --
+// turning it on for yourself doesn't affect any other recruiter's switch on
+// the same lead, and it stays on (fires on every future reply from this
+// lead) until switched off, no auto-deactivation.
+leadRouter.patch(
+  "/:id/notify-subscription",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { active } = z.object({ active: z.boolean() }).parse(req.body);
+
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+
+    const subscription = await prisma.leadNotificationSubscription.upsert({
+      where: { leadId_recruiterId: { leadId: lead.id, recruiterId: req.user!.id } },
+      create: { leadId: lead.id, recruiterId: req.user!.id, active },
+      update: { active },
+    });
+
+    return res.json({ subscription });
+  })
+);
+
+// GET /api/leads/:id/notify-subscription — this recruiter's own toggle state for this lead
+leadRouter.get(
+  "/:id/notify-subscription",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const subscription = await prisma.leadNotificationSubscription.findUnique({
+      where: { leadId_recruiterId: { leadId: req.params.id, recruiterId: req.user!.id } },
+    });
+    return res.json({ active: subscription?.active ?? false });
+  })
+);
+
+// POST /api/leads/batch-delete — Global Leads only. Moves leads to the
+// recycle bin (soft delete) instead of hard-deleting them; a background job
+// (recycleBinPurge.job.ts) permanently removes each one 30 days after ITS
+// OWN deletedAt. Contractors never get here at all -- delete lives only in
+// the Global Leads page, never the contractor's own-leads view.
 leadRouter.post(
   "/batch-delete",
   requireRole("owner", "recruiter"),
@@ -1216,15 +1410,31 @@ leadRouter.post(
       return res.json({ deletedCount: 0 });
     }
 
-    await prisma.$transaction([
-      prisma.emailQueueItem.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.conversationMessage.deleteMany({ where: { conversation: { leadId: { in: leadIds } } } }),
-      prisma.conversation.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.leadFlagEvent.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.interactionEvent.deleteMany({ where: { leadId: { in: leadIds } } }),
-      prisma.lead.deleteMany({ where: { id: { in: leadIds } } }),
-    ]);
+    const result = await prisma.lead.updateMany({
+      where: { id: { in: leadIds }, deletedAt: null },
+      data: { deletedAt: new Date(), deletedByUserId: req.user!.id },
+    });
 
-    return res.json({ deletedCount: leadIds.length });
+    return res.json({ deletedCount: result.count });
+  })
+);
+
+// POST /api/leads/:id/restore — Windows-Recycle-Bin-style undo: pulls one
+// lead back out of the bin (clears deletedAt/deletedByUserId) as long as its
+// own 30-day window hasn't already elapsed -- past that, recycleBinPurge.job.ts
+// may have already hard-deleted it, so this can legitimately 404.
+leadRouter.post(
+  "/:id/restore",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    if (!lead.deletedAt) throw new ApiError(400, "LEAD_NOT_IN_BIN", "This lead is not in the recycle bin");
+
+    const restored = await prisma.lead.update({
+      where: { id: lead.id },
+      data: { deletedAt: null, deletedByUserId: null },
+    });
+    return res.json({ lead: withEnrichedFieldCount(restored) });
   })
 );

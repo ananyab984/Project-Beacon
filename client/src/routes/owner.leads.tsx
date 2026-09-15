@@ -18,6 +18,8 @@ import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/fea
 import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
+import { ServicesCell } from "@/components/features/services-cell";
+import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
 import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/owner/leads")({
@@ -88,7 +90,7 @@ function LeadsPage() {
   const [detailsLead, setDetailsLead] = useState<ApiLead | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [mode, setMode] = useState<"table" | "board">("table");
-  const pageSize = 12;
+  const [pageSize, setPageSize] = useState(50);
 
   const filters = useMemo(
     () => ({
@@ -99,6 +101,10 @@ function LeadsPage() {
       recruiterId: rec !== "all" ? rec : undefined,
       stage: stage !== "all" ? stage : undefined,
       dateRange: dateRange !== "all" ? dateRange : undefined,
+      // ponytail: client-side pagination over a single capped fetch (server
+      // clamps limit to 100, see lead.routes.ts). Fine up to ~100 leads;
+      // once a tenant exceeds that, wire the existing cursor/nextCursor
+      // pagination into an infinite query instead of bumping this further.
       limit: 200,
     }),
     [q, lang, country, service, rec, stage, dateRange],
@@ -236,6 +242,12 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to take lead off hold"),
   });
 
+  const removeServiceMutation = useMutation({
+    mutationFn: ({ id, service }: { id: string; service: string }) => api.removeLeadService(id, service),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to remove service"),
+  });
+
   const assignMutation = useMutation({
     mutationFn: ({ ids, recruiterId }: { ids: string[]; recruiterId: string }) =>
       api.bulkUpdateLeads(ids, { recruiterId }),
@@ -340,6 +352,7 @@ function LeadsPage() {
             <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
           </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} onSheetImportComplete={invalidateLeads} />
+          <RecycleBinDialog />
           <AddLeadDialog
             trigger={
               <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm">
@@ -422,6 +435,7 @@ function LeadsPage() {
           recruiters={recruiterList}
           isLoading={leadsQuery.isLoading}
           onStageChange={(id, stage, closureReason) => stageMutation.mutate({ id, stage, closureReason })}
+          onRemoveService={(id, service) => removeServiceMutation.mutate({ id, service })}
         />
       )}
 
@@ -441,7 +455,6 @@ function LeadsPage() {
                 <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <th className="px-4 py-3">Services</th>
                 <SortableTh label="Status" k="stage" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <th className="px-4 py-3">Availability</th>
                 <th className="px-4 py-3">Source</th>
                 <SortableTh label="Recruiter" k="recruiter" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
                 <SortableTh label="Activity" k="activity" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
@@ -449,10 +462,10 @@ function LeadsPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {leadsQuery.isLoading && (
-                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
               )}
               {leadsQuery.isError && (
-                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
               )}
               {!leadsQuery.isLoading && !leadsQuery.isError && view.map((l) => {
                 const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
@@ -487,16 +500,14 @@ function LeadsPage() {
                     </td>
                     <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
                     <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {l.services.map((s) => (
-                          <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
-                        ))}
-                      </div>
+                      <ServicesCell
+                        services={l.services}
+                        onRemove={(service) => removeServiceMutation.mutate({ id: l.id, service })}
+                      />
                     </td>
                     <td className="px-4 py-3">
                       <span className="rounded-md border border-border px-2 py-0.5 text-xs font-medium">{formatStageLabel(l.stage)}</span>
                     </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.availability}</td>
                     <td className="px-4 py-3 text-foreground/80">{l.source}</td>
                     <td className="px-4 py-3 text-foreground/80">{r?.name ?? "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{relativeTime(l.lastActivityAt)}</td>
@@ -505,7 +516,7 @@ function LeadsPage() {
               })}
               {!leadsQuery.isLoading && !leadsQuery.isError && view.length === 0 && (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={10} className="px-4 py-12 text-center text-sm text-muted-foreground">
                     No leads match these filters.
                     <button className="ml-2 text-primary hover:underline" onClick={clearFilters}>Clear filters</button>
                   </td>
@@ -521,10 +532,23 @@ function LeadsPage() {
             Showing <span className="tabular-nums text-foreground">{view.length}</span> of{" "}
             <span className="tabular-nums text-foreground">{filtered.length}</span> leads
           </span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-            <span className="tabular-nums">Page {page} / {pageCount}</span>
-            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>Next</Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5">
+              <span>Rows per page</span>
+              <Select value={String(pageSize)} onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}>
+                <SelectTrigger className="h-7 w-[68px] text-xs"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {[12, 30, 50, 100].map((n) => (
+                    <SelectItem key={n} value={String(n)} className="text-xs">{n}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
+              <span className="tabular-nums">Page {page} / {pageCount}</span>
+              <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>Next</Button>
+            </div>
           </div>
         </div>
       </div>

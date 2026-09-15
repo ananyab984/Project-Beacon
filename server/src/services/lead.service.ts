@@ -152,7 +152,9 @@ export function buildLeadWhere(params: {
   flag?: string;
   since?: Date;
 }): Prisma.LeadWhereInput {
-  const where: Prisma.LeadWhereInput = {};
+  // Soft-deleted leads (Global Leads recycle bin) never show up in the
+  // normal pool or its export -- restoring is the only way back in.
+  const where: Prisma.LeadWhereInput = { deletedAt: null };
   if (params.q) {
     where.OR = [
       { fullName: { contains: params.q, mode: "insensitive" } },

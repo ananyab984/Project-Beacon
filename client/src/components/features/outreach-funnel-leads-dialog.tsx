@@ -10,6 +10,7 @@ const CATEGORY_LABEL: Record<OutreachFunnelCategory, string> = {
   replied: "Replied",
   in_negotiation: "In Negotiation",
   dnc: "DNC",
+  onboarded: "Onboarded",
 };
 
 interface Props {

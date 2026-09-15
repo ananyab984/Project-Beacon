@@ -7,23 +7,61 @@ import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Search, ArrowUpDown, Upload, Download, Mail, UserPlus, X, Activity, Clock, AlertTriangle, Trash2, Table2, KanbanSquare } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Search,
+  ArrowUpDown,
+  Upload,
+  Download,
+  Mail,
+  UserPlus,
+  X,
+  Activity,
+  Clock,
+  AlertTriangle,
+  Trash2,
+  Table2,
+  KanbanSquare,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ManualEnrichmentDialog, type LeadForEnrichment } from "@/components/features/manual-enrichment-dialog";
+import {
+  ManualEnrichmentDialog,
+  type LeadForEnrichment,
+} from "@/components/features/manual-enrichment-dialog";
 import { EnrichmentDetailsDialog } from "@/components/features/enrichment-details-dialog";
 import { ReenrichmentModal, useReenrichment } from "@/components/features/reenrichment-modal";
 import { LeadKanbanBoard } from "@/components/features/lead-kanban-board";
+import { ServicesCell } from "@/components/features/services-cell";
+import { RecycleBinDialog } from "@/components/features/recycle-bin-dialog";
+import { LeadNotifyBell } from "@/components/features/lead-notify-bell";
 import { STANDARD_SERVICES } from "@/lib/services";
 
 export const Route = createFileRoute("/recruiter/leads")({
   head: () => ({
     meta: [
       { title: "Leads — Global3 Recruiter" },
-      { name: "description", content: "CRM-style lead management for recruiters: global vs my leads, filters, bulk actions." },
+      {
+        name: "description",
+        content:
+          "CRM-style lead management for recruiters: global vs my leads, filters, bulk actions.",
+      },
     ],
   }),
   validateSearch: (s: Record<string, unknown>) => ({
@@ -32,7 +70,16 @@ export const Route = createFileRoute("/recruiter/leads")({
   component: LeadsPage,
 });
 
-const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+const VALID_SOURCES: LeadSource[] = [
+  "LINKEDIN",
+  "PROZ",
+  "ADA",
+  "ATA",
+  "ATAA",
+  "BODALGO",
+  "FREELANCER",
+  "APOLLO",
+];
 
 function mapToLeadSource(raw: string | undefined | null): LeadSource {
   if (!raw) return "LINKEDIN";
@@ -73,7 +120,15 @@ function relativeTime(iso: string | null): string {
   return `${days}d ago`;
 }
 
-const STAGE_OPTIONS: LeadStage[] = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"];
+const STAGE_OPTIONS: LeadStage[] = [
+  "NEW",
+  "CONTACTED",
+  "REPLIED",
+  "NEGOTIATING",
+  "INVITE_SENT",
+  "ONBOARDED",
+  "COLD",
+];
 
 type SortKey = "lead" | "language" | "country" | "stage" | "recruiter" | "activity";
 type Scope = "global" | "mine";
@@ -96,7 +151,7 @@ function LeadsPage() {
   const [enrichRaw, setEnrichRaw] = useState<ApiLead | null>(null);
   const [detailsLead, setDetailsLead] = useState<ApiLead | null>(null);
   const [mode, setMode] = useState<"table" | "board">("table");
-  const pageSize = 12;
+  const [pageSize, setPageSize] = useState(50);
 
   const filters = useMemo(
     () => ({
@@ -107,6 +162,10 @@ function LeadsPage() {
       recruiterId: rec !== "all" ? rec : undefined,
       stage: stage !== "all" ? stage : undefined,
       dateRange: dateRange !== "all" ? dateRange : undefined,
+      // ponytail: client-side pagination over a single capped fetch (server
+      // clamps limit to 100, see lead.routes.ts). Fine up to ~100 leads;
+      // once a tenant exceeds that, wire the existing cursor/nextCursor
+      // pagination into an infinite query instead of bumping this further.
       limit: 200,
     }),
     [q, lang, country, service, rec, stage, dateRange],
@@ -136,12 +195,16 @@ function LeadsPage() {
   const scoped = scope === "mine" ? mineLeads : globalLeads;
   const mineCount = mineLeads.length;
   const onHoldCount = useMemo(
-    () => mineLeads.filter((l) => l.enrichmentStatus !== "COMPLETE" && l.enrichmentStatus !== "IN_PROGRESS").length,
+    () =>
+      mineLeads.filter(
+        (l) => l.enrichmentStatus !== "COMPLETE" && l.enrichmentStatus !== "IN_PROGRESS",
+      ).length,
     [mineLeads],
   );
 
   const languages = useMemo(
-    () => Array.from(new Set(globalLeads.map((l) => l.targetLanguage).filter((v): v is string => !!v))),
+    () =>
+      Array.from(new Set(globalLeads.map((l) => l.targetLanguage).filter((v): v is string => !!v))),
     [globalLeads],
   );
   // Sourced from the canonical list, not derived from raw Lead.services --
@@ -181,11 +244,20 @@ function LeadsPage() {
   }
   function sortToggle(k: SortKey) {
     if (sortBy === k) setSortDir(sortDir === "asc" ? "desc" : "asc");
-    else { setSortBy(k); setSortDir("asc"); }
+    else {
+      setSortBy(k);
+      setSortDir("asc");
+    }
   }
   function clearFilters() {
-    setQ(""); setLang("all"); setCountry("all"); setService("all");
-    setRec("all"); setStage("all"); setDateRange("all"); setPage(1);
+    setQ("");
+    setLang("all");
+    setCountry("all");
+    setService("all");
+    setRec("all");
+    setStage("all");
+    setDateRange("all");
+    setPage(1);
   }
 
   function invalidateLeads() {
@@ -198,13 +270,21 @@ function LeadsPage() {
   // await mutateAsync and show their own contextual error) -- no onError
   // toast here to avoid double-toasting the same failure.
   const enrichMutation = useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) => api.updateLead(id, patch),
+    mutationFn: ({ id, patch }: { id: string; patch: Partial<ApiLead> }) =>
+      api.updateLead(id, patch),
     onSuccess: () => invalidateLeads(),
   });
 
   const stageMutation = useMutation({
-    mutationFn: ({ id, stage, closureReason }: { id: string; stage: string; closureReason?: string }) =>
-      api.updateLead(id, { stage, closureReason } as Partial<ApiLead>),
+    mutationFn: ({
+      id,
+      stage,
+      closureReason,
+    }: {
+      id: string;
+      stage: string;
+      closureReason?: string;
+    }) => api.updateLead(id, { stage, closureReason } as Partial<ApiLead>),
     onSuccess: () => invalidateLeads(),
     onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
   });
@@ -235,8 +315,16 @@ function LeadsPage() {
     onError: (err: any) => toast.error(err?.message ?? "Failed to take lead off hold"),
   });
 
+  const removeServiceMutation = useMutation({
+    mutationFn: ({ id, service }: { id: string; service: string }) =>
+      api.removeLeadService(id, service),
+    onSuccess: () => invalidateLeads(),
+    onError: (err: any) => toast.error(err?.message ?? "Failed to remove service"),
+  });
+
   const bulkCreateMutation = useMutation({
-    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) =>
+      api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
       const duplicates = res.results.filter((r) => r.status === "duplicate").length;
@@ -250,13 +338,13 @@ function LeadsPage() {
         toast.error(
           errors > 0
             ? `No leads imported — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
-            : `No leads imported — all ${duplicates} row(s) were duplicates.`
+            : `No leads imported — all ${duplicates} row(s) were duplicates.`,
         );
       } else if (duplicates > 0 || errors > 0) {
         toast.info(
           `Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
             (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
-            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
+            (errors > 0 ? ` ${errors} row(s) had errors.` : ""),
         );
       } else {
         toast.success(`Imported ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.`);
@@ -303,7 +391,9 @@ function LeadsPage() {
     onSuccess: (data) => {
       invalidateLeads();
       setSelected(new Set());
-      toast.success(`Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`);
+      toast.success(
+        `Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`,
+      );
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to delete leads");
@@ -346,15 +436,24 @@ function LeadsPage() {
           <div className="flex items-center gap-2.5">
             <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
             <span className="text-amber-100">
-              <strong className="font-semibold text-amber-300">{onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment.</strong>{" "}
-              <span className="text-amber-200/90">Please review missing candidate details to promote {onHoldCount > 1 ? "them" : "it"} to Global Leads.</span>
+              <strong className="font-semibold text-amber-300">
+                {onHoldCount} lead{onHoldCount > 1 ? "s" : ""} require manual enrichment.
+              </strong>{" "}
+              <span className="text-amber-200/90">
+                Please review missing candidate details to promote {onHoldCount > 1 ? "them" : "it"}{" "}
+                to Global Leads.
+              </span>
             </span>
           </div>
-            <Button
+          <Button
             size="sm"
             className="h-7 text-xs bg-amber-500 text-black font-semibold hover:bg-amber-400 border-none shrink-0 shadow-sm"
             onClick={() => {
-              const firstOnHold = scoped.find((l) => l.enrichmentStatus !== "COMPLETE" && (!l.identityResolved || l.flags.includes("ON_HOLD")));
+              const firstOnHold = scoped.find(
+                (l) =>
+                  l.enrichmentStatus !== "COMPLETE" &&
+                  (!l.identityResolved || l.flags.includes("ON_HOLD")),
+              );
               if (firstOnHold) setEnrichRaw(firstOnHold);
             }}
           >
@@ -370,43 +469,125 @@ function LeadsPage() {
           <Input
             placeholder="Search leads by name or ID…"
             value={q}
-            onChange={(e) => { setQ(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              setQ(e.target.value);
+              setPage(1);
+            }}
             className="pl-9"
           />
         </div>
         <div className="flex items-center gap-2">
-          <div role="tablist" aria-label="Lead view" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <ViewTab active={mode === "table"} onClick={() => setMode("table")} label="Table" icon={Table2} />
-            <ViewTab active={mode === "board"} onClick={() => setMode("board")} label="Board" icon={KanbanSquare} />
+          <div
+            role="tablist"
+            aria-label="Lead view"
+            className="inline-flex rounded-lg border border-border bg-card p-0.5"
+          >
+            <ViewTab
+              active={mode === "table"}
+              onClick={() => setMode("table")}
+              label="Table"
+              icon={Table2}
+            />
+            <ViewTab
+              active={mode === "board"}
+              onClick={() => setMode("board")}
+              label="Board"
+              icon={KanbanSquare}
+            />
           </div>
           <BulkUploadDialog onSubmitRows={(rows) => bulkCreateMutation.mutate(rows)} />
+          {/* Delete lives only in the Global Leads scope -- this is its recycle bin. */}
+          {scope === "global" && <RecycleBinDialog />}
           {/* Toggle replaces owner's Export slot */}
-          <div role="tablist" aria-label="Lead scope" className="inline-flex rounded-lg border border-border bg-card p-0.5">
-            <ScopeTab active={scope === "global"} onClick={() => { setScope("global"); setPage(1); setSelected(new Set()); }} label="Global Leads" count={globalLeads.length} />
-            <ScopeTab active={scope === "mine"} onClick={() => { setScope("mine"); setPage(1); setSelected(new Set()); }} label="My Leads" count={mineCount} />
+          <div
+            role="tablist"
+            aria-label="Lead scope"
+            className="inline-flex rounded-lg border border-border bg-card p-0.5"
+          >
+            <ScopeTab
+              active={scope === "global"}
+              onClick={() => {
+                setScope("global");
+                setPage(1);
+                setSelected(new Set());
+              }}
+              label="Global Leads"
+              count={globalLeads.length}
+            />
+            <ScopeTab
+              active={scope === "mine"}
+              onClick={() => {
+                setScope("mine");
+                setPage(1);
+                setSelected(new Set());
+              }}
+              label="My Leads"
+              count={mineCount}
+            />
           </div>
         </div>
       </div>
 
       {/* Filters */}
       <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
-        <FilterSelect value={country} onChange={(v) => { setCountry(v); setPage(1); }} placeholder="Country" options={countries} />
-        <FilterSelect value={lang} onChange={(v) => { setLang(v); setPage(1); }} placeholder="Language" options={languages} />
-        <FilterSelect value={service} onChange={(v) => { setService(v); setPage(1); }} placeholder="Service" options={services} />
+        <FilterSelect
+          value={country}
+          onChange={(v) => {
+            setCountry(v);
+            setPage(1);
+          }}
+          placeholder="Country"
+          options={countries}
+        />
+        <FilterSelect
+          value={lang}
+          onChange={(v) => {
+            setLang(v);
+            setPage(1);
+          }}
+          placeholder="Language"
+          options={languages}
+        />
+        <FilterSelect
+          value={service}
+          onChange={(v) => {
+            setService(v);
+            setPage(1);
+          }}
+          placeholder="Service"
+          options={services}
+        />
         <FilterSelect
           value={rec}
-          onChange={(v) => { setRec(v); setPage(1); }}
+          onChange={(v) => {
+            setRec(v);
+            setPage(1);
+          }}
           placeholder="Recruiter"
           options={recruiterList.map((r) => r.id)}
           labelFor={(v) => recruiterList.find((r) => r.id === v)?.name ?? v}
         />
-        <FilterSelect value={stage} onChange={(v) => { setStage(v); setPage(1); }} placeholder="Status" options={STAGE_OPTIONS} labelFor={formatStageLabel} />
+        <FilterSelect
+          value={stage}
+          onChange={(v) => {
+            setStage(v);
+            setPage(1);
+          }}
+          placeholder="Status"
+          options={STAGE_OPTIONS}
+          labelFor={formatStageLabel}
+        />
         <FilterSelect
           value={dateRange}
-          onChange={(v) => { setDateRange(v as typeof dateRange); setPage(1); }}
+          onChange={(v) => {
+            setDateRange(v as typeof dateRange);
+            setPage(1);
+          }}
           placeholder="Date Added"
           options={["24h", "7d", "30d"]}
-          labelFor={(v) => ({ "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days" })[v] ?? v}
+          labelFor={(v) =>
+            ({ "24h": "Last 24 hours", "7d": "Last 7 days", "30d": "Last 30 days" })[v] ?? v
+          }
         />
       </div>
 
@@ -415,7 +596,12 @@ function LeadsPage() {
         <div className="flex items-center justify-between rounded-xl border border-primary/30 bg-primary/5 px-4 py-2.5 text-sm">
           <div className="flex items-center gap-3">
             <span className="font-medium">{selected.size} selected</span>
-            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setSelected(new Set())}>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => setSelected(new Set())}
+            >
               <X className="h-3 w-3" /> Clear
             </Button>
           </div>
@@ -425,21 +611,27 @@ function LeadsPage() {
               size="sm"
               className="h-8 text-xs gap-1.5"
               onClick={() => {
-                api.downloadLeadsExport(filters as unknown as Record<string, string | undefined>)
-                  .catch((err) => toast.error(err instanceof Error ? err.message : "Export failed"));
+                api
+                  .downloadLeadsExport(filters as unknown as Record<string, string | undefined>)
+                  .catch((err) =>
+                    toast.error(err instanceof Error ? err.message : "Export failed"),
+                  );
               }}
             >
               <Download className="h-3.5 w-3.5" /> Export
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              disabled={deleteMutation.isPending}
-              onClick={() => deleteMutation.mutate(Array.from(selected))}
-              className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
-            >
-              <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
-            </Button>
+            {/* Delete lives only in the Global Leads scope, never "My Leads". */}
+            {scope === "global" && (
+              <Button
+                variant="destructive"
+                size="sm"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteMutation.mutate(Array.from(selected))}
+                className="h-8 text-xs gap-1.5 font-semibold bg-red-600 hover:bg-red-700 text-white shadow-xs"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Delete Lead{selected.size > 1 ? "s" : ""}
+              </Button>
+            )}
           </div>
         </div>
       )}
@@ -450,133 +642,250 @@ function LeadsPage() {
           leads={filtered}
           recruiters={recruiterList}
           isLoading={scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading}
-          onStageChange={(id, stage, closureReason) => stageMutation.mutate({ id, stage, closureReason })}
+          onStageChange={(id, stage, closureReason) =>
+            stageMutation.mutate({ id, stage, closureReason })
+          }
+          onRemoveService={(id, service) => removeServiceMutation.mutate({ id, service })}
         />
       )}
 
       {/* Table */}
       {mode === "table" && (
-      <div className="overflow-hidden rounded-2xl border border-border bg-card">
-        <div className="max-h-[68vh] overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-muted/80 text-left text-[11px] uppercase tracking-wide text-muted-foreground backdrop-blur">
-              <tr>
-                <th className="w-10 px-4 py-3">
-                  <Checkbox checked={allChecked} onCheckedChange={togglePage} aria-label="Select page" />
-                </th>
-                <SortableTh label="Lead" k="lead" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <th className="px-4 py-3 font-semibold text-foreground">ENRICHMENT STATUS</th>
-                <SortableTh label="Language" k="language" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <SortableTh label="Country" k="country" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <th className="px-4 py-3">Services</th>
-                <SortableTh label="Status" k="stage" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <th className="px-4 py-3">Availability</th>
-                <th className="px-4 py-3">Source</th>
-                <SortableTh label="Recruiter" k="recruiter" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-                <SortableTh label="Activity" k="activity" sortBy={sortBy} sortDir={sortDir} onClick={sortToggle} />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {(scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading) && view.length === 0 && (
-                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">Loading…</td></tr>
-              )}
-              {(scope === "mine" ? mineQuery.isError : globalQuery.isError) && view.length === 0 && (
-                <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-destructive">Failed to load leads.</td></tr>
-              )}
-              {view.map((l) => {
-                const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
-                const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
-                const isSel = selected.has(l.id);
-                // On Hold is an overlay independent of completion -- reserved
-                // for the waterfall not concluding (timeout/system_error,
-                // including a stalled/orphaned run) or a recruiter's own
-                // manual toggle, never for a low field count. That rule, the
-                // retry eligibility, and how each state renders now live in
-                // EnrichmentStatusCell so both leads tables share one copy.
-                const completeness = enrichmentCompleteness(l);
-                const isWellEnriched = completeness >= ENRICHMENT_COMPLETENESS_THRESHOLD;
-                return (
-                  <tr key={l.id} className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}>
-                    <td className="px-4 py-3">
-                      <Checkbox checked={isSel} onCheckedChange={() => toggle(l.id)} aria-label={`Select ${label}`} />
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${isWellEnriched ? "bg-emerald-500" : "bg-destructive"}`}
-                          title={isWellEnriched ? "Well-enriched profile" : "Profile data still incomplete"}
-                        />
-                        <span className="font-medium">{label}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <EnrichmentStatusCell
-                        lead={l}
-                        onOpenDetails={setDetailsLead}
-                        onRetry={(id) => retryEnrichmentMutation.mutate(id)}
-                        retryPending={retryEnrichmentMutation.isPending}
-                        onReenrich={reenrichment.start}
-                      />
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                        {l.targetLanguage ?? "—"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {l.services.map((s) => (
-                          <span key={s} className="rounded-md border border-accent/20 bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">{s}</span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      {scope === "mine" ? (
-                        <StageCell lead={l} onChanged={invalidateLeads} />
-                      ) : (
-                        <span className="inline-flex items-center rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
-                          {formatStageLabel(l.stage)}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-foreground/80">{l.availability}</td>
-                    <td className="px-4 py-3 text-foreground/80">{l.source}</td>
-                    <td className="px-4 py-3 text-foreground/80">{r?.name ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      {scope === "mine" ? (
-                        <ActivityCell lead={l} recruiterName={r?.name ?? "—"} />
-                      ) : (
-                        <span className="text-muted-foreground">{relativeTime(l.lastActivityAt)}</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-              {view.length === 0 && !(scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading) && (
+        <div className="overflow-hidden rounded-2xl border border-border bg-card">
+          <div className="max-h-[68vh] overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-muted/80 text-left text-[11px] uppercase tracking-wide text-muted-foreground backdrop-blur">
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-sm text-muted-foreground">
-                    No leads match these filters.
-                    <button className="ml-2 text-primary hover:underline" onClick={clearFilters}>Clear filters</button>
-                  </td>
+                  <th className="w-10 px-4 py-3">
+                    <Checkbox
+                      checked={allChecked}
+                      onCheckedChange={togglePage}
+                      aria-label="Select page"
+                    />
+                  </th>
+                  <SortableTh
+                    label="Lead"
+                    k="lead"
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onClick={sortToggle}
+                  />
+                  <th className="px-4 py-3 font-semibold text-foreground">ENRICHMENT STATUS</th>
+                  <SortableTh
+                    label="Language"
+                    k="language"
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onClick={sortToggle}
+                  />
+                  <SortableTh
+                    label="Country"
+                    k="country"
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onClick={sortToggle}
+                  />
+                  <th className="px-4 py-3">Services</th>
+                  <SortableTh
+                    label="Status"
+                    k="stage"
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onClick={sortToggle}
+                  />
+                  <th className="px-4 py-3">Source</th>
+                  <SortableTh
+                    label="Recruiter"
+                    k="recruiter"
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onClick={sortToggle}
+                  />
+                  <SortableTh
+                    label="Activity"
+                    k="activity"
+                    sortBy={sortBy}
+                    sortDir={sortDir}
+                    onClick={sortToggle}
+                  />
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {(scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading) &&
+                  view.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={10}
+                        className="px-4 py-12 text-center text-sm text-muted-foreground"
+                      >
+                        Loading…
+                      </td>
+                    </tr>
+                  )}
+                {(scope === "mine" ? mineQuery.isError : globalQuery.isError) &&
+                  view.length === 0 && (
+                    <tr>
+                      <td colSpan={10} className="px-4 py-12 text-center text-sm text-destructive">
+                        Failed to load leads.
+                      </td>
+                    </tr>
+                  )}
+                {view.map((l) => {
+                  const r = recruiterList.find((x) => x.id === l.assignedRecruiterId);
+                  const label = l.displayName ?? l.fullName ?? l.maskedLabel ?? "—";
+                  const isSel = selected.has(l.id);
+                  // On Hold is an overlay independent of completion -- reserved
+                  // for the waterfall not concluding (timeout/system_error,
+                  // including a stalled/orphaned run) or a recruiter's own
+                  // manual toggle, never for a low field count. That rule, the
+                  // retry eligibility, and how each state renders now live in
+                  // EnrichmentStatusCell so both leads tables share one copy.
+                  const completeness = enrichmentCompleteness(l);
+                  const isWellEnriched = completeness >= ENRICHMENT_COMPLETENESS_THRESHOLD;
+                  return (
+                    <tr
+                      key={l.id}
+                      className={`transition-colors ${isSel ? "bg-primary/5" : "hover:bg-muted/40"}`}
+                    >
+                      <td className="px-4 py-3">
+                        <Checkbox
+                          checked={isSel}
+                          onCheckedChange={() => toggle(l.id)}
+                          aria-label={`Select ${label}`}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`h-1.5 w-1.5 shrink-0 rounded-full ${isWellEnriched ? "bg-emerald-500" : "bg-destructive"}`}
+                            title={
+                              isWellEnriched
+                                ? "Well-enriched profile"
+                                : "Profile data still incomplete"
+                            }
+                          />
+                          <span className="font-medium">{label}</span>
+                          <LeadNotifyBell leadId={l.id} />
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <EnrichmentStatusCell
+                          lead={l}
+                          onOpenDetails={setDetailsLead}
+                          onRetry={(id) => retryEnrichmentMutation.mutate(id)}
+                          retryPending={retryEnrichmentMutation.isPending}
+                          onReenrich={reenrichment.start}
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                          {l.targetLanguage ?? "—"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-foreground/80">{l.country ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <ServicesCell
+                          services={l.services}
+                          onRemove={(service) =>
+                            removeServiceMutation.mutate({ id: l.id, service })
+                          }
+                        />
+                      </td>
+                      <td className="px-4 py-3">
+                        {scope === "mine" ? (
+                          <StageCell lead={l} onChanged={invalidateLeads} />
+                        ) : (
+                          <span className="inline-flex items-center rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/80">
+                            {formatStageLabel(l.stage)}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-foreground/80">{l.source}</td>
+                      <td className="px-4 py-3 text-foreground/80">{r?.name ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        {scope === "mine" ? (
+                          <ActivityCell lead={l} recruiterName={r?.name ?? "—"} />
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {relativeTime(l.lastActivityAt)}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {view.length === 0 &&
+                  !(scope === "mine" ? mineQuery.isLoading : globalQuery.isLoading) && (
+                    <tr>
+                      <td
+                        colSpan={10}
+                        className="px-4 py-12 text-center text-sm text-muted-foreground"
+                      >
+                        No leads match these filters.
+                        <button
+                          className="ml-2 text-primary hover:underline"
+                          onClick={clearFilters}
+                        >
+                          Clear filters
+                        </button>
+                      </td>
+                    </tr>
+                  )}
+              </tbody>
+            </table>
+          </div>
 
-        <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
-          <span>
-            Showing <span className="tabular-nums text-foreground">{view.length}</span> of{" "}
-            <span className="tabular-nums text-foreground">{filtered.length}</span> leads
-          </span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled={page === 1} onClick={() => setPage(page - 1)}>Previous</Button>
-            <span className="tabular-nums">Page {page} / {pageCount}</span>
-            <Button variant="outline" size="sm" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>Next</Button>
+          <div className="flex items-center justify-between border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+            <span>
+              Showing <span className="tabular-nums text-foreground">{view.length}</span> of{" "}
+              <span className="tabular-nums text-foreground">{filtered.length}</span> leads
+            </span>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1.5">
+                <span>Rows per page</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => {
+                    setPageSize(Number(v));
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-[68px] text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[12, 30, 50, 100].map((n) => (
+                      <SelectItem key={n} value={String(n)} className="text-xs">
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page === 1}
+                  onClick={() => setPage(page - 1)}
+                >
+                  Previous
+                </Button>
+                <span className="tabular-nums">
+                  Page {page} / {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage(page + 1)}
+                >
+                  Next
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
       )}
 
       {/* Manual Enrichment Modal */}
@@ -601,15 +910,25 @@ function LeadsPage() {
 }
 
 function ViewTab({
-  active, onClick, label, icon: Icon,
-}: { active: boolean; onClick: () => void; label: string; icon: typeof Table2 }) {
+  active,
+  onClick,
+  label,
+  icon: Icon,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  icon: typeof Table2;
+}) {
   return (
     <button
       role="tab"
       aria-selected={active}
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-        active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+        active
+          ? "bg-primary text-primary-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
       }`}
     >
       <Icon className="h-3.5 w-3.5" /> {label}
@@ -617,7 +936,17 @@ function ViewTab({
   );
 }
 
-function ScopeTab({ active, onClick, label, count }: { active: boolean; onClick: () => void; label: string; count: number }) {
+function ScopeTab({
+  active,
+  onClick,
+  label,
+  count,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+}) {
   return (
     <button
       role="tab"
@@ -630,14 +959,19 @@ function ScopeTab({ active, onClick, label, count }: { active: boolean; onClick:
       }`}
     >
       <span>{label}</span>
-      <span className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${active ? "bg-primary-foreground/20" : "bg-muted"}`}>{count}</span>
+      <span
+        className={`rounded px-1.5 py-0.5 text-[10px] tabular-nums ${active ? "bg-primary-foreground/20" : "bg-muted"}`}
+      >
+        {count}
+      </span>
     </button>
   );
 }
 
 function StageCell({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }) {
   const mutation = useMutation({
-    mutationFn: (patch: { stage: string; closureReason?: string }) => api.updateLead(lead.id, patch as Partial<ApiLead>),
+    mutationFn: (patch: { stage: string; closureReason?: string }) =>
+      api.updateLead(lead.id, patch as Partial<ApiLead>),
     onSuccess: () => onChanged(),
     onError: (err: any) => toast.error(err?.message ?? "Failed to update stage"),
   });
@@ -664,7 +998,9 @@ function StageCell({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }
       </SelectTrigger>
       <SelectContent>
         {STAGE_OPTIONS.map((s) => (
-          <SelectItem key={s} value={s} className="text-xs">{formatStageLabel(s)}</SelectItem>
+          <SelectItem key={s} value={s} className="text-xs">
+            {formatStageLabel(s)}
+          </SelectItem>
         ))}
       </SelectContent>
     </Select>
@@ -673,11 +1009,16 @@ function StageCell({ lead, onChanged }: { lead: ApiLead; onChanged: () => void }
 
 function timelineIcon(type: LeadTimelineEvent["type"]): string {
   switch (type) {
-    case "STAGE_CHANGE": return "🟦";
-    case "FLAG": return "🚩";
-    case "INTERACTION": return "💬";
-    case "MANUAL_ACTIVITY": return "📝";
-    default: return "•";
+    case "STAGE_CHANGE":
+      return "🟦";
+    case "FLAG":
+      return "🚩";
+    case "INTERACTION":
+      return "💬";
+    case "MANUAL_ACTIVITY":
+      return "📝";
+    default:
+      return "•";
   }
 }
 
@@ -699,13 +1040,17 @@ function timelineTitle(e: LeadTimelineEvent): string {
 function timelineDetail(e: LeadTimelineEvent): string | undefined {
   switch (e.type) {
     case "STAGE_CHANGE":
-      return e.data.reason ? `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}. Reason: ${e.data.reason}` : `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}`;
+      return e.data.reason
+        ? `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}. Reason: ${e.data.reason}`
+        : `${e.data.fromStage ?? "—"} → ${e.data.toStage ?? "—"}`;
     case "FLAG":
       return e.data.reason;
     case "INTERACTION":
       return e.data.occurredAt ? new Date(e.data.occurredAt).toLocaleString() : undefined;
     case "MANUAL_ACTIVITY":
-      return [e.data.purpose, e.data.outcome, e.data.notes].filter(Boolean).join(" — ") || undefined;
+      return (
+        [e.data.purpose, e.data.outcome, e.data.notes].filter(Boolean).join(" — ") || undefined
+      );
     default:
       return undefined;
   }
@@ -737,12 +1082,19 @@ function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: s
             <Activity className="h-4 w-4 text-primary" /> Activity — {label}
           </DialogTitle>
           <DialogDescription>
-            Full timeline of interactions, stage changes, and enrichment events{recruiterName !== "—" ? ` for ${recruiterName}` : ""}.
+            Full timeline of interactions, stage changes, and enrichment events
+            {recruiterName !== "—" ? ` for ${recruiterName}` : ""}.
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto pr-1">
-          {detailQuery.isLoading && <div className="py-8 text-center text-xs text-muted-foreground">Loading…</div>}
-          {detailQuery.isError && <div className="py-8 text-center text-xs text-destructive">Failed to load activity.</div>}
+          {detailQuery.isLoading && (
+            <div className="py-8 text-center text-xs text-muted-foreground">Loading…</div>
+          )}
+          {detailQuery.isError && (
+            <div className="py-8 text-center text-xs text-destructive">
+              Failed to load activity.
+            </div>
+          )}
           {!detailQuery.isLoading && !detailQuery.isError && (
             <ol className="relative space-y-4 border-l border-border pl-5">
               {timeline.map((e, i) => (
@@ -752,9 +1104,13 @@ function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: s
                   </span>
                   <div className="flex items-baseline justify-between gap-3">
                     <div className="text-sm font-medium text-foreground">{timelineTitle(e)}</div>
-                    <div className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{relativeTime(e.at)}</div>
+                    <div className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {relativeTime(e.at)}
+                    </div>
                   </div>
-                  {timelineDetail(e) && <div className="mt-0.5 text-xs text-muted-foreground">{timelineDetail(e)}</div>}
+                  {timelineDetail(e) && (
+                    <div className="mt-0.5 text-xs text-muted-foreground">{timelineDetail(e)}</div>
+                  )}
                 </li>
               ))}
               {timeline.length === 0 && (
@@ -764,7 +1120,9 @@ function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: s
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Close</Button>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+            Close
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -773,18 +1131,34 @@ function ActivityCell({ lead, recruiterName }: { lead: ApiLead; recruiterName: s
 
 function sortVal(l: ApiLead, k: SortKey): string | number {
   switch (k) {
-    case "lead": return l.displayName ?? l.fullName ?? l.maskedLabel ?? "";
-    case "language": return l.targetLanguage ?? "";
-    case "country": return l.country ?? "";
-    case "stage": return STAGE_OPTIONS.indexOf(l.stage);
-    case "recruiter": return l.assignedRecruiterId ?? "";
-    case "activity": return l.lastActivityAt ?? "";
+    case "lead":
+      return l.displayName ?? l.fullName ?? l.maskedLabel ?? "";
+    case "language":
+      return l.targetLanguage ?? "";
+    case "country":
+      return l.country ?? "";
+    case "stage":
+      return STAGE_OPTIONS.indexOf(l.stage);
+    case "recruiter":
+      return l.assignedRecruiterId ?? "";
+    case "activity":
+      return l.lastActivityAt ?? "";
   }
 }
 
 function SortableTh({
-  label, k, sortBy, sortDir, onClick,
-}: { label: string; k: SortKey; sortBy: SortKey; sortDir: "asc" | "desc"; onClick: (k: SortKey) => void }) {
+  label,
+  k,
+  sortBy,
+  sortDir,
+  onClick,
+}: {
+  label: string;
+  k: SortKey;
+  sortBy: SortKey;
+  sortDir: "asc" | "desc";
+  onClick: (k: SortKey) => void;
+}) {
   const active = sortBy === k;
   return (
     <th className="px-4 py-3">
@@ -803,20 +1177,40 @@ function SortableTh({
 }
 
 function FilterSelect({
-  value, onChange, placeholder, options, labelFor,
-}: { value: string; onChange: (v: string) => void; placeholder: string; options: string[]; labelFor?: (v: string) => string }) {
+  value,
+  onChange,
+  placeholder,
+  options,
+  labelFor,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  options: string[];
+  labelFor?: (v: string) => string;
+}) {
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger><SelectValue placeholder={placeholder} /></SelectTrigger>
+      <SelectTrigger>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
       <SelectContent>
         <SelectItem value="all">All {placeholder.toLowerCase()}</SelectItem>
-        {options.map((o) => <SelectItem key={o} value={o}>{labelFor ? labelFor(o) : o}</SelectItem>)}
+        {options.map((o) => (
+          <SelectItem key={o} value={o}>
+            {labelFor ? labelFor(o) : o}
+          </SelectItem>
+        ))}
       </SelectContent>
     </Select>
   );
 }
 
-function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
+function BulkUploadDialog({
+  onSubmitRows,
+}: {
+  onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   // Same precheck pattern as add-lead-dialog.tsx's "Add a Lead" bulk upload
@@ -835,27 +1229,43 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
 
   function downloadTemplate() {
     const headers = [
-      "Reachout Date", "First Name", "Full Name",
-      "Country of Residence", "Source", "Profile_Link", "Contact Number",
-      "Email Address", "Services", "Source_Language", "Target_Language", "Secondary_Languages",
+      "Reachout Date",
+      "First Name",
+      "Full Name",
+      "Country of Residence",
+      "Source",
+      "Profile_Link",
+      "Contact Number",
+      "Email Address",
+      "Services",
+      "Source_Language",
+      "Target_Language",
+      "Secondary_Languages",
     ];
     const csv = headers.join(",") + "\n";
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url; a.download = "leads_template.csv"; a.click();
+    a.href = url;
+    a.download = "leads_template.csv";
+    a.click();
     URL.revokeObjectURL(url);
   }
 
   function submit() {
-    if (!file) { toast.error("Choose a CSV or Excel file first"); return; }
+    if (!file) {
+      toast.error("Choose a CSV or Excel file first");
+      return;
+    }
     const currentFile = file;
     const isExcel = /\.xlsx?$/i.test(currentFile.name);
     const reader = new FileReader();
 
     const finish = async (parsed: ReturnType<typeof parseCsvLeads>) => {
       if (parsed.length === 0) {
-        toast.info(`Uploaded ${currentFile.name}. Ensure sheet contains Name, Email, Language, or Service headers.`);
+        toast.info(
+          `Uploaded ${currentFile.name}. Ensure sheet contains Name, Email, Language, or Service headers.`,
+        );
         return;
       }
 
@@ -881,13 +1291,15 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
             email: r.email ?? undefined,
             contactNumber: r.contactNumber ?? undefined,
             profileLink: r.profileLink ?? undefined,
-          }))
+          })),
         );
         if (dupRes.hasDuplicates) {
-          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "…" : "");
+          const namesList =
+            dupRes.duplicateNames.slice(0, 3).join(", ") +
+            (dupRes.duplicateNames.length > 3 ? "…" : "");
           toast.error(
             `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or import the rest.`,
-            { duration: 6000 }
+            { duration: 6000 },
           );
           setDuplicateCheckResult({
             fileName: currentFile.name,
@@ -899,7 +1311,9 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
           });
         } else {
           onSubmitRows(rows);
-          toast.success(`Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`);
+          toast.success(
+            `Uploaded ${currentFile.name}. Importing ${parsed.length} candidate leads…`,
+          );
           setOpen(false);
           setFile(null);
         }
@@ -930,7 +1344,9 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
           const stringRows = rawRows.map((row) => row.map((cell) => String(cell ?? "")));
           finish(mapRowsToLeads(stringRows));
         } catch (err: any) {
-          toast.error(`Could not read ${currentFile.name} as an Excel file: ${err?.message || "unknown error"}`);
+          toast.error(
+            `Could not read ${currentFile.name} as an Excel file: ${err?.message || "unknown error"}`,
+          );
         }
       };
       reader.readAsArrayBuffer(currentFile);
@@ -946,7 +1362,9 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
   function importSkippingDuplicates() {
     if (!duplicateCheckResult) return;
     onSubmitRows(duplicateCheckResult.rows);
-    toast.success(`Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`);
+    toast.success(
+      `Importing ${duplicateCheckResult.newCount} new lead(s) (skipping ${duplicateCheckResult.duplicateCount} existing duplicate(s)).`,
+    );
     setDuplicateCheckResult(null);
     setOpen(false);
     setFile(null);
@@ -973,20 +1391,38 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
                 <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
                 ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
               </div>
-              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
+              <span className="text-[11px] font-medium text-muted-foreground">
+                {duplicateCheckResult.fileName}
+              </span>
             </div>
             <p className="text-xs text-foreground leading-relaxed">
-              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
-              <span className="font-semibold text-destructive ml-1">{duplicateCheckResult.duplicateNames.join(", ")}</span>
-              . You can upload another file or import only the <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
+              <strong>{duplicateCheckResult.duplicateCount}</strong> out of{" "}
+              <strong>{duplicateCheckResult.totalCount}</strong> leads in this file already exist:
+              <span className="font-semibold text-destructive ml-1">
+                {duplicateCheckResult.duplicateNames.join(", ")}
+              </span>
+              . You can upload another file or import only the{" "}
+              <strong>{duplicateCheckResult.newCount}</strong> new lead(s).
             </p>
             <div className="flex items-center gap-2 pt-1 flex-wrap">
               {duplicateCheckResult.newCount > 0 && (
-                <Button type="button" size="sm" onClick={importSkippingDuplicates} className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5">
-                  Import {duplicateCheckResult.newCount} New Lead{duplicateCheckResult.newCount === 1 ? "" : "s"} Only
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={importSkippingDuplicates}
+                  className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5"
+                >
+                  Import {duplicateCheckResult.newCount} New Lead
+                  {duplicateCheckResult.newCount === 1 ? "" : "s"} Only
                 </Button>
               )}
-              <Button type="button" variant="ghost" size="sm" onClick={() => setDuplicateCheckResult(null)} className="h-8 text-xs text-muted-foreground hover:text-foreground">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDuplicateCheckResult(null)}
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+              >
                 Dismiss
               </Button>
             </div>
@@ -997,22 +1433,35 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
             onClick={downloadTemplate}
             className="flex w-full items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-left text-sm transition-colors hover:bg-muted"
           >
-            <span className="flex items-center gap-2"><Download className="h-3.5 w-3.5" /> Download sample template</span>
+            <span className="flex items-center gap-2">
+              <Download className="h-3.5 w-3.5" /> Download sample template
+            </span>
             <span className="text-[11px] text-muted-foreground">.csv</span>
           </button>
           <label className="block">
-            <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">File</span>
+            <span className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              File
+            </span>
             <input
               type="file"
               accept=".csv,.xlsx,.xls"
-              onChange={(e) => { setFile(e.target.files?.[0] ?? null); setDuplicateCheckResult(null); }}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] ?? null);
+                setDuplicateCheckResult(null);
+              }}
               className="mt-1 block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
             />
-            {file && <div className="mt-1 text-[11px] text-muted-foreground">{file.name} · {(file.size / 1024).toFixed(1)} KB</div>}
+            {file && (
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                {file.name} · {(file.size / 1024).toFixed(1)} KB
+              </div>
+            )}
           </label>
         </div>
         <DialogFooter>
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
           <Button size="sm" onClick={submit} disabled={checkingDuplicates}>
             {checkingDuplicates ? "Checking for duplicates…" : "Upload"}
           </Button>

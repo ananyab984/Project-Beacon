@@ -4,6 +4,7 @@ import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
+import { redactClientIfContractor } from "./requirement.routes";
 
 export const clientDemandRouter = Router();
 
@@ -47,7 +48,13 @@ clientDemandRouter.get(
       },
       orderBy: { submittedAt: "desc" },
     });
-    return res.json({ clientDemands });
+    // Security fix: this returned client.name to a contractor with no
+    // redaction at all -- confirmed live-reachable from
+    // contractor.index.tsx's own dashboard query, which never actually
+    // renders it, so this was pure over-the-wire disclosure with no UI
+    // benefit. Contractors must never see Client identity, same rule
+    // requirement.routes.ts already enforces.
+    return res.json({ clientDemands: clientDemands.map((d) => redactClientIfContractor(req.user!.role, d)) });
   })
 );
 
@@ -142,7 +149,10 @@ clientDemandRouter.get(
     if (!demand) {
       return res.status(404).json({ error: "DEMAND_NOT_FOUND", message: "Client demand not found" });
     }
-    return res.json({ clientDemand: demand });
+    // Security fix: this returned the FULL Client record (name, industry,
+    // contactName, contactEmail, notes) to a contractor with no redaction --
+    // same rule as GET / above.
+    return res.json({ clientDemand: redactClientIfContractor(req.user!.role, demand) });
   })
 );
 

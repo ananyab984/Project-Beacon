@@ -286,6 +286,7 @@ model User {
   role              UserRole
   workStatus        WorkStatus @default(PERMANENT) @map("work_status")
   languages         String[]   @default([])
+  slackMemberId     String?    @map("slack_member_id") // pasted by the user from their Slack profile; notifications no-op if unset
   emailVerified     Boolean    @default(false) @map("email_verified")
   startDate         DateTime   @default(now()) @map("start_date") // determines 3-month trend baseline eligibility
   isActive          Boolean    @default(true) @map("is_active")
@@ -301,6 +302,7 @@ model User {
   flagEventsSet       LeadFlagEvent[]     @relation("SetBy")
   flagEventsConfirmed LeadFlagEvent[]     @relation("ConfirmedBy")
   interactionsSent    InteractionEvent[]  @relation("SentBy")
+  leadsDeleted        Lead[]              @relation("DeletedBy")
   manualActivities    ManualActivityLog[]
   emailQueueItems     EmailQueueItem[]
   conversations       Conversation[]
@@ -322,6 +324,11 @@ model User {
   requirementsAssigned         Requirement[]            @relation("RequirementAssignee")
   requirementAssignmentsAsRec  RequirementAssignment[]  @relation("RequirementAssignmentRecruiter")
   requirementAssignmentsMade   RequirementAssignment[]  @relation("RequirementAssignedBy")
+
+  // Notifications
+  notifications             Notification[]
+  notificationPreferences   NotificationPreference[]
+  leadNotificationSubscriptions LeadNotificationSubscription[]
 
   @@map("users")
 }
@@ -481,6 +488,15 @@ model Lead {
   createdAt      DateTime  @default(now()) @map("created_at")
   lastActivityAt DateTime? @map("last_activity_at") // repo: last_activity, rendered as relative time
 
+  // --- recycle bin (soft delete) ---
+  // Global Leads only: batch-delete moves a lead here instead of hard-
+  // deleting it. Each lead gets its own 30-day countdown from its own
+  // deletedAt (Windows Recycle Bin semantics, not a single bin-wide expiry) --
+  // see lib/recycleBin.ts for the retention window and purge job.
+  deletedAt       DateTime? @map("deleted_at")
+  deletedByUserId String?   @map("deleted_by_user_id")
+  deletedBy       User?     @relation("DeletedBy", fields: [deletedByUserId], references: [id])
+
   // relations
   vendorMatches        LeadVendorMatch[]
   stageHistory         StageHistory[]
@@ -492,12 +508,14 @@ model Lead {
   classificationEvents ReplyClassificationEvent[]
   reenrichmentRuns     ReenrichmentRun[]
   enrichmentRuns       EnrichmentRun[]
+  notificationSubscriptions LeadNotificationSubscription[]
 
   @@index([enrichmentStatus])
   @@index([assignedRecruiterId])
   @@index([claimedByRecruiterId])
   @@index([stage])
   @@index([country])
+  @@index([deletedAt])
   @@map("leads")
 }
 
@@ -1009,7 +1027,21 @@ model EmailQueueItem {
   receivedAt    DateTime         @default(now()) @map("received_at")
   sentAt        DateTime?        @map("sent_at")
   sentChannel   String?          @map("sent_channel")
+  // True for every row from here on -- POST /api/email-queue (the "Search
+  // Lead" -> add action) is the only path left that creates one, after
+  // lead.routes.ts's auto-add-on-lead-creation side effect was removed.
+  // Defaults true so that route needn't set it explicitly, but the
+  // pre-existing rows this migration backfills from that removed auto-add
+  // are set false, so the queue can show/count only what a recruiter
+  // genuinely added themselves instead of everything that bug silently
+  // dropped in.
+  addedManually Boolean          @default(true) @map("added_manually")
 
+  // A lead has at most one queue item per recruiter -- was only enforced by
+  // an application-level findFirst-then-create in addLeadToEmailQueue, a
+  // non-atomic check-then-act that a double-click/duplicate request could
+  // race past. Confirmed no existing rows violate this before adding it.
+  @@unique([leadId, recruiterId])
   @@index([leadId])
   @@index([status])
   @@map("email_queue_items")
@@ -1042,8 +1074,17 @@ model Conversation {
 
   messages ConversationMessage[]
 
+  // One conversation per lead+recruiter+channel -- was only enforced by an
+  // application-level findFirst-then-create in syncToConversation and
+  // conversation.routes.ts's POST /, a non-atomic check-then-act that two
+  // inbound messages arriving milliseconds apart could race past, each
+  // creating their own Conversation row and fragmenting history exactly
+  // like the chat_id-rotation bug this same file already guards against
+  // elsewhere. Confirmed no existing rows violate this before adding it.
+  @@unique([leadId, recruiterId, channel])
   @@index([leadId])
   @@index([recruiterId])
+  @@index([lastMessageAt])
   @@map("conversations")
 }
 
@@ -1056,7 +1097,11 @@ model ConversationMessage {
   sentAt            DateTime      @default(now()) @map("sent_at")
   externalMessageId String?       @map("external_message_id")
 
-  @@index([conversationId])
+  // Composite index (not a separate single-column one) since it's a strict
+  // leftmost-prefix superset of a plain conversationId lookup -- covers both
+  // findReplyAnchor's own filter (conversationId + sender, ordered by
+  // sentAt) and any query that only needs conversationId.
+  @@index([conversationId, sender, sentAt])
   @@index([externalMessageId])
   @@map("conversation_messages")
 }
@@ -1170,6 +1215,70 @@ model Escalation {
   @@index([status])
   @@index([priority])
   @@map("escalations")
+}
+
+// ----------------------------------------------------------------------------
+// NOTIFICATIONS — unified in-app/email/Slack feed
+// (recruiter-notifications-popover.tsx, escalations.tsx bells). One funnel,
+// NotificationService.createNotification, writes every row; scanForEscalations
+// also mirrors each new Escalation into this table so both bells read one
+// feed instead of two parallel systems.
+// ----------------------------------------------------------------------------
+
+enum NotificationType {
+  NEW_LEAD
+  TASK_ASSIGNMENT
+  DUE_DATE_REMINDER
+  LEAD_RESPONSE
+  ESCALATION
+}
+
+model Notification {
+  id          String           @id @default(uuid())
+  recipientId String           @map("recipient_id")
+  recipient   User             @relation(fields: [recipientId], references: [id])
+  type        NotificationType
+  title       String
+  body        String
+  link        String? // route to deep-link into (lead/requirement/escalation); resolved by the caller, not a typed FK -- mirrors Escalation's soft leadId/clientId references above
+  read        Boolean          @default(false)
+  readAt      DateTime?        @map("read_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+
+  @@index([recipientId, read, createdAt])
+  @@map("notifications")
+}
+
+/// Per-user, per-type channel opt-in for email/Slack. The in-app bell is
+/// always on for NEW_LEAD/TASK_ASSIGNMENT/DUE_DATE_REMINDER/ESCALATION and
+/// isn't a toggle, so it has no column here.
+model NotificationPreference {
+  id           String           @id @default(uuid())
+  userId       String           @map("user_id")
+  user         User             @relation(fields: [userId], references: [id])
+  type         NotificationType
+  emailEnabled Boolean          @default(false) @map("email_enabled")
+  slackEnabled Boolean          @default(false) @map("slack_enabled")
+
+  @@unique([userId, type])
+  @@map("notification_preferences")
+}
+
+/// The per-lead "Notify me on response" bell (lead-card.tsx). Plain manual
+/// on/off toggle -- deliberately no auto-deactivation after firing (confirmed
+/// with the user; diverges from the original PDF spec's "fires once, resets"
+/// behavior in favor of a simpler always-on-until-switched-off subscription).
+model LeadNotificationSubscription {
+  id          String   @id @default(uuid())
+  leadId      String   @map("lead_id")
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recruiterId String   @map("recruiter_id")
+  recruiter   User     @relation(fields: [recruiterId], references: [id])
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@unique([leadId, recruiterId])
+  @@map("lead_notification_subscriptions")
 }
 
 // ----------------------------------------------------------------------------

@@ -295,6 +295,37 @@ class LeadProfile(BaseModel):
             "person's name."
         ),
     )
+    email: Optional[str] = Field(
+        None,
+        description=(
+            "A real email address shown as VISIBLE, LITERAL TEXT somewhere on the page (an "
+            "About/Bio section, a dedicated contact block, even the headline). Copy it "
+            "character-for-character. NEVER construct, guess, or infer one -- not even a "
+            "plausible-looking pattern like 'firstname.lastname@company.com' -- if it is not "
+            "printed on the page itself. A wrong email reaches a real, different person, so "
+            "verbatim-or-null is the only acceptable answer here; there is no safe middle "
+            "guess. Null if the page shows no email at all -- never a sentence explaining its "
+            "absence.\n\n"
+            "LinkedIn profiles will almost always come back null for this field: LinkedIn "
+            "deliberately locks contact info behind an authenticated 'Contact info' modal "
+            "that is not part of the publicly rendered page a browsing agent can read, so "
+            "finding nothing there is the platform's own restriction working as intended, not "
+            "a failed extraction. Freelance-marketplace profiles (ProZ, Bodalgo, ATA/ATAA, "
+            "Freelancer.com) publish contact details on the page itself far more often, since "
+            "that is how their users solicit work -- this field is meant to actually succeed "
+            "there."
+        ),
+    )
+    phone: Optional[str] = Field(
+        None,
+        description=(
+            "A real phone number shown as VISIBLE, LITERAL TEXT on the page, copied verbatim "
+            "including whatever formatting/country code it's written with. Same rule as "
+            "email: only if directly printed on the page, never inferred or guessed. Null if "
+            "the page shows no phone number. Same LinkedIn caveat as email applies -- expect "
+            "null there, since LinkedIn does not publicly render contact info at all."
+        ),
+    )
     profile_sections_detected: List[str] = Field(
         default_factory=list,
         description=(
@@ -318,6 +349,19 @@ class LeadProfile(BaseModel):
             "appear -- do not stop after finding one. Return an EMPTY LIST if none are "
             "listed -- never a sentence explaining that none were found, and never a "
             "placeholder like 'N/A'."
+        ),
+    )
+    skills: List[str] = Field(
+        default_factory=list,
+        description=(
+            "The person's listed skills, specialties, or service offerings -- a platform "
+            "'Skills' section (e.g. LinkedIn), a 'Specialties'/'Services' block, or a list of "
+            "service-tags/badges shown on the profile, one string per skill/specialty exactly "
+            "as named on the page. This is a distinct section from the free-text About/Bio and "
+            "from job titles -- only capture what appears in an actual skills/specialties "
+            "listing, not something you infer from reading a role description. Capture ALL of "
+            "them, wherever on the page they appear. Return an EMPTY LIST if the page has no "
+            "such section -- never a sentence explaining its absence."
         ),
     )
     experience: List[ExperienceEntry] = Field(

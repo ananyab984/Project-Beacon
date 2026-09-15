@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { FEATURES } from "@/lib/feature-flags";
 
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { checkFaqAndAutofill } from "@/lib/faq";
 import type { ApiEmailQueueItem, ApiConversationMessage, EmailQueueStatus } from "@/lib/api-types";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
@@ -39,12 +40,18 @@ function timeAgo(iso: string): string {
 }
 
 function preview(item: ApiEmailQueueItem): string {
-  if (!item.body) return "No draft yet";
-  return item.body.replace(/\s+/g, " ").trim().slice(0, 100);
+  // Prefer the lead's most recent reply over this item's own draft -- `body`
+  // is only ever this item's outgoing draft/sent text and is never updated
+  // when the candidate replies, so a queue item that had climbed to the top
+  // after a reply still showed its original outgoing mail underneath it.
+  const text = item.latestMessageText || item.body;
+  if (!text) return "No draft yet";
+  return text.replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
 export function EmailQueuePageView() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["email-queue"],
     queryFn: api.getEmailQueue,
@@ -55,9 +62,14 @@ export function EmailQueuePageView() {
   });
   const emailQueue = data?.items ?? [];
 
+  // GET /api/leads (the global pool) is owner/recruiter only -- this page
+  // also renders for contractor (contractor.email-queue.tsx), for whom that
+  // call 403s outright, so the inline "Search lead to add to queue" box
+  // below never found their own leads. Same fix as search-lead-dialog.tsx:
+  // contractors search their own submissions via GET /api/leads/mine.
   const { data: leadsData } = useQuery({
-    queryKey: ["leads"],
-    queryFn: () => api.getLeads({ limit: 100 }),
+    queryKey: user?.role === "contractor" ? ["leads", "mine"] : ["leads"],
+    queryFn: () => (user?.role === "contractor" ? api.getMyLeads() : api.getLeads({ limit: 100 })),
   });
   const availableLeads = leadsData?.leads ?? [];
 
@@ -121,6 +133,19 @@ export function EmailQueuePageView() {
     .reverse()
     .find((m: ApiConversationMessage) => m.sender === "THEM")?.text;
 
+  // Every one of the lead's inbound emails still worth choosing from, newest
+  // first. Only surfaced in the UI when there's more than one -- with a
+  // single (or no) prior email there's nothing ambiguous to pick between,
+  // and the backend's own findReplyAnchor fallback already gets it right.
+  const candidateReplyTargets = [...(emailThread?.messages ?? [])]
+    .filter((m: ApiConversationMessage) => m.sender === "THEM")
+    .sort((a, b) => new Date(b.sentAt).getTime() - new Date(a.sentAt).getTime());
+  // Explicit choice of which inbound email this draft answers -- undefined
+  // means "let the backend fall back to its own most-recent-reply guess",
+  // which is exactly today's behavior and stays correct whenever there's
+  // nothing to disambiguate.
+  const [replyToId, setReplyToId] = useState<string | undefined>(undefined);
+
   async function handleCheckFaqEmail() {
     await checkFaqAndAutofill(lastCandidateEmail, setIsCheckingFaq, (draft) => {
       setBody(draft);
@@ -183,7 +208,10 @@ export function EmailQueuePageView() {
     setSending(true);
     try {
       const channel = selected.candidateRole?.toLowerCase().includes("linkedin") ? "LINKEDIN" : "EMAIL";
-      await api.sendEmailQueueItem(selected.id, { to, subject, body, channel, accountId });
+      const replyToMessageId = replyToId
+        ? candidateReplyTargets.find((m) => m.id === replyToId)?.externalMessageId ?? undefined
+        : undefined;
+      await api.sendEmailQueueItem(selected.id, { to, subject, body, channel, accountId, replyToMessageId });
       await queryClient.invalidateQueries({ queryKey: ["email-queue"] });
       toast.success(`Message sent via Unipile to ${candidateName(selected)}!`);
       setSelectAccountDialogOpen(false);
@@ -212,6 +240,7 @@ export function EmailQueuePageView() {
     setTo(e ? e.to || candidateEmail(e) : "");
     setSaveState("idle");
     setSavedAt(null);
+    setReplyToId(undefined);
   }
 
   // `to` is authoritative once saved/sent (persisted on the item itself --
@@ -309,7 +338,7 @@ export function EmailQueuePageView() {
   return (
     <div className="mx-auto h-[calc(100vh-8rem)] max-w-7xl overflow-hidden rounded-2xl border border-border bg-card">
       <div className="grid h-full grid-cols-1 md:grid-cols-[340px_1fr]">
-        <div className="border-r border-border flex flex-col h-full">
+        <div className="border-r border-border flex min-h-0 flex-col h-full">
           <div className="border-b border-border p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Queue <span className="text-muted-foreground font-normal">({emailQueue.length})</span></div>
@@ -367,7 +396,7 @@ export function EmailQueuePageView() {
               )}
             </div>
           </div>
-          <div className="divide-y divide-border overflow-y-auto">
+          <div className="flex-1 min-h-0 divide-y divide-border overflow-y-auto">
             {isLoading && (
               <div className="p-6 text-center text-xs text-muted-foreground">
                 <Loader2 className="mx-auto mb-2 h-4 w-4 animate-spin" /> Loading email queue…
@@ -492,6 +521,29 @@ export function EmailQueuePageView() {
                     <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
                     <Input value={to} onChange={(e) => { setTo(e.target.value); markDirty(); }} placeholder="recipient@example.com" className="mt-1" />
                   </div>
+                  {candidateReplyTargets.length > 1 && (
+                    <div>
+                      <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">
+                        Replying to
+                      </label>
+                      {/* This lead has more than one still-open email -- without
+                          an explicit choice here, the send defaults to
+                          whichever arrived most recently, which is often NOT
+                          the one this draft is actually answering. */}
+                      <select
+                        value={replyToId ?? ""}
+                        onChange={(e) => setReplyToId(e.target.value || undefined)}
+                        className="mt-1 w-full rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"
+                      >
+                        <option value="">Most recent email (default)</option>
+                        {candidateReplyTargets.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {formatReplyTime(m.sentAt)} — {m.text.replace(/\s+/g, " ").trim().slice(0, 80)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">Subject</label>
                     <Input value={subject} onChange={(e) => { setSubject(e.target.value); markDirty(); }} className="mt-1" />

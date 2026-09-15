@@ -6,6 +6,7 @@ import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { normalizeEmail, normalizeName, validateEmailFormat, validateNameLength } from "../lib/normalize";
+import { UnipileService } from "../services/unipile.service";
 
 export const userRouter = Router();
 
@@ -26,6 +27,10 @@ const languagesSchema = z.object({
   languages: z.array(z.string()),
 });
 
+const slackMemberIdSchema = z.object({
+  slackMemberId: z.string().trim().min(1).max(20).nullable(),
+});
+
 const contractorAssignmentSchema = z.object({
   recruiterId: z.string().uuid().optional(),
 });
@@ -38,6 +43,7 @@ const SAFE_USER_SELECT = {
   role: true,
   workStatus: true,
   languages: true,
+  slackMemberId: true,
   emailVerified: true,
   isActive: true,
   startDate: true,
@@ -174,6 +180,45 @@ userRouter.patch(
     });
 
     return res.json({ user });
+  })
+);
+
+// PATCH /api/users/:id/slack-member-id — owner (any user) or the user themself.
+// Pasted once from the user's own Slack profile so notifications can DM them
+// via G3's Slack bot; null clears it (Slack delivery just no-ops after that).
+userRouter.patch(
+  "/:id/slack-member-id",
+  asyncHandler(async (req: Request, res: Response) => {
+    const role = req.user!.role.toLowerCase() as Role;
+    if (role !== "owner" && req.user!.id !== req.params.id) {
+      throw new ApiError(403, "FORBIDDEN", "You can only update your own Slack member id");
+    }
+
+    const { slackMemberId } = slackMemberIdSchema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!existing) throw new ApiError(404, "USER_NOT_FOUND", "User not found");
+
+    const user = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { slackMemberId },
+      select: SAFE_USER_SELECT,
+    });
+
+    return res.json({ user });
+  })
+);
+
+// DELETE /api/users/:id/connected-accounts/:accountId — owner disconnects any
+// recruiter's outreach account from the org-wide mapping view. Recruiters
+// still disconnect their own via /api/unipile/accounts/:accountId; this is
+// specifically the owner-on-behalf-of-someone-else path.
+userRouter.delete(
+  "/:id/connected-accounts/:accountId",
+  requireRole("owner"),
+  asyncHandler(async (req: Request, res: Response) => {
+    await UnipileService.disconnectAccount(req.params.id, req.params.accountId);
+    return res.json({ success: true });
   })
 );
 

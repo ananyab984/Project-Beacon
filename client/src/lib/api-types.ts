@@ -6,22 +6,37 @@
 export type UserRole = "OWNER" | "RECRUITER" | "CONTRACTOR";
 export type WorkStatus = "PERMANENT" | "CONTRACTOR";
 
-export type LeadStage = "NEW" | "CONTACTED" | "REPLIED" | "NEGOTIATING" | "INVITE_SENT" | "ONBOARDED" | "COLD";
+export type LeadStage =
+  "NEW" | "CONTACTED" | "REPLIED" | "NEGOTIATING" | "INVITE_SENT" | "ONBOARDED" | "COLD";
 export type LeadStatus =
-  | "NEW" | "CONTACTED" | "AWAITING_REPLY" | "REPLIED" | "SCREENING" | "INTERVIEW_SCHEDULED"
-  | "INTERVIEW_COMPLETED" | "NEGOTIATION" | "OFFERED" | "PLACED" | "ON_HOLD" | "CLOSED" | "REJECTED";
+  | "NEW"
+  | "CONTACTED"
+  | "AWAITING_REPLY"
+  | "REPLIED"
+  | "SCREENING"
+  | "INTERVIEW_SCHEDULED"
+  | "INTERVIEW_COMPLETED"
+  | "NEGOTIATION"
+  | "OFFERED"
+  | "PLACED"
+  | "ON_HOLD"
+  | "CLOSED"
+  | "REJECTED";
 export type LeadPriority = "P0" | "P1" | "P2" | "P3";
 export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
 export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
-export type EnrichmentStatus = "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
-export type LeadSource = "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
+export type EnrichmentStatus =
+  "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
+export type LeadSource =
+  "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
 /** Why the ON_HOLD flag is currently set -- purely descriptive, doesn't
  * drive ON_HOLD by itself. MANUAL only clears via the flags toggle;
  * TIMEOUT/SYSTEM_ERROR auto-clear the next time a re-enrichment run
  * concludes cleanly. */
 export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
 
-export type OutreachFunnelCategory = "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc";
+export type OutreachFunnelCategory =
+  "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc" | "onboarded";
 
 /** One row in a funnel tile's drill-down list -- deliberately lighter than
  *  ApiLead, matching what GET /reports/outreach-funnel/leads selects. */
@@ -149,6 +164,19 @@ export interface ApiLead {
   replyClassifiedAt: string | null;
   createdAt: string;
   lastActivityAt: string | null;
+  /** Set once this lead is soft-deleted into the Global Leads recycle bin
+   *  (POST /batch-delete); cleared on restore. Normal list/export endpoints
+   *  never return a lead with this set -- only GET /api/leads/bin does. */
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+}
+
+/** GET /api/leads/bin row: an ApiLead plus its own recycle-bin countdown
+ *  (see server/src/lib/recycleBin.ts -- each item ages out independently,
+ *  Windows Recycle Bin style, not on one bin-wide clock). */
+export interface ApiBinLead extends ApiLead {
+  purgeAt: string;
+  daysUntilPurge: number;
 }
 
 /** One normalized profile-section entry. Keys vary by section (language/
@@ -180,6 +208,7 @@ export interface ApiUser {
   role: UserRole;
   workStatus: WorkStatus;
   languages: string[];
+  slackMemberId?: string | null;
   emailVerified: boolean;
   isActive: boolean;
   startDate: string;
@@ -286,6 +315,11 @@ export interface ApiEmailQueueItem {
   receivedAt: string;
   sentAt: string | null;
   sentChannel: "LINKEDIN" | "EMAIL" | null;
+  // The most recent message text from this lead's EMAIL conversation, if
+  // any -- distinct from `body`, which is this item's own draft and never
+  // updated when the candidate replies. Only present on GET /api/email-queue
+  // (the list view); absent (undefined) on other endpoints' responses.
+  latestMessageText?: string | null;
 }
 
 export type ConversationChannel = "LINKEDIN" | "EMAIL" | "INSTAGRAM" | "WHATSAPP" | "SMS";
@@ -325,6 +359,29 @@ export interface ApiConversation {
 
 export type EscalationPriority = "P1" | "P2" | "P3";
 export type EscalationStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS";
+
+export type NotificationType =
+  "NEW_LEAD" | "TASK_ASSIGNMENT" | "DUE_DATE_REMINDER" | "LEAD_RESPONSE" | "ESCALATION";
+
+export interface ApiNotification {
+  id: string;
+  recipientId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiNotificationPreference {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+}
 
 export interface ApiEscalation {
   id: string;

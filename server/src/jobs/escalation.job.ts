@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { createNotification } from "../services/notification.service";
 
 const SLA_BREACH_HOURS = 24;
 const STALE_ON_HOLD_DAYS = 5;
@@ -28,18 +29,23 @@ async function scanSlaBreaches() {
   for (const b of breaches) {
     if (await escalationExists("SLA Breach", b.leadId)) continue;
     const hoursOverdue = (Date.now() - b.occurredAt.getTime()) / 3600_000 - SLA_BREACH_HOURS;
+    const title = `Unanswered high-priority reply — ${b.lead.fullName ?? b.lead.maskedLabel}`;
+    const detail = `Lead replied ${Math.round((Date.now() - b.occurredAt.getTime()) / 3600_000)}h ago and hasn't been responded to.`;
     await prisma.escalation.create({
       data: {
         priority: "P1",
         category: "SLA Breach",
-        title: `Unanswered high-priority reply — ${b.lead.fullName ?? b.lead.maskedLabel}`,
-        detail: `Lead replied ${Math.round((Date.now() - b.occurredAt.getTime()) / 3600_000)}h ago and hasn't been responded to.`,
+        title,
+        detail,
         recommendedAction: "Respond to this lead immediately to avoid losing engagement momentum.",
         slaHoursRemaining: -Math.round(hoursOverdue),
         leadId: b.leadId,
         recruiterId: b.lead.assignedRecruiterId,
       },
     });
+    if (b.lead.assignedRecruiterId) {
+      await mirrorEscalationNotification(b.lead.assignedRecruiterId, title, detail, "/recruiter/leads");
+    }
   }
 }
 
@@ -53,35 +59,83 @@ async function scanStaleLeads() {
   for (const lead of stale) {
     if (await escalationExists("Recruiter Performance", lead.id)) continue;
     const ageDays = Math.round((Date.now() - lead.createdAt.getTime()) / 86_400_000);
+    const title = `Lead stuck On Hold for ${ageDays}d — ${lead.fullName ?? lead.maskedLabel}`;
+    const detail = "This lead has not had its identity resolved / manual enrichment completed.";
     await prisma.escalation.create({
       data: {
         priority: ageDays > STALE_ON_HOLD_DAYS * 2 ? "P2" : "P3",
         category: "Recruiter Performance",
-        title: `Lead stuck On Hold for ${ageDays}d — ${lead.fullName ?? lead.maskedLabel}`,
-        detail: "This lead has not had its identity resolved / manual enrichment completed.",
+        title,
+        detail,
         recommendedAction: "Complete manual enrichment to promote this lead to the Global pool, or close it out.",
         leadId: lead.id,
         recruiterId: lead.assignedRecruiterId,
       },
     });
+    if (lead.assignedRecruiterId) {
+      await mirrorEscalationNotification(lead.assignedRecruiterId, title, detail, "/recruiter/performance");
+    }
   }
 }
 
 async function scanEmailQueueBacklog() {
   const recruiters = await prisma.user.findMany({ where: { role: "RECRUITER", isActive: true }, select: { id: true, name: true } });
   for (const r of recruiters) {
-    const backlog = await prisma.emailQueueItem.count({ where: { recruiterId: r.id } });
-    if (backlog < EMAIL_QUEUE_BACKLOG_THRESHOLD) continue;
-    if (await escalationExists("Email Queue Threshold Alert", null, r.id)) continue;
+    // addedManually: true only -- matches GET /api/email-queue's own filter
+    // (email-queue.routes.ts). lead.routes.ts used to silently auto-create
+    // an EmailQueueItem for every lead a recruiter created; those historical
+    // rows are excluded from the queue a recruiter actually sees, so
+    // counting them here produced a stale, inflated backlog escalation that
+    // never matched what the recruiter could see or act on -- confirmed
+    // live: "ananya's email queue has 25 unsent drafts" while the real,
+    // visible queue held only 2.
+    const backlog = await prisma.emailQueueItem.count({ where: { recruiterId: r.id, addedManually: true } });
+    const existing = await prisma.escalation.findFirst({
+      where: { category: "Email Queue Threshold Alert", recruiterId: r.id, status: { not: "IN_PROGRESS" } },
+    });
+
+    if (backlog < EMAIL_QUEUE_BACKLOG_THRESHOLD) {
+      // The condition that created this escalation no longer holds (drafts
+      // were sent/discarded, or -- as happened live -- the count itself was
+      // corrected). This schema has no "resolved" status and nothing else
+      // ever revisits an escalation once created (see this function's own
+      // doc comment: "this job is their only producer"), so without this an
+      // escalation keeps showing a stale count forever even after the real
+      // backlog clears.
+      if (existing) await prisma.escalation.delete({ where: { id: existing.id } });
+      continue;
+    }
+
+    if (existing) continue;
+    const title = `${r.name}'s email queue has ${backlog} unsent drafts`;
+    const detail = `Backlog exceeds the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold.`;
     await prisma.escalation.create({
       data: {
         priority: "P2",
         category: "Email Queue Threshold Alert",
-        title: `${r.name}'s email queue has ${backlog} unsent drafts`,
-        detail: `Backlog exceeds the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold.`,
+        title,
+        detail,
         recommendedAction: "Review and send or discard queued drafts to keep outreach timely.",
         recruiterId: r.id,
       },
     });
+    await mirrorEscalationNotification(r.id, title, detail, "/recruiter/email-queue");
   }
+}
+
+// Mirrors a newly created Escalation into the unified Notification feed so
+// the recruiter's bell picks it up too (matching the old popover's
+// category -> route heuristic). Only fires when there's an individual
+// recruiter to notify -- Escalation.ownerUserId ("System"-owned escalations)
+// has no single deterministic recipient to target, so those stay
+// Escalation-table-only; the owner's EscalationsBell reads that table
+// directly and is unaffected either way.
+async function mirrorEscalationNotification(recruiterId: string, title: string, detail: string, link: string) {
+  await createNotification({
+    recipientId: recruiterId,
+    type: "ESCALATION",
+    title,
+    body: detail,
+    link,
+  }).catch((err) => console.error("[notifications] escalation mirror failed:", err));
 }

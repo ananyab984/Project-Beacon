@@ -6,6 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
+import { createNotification } from "../services/notification.service";
 
 export const requirementRouter = Router();
 
@@ -41,10 +42,23 @@ const assignSchema = z.object({
   note: z.string().optional(),
 });
 
+/** Contractors get the same requirement-level detail recruiters do (which
+ * matters for the "same requirements page" parity ask) EXCEPT client
+ * identity -- a contractor must never learn which client a piece of demand
+ * belongs to. Strips the `client` key entirely rather than trying to
+ * whitelist safe sub-fields, since a client's name is itself the thing being
+ * withheld. Takes a plain role string rather than the full Express Request
+ * so it's directly unit testable. */
+export function redactClientIfContractor<T extends { client?: unknown }>(requesterRole: string, requirement: T): T {
+  if (requesterRole.toLowerCase() !== "contractor") return requirement;
+  const { client, ...rest } = requirement;
+  return rest as T;
+}
+
 // GET /api/requirements?clientId=&status=&priority=&q= — filterable list
 requirementRouter.get(
   "/",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const where: Prisma.RequirementWhereInput = {};
 
@@ -68,7 +82,7 @@ requirementRouter.get(
       },
       orderBy: { createdAt: "desc" },
     });
-    return res.json({ requirements });
+    return res.json({ requirements: requirements.map((r) => redactClientIfContractor(req.user!.role, r)) });
   })
 );
 
@@ -120,6 +134,17 @@ requirementRouter.post(
       return rows;
     });
 
+    for (const requirement of created) {
+      if (!requirement.recruiterId) continue;
+      await createNotification({
+        recipientId: requirement.recruiterId,
+        type: "TASK_ASSIGNMENT",
+        title: `Assigned: ${requirement.title}`,
+        body: `You've been assigned to "${requirement.title}" (${requirement.language}, ${requirement.service}).`,
+        link: `/recruiter/clients`,
+      }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
+    }
+
     return res.status(201).json({ requirements: created });
   })
 );
@@ -127,7 +152,7 @@ requirementRouter.post(
 // GET /api/requirements/:id — single requirement detail with assignments and client
 requirementRouter.get(
   "/:id",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const requirement = await prisma.requirement.findUnique({
       where: { id: req.params.id },
@@ -144,14 +169,14 @@ requirementRouter.get(
       },
     });
     if (!requirement) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
-    return res.json({ requirement });
+    return res.json({ requirement: redactClientIfContractor(req.user!.role, requirement) });
   })
 );
 
 // GET /api/requirements/:id/history — assignment history audit trail
 requirementRouter.get(
   "/:id/history",
-  requireRole("owner", "recruiter"),
+  requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
     const assignments = await prisma.requirementAssignment.findMany({
       where: { requirementId: req.params.id },
@@ -256,6 +281,18 @@ requirementRouter.post(
         },
       }),
     ]);
+
+    // Unassign (recruiterId: null) fires nothing -- only a real assignment
+    // is a "task assignment" someone needs to be told about.
+    if (recruiterId) {
+      await createNotification({
+        recipientId: recruiterId,
+        type: "TASK_ASSIGNMENT",
+        title: `Assigned: ${updated.title}`,
+        body: `You've been assigned to "${updated.title}" (${updated.language}, ${updated.service}).`,
+        link: `/recruiter/clients`,
+      }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
+    }
 
     return res.json({ requirement: updated });
   })

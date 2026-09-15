@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, CheckCircle2, Upload, Download, FileSpreadsheet } from "lucide-react";
+import { Upload, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -29,6 +29,21 @@ const SOURCES = [
 
 const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
 
+const INITIAL_VALUES = {
+  first_name: "",
+  last_name: "",
+  country_of_residence: "",
+  source: "LinkedIn",
+  profile_link: "",
+  email_address: "",
+  contact_number: "",
+  reachout_date: "",
+  source_language: "",
+  target_language: "",
+  secondary_languages: "",
+  services: "",
+};
+
 /** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
 function mapToLeadSource(raw: string | undefined | null): LeadSource {
   if (!raw) return "LINKEDIN";
@@ -50,27 +65,25 @@ export function ContractorAddLeadDialog({
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledSetOpen ?? setInternalOpen;
-  const [values, setValues] = useState({
-    first_name: "",
-    last_name: "",
-    country_of_residence: "",
-    source: "LinkedIn",
-    profile_link: "",
-    email_address: "",
-    contact_number: "",
-    reachout_date: "",
-    source_language: "English",
-    target_language: "German",
-    secondary_languages: "French",
-    services: "",
-  });
+  const [values, setValues] = useState(INITIAL_VALUES);
   const [customService, setCustomService] = useState("");
   const [customTask, setCustomTask] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const [dup, setDup] = useState<{ checked: boolean; hit: boolean; matchName?: string }>({ checked: false, hit: false });
 
   function invalidateLeads() {
     queryClient.invalidateQueries({ queryKey: ["leads"] });
+  }
+
+  // Without this, the dialog kept showing the just-submitted lead's data the
+  // next time it was opened -- component state persists across open/close
+  // since the dialog never unmounts, so a contractor adding several leads in
+  // a row would see the previous one's name/profile link still sitting in
+  // the form instead of a blank one.
+  function resetForm() {
+    setValues(INITIAL_VALUES);
+    setCustomService("");
+    setCustomTask("");
+    setErrors({});
   }
 
   const createMutation = useMutation({
@@ -79,6 +92,7 @@ export function ContractorAddLeadDialog({
       toast.success(`Lead ${lead.fullName} submitted to pipeline!`);
       invalidateLeads();
       setOpen(false);
+      resetForm();
     },
     onError: (err: any) => toast.error(err?.message ?? "Failed to submit lead"),
   });
@@ -117,7 +131,6 @@ export function ContractorAddLeadDialog({
   function set(k: string, v: string) {
     setValues((prev) => ({ ...prev, [k]: v }));
     setErrors((prev) => ({ ...prev, [k]: "" }));
-    setDup({ checked: false, hit: false });
   }
 
   function validate() {
@@ -134,21 +147,6 @@ export function ContractorAddLeadDialog({
     return Object.keys(next).length === 0;
   }
 
-  async function onCheck() {
-    if (!validate()) return;
-    try {
-      const fullName = [values.first_name.trim(), values.last_name.trim()].filter(Boolean).join(" ");
-      const res = await api.checkDuplicateLead({
-        email: values.email_address || undefined,
-        contactNumber: values.contact_number || undefined,
-        fullName,
-      });
-      setDup({ checked: true, hit: res.isDuplicate, matchName: res.isDuplicate ? fullName : undefined });
-    } catch (err: any) {
-      toast.error(err?.message ?? "Duplicate check failed");
-    }
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate()) return;
@@ -162,19 +160,21 @@ export function ContractorAddLeadDialog({
       ? resolvedService.split(",").map((s) => s.trim()).filter(Boolean)
       : [];
 
-    // Earlier UX hint only — the backend itself also flags duplicates on
-    // create, so we never block submission on this check.
-    if (!dup.checked) {
-      try {
-        const res = await api.checkDuplicateLead({
-          email: values.email_address || undefined,
-          contactNumber: values.contact_number || undefined,
-          fullName: trimmed,
-        });
-        if (res.isDuplicate) toast.warning("A similar lead may already exist — submitting anyway.");
-      } catch {
-        // ignore — non-blocking hint
-      }
+    // Automatic, non-blocking hint only -- same as add-lead-dialog.tsx
+    // (recruiter/owner): no separate "Check for duplicates" button or
+    // persistent checked/hit state, just a toast if the backend's own
+    // create-time duplicate check (the real source of truth) would flag
+    // this. Never blocks submission.
+    try {
+      const dup = await api.checkDuplicateLead({
+        email: values.email_address || undefined,
+        contactNumber: values.contact_number || undefined,
+        fullName: trimmed,
+        profileLink: values.profile_link || undefined,
+      });
+      if (dup.isDuplicate) toast.warning("A similar lead may already exist — submitting anyway.");
+    } catch {
+      // Non-blocking hint only -- proceed even if the duplicate check itself fails.
     }
 
     createMutation.mutate({
@@ -523,34 +523,10 @@ export function ContractorAddLeadDialog({
             />
           </Field>
 
-          <div className="md:col-span-2">
-            {dup.checked && (
-              dup.hit ? (
-                <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                  <div>
-                    <div className="font-semibold">A similar lead may already exist</div>
-                    <div className="opacity-80">Check name and profile link. You can still submit if you're sure.</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2 rounded-lg border border-[oklch(0.5_0.14_155)]/40 bg-[oklch(0.5_0.14_155)]/10 px-3 py-2 text-xs text-[oklch(0.55_0.14_155)]">
-                  <CheckCircle2 className="h-4 w-4" />
-                  <div>No duplicate found</div>
-                </div>
-              )
-            )}
-          </div>
-
-          <DialogFooter className="md:col-span-2 gap-2 pt-2 border-t border-border">
+          <DialogFooter className="md:col-span-2 pt-2 border-t border-border">
             <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="button" variant="outline" onClick={onCheck}>Check for duplicates</Button>
-            <Button
-              type="submit"
-              disabled={createMutation.isPending}
-              className={dup.hit ? "bg-warning text-warning-foreground hover:bg-warning/90 font-semibold" : "bg-primary text-primary-foreground hover:bg-primary/90 font-semibold"}
-            >
-              {createMutation.isPending ? "Submitting…" : dup.hit ? "Submit anyway" : "Submit lead"}
+            <Button type="submit" disabled={createMutation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
+              {createMutation.isPending ? "Submitting…" : "Submit lead"}
             </Button>
           </DialogFooter>
         </form>

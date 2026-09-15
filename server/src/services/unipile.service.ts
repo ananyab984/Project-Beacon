@@ -16,6 +16,8 @@ import {
   InboundChannel,
 } from "@prisma/client";
 import { processInboundMessage } from "./processInboundMessage";
+import { createNotification } from "./notification.service";
+import { getSystemSetting } from "./system-settings.service";
 
 // Exact, known Unipile account-status strings -> our AccountStatus enum.
 // Deliberately an exact-match table, not substring matching: a status like
@@ -99,6 +101,70 @@ const QUOTE_HEADER_PATTERNS: RegExp[] = [
   // Outlook plaintext header block
   /^From:\s.+\r?\nSent:\s.+\r?\nTo:\s.+\r?\n(Cc:\s.+\r?\n)?Subject:\s.+$/im,
 ];
+
+/** Finds the specific message id (Unipile's own, or the provider's -- either
+ * works per their docs) an outbound EMAIL send should thread under, when the
+ * caller doesn't already know which exact message it's replying to: the
+ * lead's most recent reply in this conversation, if any.
+ *
+ * sendEmail's own doc comment already established that Unipile needs a real
+ * message id as `reply_to` -- a thread-id guess was tried live and Unipile
+ * silently ignored it, starting a brand-new unrelated thread instead.
+ * Sending with NO reply_to at all has the identical effect. Confirmed live:
+ * a real conversation fragmented across several different Unipile-side
+ * thread ids because more than one outbound send in the same exchange went
+ * out with nothing to thread under, and several of the lead's genuine
+ * replies to those fragments then had no way back to the Conversation the
+ * app displays. */
+export async function findReplyAnchor(leadId: string, recruiterId: string): Promise<string | undefined> {
+  const latestReply = await prisma.conversationMessage.findFirst({
+    where: { conversation: { leadId, recruiterId, channel: "EMAIL" }, sender: "THEM" },
+    orderBy: { sentAt: "desc" },
+    select: { externalMessageId: true },
+  });
+  return latestReply?.externalMessageId ?? undefined;
+}
+
+/** The correct `Re: <subject>` for a threaded email reply, given the exact
+ * message id it's anchored to -- ported out of conversation.routes.ts's
+ * POST /:id/messages so email-queue.routes.ts's send route can apply the
+ * same protection when a caller supplies an explicit replyToMessageId.
+ *
+ * Unipile validates a threaded reply's subject against the real thread it's
+ * attached to via `reply_to`, rejecting a mismatch with "The reply subject
+ * is invalid" -- confirmed live. EmailQueueItem's own `subject` field is NOT
+ * a reliable source for that: it can be silently regenerated after the
+ * original send (generate-draft has no guard against re-running on an
+ * already-sent item), drifting away from whatever was actually delivered on
+ * the thread being replied to -- and if the caller is replying to an OLDER
+ * message than the one that subject reflects, it may not even be that
+ * thread's subject at all. The one place the real subject is always
+ * available is the inbound webhook event for the specific message being
+ * replied to -- prefer that, and only fall back to a queue item's guess when
+ * there's no prior thread to match (i.e. `replyToMessageId` is undefined). */
+export async function resolveReplySubject(
+  leadId: string,
+  recruiterId: string,
+  replyToMessageId: string | undefined,
+  fallbackLabel: string
+): Promise<string> {
+  let originalSubject: string | null = null;
+  if (replyToMessageId) {
+    const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
+      where: { eventType: "mail_received", payload: { path: ["email_id"], equals: replyToMessageId } },
+      orderBy: { processedAt: "desc" },
+    });
+    originalSubject = (webhookEvent?.payload as any)?.subject || null;
+  }
+  if (!originalSubject) {
+    const latestQueueItem = await prisma.emailQueueItem.findFirst({
+      where: { leadId, recruiterId },
+      orderBy: { receivedAt: "desc" },
+    });
+    originalSubject = latestQueueItem?.subject || fallbackLabel;
+  }
+  return /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+}
 
 export function stripQuotedReplyHistory(text: string): string {
   let cutIndex = text.length;
@@ -800,6 +866,48 @@ export class UnipileService {
   }
 
   /**
+   * Send a plain system/transactional email (e.g. a notification to a
+   * recruiter about their own lead/requirement) via one dedicated,
+   * pre-connected Unipile mailbox (UNIPILE_SYSTEM_ACCOUNT_ID) -- NOT a
+   * recruiter's own outreach account. Deliberately skips everything
+   * candidate-outreach-specific that sendEmail() above does: no leadId (a
+   * task/due-date notification has no candidate to attach one to), no
+   * InteractionEvent/Conversation writes (this isn't a real outreach
+   * interaction, and writing one would corrupt SLA/response-time tracking
+   * that reads those tables), and no assertLiveSendsAllowed gate (that's a
+   * safety switch for real candidate-facing sends, not system mail). No-ops
+   * if the system mailbox isn't configured yet, matching the notification
+   * feature's "email/Slack channels no-op until provisioned" design.
+   */
+  static async sendSystemEmail(toEmail: string, subject: string, body: string): Promise<void> {
+    // Owner-configurable in-app (see system-settings.routes.ts) rather than
+    // env-var-only, so G3 can connect/change the notification mailbox
+    // themselves without an engineering redeploy.
+    const accountId = await getSystemSetting("UNIPILE_SYSTEM_ACCOUNT_ID");
+    if (!accountId) {
+      console.warn("[unipile] Notification email account not configured -- skipping system notification email");
+      return;
+    }
+
+    const unipileBaseUrl = this.getUnipileBaseUrl();
+    const payload = {
+      account_id: accountId,
+      to: [{ identifier: toEmail.trim(), display_name: "" }],
+      subject,
+      body: plainTextToEmailHtml(body),
+    };
+
+    await retryWithBackoff(
+      (signal) =>
+        axios.post(`${unipileBaseUrl}/emails`, payload, {
+          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+          signal,
+        }),
+      { retries: 0, deadlineMs: 15000 }
+    );
+  }
+
+  /**
    * Helper to sync outbound message to Conversation & ConversationMessage models
    */
   private static async syncToConversation(
@@ -815,37 +923,35 @@ export class UnipileService {
       const candidateName = lead?.fullName || lead?.firstName || "Candidate";
       const conversationChannel = channel === "LINKEDIN" ? ConversationChannel.LINKEDIN : ConversationChannel.EMAIL;
 
-      // BUG FIX: this lookup was missing a channel filter, so a lead already
-      // having a LINKEDIN conversation meant every EMAIL send for that same
-      // lead silently reused (and mutated) the LinkedIn conversation instead
-      // of creating its own -- confirmed live, an outreach email's body ended
-      // up appended into the candidate's LinkedIn thread. LinkedIn and Email
-      // are always distinct Conversation rows per lead+recruiter.
-      let conv = await prisma.conversation.findFirst({
-        where: { leadId, recruiterId, channel: conversationChannel },
+      // LinkedIn and Email are always distinct Conversation rows per
+      // lead+recruiter (confirmed live: a missing channel filter here once
+      // let an outreach email's body get appended into the candidate's
+      // LinkedIn thread). Existence-or-create is now one atomic upsert
+      // (enforced by the (leadId, recruiterId, channel) unique constraint)
+      // instead of a findFirst-then-create/update -- two messages for the
+      // same lead+channel arriving milliseconds apart could otherwise both
+      // see "no conversation yet" and both create one, fragmenting history
+      // exactly like the chat_id-rotation bug this file already guards
+      // against elsewhere.
+      const conv = await prisma.conversation.upsert({
+        where: { leadId_recruiterId_channel: { leadId, recruiterId, channel: conversationChannel } },
+        update: { lastMessageAt: new Date() },
+        create: {
+          leadId,
+          recruiterId,
+          candidateName,
+          channel: conversationChannel,
+          lastMessageAt: new Date(),
+          unipileChatId: unipileChatId || undefined,
+        },
       });
-
-      if (!conv) {
-        conv = await prisma.conversation.create({
-          data: {
-            leadId,
-            recruiterId,
-            candidateName,
-            channel: conversationChannel,
-            lastMessageAt: new Date(),
-            unipileChatId: unipileChatId || undefined,
-          },
-        });
-      } else {
-        await prisma.conversation.update({
-          where: { id: conv.id },
-          data: {
-            lastMessageAt: new Date(),
-            // Backfill the chat id the first time we actually learn it (e.g. the
-            // first message went via invite with no chat id, a later one succeeds).
-            ...(unipileChatId && !conv.unipileChatId ? { unipileChatId } : {}),
-          },
-        });
+      // Backfill the chat id the first time we actually learn it (e.g. the
+      // first message went via invite with no chat id, a later one
+      // succeeds) -- kept as a separate follow-up write rather than folded
+      // into the upsert's `update`, since Prisma's upsert can't
+      // conditionally reference the row's own pre-existing value.
+      if (unipileChatId && !conv.unipileChatId) {
+        await prisma.conversation.update({ where: { id: conv.id }, data: { unipileChatId } });
       }
 
       await prisma.conversationMessage.create({
@@ -891,6 +997,13 @@ export class UnipileService {
     const bodyStr = JSON.stringify(body || {});
     const dedupeKey = crypto.createHash("sha256").update(bodyStr).digest("hex");
 
+    // Cheap up-front check for the common case (an exact retry) -- not what
+    // actually closes the race, since two near-simultaneous deliveries of
+    // the same webhook could both see "not found" here before either
+    // commits. The dedupeKey unique constraint is what's actually atomic:
+    // attempt the create, and treat a conflict on it exactly like the
+    // already-processed case rather than letting the second delivery
+    // duplicate-process (double-count a reply, double-fire an auto-reply).
     const existing = await prisma.unipileWebhookEvent.findUnique({ where: { dedupeKey } });
     if (existing) {
       return { status: "already_processed", id: existing.id };
@@ -898,13 +1011,21 @@ export class UnipileService {
 
     const eventType = body.event || body.AccountStatus?.message || body.status || "unknown_event";
 
-    await prisma.unipileWebhookEvent.create({
-      data: {
-        dedupeKey,
-        eventType,
-        payload: body,
-      },
-    });
+    try {
+      await prisma.unipileWebhookEvent.create({
+        data: {
+          dedupeKey,
+          eventType,
+          payload: body,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2002") {
+        const raced = await prisma.unipileWebhookEvent.findUniqueOrThrow({ where: { dedupeKey } });
+        return { status: "already_processed", id: raced.id };
+      }
+      throw err;
+    }
 
     // 1. Account status webhook handling
     const accountId = body.AccountStatus?.account_id ?? body.account_id ?? null;
@@ -1243,14 +1364,29 @@ export class UnipileService {
         // for. Positively identify the Conversation via the lead's own stored
         // email address matching who this reply came from (from_attendee),
         // the same certainty guarantee as the account nonce match: an email
-        // address is who sent it, not a guess. Only ever fires for genuinely
-        // inbound mail (isOutbound false) with no chat id match yet.
+        // address is who sent it, not a guess.
+        //
+        // Deliberately NOT scoped to `unipileChatId: null` (i.e. "only the
+        // first time"): confirmed live, Unipile does not keep one stable
+        // chat_id for the life of an email exchange the way it does for
+        // LinkedIn -- an outbound send with no reply_to anchor (see
+        // findReplyAnchor) starts a logically new thread from Unipile's side
+        // even though it's the same real conversation, so a single lead
+        // legitimately produced several different chat_ids over time. The
+        // old `unipileChatId: null` guard meant only the FIRST-ever id could
+        // ever be learned; every later reply that arrived under a different
+        // (but equally genuine) id had no path back to the Conversation and
+        // was silently dropped into InboundMessage-only, invisible in the
+        // Conversations/Email Queue UI despite being a real, correctly-
+        // delivered reply. Re-matching on every miss instead of only once
+        // makes this self-healing: whichever chat_id Unipile is currently
+        // using for this lead's thread gets picked up, not just whichever
+        // one happened to arrive first.
         if (!conversation && chatId && !isOutbound && connAcc && inboundChannel === InboundChannel.EMAIL && fromIdentity) {
           const candidates = await prisma.conversation.findMany({
             where: {
               recruiterId: connAcc.userId,
               channel: ConversationChannel.EMAIL,
-              unipileChatId: null,
               lead: { email: { equals: fromIdentity, mode: "insensitive" } },
             },
           });
@@ -1259,7 +1395,7 @@ export class UnipileService {
               where: { id: candidates[0].id },
               data: { unipileChatId: chatId },
             });
-            console.log(`[unipile webhook] Backfilled chat id ${chatId} onto conversation ${conversation.id} via lead-email match.`);
+            console.log(`[unipile webhook] Matched inbound email to conversation ${conversation.id} via lead-email identity (chatId=${chatId}).`);
           } else if (candidates.length > 1) {
             console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${fromIdentity} -- refusing to guess.`);
           }
@@ -1371,6 +1507,24 @@ export class UnipileService {
                 lastMessageAt: eventTimestamp,
               },
             });
+
+            // "Notify me on response" -- a plain per-lead subscription, left
+            // active after firing (see LeadNotificationSubscription doc
+            // comment in schema.prisma), so it fires again on every future
+            // reply from this lead until the recruiter turns it off.
+            const subs = await prisma.leadNotificationSubscription.findMany({
+              where: { leadId: conversation.leadId, active: true },
+            });
+            if (subs.length > 0) {
+              const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+              for (const sub of subs) createNotification({
+                recipientId: sub.recruiterId,
+                type: "LEAD_RESPONSE",
+                title: `${lead?.fullName ?? lead?.maskedLabel ?? "A lead"} replied`,
+                body: messageText.slice(0, 200),
+                link: `/recruiter/leads`,
+              }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+            }
           }
         }
       }

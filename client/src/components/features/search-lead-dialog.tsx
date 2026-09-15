@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Search, Sparkles, Loader2, ContactRound, Plus } from "lucide-react";
 import { api } from "@/lib/api";
 import type { ApiLead } from "@/lib/api-types";
+import { useAuth } from "@/lib/auth";
 
 interface SearchLeadDialogProps {
   open?: boolean;
@@ -37,10 +38,18 @@ export function SearchLeadDialog({
 
   const [query, setQuery] = useState("");
   const [loadingId, setLoadingId] = useState<string | null>(null);
+  const { user } = useAuth();
 
+  // GET /api/leads (the global pool) is owner/recruiter only -- a contractor
+  // calling it 403s outright, which is why this dialog could never find a
+  // contractor's OWN just-added lead ("no leads matched", or an infinite
+  // "Loading leads roster…" while React Query quietly retried the failing
+  // request). Contractors search their own submissions via GET
+  // /api/leads/mine instead, same as the rest of the app already does for
+  // them (contractor.leads.tsx).
   const { data, isLoading } = useQuery({
-    queryKey: ["leads"],
-    queryFn: () => api.getLeads({ limit: 100 }),
+    queryKey: user?.role === "contractor" ? ["leads", "mine"] : ["leads"],
+    queryFn: () => (user?.role === "contractor" ? api.getMyLeads() : api.getLeads({ limit: 100 })),
     enabled: isOpen,
   });
 

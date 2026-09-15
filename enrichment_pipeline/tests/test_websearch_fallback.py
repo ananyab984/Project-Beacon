@@ -203,7 +203,10 @@ def test_rich_lead_skips_websearch_entirely():
         f: "brightdata"
         for f in ["Country_of_Residence", "Source_Language", "Target_Language", "Services", "Headline", "Current_Title", "About_Snippet"]
     }
-    orch.claude = stub(search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {})
+    orch.claude = stub(
+        search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {},
+        extract_missing_fields=lambda *a, **kw: {},
+    )
 
     result = orch.process_lead(_rich_lead(), known_field_sources=field_sources)
 
@@ -229,7 +232,10 @@ def test_four_of_seven_fillable_fields_already_found_skips_websearch():
         "Services": "Subtitling",
     }
     field_sources = {f: "brightdata" for f in ["Headline", "Current_Title", "About_Snippet", "Services"]}
-    orch.claude = stub(search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {})
+    orch.claude = stub(
+        search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {},
+        extract_missing_fields=lambda *a, **kw: {},
+    )
 
     result = orch.process_lead(lead, known_field_sources=field_sources)
 
@@ -251,7 +257,10 @@ def test_disabled_by_default_even_for_a_thin_lead():
     orch = EnrichmentOrchestrator(cfg)
     orch.brightdata = stub(scrape_profile=lambda url: (_ for _ in ()).throw(BrightDataError("blocked")))
     orch.parallel = stub(enrich_profile=lambda lead, profile_link: (_ for _ in ()).throw(ParallelError("blocked")))
-    orch.claude = stub(search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {})
+    orch.claude = stub(
+        search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {},
+        extract_missing_fields=lambda *a, **kw: {},
+    )
 
     result = orch.process_lead(_thin_lead())
 
@@ -271,7 +280,10 @@ def test_only_contact_fields_missing_also_skips_websearch():
         f: "brightdata"
         for f in ["Country_of_Residence", "Source_Language", "Target_Language", "Services", "Headline", "Current_Title", "About_Snippet"]
     }
-    orch.claude = stub(search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {})
+    orch.claude = stub(
+        search_missing_fields=lambda *a, **kw: calls.__setitem__("websearch", calls["websearch"] + 1) or {},
+        extract_missing_fields=lambda *a, **kw: {},
+    )
 
     result = orch.process_lead(lead, known_field_sources=field_sources)
 
