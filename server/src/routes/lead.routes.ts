@@ -6,7 +6,7 @@ import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { fetchCsv } from "../lib/fetchCsv";
-import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere } from "../services/lead.service";
+import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere, requireActiveLead } from "../services/lead.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
@@ -18,8 +18,8 @@ import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFie
 import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
-import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
 import { createNotification } from "../services/notification.service";
+import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
 
 export const leadRouter = Router();
 
@@ -434,8 +434,7 @@ leadRouter.get(
   "/:id",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
 
     const role = req.user!.role.toLowerCase() as Role;
     if (role === "contractor" && lead.createdByContractorId !== req.user!.id) {
@@ -780,8 +779,7 @@ leadRouter.patch(
   "/:id",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const existing = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!existing) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const existing = await requireActiveLead(req.params.id);
 
     const role = req.user!.role.toLowerCase() as Role;
     if (role === "contractor" && existing.createdByContractorId !== req.user!.id) {
@@ -1091,8 +1089,7 @@ leadRouter.post(
     const schema = z.object({ flag: z.enum(LEAD_FLAGS), reason: z.string().optional(), provisional: z.boolean().optional() });
     const { flag, reason, provisional } = schema.parse(req.body);
 
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     await prisma.leadFlagEvent.create({
@@ -1125,8 +1122,7 @@ leadRouter.delete(
     const flag = req.params.flag.toUpperCase();
     if (!LEAD_FLAGS.includes(flag as any)) throw new ApiError(400, "INVALID_FLAG", "Unknown flag type");
 
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     await prisma.leadFlagEvent.create({
@@ -1153,8 +1149,7 @@ leadRouter.delete(
   "/:id/services/:service",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const services = lead.services.filter((s) => s !== req.params.service);
@@ -1179,8 +1174,7 @@ leadRouter.post(
     ]);
     const parsed = schema.parse(req.body);
 
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const activity = await prisma.manualActivityLog.create({
@@ -1208,8 +1202,7 @@ leadRouter.post(
   "/:id/retry-enrichment",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     if (lead.enrichmentStatus === "IN_PROGRESS") {
@@ -1240,8 +1233,7 @@ leadRouter.post(
   "/:id/reenrich",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     // The in-flight lock. The button is disabled client-side while a run is
@@ -1291,8 +1283,7 @@ leadRouter.get(
   "/:id/reenrichment-status",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const run = await prisma.reenrichmentRun.findFirst({
@@ -1327,8 +1318,7 @@ leadRouter.post(
       .object({ runId: z.string(), acceptFields: z.array(z.string()) })
       .parse(req.body);
 
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
     const run = await prisma.reenrichmentRun.findFirst({ where: { id: runId, leadId: lead.id } });
@@ -1371,8 +1361,7 @@ leadRouter.patch(
   asyncHandler(async (req: Request, res: Response) => {
     const { active } = z.object({ active: z.boolean() }).parse(req.body);
 
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    const lead = await requireActiveLead(req.params.id);
 
     const subscription = await prisma.leadNotificationSubscription.upsert({
       where: { leadId_recruiterId: { leadId: lead.id, recruiterId: req.user!.id } },
@@ -1423,18 +1412,28 @@ leadRouter.post(
 // lead back out of the bin (clears deletedAt/deletedByUserId) as long as its
 // own 30-day window hasn't already elapsed -- past that, recycleBinPurge.job.ts
 // may have already hard-deleted it, so this can legitimately 404.
+//
+// Atomic updateMany re-checking `deletedAt: { not: null }` in its own WHERE
+// (same guarded-update pattern as claimLead/batch-delete above) instead of
+// findUnique-then-update: closes the race against recycleBinPurge.job.ts,
+// which can hard-delete this same row between a separate read and a plain
+// update. That used to surface here as an unhandled Prisma P2025 (500)
+// instead of the 404 this route's own comment promises.
 leadRouter.post(
   "/:id/restore",
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
-    const lead = await prisma.lead.findUnique({ where: { id: req.params.id } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
-    if (!lead.deletedAt) throw new ApiError(400, "LEAD_NOT_IN_BIN", "This lead is not in the recycle bin");
-
-    const restored = await prisma.lead.update({
-      where: { id: lead.id },
+    const result = await prisma.lead.updateMany({
+      where: { id: req.params.id, deletedAt: { not: null } },
       data: { deletedAt: null, deletedByUserId: null },
     });
-    return res.json({ lead: withEnrichedFieldCount(restored) });
+    if (result.count === 0) {
+      const existing = await prisma.lead.findUnique({ where: { id: req.params.id }, select: { id: true } });
+      if (!existing) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+      throw new ApiError(400, "LEAD_NOT_IN_BIN", "This lead is not in the recycle bin");
+    }
+
+    const restored = await prisma.lead.findUnique({ where: { id: req.params.id } });
+    return res.json({ lead: withEnrichedFieldCount(restored!) });
   })
 );

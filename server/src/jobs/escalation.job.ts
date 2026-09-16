@@ -21,7 +21,13 @@ export async function scanForEscalations() {
 async function scanSlaBreaches() {
   const cutoff = new Date(Date.now() - SLA_BREACH_HOURS * 3600_000);
   const breaches = await prisma.interactionEvent.findMany({
-    where: { direction: "INBOUND", isUrgentFlag: true, recruiterRespondedAt: null, occurredAt: { lt: cutoff } },
+    where: {
+      direction: "INBOUND",
+      isUrgentFlag: true,
+      recruiterRespondedAt: null,
+      occurredAt: { lt: cutoff },
+      lead: { deletedAt: null },
+    },
     include: { lead: true },
     take: 50,
   });
@@ -52,7 +58,7 @@ async function scanSlaBreaches() {
 async function scanStaleLeads() {
   const cutoff = new Date(Date.now() - STALE_ON_HOLD_DAYS * 86_400_000);
   const stale = await prisma.lead.findMany({
-    where: { OR: [{ identityResolved: false }, { flags: { has: "ON_HOLD" } }], createdAt: { lt: cutoff } },
+    where: { OR: [{ identityResolved: false }, { flags: { has: "ON_HOLD" } }], createdAt: { lt: cutoff }, deletedAt: null },
     take: 50,
   });
 

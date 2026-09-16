@@ -190,10 +190,11 @@ export async function getOutreachFunnelLeadIds(
   // written. Contractors must only ever see their own leads here, same as
   // everywhere else.
   const leadWhere: any = isOwner
-    ? {}
+    ? { deletedAt: null }
     : isContractor
-      ? { createdByContractorId: requesterId }
+      ? { createdByContractorId: requesterId, deletedAt: null }
       : {
+          deletedAt: null,
           OR: [
             { assignedRecruiterId: requesterId },
             { claimedByRecruiterId: requesterId },
@@ -305,16 +306,16 @@ reportsRouter.get(
   "/data-health",
   requireRole("owner", "recruiter"),
   asyncHandler(async (_req: Request, res: Response) => {
-    const total = await prisma.lead.count();
+    const total = await prisma.lead.count({ where: { deletedAt: null } });
     if (total === 0) {
       return res.json({ total: 0, enrichedPct: 0, verifiedEmailPct: 0, confirmedLanguagePairPct: 0, experienceDataPct: 0 });
     }
 
     const [enriched, verifiedEmail, confirmedLanguagePair, experienceData] = await Promise.all([
-      prisma.lead.count({ where: { enrichmentStatus: "COMPLETE" } }),
-      prisma.lead.count({ where: { email: { not: null } } }),
-      prisma.lead.count({ where: { AND: [{ sourceLanguage: { not: null } }, { targetLanguage: { not: null } }] } }),
-      prisma.lead.count({ where: { yearsOfExperience: { not: null } } }),
+      prisma.lead.count({ where: { enrichmentStatus: "COMPLETE", deletedAt: null } }),
+      prisma.lead.count({ where: { email: { not: null }, deletedAt: null } }),
+      prisma.lead.count({ where: { AND: [{ sourceLanguage: { not: null } }, { targetLanguage: { not: null } }], deletedAt: null } }),
+      prisma.lead.count({ where: { yearsOfExperience: { not: null }, deletedAt: null } }),
     ]);
 
     return res.json({
@@ -433,6 +434,7 @@ reportsRouter.get(
 
     if (type === "leads.csv" || type === "leads-pipeline") {
       const leads = await prisma.lead.findMany({
+        where: { deletedAt: null },
         include: { assignedTo: { select: { name: true } } },
         orderBy: { createdAt: "desc" },
         take: 1000,

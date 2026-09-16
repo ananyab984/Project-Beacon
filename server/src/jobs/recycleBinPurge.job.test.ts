@@ -84,12 +84,31 @@ async function test4_purgeCutoffIsPerItemNotGlobal() {
   assert.strictEqual(oldGone, null, "a lead 45 days into its own window must be purged in the same run");
 }
 
+async function test5_aLeadRestoredJustBeforePurgeSurvivesEvenPastItsOldWindow() {
+  // Regression test for the TOCTOU race this job used to have: it read
+  // candidate ids, then deleted by that id list, so a restore landing
+  // between the read and the delete was silently undone. This pins the fix
+  // (deletedAt re-checked directly in deleteMany's own WHERE) by simulating
+  // the restore happening first -- deletedAt is already cleared by the time
+  // purge runs, exactly as it would be if POST /:id/restore won the race.
+  const lead = await prisma.lead.create({
+    data: { fullName: LEAD_EXPIRED, source: "LINKEDIN", deletedAt: new Date(Date.now() - 45 * DAY_MS) },
+  });
+  await prisma.lead.update({ where: { id: lead.id }, data: { deletedAt: null, deletedByUserId: null } });
+
+  await purgeExpiredRecycleBinLeads();
+
+  const stillThere = await prisma.lead.findUnique({ where: { id: lead.id } });
+  assert.ok(stillThere, "a lead restored before purge runs must survive, even if its old deletedAt was long expired");
+}
+
 async function main() {
   const tests = [
     test1_leadWithinRetentionWindowSurvivesThePurge,
     test2_leadPastItsOwnThirtyDayWindowIsHardDeleted,
     test3_leadNeverSoftDeletedIsUntouched,
     test4_purgeCutoffIsPerItemNotGlobal,
+    test5_aLeadRestoredJustBeforePurgeSurvivesEvenPastItsOldWindow,
   ];
   let failed = 0;
   await cleanup();
