@@ -291,6 +291,81 @@ function RecruiterSettingsPage() {
         </div>
       </section>
 
+      {/* Notification Preferences Section */}
+      <section className="rounded-2xl border border-border bg-card p-6 space-y-4">
+        <div>
+          <h3 className="text-base font-semibold flex items-center gap-2">
+            <Bell className="h-5 w-5 text-primary" /> Notification Preferences
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            The in-app bell is always on for new leads, task assignments, due-date reminders, and escalations. Turn on email or Slack for any type below.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-border text-left text-muted-foreground">
+                <th className="py-2 pr-4 font-medium">Type</th>
+                <th className="py-2 px-4 font-medium">Bell</th>
+                <th className="py-2 px-4 font-medium">Email</th>
+                <th className="py-2 px-4 font-medium">Slack</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/60">
+              {preferences.map((p) => (
+                <tr key={p.type}>
+                  <td className="py-3 pr-4 font-medium text-foreground">{NOTIFICATION_TYPE_LABELS[p.type]}</td>
+                  <td className="py-3 px-4">
+                    {alwaysOnBellTypes.has(p.type) ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </td>
+                  <td className="py-3 px-4">
+                    <Switch
+                      checked={p.emailEnabled}
+                      onCheckedChange={(checked) => updatePrefMutation.mutate({ type: p.type, patch: { emailEnabled: checked } })}
+                    />
+                  </td>
+                  <td className="py-3 px-4">
+                    <Switch
+                      checked={p.slackEnabled}
+                      onCheckedChange={(checked) => updatePrefMutation.mutate({ type: p.type, patch: { slackEnabled: checked } })}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-1.5 border-t border-border pt-4">
+          <Label className="text-xs">Slack Member ID</Label>
+          <p className="text-[11px] text-muted-foreground">
+            Copy your member ID from your Slack profile and paste it here to receive Slack notifications.
+          </p>
+          <div className="flex items-center gap-2">
+            <Input
+              value={slackMemberId}
+              onChange={(e) => setSlackMemberId(e.target.value)}
+              placeholder="U0XXXXXXX"
+              className="text-xs max-w-xs"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={slackMutation.isPending}
+              onClick={() => slackMutation.mutate()}
+              className="text-xs"
+            >
+              Save
+            </Button>
+          </div>
+        </div>
+      </section>
+
       <ConnectAccountDialog open={connectDialogOpen} onOpenChange={setConnectDialogOpen} />
     </div>
   );

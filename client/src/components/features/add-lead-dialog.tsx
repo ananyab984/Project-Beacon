@@ -69,6 +69,7 @@ export function AddLeadDialog({
   const [customService, setCustomService] = useState("");
   const [customTask, setCustomTask] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [sheetUrl, setSheetUrl] = useState("");
 
   function invalidateLeads() {
     queryClient.invalidateQueries({ queryKey: ["leads"] });
@@ -128,6 +129,22 @@ export function AddLeadDialog({
       setOpen(false);
     },
     onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
+  const sheetImportMutation = useMutation({
+    mutationFn: (url: string) => api.importLeadsFromSheet(url),
+    onSuccess: (res) => {
+      if (res.results.length === 0) {
+        toast.info(res.message || "No matching rows found in that sheet.");
+        return;
+      }
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      toast.success(`Imported ${succeeded} of ${res.results.length} rows from Google Sheet`);
+      invalidateLeads();
+      setSheetUrl("");
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to import from Google Sheet"),
   });
 
   function set(k: string, v: string) {
@@ -435,6 +452,24 @@ export function AddLeadDialog({
                 <Upload className="h-3.5 w-3.5" /> Upload file
               </div>
             </label>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            <Input
+              value={sheetUrl}
+              onChange={(e) => setSheetUrl(e.target.value)}
+              placeholder="…or paste a public Google Sheet URL"
+              className="h-8 text-xs bg-card"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={!sheetUrl.trim() || sheetImportMutation.isPending}
+              onClick={() => sheetImportMutation.mutate(sheetUrl.trim())}
+              className="h-8 shrink-0 text-xs"
+            >
+              {sheetImportMutation.isPending ? "Importing…" : "Import"}
+            </Button>
           </div>
         </div>
 

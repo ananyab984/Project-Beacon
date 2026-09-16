@@ -25,9 +25,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
- 
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum UserRole {
@@ -142,11 +141,11 @@ enum LeadSource {
   LINKEDIN
   PROZ
   ADA
-  ATA	
-  ATAA	
-  BODALGO	
-  FREELANCER	
-  APOLLO	
+  ATA
+  ATAA
+  BODALGO
+  FREELANCER
+  APOLLO
 }
 
 enum InteractionDirection {
@@ -296,17 +295,17 @@ model User {
   leadsCreated             Lead[] @relation("CreatedBy")
   leadsCreatedAsContractor Lead[] @relation("ContractorCreator")
 
-  leadsAssigned       Lead[]              @relation("AssignedTo")
-  leadsClaimed        Lead[]              @relation("ClaimedBy")
-  stageChanges        StageHistory[]      @relation("ChangedBy")
-  flagEventsSet       LeadFlagEvent[]     @relation("SetBy")
-  flagEventsConfirmed LeadFlagEvent[]     @relation("ConfirmedBy")
-  interactionsSent    InteractionEvent[]  @relation("SentBy")
-  leadsDeleted        Lead[]              @relation("DeletedBy")
-  manualActivities    ManualActivityLog[]
-  emailQueueItems     EmailQueueItem[]
-  conversations       Conversation[]
-  escalationsOwned    Escalation[]        @relation("EscalationOwner")
+  leadsAssigned             Lead[]                     @relation("AssignedTo")
+  leadsClaimed              Lead[]                     @relation("ClaimedBy")
+  stageChanges              StageHistory[]             @relation("ChangedBy")
+  flagEventsSet             LeadFlagEvent[]            @relation("SetBy")
+  flagEventsConfirmed       LeadFlagEvent[]            @relation("ConfirmedBy")
+  interactionsSent          InteractionEvent[]         @relation("SentBy")
+  leadsDeleted              Lead[]                     @relation("DeletedBy")
+  manualActivities          ManualActivityLog[]
+  emailQueueItems           EmailQueueItem[]
+  conversations             Conversation[]
+  escalationsOwned          Escalation[]               @relation("EscalationOwner")
   replyClassificationEvents ReplyClassificationEvent[]
 
   // Contractor-management (recruiter <-> assigned contractors)
@@ -314,20 +313,20 @@ model User {
   managedBy          ContractorAssignment[] @relation("AssignedContractor")
 
   // Scoring relationships
-  monthlyMetrics RecruiterMonthlyMetric[]
-  scoreSnapshots RecruiterScoreSnapshot[]
-  kpiSummary     RecruiterKpiSummary?
+  monthlyMetrics    RecruiterMonthlyMetric[]
+  scoreSnapshots    RecruiterScoreSnapshot[]
+  kpiSummary        RecruiterKpiSummary?
   clientDemands     ClientDemand[]           @relation("ClientDemandOwner")
   connectedAccounts ConnectedAccount[]
 
   // Client demand / requirement relationships
-  requirementsAssigned         Requirement[]            @relation("RequirementAssignee")
-  requirementAssignmentsAsRec  RequirementAssignment[]  @relation("RequirementAssignmentRecruiter")
-  requirementAssignmentsMade   RequirementAssignment[]  @relation("RequirementAssignedBy")
+  requirementsAssigned        Requirement[]           @relation("RequirementAssignee")
+  requirementAssignmentsAsRec RequirementAssignment[] @relation("RequirementAssignmentRecruiter")
+  requirementAssignmentsMade  RequirementAssignment[] @relation("RequirementAssignedBy")
 
   // Notifications
-  notifications             Notification[]
-  notificationPreferences   NotificationPreference[]
+  notifications                 Notification[]
+  notificationPreferences       NotificationPreference[]
   leadNotificationSubscriptions LeadNotificationSubscription[]
 
   @@map("users")
@@ -397,8 +396,8 @@ model Lead {
   // generic one would reset on any unrelated field write while a run is
   // stuck, masking exactly the staleness this needs to detect.
   enrichmentStartedAt DateTime?        @map("enrichment_started_at")
-  promotedToGlobalAt DateTime?        @map("promoted_to_global_at")
-  justEnrichedUntil  DateTime?        @map("just_enriched_until") // repo: transient "recently enriched" highlight window
+  promotedToGlobalAt  DateTime?        @map("promoted_to_global_at")
+  justEnrichedUntil   DateTime?        @map("just_enriched_until") // repo: transient "recently enriched" highlight window
 
   replyCategoryId           String?               @map("reply_category_id")
   replyCategory             ReplyCategory?        @relation(fields: [replyCategoryId], references: [id], onDelete: SetNull)
@@ -445,7 +444,7 @@ model Lead {
   // round-tripped to the enrichment_pipeline on every enrichLeadById call so
   // a repeat enrichment of the same lead doesn't re-spend an LLM call
   // re-verifying something already settled.
-  fieldSources Json? @map("field_sources")
+  fieldSources   Json?    @map("field_sources")
   // Full-fidelity enrichment payload from Parallel's Task Run (Stage 3.5,
   // LinkedIn-only) -- Experience, Education, Languages, Certifications, etc.
   // The thin canonical fields above (headline, aboutSnippet, ...) are a
@@ -455,18 +454,18 @@ model Lead {
   // "clay_data" name via @map (Parallel replaced Clay in this exact
   // waterfall position; renaming just the Prisma-facing field avoids a
   // migration for what's otherwise the same slot).
-  parallelData Json? @map("clay_data")
+  parallelData   Json?    @map("clay_data")
   // The complete raw Bright Data/Tavily scrape payload, verbatim -- same
   // "nothing dropped" principle as parallelData above, extended to the
   // primary scrape source. Previously computed in orchestrator.py purely for
   // internal LLM-fallback verification and discarded before the response
   // was even built; now persisted so drafting can mine it too.
-  rawScrapeData Json? @map("raw_scrape_data")
+  rawScrapeData  Json?    @map("raw_scrape_data")
   // Verbatim raw output row + citation map from a recruiter-triggered Autumn.ai
   // re-enrichment run (see ReenrichmentRun below) -- same "nothing dropped"
   // principle as parallelData/rawScrapeData, kept separate from both since
   // Autumn is its own task-based path, not a waterfall step.
-  autumnData Json? @map("autumn_data")
+  autumnData     Json?    @map("autumn_data")
 
   // --- source + enrichment (Phase 1: Bright Data / ProZ / Claude wrapper) ---
   source                  LeadSource
@@ -492,15 +491,15 @@ model Lead {
   deletedBy       User?     @relation("DeletedBy", fields: [deletedByUserId], references: [id])
 
   // relations
-  vendorMatches        LeadVendorMatch[]
-  stageHistory         StageHistory[]
-  flagEvents           LeadFlagEvent[]
-  interactionEvents    InteractionEvent[]
-  manualActivityLogs   ManualActivityLog[]
-  emailQueueItems      EmailQueueItem[]
-  conversations        Conversation[]
-  classificationEvents ReplyClassificationEvent[]
-  reenrichmentRuns     ReenrichmentRun[]
+  vendorMatches             LeadVendorMatch[]
+  stageHistory              StageHistory[]
+  flagEvents                LeadFlagEvent[]
+  interactionEvents         InteractionEvent[]
+  manualActivityLogs        ManualActivityLog[]
+  emailQueueItems           EmailQueueItem[]
+  conversations             Conversation[]
+  classificationEvents      ReplyClassificationEvent[]
+  reenrichmentRuns          ReenrichmentRun[]
   notificationSubscriptions LeadNotificationSubscription[]
 
   @@index([enrichmentStatus])
@@ -1275,16 +1274,16 @@ model RecruiterKpiSummary {
 // ----------------------------------------------------------------------------
 
 model ConnectedAccount {
-  id               String        @id @default(uuid())
-  userId           String        @map("user_id")
-  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String          @id @default(uuid())
+  userId           String          @map("user_id")
+  user             User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider         UnipileProvider
-  unipileAccountId String        @unique @map("unipile_account_id")
-  accountName      String?       @map("account_name")
-  status           AccountStatus @default(CONNECTING)
-  statusMessage    String?       @map("status_message")
-  createdAt        DateTime      @default(now()) @map("created_at")
-  updatedAt        DateTime      @updatedAt @map("updated_at")
+  unipileAccountId String          @unique @map("unipile_account_id")
+  accountName      String?         @map("account_name")
+  status           AccountStatus   @default(CONNECTING)
+  statusMessage    String?         @map("status_message")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
 
   degradationHistory AccountDegradation[]
 
@@ -1296,9 +1295,9 @@ model UnipileAuthAttempt {
   id        String          @id @default(uuid())
   userId    String          @map("user_id")
   provider  UnipileProvider
-  nonce     String   @unique
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  nonce     String          @unique
+  expiresAt DateTime        @map("expires_at")
+  createdAt DateTime        @default(now()) @map("created_at")
 
   @@index([userId])
   @@map("unipile_auth_attempts")
@@ -1350,4 +1349,3 @@ model InboundMessage {
   @@index([threadId])
   @@map("inbound_messages")
 }
-

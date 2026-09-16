@@ -47,7 +47,9 @@ import { Route as RecruiterEmailQueueRouteImport } from './routes/recruiter.emai
 import { Route as RecruiterLeadsRouteImport } from './routes/recruiter.leads'
 import { Route as RecruiterPerformanceRouteImport } from './routes/recruiter.performance'
 import { Route as RecruiterSettingsRouteImport } from './routes/recruiter.settings'
+import { Route as OwnerLeadsRecycleBinRouteImport } from './routes/owner.leads_.recycle-bin'
 import { Route as OwnerRecruiterEvaluationIdRouteImport } from './routes/owner.recruiter-evaluation.$id'
+import { Route as RecruiterLeadsRecycleBinRouteImport } from './routes/recruiter.leads_.recycle-bin'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -239,11 +241,22 @@ const RecruiterSettingsRoute = RecruiterSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => RecruiterRoute,
 } as any)
+const OwnerLeadsRecycleBinRoute = OwnerLeadsRecycleBinRouteImport.update({
+  id: '/leads_/recycle-bin',
+  path: '/leads/recycle-bin',
+  getParentRoute: () => OwnerRoute,
+} as any)
 const OwnerRecruiterEvaluationIdRoute =
   OwnerRecruiterEvaluationIdRouteImport.update({
     id: '/recruiter-evaluation/$id',
     path: '/recruiter-evaluation/$id',
     getParentRoute: () => OwnerRoute,
+  } as any)
+const RecruiterLeadsRecycleBinRoute =
+  RecruiterLeadsRecycleBinRouteImport.update({
+    id: '/leads_/recycle-bin',
+    path: '/leads/recycle-bin',
+    getParentRoute: () => RecruiterRoute,
   } as any)
 
 export interface FileRoutesByFullPath {
@@ -285,7 +298,9 @@ export interface FileRoutesByFullPath {
   '/contractor/': typeof ContractorIndexRoute
   '/owner/': typeof OwnerIndexRoute
   '/recruiter/': typeof RecruiterIndexRoute
+  '/owner/leads/recycle-bin': typeof OwnerLeadsRecycleBinRoute
   '/owner/recruiter-evaluation/$id': typeof OwnerRecruiterEvaluationIdRoute
+  '/recruiter/leads/recycle-bin': typeof RecruiterLeadsRecycleBinRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -323,7 +338,9 @@ export interface FileRoutesByTo {
   '/contractor': typeof ContractorIndexRoute
   '/owner': typeof OwnerIndexRoute
   '/recruiter': typeof RecruiterIndexRoute
+  '/owner/leads/recycle-bin': typeof OwnerLeadsRecycleBinRoute
   '/owner/recruiter-evaluation/$id': typeof OwnerRecruiterEvaluationIdRoute
+  '/recruiter/leads/recycle-bin': typeof RecruiterLeadsRecycleBinRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -365,7 +382,9 @@ export interface FileRoutesById {
   '/contractor/': typeof ContractorIndexRoute
   '/owner/': typeof OwnerIndexRoute
   '/recruiter/': typeof RecruiterIndexRoute
+  '/owner/leads_/recycle-bin': typeof OwnerLeadsRecycleBinRoute
   '/owner/recruiter-evaluation/$id': typeof OwnerRecruiterEvaluationIdRoute
+  '/recruiter/leads_/recycle-bin': typeof RecruiterLeadsRecycleBinRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -408,7 +427,9 @@ export interface FileRouteTypes {
     | '/contractor/'
     | '/owner/'
     | '/recruiter/'
+    | '/owner/leads/recycle-bin'
     | '/owner/recruiter-evaluation/$id'
+    | '/recruiter/leads/recycle-bin'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -446,7 +467,9 @@ export interface FileRouteTypes {
     | '/contractor'
     | '/owner'
     | '/recruiter'
+    | '/owner/leads/recycle-bin'
     | '/owner/recruiter-evaluation/$id'
+    | '/recruiter/leads/recycle-bin'
   id:
     | '__root__'
     | '/'
@@ -487,7 +510,9 @@ export interface FileRouteTypes {
     | '/contractor/'
     | '/owner/'
     | '/recruiter/'
+    | '/owner/leads_/recycle-bin'
     | '/owner/recruiter-evaluation/$id'
+    | '/recruiter/leads_/recycle-bin'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -772,12 +797,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecruiterSettingsRouteImport
       parentRoute: typeof RecruiterRoute
     }
+    '/owner/leads_/recycle-bin': {
+      id: '/owner/leads_/recycle-bin'
+      path: '/leads/recycle-bin'
+      fullPath: '/owner/leads/recycle-bin'
+      preLoaderRoute: typeof OwnerLeadsRecycleBinRouteImport
+      parentRoute: typeof OwnerRoute
+    }
     '/owner/recruiter-evaluation/$id': {
       id: '/owner/recruiter-evaluation/$id'
       path: '/recruiter-evaluation/$id'
       fullPath: '/owner/recruiter-evaluation/$id'
       preLoaderRoute: typeof OwnerRecruiterEvaluationIdRouteImport
       parentRoute: typeof OwnerRoute
+    }
+    '/recruiter/leads_/recycle-bin': {
+      id: '/recruiter/leads_/recycle-bin'
+      path: '/leads/recycle-bin'
+      fullPath: '/recruiter/leads/recycle-bin'
+      preLoaderRoute: typeof RecruiterLeadsRecycleBinRouteImport
+      parentRoute: typeof RecruiterRoute
     }
   }
 }
@@ -819,6 +858,7 @@ interface OwnerRouteChildren {
   OwnerReportsRoute: typeof OwnerReportsRoute
   OwnerSettingsRoute: typeof OwnerSettingsRoute
   OwnerIndexRoute: typeof OwnerIndexRoute
+  OwnerLeadsRecycleBinRoute: typeof OwnerLeadsRecycleBinRoute
   OwnerRecruiterEvaluationIdRoute: typeof OwnerRecruiterEvaluationIdRoute
 }
 
@@ -835,6 +875,7 @@ const OwnerRouteChildren: OwnerRouteChildren = {
   OwnerReportsRoute: OwnerReportsRoute,
   OwnerSettingsRoute: OwnerSettingsRoute,
   OwnerIndexRoute: OwnerIndexRoute,
+  OwnerLeadsRecycleBinRoute: OwnerLeadsRecycleBinRoute,
   OwnerRecruiterEvaluationIdRoute: OwnerRecruiterEvaluationIdRoute,
 }
 
@@ -849,6 +890,7 @@ interface RecruiterRouteChildren {
   RecruiterPerformanceRoute: typeof RecruiterPerformanceRoute
   RecruiterSettingsRoute: typeof RecruiterSettingsRoute
   RecruiterIndexRoute: typeof RecruiterIndexRoute
+  RecruiterLeadsRecycleBinRoute: typeof RecruiterLeadsRecycleBinRoute
 }
 
 const RecruiterRouteChildren: RecruiterRouteChildren = {
@@ -860,6 +902,7 @@ const RecruiterRouteChildren: RecruiterRouteChildren = {
   RecruiterPerformanceRoute: RecruiterPerformanceRoute,
   RecruiterSettingsRoute: RecruiterSettingsRoute,
   RecruiterIndexRoute: RecruiterIndexRoute,
+  RecruiterLeadsRecycleBinRoute: RecruiterLeadsRecycleBinRoute,
 }
 
 const RecruiterRouteWithChildren = RecruiterRoute._addFileChildren(
