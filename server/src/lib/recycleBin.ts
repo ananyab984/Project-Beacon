@@ -21,3 +21,12 @@ export function daysUntilPurge(deletedAt: Date, now: Date = new Date()): number 
 export function isPastRetention(deletedAt: Date, now: Date = new Date()): boolean {
   return computePurgeAt(deletedAt).getTime() <= now.getTime();
 }
+
+/** Inverse of computePurgeAt, for querying the DB directly (`deletedAt <=
+ *  purgeCutoff(now)`) instead of reading rows into JS and filtering with
+ *  isPastRetention -- see recycleBinPurge.job.ts, which needs this as a
+ *  literal WHERE condition re-evaluated at transaction time, not a
+ *  precomputed id list from an earlier read. */
+export function purgeCutoff(now: Date = new Date()): Date {
+  return new Date(now.getTime() - RECYCLE_BIN_RETENTION_DAYS * DAY_MS);
+}

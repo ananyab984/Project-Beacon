@@ -11,7 +11,7 @@
  */
 import assert from "node:assert";
 import { prisma } from "../prisma";
-import { buildLeadWhere } from "../services/lead.service";
+import { buildLeadWhere, findDuplicateLead, requireActiveLead } from "../services/lead.service";
 
 const LEAD_ACTIVE = "Test RecycleBin Route Active";
 const LEAD_DELETED = "Test RecycleBin Route Deleted";
@@ -86,12 +86,54 @@ async function test4_restoreClearsDeletedAtAndReturnsTheLeadToTheNormalPool() {
   assert.strictEqual(binHit, null, "a restored lead must no longer appear in the recycle bin query");
 }
 
+async function test5_findDuplicateLeadIgnoresASoftDeletedLead() {
+  // A recruiter re-adding a legitimately-deleted lead (same email, manual
+  // add/CSV/Sheet import) must not be blocked as a duplicate against its own
+  // trashed row for the 30 days it sits in the bin.
+  const email = "recyclebin-dup-check@example.com";
+  await prisma.lead.create({ data: { fullName: LEAD_DELETED, source: "LINKEDIN", email, deletedAt: new Date() } });
+
+  const result = await findDuplicateLead({ email });
+  assert.strictEqual(result.isDuplicate, false, "a soft-deleted lead must never trigger a duplicate match");
+}
+
+async function test6_requireActiveLeadTreatsASoftDeletedLeadAsNotFound() {
+  // Every single-lead action route (flags, retry-enrichment, reenrich, ...)
+  // goes through this helper -- a soft-deleted lead must 404 here exactly
+  // like a genuinely missing id, not still be fully actionable by id.
+  const lead = await prisma.lead.create({ data: { fullName: LEAD_DELETED, source: "LINKEDIN", deletedAt: new Date() } });
+
+  await assert.rejects(
+    () => requireActiveLead(lead.id),
+    (err: any) => err.statusCode === 404,
+    "requireActiveLead must 404 a soft-deleted lead, the same as a missing one"
+  );
+}
+
+async function test7_restoreDoesNotMatchALeadThatIsNotInTheBin() {
+  // Mirrors POST /api/leads/:id/restore's atomic updateMany guard: an
+  // already-active lead's deletedAt is already null, so the `deletedAt: {
+  // not: null }` condition must not match it -- restore is a no-op (the
+  // route turns count === 0 into a 400 LEAD_NOT_IN_BIN), never a silent
+  // success that clears fields that were already clear.
+  const lead = await prisma.lead.create({ data: { fullName: LEAD_ACTIVE, source: "LINKEDIN" } });
+
+  const result = await prisma.lead.updateMany({
+    where: { id: lead.id, deletedAt: { not: null } },
+    data: { deletedAt: null, deletedByUserId: null },
+  });
+  assert.strictEqual(result.count, 0, "restoring a lead that isn't in the bin must match zero rows");
+}
+
 async function main() {
   const tests = [
     test1_buildLeadWhereExcludesSoftDeletedLeadsByDefault,
     test2_batchDeleteSoftDeletesInsteadOfRemovingTheRow,
     test3_batchDeleteIsIdempotentForAlreadyDeletedLeads,
     test4_restoreClearsDeletedAtAndReturnsTheLeadToTheNormalPool,
+    test5_findDuplicateLeadIgnoresASoftDeletedLead,
+    test6_requireActiveLeadTreatsASoftDeletedLeadAsNotFound,
+    test7_restoreDoesNotMatchALeadThatIsNotInTheBin,
   ];
   let failed = 0;
   await cleanup();
