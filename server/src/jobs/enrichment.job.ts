@@ -356,6 +356,8 @@ export async function stallOverdueEnrichments() {
   const overdue = await prisma.lead.findMany({
     where: {
       enrichmentStatus: "IN_PROGRESS",
+      // Never re-touch a lead sitting in the Global Leads recycle bin.
+      deletedAt: null,
       // Also catches leads that were already IN_PROGRESS from before this
       // field existed (confirmed live: two leads stuck for hours predate
       // enrichmentStartedAt entirely) -- a currently-running lead with no
@@ -428,7 +430,7 @@ export async function stallOverdueEnrichments() {
  *  lead. */
 export async function pollPendingEnrichment() {
   const candidates = await prisma.lead.findMany({
-    where: { enrichmentStatus: "PENDING", NOT: { flags: { has: "ON_HOLD" } } },
+    where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
     take: BATCH_SIZE,
     orderBy: { createdAt: "asc" },
     select: { id: true },
@@ -437,7 +439,7 @@ export async function pollPendingEnrichment() {
 
   const candidateIds = candidates.map((l) => l.id);
   await prisma.lead.updateMany({
-    where: { id: { in: candidateIds }, enrichmentStatus: "PENDING" },
+    where: { id: { in: candidateIds }, enrichmentStatus: "PENDING", deletedAt: null },
     data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
   });
 

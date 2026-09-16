@@ -19,7 +19,7 @@ export async function findDuplicateLead(input: {
   // 1. Email check (exact case-insensitive)
   if (email && email.includes("@")) {
     const match = await prisma.lead.findFirst({
-      where: { email: { equals: email, mode: "insensitive" } },
+      where: { email: { equals: email, mode: "insensitive" }, deletedAt: null },
       select: { id: true, fullName: true, displayName: true, email: true },
     });
     if (match) {
@@ -43,6 +43,7 @@ export async function findDuplicateLead(input: {
     if (normalizedLink.length > 5) {
       const match = await prisma.lead.findFirst({
         where: {
+          deletedAt: null,
           OR: [
             { profileLink: { equals: rawProfileLink, mode: "insensitive" } },
             { profileLink: { contains: normalizedLink, mode: "insensitive" } },
@@ -66,7 +67,7 @@ export async function findDuplicateLead(input: {
     const digitsOnly = contactNumber.replace(/\D/g, "");
     if (digitsOnly.length >= 7) {
       const allLeadsWithContact = await prisma.lead.findMany({
-        where: { contactNumber: { not: null } },
+        where: { contactNumber: { not: null }, deletedAt: null },
         select: { id: true, fullName: true, displayName: true, contactNumber: true },
       });
       const match = allLeadsWithContact.find((l) => {
@@ -88,6 +89,7 @@ export async function findDuplicateLead(input: {
   if (fullName && fullName.length >= 3) {
     const match = await prisma.lead.findFirst({
       where: {
+        deletedAt: null,
         OR: [
           { fullName: { equals: fullName, mode: "insensitive" } },
           { displayName: { equals: fullName, mode: "insensitive" } },
@@ -127,19 +129,32 @@ export async function getLeadTimeline(leadId: string) {
   return events;
 }
 
-/** Atomic claim: only succeeds if the lead is currently unclaimed. Guards the
- *  race between two recruiters claiming the same global-pool lead at once. */
+/** Atomic claim: only succeeds if the lead is currently unclaimed and not
+ *  soft-deleted. Guards the race between two recruiters claiming the same
+ *  global-pool lead at once. */
 export async function claimLead(leadId: string, recruiterId: string) {
   const result = await prisma.lead.updateMany({
-    where: { id: leadId, claimedByRecruiterId: null },
+    where: { id: leadId, claimedByRecruiterId: null, deletedAt: null },
     data: { claimedByRecruiterId: recruiterId, claimedAt: new Date(), assignedRecruiterId: recruiterId, assignedAt: new Date() },
   });
   if (result.count === 0) {
     const existing = await prisma.lead.findUnique({ where: { id: leadId } });
-    if (!existing) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    if (!existing || existing.deletedAt) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
     throw new ApiError(409, "ALREADY_CLAIMED", "This lead has already been claimed by another recruiter");
   }
   return prisma.lead.findUnique({ where: { id: leadId } });
+}
+
+/** Shared single-lead lookup for every :id action route (flags, activities,
+ *  retry-enrichment, reenrich, notify-subscription, ...): 404s identically on
+ *  a missing id and a soft-deleted one -- a lead sitting in the Global Leads
+ *  recycle bin must be as inert to these routes as it already is to the
+ *  list/export/mine endpoints (buildLeadWhere above), not still fully
+ *  claimable/flaggable/re-enrichable by id. */
+export async function requireActiveLead(id: string) {
+  const lead = await prisma.lead.findUnique({ where: { id } });
+  if (!lead || lead.deletedAt) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+  return lead;
 }
 
 export function buildLeadWhere(params: {
