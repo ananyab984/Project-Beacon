@@ -10,6 +10,7 @@ import { UnipileService, findReplyAnchor, resolveReplySubject } from "../service
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
+import { isThinProfileDraft } from "../drafting/evaluator";
 import { assertContractorOwnsLead } from "./lead.routes";
 
 export const conversationRouter = Router();
@@ -192,6 +193,7 @@ conversationRouter.post(
     if (!conversation) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
 
     let draft: { subject: string | null; body: string };
+    let lowDataWarning = false;
     try {
       // Previously omitted Headline/About_Snippet/Current_Title/
       // Tools_Software/Certifications entirely -- LinkedIn drafts were
@@ -209,6 +211,7 @@ conversationRouter.post(
           `Cannot draft for this lead yet (${reason}) — add the missing info to the lead first`
         );
       }
+      lowDataWarning = isThinProfileDraft(result.flags);
     } catch (err: any) {
       if (err instanceof ApiError) throw err;
       throw new ApiError(
@@ -218,7 +221,7 @@ conversationRouter.post(
       );
     }
 
-    return res.json({ draft: { body: draft.body } });
+    return res.json({ draft: { body: draft.body }, lowDataWarning });
   })
 );
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -118,6 +118,12 @@ export function ConversationsPageView() {
   }, [filtered, searchThread]);
 
   const conv = searchedFiltered.find((c: ApiConversation) => c.id === id) ?? searchedFiltered[0];
+  // Read inside the async callbacks below to check whether the recruiter has
+  // since switched to a different conversation -- `conv` itself would be
+  // stale (captured when the async call started) inside those closures. Same
+  // stale-response class of bug fixed in email-queue-page-view.tsx.
+  const convIdRef = useRef(conv?.id);
+  useEffect(() => { convIdRef.current = conv?.id; }, [conv?.id]);
 
   useEffect(() => {
     if (!conv) return;
@@ -131,13 +137,25 @@ export function ConversationsPageView() {
 
   const handleGenerateLinkedInDraft = async () => {
     if (!conv) return;
+    const requestedId = conv.id;
+    const requestedLeadLabel = candidateName(conv);
     setIsGeneratingDraft(true);
     try {
-      const { draft: generated } = await api.generateLinkedInDraft(conv.id);
-      setDraft(generated.body);
-      toast.success(`Generated official LinkedIn draft for ${candidateName(conv)}!`);
+      const { draft: generated, lowDataWarning } = await api.generateLinkedInDraft(requestedId);
+      // The recruiter may have switched to a different conversation while
+      // this was generating -- don't overwrite whatever's now on screen with
+      // a draft meant for someone else.
+      if (convIdRef.current === requestedId) setDraft(generated.body);
+      if (lowDataWarning) {
+        toast.warning(
+          `Draft for ${requestedLeadLabel} was generated with limited profile data — add more enrichment info to this lead for a stronger, more personalized draft.`,
+          { duration: 8000 }
+        );
+      } else {
+        toast.success(`Generated official LinkedIn draft for ${requestedLeadLabel}!`);
+      }
     } catch (err: any) {
-      setDraft(getDefaultDraft(candidateName(conv), conv.candidateRole));
+      if (convIdRef.current === requestedId) setDraft(getDefaultDraft(requestedLeadLabel, conv.candidateRole));
       toast.info("Loaded official LinkedIn template draft.");
     } finally {
       setIsGeneratingDraft(false);
@@ -146,8 +164,13 @@ export function ConversationsPageView() {
 
   const handleCheckFaq = async () => {
     if (!conv) return;
+    const requestedId = conv.id;
     const lastLeadMessage = [...conv.messages].reverse().find((m: ApiConversationMessage) => m.sender === "THEM");
-    await checkFaqAndAutofill(lastLeadMessage?.text, setIsCheckingFaq, setDraft);
+    await checkFaqAndAutofill(lastLeadMessage?.text, setIsCheckingFaq, (text) => {
+      // Same stale-response guard as above -- discard if the recruiter has
+      // since moved on to a different conversation.
+      if (convIdRef.current === requestedId) setDraft(text);
+    });
   };
 
   const handleSelectLeadFromSearch = async (lead: ApiLead) => {

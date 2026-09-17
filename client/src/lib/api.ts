@@ -585,7 +585,7 @@ export const api = {
   },
 
   async generateEmailDraft(id: string, to?: string) {
-    return request<{ item: ApiEmailQueueItem }>(`/api/email-queue/${id}/generate-draft`, {
+    return request<{ item: ApiEmailQueueItem; lowDataWarning: boolean }>(`/api/email-queue/${id}/generate-draft`, {
       method: "POST",
       body: JSON.stringify({ to }),
     });
@@ -632,7 +632,7 @@ export const api = {
   },
 
   async generateLinkedInDraft(id: string) {
-    return request<{ draft: { body: string } }>(`/api/conversations/${id}/generate-draft`, {
+    return request<{ draft: { body: string }; lowDataWarning: boolean }>(`/api/conversations/${id}/generate-draft`, {
       method: "POST",
     });
   },
