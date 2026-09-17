@@ -11,6 +11,7 @@ import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { applyLinkFor } from "../lib/onboarding/applyLinkFor";
 import { getDraftingOrchestrator } from "../drafting/instance";
+import { isThinProfileDraft } from "../drafting/evaluator";
 import { assertContractorOwnsLead } from "./lead.routes";
 
 export const emailQueueRouter = Router();
@@ -239,6 +240,11 @@ emailQueueRouter.post(
     }
 
     let draft: { subject: string | null; body: string };
+    // NO_EMAIL/NO_LINKEDIN_PROFILE (missing contact info) is the only case
+    // that blocks drafting entirely -- thin *content* (few enrichment facts)
+    // still gets a real, honestly-grounded draft from whatever facts exist;
+    // see lowDataWarning below instead of refusing it here.
+    let lowDataWarning = false;
     try {
       // Drafting runs in-process (server/src/drafting/) -- no network hop,
       // no DRAFTING_SERVICE_URL to misconfigure.
@@ -260,6 +266,7 @@ emailQueueRouter.post(
           `Cannot draft for this lead yet (${reason}) — add the missing info to the lead first`
         );
       }
+      lowDataWarning = isThinProfileDraft(result.flags);
     } catch (err: any) {
       if (err instanceof ApiError) throw err;
       // Never fabricate a fallback draft here -- surface the failure and let
@@ -282,7 +289,7 @@ emailQueueRouter.post(
         aiDraftText: draft.body,
       },
     });
-    return res.json({ item: updated });
+    return res.json({ item: updated, lowDataWarning });
   })
 );
 
