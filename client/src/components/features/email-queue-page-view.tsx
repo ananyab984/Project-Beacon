@@ -713,15 +713,17 @@ function EmailThread({
     setIsSendingReply(true);
     try {
       // Thread the outbound message under the specific inbound message the
-      // recruiter opened the reply box from, or -- for a self-initiated
-      // follow-up -- under whatever is currently the latest message in the
-      // thread, so it still lands in the same Gmail thread. Unipile's
-      // /emails needs the exact message id as `reply_to` to land in the
-      // same Gmail thread instead of starting a new one.
+      // recruiter opened the reply box from. A follow-up is never anchored
+      // client-side -- `externalMessageId` on an outbound (ME) message is
+      // Unipile's tracking id, not a real mail id, and sending it back as
+      // `reply_to` gets rejected with "The parent mail could not be found"
+      // (422). Leaving it undefined lets the server's own findReplyAnchor
+      // thread under the lead's latest genuine reply, or send fresh if
+      // there isn't one yet -- exactly the right behavior either way.
       const replyToMessageId =
-        (activeReplyId === FOLLOW_UP_ID
-          ? allMessages.find((m) => m.id === latestId)?.externalMessageId
-          : replies.find((r) => r.id === activeReplyId)?.externalMessageId) ?? undefined;
+        activeReplyId === FOLLOW_UP_ID
+          ? undefined
+          : replies.find((r) => r.id === activeReplyId)?.externalMessageId ?? undefined;
       await api.sendConversationMessage(conversationId, replyDraft.trim(), undefined, undefined, replyToMessageId);
       await queryClient.invalidateQueries({ queryKey: ["email-replies", leadId] });
       toast.success(activeReplyId === FOLLOW_UP_ID ? "Follow-up sent" : "Reply sent");
