@@ -699,18 +699,32 @@ function EmailThread({
     await checkFaqAndAutofill(message.text, setIsCheckingFaqForReply, setReplyDraft);
   }
 
+  // A follow-up isn't anchored to a specific inbound message -- the
+  // recruiter is sending on their own initiative, not replying to the lead
+  // -- so it gets its own sentinel id instead of a real message id.
+  const FOLLOW_UP_ID = "__followup__";
+  function openFollowUpBox() {
+    setActiveReplyId(FOLLOW_UP_ID);
+    setReplyDraft("");
+  }
+
   async function sendReply() {
     if (!conversationId || !replyDraft.trim()) return;
     setIsSendingReply(true);
     try {
-      // Thread the outbound reply under the specific inbound message the
-      // recruiter opened the reply box from, not just "the conversation" --
-      // Unipile's /emails needs the exact message id as `reply_to` to land
-      // in the same Gmail thread instead of starting a new one.
-      const replyToMessageId = replies.find((r) => r.id === activeReplyId)?.externalMessageId ?? undefined;
+      // Thread the outbound message under the specific inbound message the
+      // recruiter opened the reply box from, or -- for a self-initiated
+      // follow-up -- under whatever is currently the latest message in the
+      // thread, so it still lands in the same Gmail thread. Unipile's
+      // /emails needs the exact message id as `reply_to` to land in the
+      // same Gmail thread instead of starting a new one.
+      const replyToMessageId =
+        (activeReplyId === FOLLOW_UP_ID
+          ? allMessages.find((m) => m.id === latestId)?.externalMessageId
+          : replies.find((r) => r.id === activeReplyId)?.externalMessageId) ?? undefined;
       await api.sendConversationMessage(conversationId, replyDraft.trim(), undefined, undefined, replyToMessageId);
       await queryClient.invalidateQueries({ queryKey: ["email-replies", leadId] });
-      toast.success("Reply sent");
+      toast.success(activeReplyId === FOLLOW_UP_ID ? "Follow-up sent" : "Reply sent");
       setActiveReplyId(null);
       setReplyDraft("");
     } catch (err: any) {
@@ -834,6 +848,39 @@ function EmailThread({
               </div>
             );
           })}
+
+          <div className="pt-1.5">
+            {activeReplyId === FOLLOW_UP_ID ? (
+              <div className="space-y-1.5">
+                <div className="relative">
+                  <Textarea
+                    value={replyDraft}
+                    onChange={(e) => setReplyDraft(e.target.value)}
+                    placeholder="Type your follow-up…"
+                    className="min-h-[100px] font-sans text-xs leading-relaxed"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2">
+                  <button onClick={() => setActiveReplyId(null)} className="text-[11px] text-muted-foreground hover:underline">
+                    Cancel
+                  </button>
+                  <Button
+                    size="sm"
+                    onClick={sendReply}
+                    disabled={isSendingReply || !replyDraft.trim() || !conversationId}
+                    className="h-7 text-xs bg-primary text-primary-foreground gap-1.5"
+                  >
+                    {isSendingReply ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+                    {isSendingReply ? "Sending…" : "Send follow-up"}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <button onClick={openFollowUpBox} className="text-[11px] font-medium text-primary hover:underline">
+                Send a follow-up
+              </button>
+            )}
+          </div>
         </div>
       )}
     </div>
