@@ -105,6 +105,12 @@ export function EmailQueuePageView() {
 
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const selected = emailQueue.find((e) => e.id === selectedId);
+  // Read inside async callbacks below to check whether the recruiter has
+  // since switched to a different queue item -- `selectedId` itself would
+  // be stale (captured at the time the async call started) inside those
+  // closures.
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [aiPref] = useAiToolsEnabled();
   const ai = FEATURES.ai && aiPref;
   const [body, setBody] = useState("");
@@ -147,7 +153,12 @@ export function EmailQueuePageView() {
   const [replyToId, setReplyToId] = useState<string | undefined>(undefined);
 
   async function handleCheckFaqEmail() {
+    const requestedId = selectedId;
     await checkFaqAndAutofill(lastCandidateEmail, setIsCheckingFaq, (draft) => {
+      // The recruiter may have switched to a different lead while this FAQ
+      // check was in flight -- don't apply another lead's answer to
+      // whatever's now on screen.
+      if (selectedIdRef.current !== requestedId) return;
       setBody(draft);
       markDirty();
     });
@@ -273,19 +284,27 @@ export function EmailQueuePageView() {
 
   async function handleGenerateDraft() {
     if (!selected) return;
+    const requestedId = selected.id;
+    const requestedLeadLabel = candidateName(selected);
     setIsGeneratingDraft(true);
     try {
       // Pass along whatever the recruiter has typed into the TO field --
       // previously this was silently dropped, so a manually-entered email
       // could never unblock a NO_EMAIL-ineligible lead (the field only ever
       // reached the backend at send time, never at draft time).
-      const { item } = await api.generateEmailDraft(selected.id, to.trim() || undefined);
-      setBody(item.body);
-      setSubject(item.subject);
-      setSaveState("saved");
-      setSavedAt(new Date());
+      const { item } = await api.generateEmailDraft(requestedId, to.trim() || undefined);
       queryClient.invalidateQueries({ queryKey: ["email-queue"] });
-      toast.success(`Generated official email draft for ${candidateName(selected)}!`);
+      // The recruiter may have switched to a different queue item while this
+      // was generating -- the draft is safely saved server-side on its own
+      // item regardless, but applying it here would overwrite whatever
+      // lead is now on screen with someone else's draft.
+      if (selectedIdRef.current === requestedId) {
+        setBody(item.body);
+        setSubject(item.subject);
+        setSaveState("saved");
+        setSavedAt(new Date());
+      }
+      toast.success(`Generated official email draft for ${requestedLeadLabel}!`);
     } catch (err: any) {
       if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
         toast.error("Drafting service unavailable — write the message manually");
