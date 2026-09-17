@@ -105,6 +105,12 @@ export function EmailQueuePageView() {
 
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
   const selected = emailQueue.find((e) => e.id === selectedId);
+  // Read inside async callbacks below to check whether the recruiter has
+  // since switched to a different queue item -- `selectedId` itself would
+  // be stale (captured at the time the async call started) inside those
+  // closures.
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
   const [aiPref] = useAiToolsEnabled();
   const ai = FEATURES.ai && aiPref;
   const [body, setBody] = useState("");
@@ -147,7 +153,12 @@ export function EmailQueuePageView() {
   const [replyToId, setReplyToId] = useState<string | undefined>(undefined);
 
   async function handleCheckFaqEmail() {
+    const requestedId = selectedId;
     await checkFaqAndAutofill(lastCandidateEmail, setIsCheckingFaq, (draft) => {
+      // The recruiter may have switched to a different lead while this FAQ
+      // check was in flight -- don't apply another lead's answer to
+      // whatever's now on screen.
+      if (selectedIdRef.current !== requestedId) return;
       setBody(draft);
       markDirty();
     });
@@ -273,19 +284,36 @@ export function EmailQueuePageView() {
 
   async function handleGenerateDraft() {
     if (!selected) return;
+    const requestedId = selected.id;
+    const requestedLeadLabel = candidateName(selected);
     setIsGeneratingDraft(true);
     try {
       // Pass along whatever the recruiter has typed into the TO field --
       // previously this was silently dropped, so a manually-entered email
       // could never unblock a NO_EMAIL-ineligible lead (the field only ever
       // reached the backend at send time, never at draft time).
-      const { item } = await api.generateEmailDraft(selected.id, to.trim() || undefined);
-      setBody(item.body);
-      setSubject(item.subject);
-      setSaveState("saved");
-      setSavedAt(new Date());
+      const { item, lowDataWarning } = await api.generateEmailDraft(requestedId, to.trim() || undefined);
       queryClient.invalidateQueries({ queryKey: ["email-queue"] });
-      toast.success(`Generated official email draft for ${candidateName(selected)}!`);
+      // The recruiter may have switched to a different queue item while this
+      // was generating -- the draft is safely saved server-side on its own
+      // item regardless, but applying it here would overwrite whatever
+      // lead is now on screen with someone else's draft.
+      if (selectedIdRef.current === requestedId) {
+        setBody(item.body);
+        setSubject(item.subject);
+        setSaveState("saved");
+        setSavedAt(new Date());
+      }
+      if (lowDataWarning) {
+        // Still a real, honestly-grounded draft -- just built from a thin
+        // profile, so the recruiter should know before sending it as-is.
+        toast.warning(
+          `Draft for ${requestedLeadLabel} was generated with limited profile data — add more enrichment info to this lead for a stronger, more personalized draft.`,
+          { duration: 8000 }
+        );
+      } else {
+        toast.success(`Generated official email draft for ${requestedLeadLabel}!`);
+      }
     } catch (err: any) {
       if (err.status === 502 || err.code === "DRAFTING_SERVICE_UNAVAILABLE") {
         toast.error("Drafting service unavailable — write the message manually");
@@ -653,6 +681,14 @@ function EmailThread({
   const replies: ApiConversationMessage[] = allMessages.filter((m) => m.sender === "THEM");
   const conversationId = data?.conversation?.id;
 
+  // This component doesn't remount when the recruiter switches to a
+  // different lead (no `key` prop -- the parent just passes new props to
+  // the same instance), so read inside the async FAQ-check callback below to
+  // discard a stale answer meant for whichever lead was showing when it was
+  // requested.
+  const leadIdRef = useRef(leadId);
+  useEffect(() => { leadIdRef.current = leadId; }, [leadId]);
+
   // Every real send (the original cold-outreach email AND every later reply)
   // already lands in allMessages via syncToConversation -- rendering it
   // directly, both ME and THEM, is what keeps every reply visible instead of
@@ -690,13 +726,27 @@ function EmailThread({
   const [isCheckingFaqForReply, setIsCheckingFaqForReply] = useState(false);
   const [isSendingReply, setIsSendingReply] = useState(false);
 
+  // Since this instance persists across a lead switch (see leadIdRef above),
+  // any reply/follow-up box left open for the previous lead must not survive
+  // into the newly-shown one -- otherwise its half-typed text would sit
+  // there ready to be sent under the new lead's conversation.
+  useEffect(() => {
+    setActiveReplyId(null);
+    setReplyDraft("");
+  }, [leadId]);
+
   async function openReplyBox(message: ThreadMessage) {
+    const requestedLeadId = leadId;
     setActiveReplyId(message.id);
     setReplyDraft("");
     // Opening a specific reply's box makes the intent unambiguous (unlike
     // the header's manual "Check FAQ", which only ever guesses at the
     // latest message) -- auto-run the check against exactly this reply.
-    await checkFaqAndAutofill(message.text, setIsCheckingFaqForReply, setReplyDraft);
+    await checkFaqAndAutofill(message.text, setIsCheckingFaqForReply, (draft) => {
+      // Discard if the recruiter has since switched to a different lead.
+      if (leadIdRef.current !== requestedLeadId) return;
+      setReplyDraft(draft);
+    });
   }
 
   // A follow-up isn't anchored to a specific inbound message -- the
@@ -825,7 +875,13 @@ function EmailThread({
                         </div>
                         <div className="flex items-center justify-between">
                           <button
-                            onClick={() => checkFaqAndAutofill(m.text, setIsCheckingFaqForReply, setReplyDraft)}
+                            onClick={() => {
+                              const requestedLeadId = leadId;
+                              checkFaqAndAutofill(m.text, setIsCheckingFaqForReply, (draft) => {
+                                if (leadIdRef.current !== requestedLeadId) return;
+                                setReplyDraft(draft);
+                              });
+                            }}
                             disabled={isCheckingFaqForReply}
                             className="text-[11px] text-cyan-500 hover:underline flex items-center gap-1"
                           >

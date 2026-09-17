@@ -48,6 +48,17 @@ export interface Evaluation {
   flags: string[];
 }
 
+// The two flags evaluate() raises when a draft went out with little or
+// nothing of this lead's own profile to personalize against -- not a
+// drafting failure (the draft is still real and grounded in whatever facts
+// exist), just thin material. Callers surfacing this to a recruiter should
+// say "add more data for a better draft," not treat it as an error.
+const THIN_PROFILE_FLAGS = new Set(["LOW_PERSONALIZATION_DEPTH", "LOW_NAMED_SPECIFICITY"]);
+
+export function isThinProfileDraft(flags: string[]): boolean {
+  return flags.some((f) => THIN_PROFILE_FLAGS.has(f));
+}
+
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
