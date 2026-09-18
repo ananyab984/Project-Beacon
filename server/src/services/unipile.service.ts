@@ -16,7 +16,7 @@ import {
   InboundChannel,
 } from "@prisma/client";
 import { processInboundMessage } from "./processInboundMessage";
-import { createNotification } from "./notification.service";
+import { createNotification, formatLeadResponseSlackCard } from "./notification.service";
 import { getSystemSetting } from "./system-settings.service";
 import { redactForLog } from "../lib/logSanitizer";
 
@@ -188,6 +188,18 @@ export function safeCompare(a: string, b: string): boolean {
   const bufB = Buffer.from(b);
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/** The local ConnectedAccount rows that no longer appear anywhere in
+ * Unipile's live /accounts response -- i.e. removed directly from Unipile's
+ * own dashboard rather than through this app. Exported as a plain function
+ * of its inputs (no Prisma/axios) so the diff itself is directly
+ * unit-testable; getUserConnectedAccounts is the only caller. */
+export function accountsVanishedFromUnipile<T extends { unipileAccountId: string }>(
+  localAccounts: T[],
+  liveAccountIds: Set<string>
+): T[] {
+  return localAccounts.filter((account) => !liveAccountIds.has(account.unipileAccountId));
 }
 
 export class UnipileService {
@@ -421,8 +433,10 @@ export class UnipileService {
         { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
       );
       const items = response.data?.items || response.data || [];
+      const liveAccountIds = new Set<string>();
       if (Array.isArray(items) && items.length > 0) {
         for (const item of items) {
+          liveAccountIds.add(item.id);
           // `/accounts` is scoped to the whole Unipile API key, i.e. every
           // user's accounts, not just this one, and (unlike the webhook's
           // `body.name`) items here carry no correlator back to our
@@ -465,6 +479,33 @@ export class UnipileService {
 
           await this.upsertConnectedAccountForUser(userId, provider, item.id, accountName, mappedStatus, rawStatus);
         }
+      }
+
+      // Reverse direction: the loop above only ever touches accounts
+      // Unipile's /accounts still returns. If this user disconnected/removed
+      // an account directly from Unipile's own dashboard, it simply stops
+      // appearing in that response -- there's no "deleted" entry to map a
+      // status onto -- so a local row left at OK/RECONNECTION_NEEDED read as
+      // "Connected" here forever, Refresh included. `/accounts` is scoped to
+      // the whole Unipile API key (every user, not just this one -- see the
+      // SECURITY comment above), so it's a complete live list to diff
+      // against.
+      const localAccounts = await prisma.connectedAccount.findMany({
+        where: { userId, status: { not: AccountStatus.DISCONNECTED } },
+      });
+      for (const account of accountsVanishedFromUnipile(localAccounts, liveAccountIds)) {
+        await prisma.accountDegradation.create({
+          data: {
+            connectedAccountId: account.id,
+            fromStatus: account.status,
+            toStatus: AccountStatus.DISCONNECTED,
+            reason: "No longer present in Unipile's connected-accounts list",
+          },
+        });
+        await prisma.connectedAccount.update({
+          where: { id: account.id },
+          data: { status: AccountStatus.DISCONNECTED, statusMessage: "Disconnected directly from Unipile" },
+        });
       }
     } catch (err: any) {
       console.warn("Could not sync live Unipile accounts:", err.message);
@@ -1535,6 +1576,7 @@ export class UnipileService {
                 type: "LEAD_RESPONSE",
                 title: `${leadName} replied`,
                 body: `${leadName} sent you a new message: "${excerpt}"`,
+                slackCard: formatLeadResponseSlackCard(leadName, excerpt),
                 link: `/recruiter/leads`,
               }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
             }
