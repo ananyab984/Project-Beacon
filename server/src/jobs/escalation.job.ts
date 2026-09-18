@@ -1,5 +1,5 @@
 import { prisma } from "../prisma";
-import { createNotification } from "../services/notification.service";
+import { createNotification, formatEscalationSlackCard } from "../services/notification.service";
 
 const SLA_BREACH_HOURS = 24;
 const STALE_ON_HOLD_DAYS = 5;
@@ -53,7 +53,7 @@ async function scanSlaBreaches() {
     });
     if (b.lead.assignedRecruiterId) {
       const notificationBody = `${b.lead.fullName ?? b.lead.maskedLabel} replied ${hoursSinceReply}h ago and still hasn't been responded to. ${recommendedAction}`;
-      await mirrorEscalationNotification(b.lead.assignedRecruiterId, title, notificationBody, "/recruiter/leads");
+      await mirrorEscalationNotification(b.lead.assignedRecruiterId, title, notificationBody, detail, recommendedAction, "/recruiter/leads");
     }
   }
 }
@@ -84,7 +84,7 @@ async function scanStaleLeads() {
     });
     if (lead.assignedRecruiterId) {
       const notificationBody = `the lead "${lead.fullName ?? lead.maskedLabel}" has been stuck on hold for ${ageDays} day${ageDays === 1 ? "" : "s"} -- its identity hasn't been resolved or manual enrichment completed yet. ${recommendedAction}`;
-      await mirrorEscalationNotification(lead.assignedRecruiterId, title, notificationBody, "/recruiter/performance");
+      await mirrorEscalationNotification(lead.assignedRecruiterId, title, notificationBody, detail, recommendedAction, "/recruiter/performance");
     }
   }
 }
@@ -136,7 +136,7 @@ async function scanEmailQueueBacklog() {
     // sibling `recommendedAction` field to fall back on, so it's folded in
     // here as a full sentence instead of getting dropped.
     const notificationBody = `your email queue backlog has reached ${backlog} unsent draft${backlog === 1 ? "" : "s"}, over the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold. ${recommendedAction}`;
-    await mirrorEscalationNotification(r.id, title, notificationBody, "/recruiter/email-queue");
+    await mirrorEscalationNotification(r.id, title, notificationBody, detail, recommendedAction, "/recruiter/email-queue");
   }
 }
 
@@ -147,12 +147,20 @@ async function scanEmailQueueBacklog() {
 // has no single deterministic recipient to target, so those stay
 // Escalation-table-only; the owner's EscalationsBell reads that table
 // directly and is unaffected either way.
-async function mirrorEscalationNotification(recruiterId: string, title: string, detail: string, link: string) {
+async function mirrorEscalationNotification(
+  recruiterId: string,
+  title: string,
+  notificationBody: string,
+  detail: string,
+  recommendedAction: string,
+  link: string
+) {
   await createNotification({
     recipientId: recruiterId,
     type: "ESCALATION",
     title,
-    body: detail,
+    body: notificationBody,
+    slackCard: formatEscalationSlackCard(title, detail, recommendedAction, link),
     link,
   }).catch((err) => console.error("[notifications] escalation mirror failed:", err));
 }

@@ -1,6 +1,6 @@
 import { prisma } from "../prisma";
 import { config } from "../config";
-import { createNotification } from "../services/notification.service";
+import { createNotification, formatDueDateReminderSlackCard } from "../services/notification.service";
 
 /** Scans assigned, not-yet-fulfilled Requirements whose deadline falls
  *  within the configured window and reminds the assigned recruiter, once per
@@ -50,6 +50,7 @@ export async function runDueDateReminders() {
       type: "DUE_DATE_REMINDER",
       title,
       body: `the requirement "${requirement.title}" for ${requirement.client.name} ${dueText} -- ${requirement.headcountNeeded} candidate${requirement.headcountNeeded === 1 ? "" : "s"} needed in ${requirement.language} (${requirement.service}). Deadline: ${requirement.deadline!.toDateString()}.`,
+      slackCard: formatDueDateReminderSlackCard(requirement, daysLeft),
       link: `/recruiter/clients`,
     }).catch((err) => console.error("[notifications] due-date reminder notify failed:", err));
   }

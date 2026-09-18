@@ -16,7 +16,7 @@ import {
   InboundChannel,
 } from "@prisma/client";
 import { processInboundMessage } from "./processInboundMessage";
-import { createNotification } from "./notification.service";
+import { createNotification, formatLeadResponseSlackCard } from "./notification.service";
 import { getSystemSetting } from "./system-settings.service";
 
 // Exact, known Unipile account-status strings -> our AccountStatus enum.
@@ -1565,6 +1565,7 @@ export class UnipileService {
                 type: "LEAD_RESPONSE",
                 title: `${leadName} replied`,
                 body: `${leadName} sent you a new message: "${excerpt}"`,
+                slackCard: formatLeadResponseSlackCard(leadName, excerpt),
                 link: `/recruiter/leads`,
               }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
             }

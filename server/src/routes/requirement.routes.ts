@@ -6,7 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
-import { createNotification, formatTaskAssignmentBody } from "../services/notification.service";
+import { createNotification, formatTaskAssignmentBody, formatTaskAssignmentSlackCard } from "../services/notification.service";
 
 export const requirementRouter = Router();
 
@@ -141,6 +141,7 @@ requirementRouter.post(
         type: "TASK_ASSIGNMENT",
         title: `Assigned: ${requirement.title}`,
         body: formatTaskAssignmentBody(requirement, client.name),
+        slackCard: formatTaskAssignmentSlackCard(requirement),
         link: `/recruiter/clients`,
       }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
     }
@@ -295,6 +296,7 @@ requirementRouter.post(
         type: "TASK_ASSIGNMENT",
         title: `Assigned: ${updated.title}`,
         body: formatTaskAssignmentBody(existing, existing.client.name),
+        slackCard: formatTaskAssignmentSlackCard(existing),
         link: `/recruiter/clients`,
       }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
     }

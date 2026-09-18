@@ -1,7 +1,29 @@
 import { prisma } from "../prisma";
 import { NotificationType } from "@prisma/client";
+import { config } from "../config";
 import { UnipileService } from "./unipile.service";
-import { sendSlackDm } from "./slack.service";
+import { sendSlackDm, sendSlackCard } from "./slack.service";
+
+export interface SlackCardField {
+  label: string;
+  value: string;
+}
+
+/** The structured, formatted Slack DM for a notification -- a colored
+ * accent bar, an emoji headline, bold label/value fields, an optional plain-
+ * text note, and an optional link-out button to the exact G3 page this
+ * concerns. Deliberately separate from `title`/`body` (which still drive
+ * the bell and email, and stay plain-text greeting-prefixed) since Slack's
+ * richer surface can show far more structure than a single sentence. */
+export interface SlackCard {
+  emoji: string;
+  headline: string;
+  /** Hex color for the attachment's left accent bar. */
+  color: string;
+  fields: SlackCardField[];
+  note?: string;
+  button?: { text: string; path: string };
+}
 
 interface CreateNotificationInput {
   recipientId: string;
@@ -13,6 +35,53 @@ interface CreateNotificationInput {
    * vague fragment. */
   body: string;
   link?: string;
+  /** When set, Slack gets this formatted card instead of the plain
+   * `title`/body text -- the bell and email are unaffected either way. */
+  slackCard?: SlackCard;
+}
+
+/** Slack's `url` button action is a plain link-out -- no interactivity
+ * endpoint/signing needed, unlike an actionId button. Absolute because
+ * Slack requires a fully-qualified URL; g3's own route guard handles
+ * sending a not-yet-logged-in recruiter to sign in first. */
+function absoluteAppUrl(path: string): string {
+  return `${config.clientUrl.replace(/\/+$/, "")}${path}`;
+}
+
+/** Renders a SlackCard into the Block Kit blocks sendSlackCard nests inside
+ * the colored attachment -- the header/fields/note/button structure shown
+ * in G3's reference notification mockups. */
+export function buildSlackCardBlocks(card: SlackCard): unknown[] {
+  const blocks: unknown[] = [
+    { type: "section", text: { type: "mrkdwn", text: `${card.emoji} *${card.headline}*` } },
+  ];
+
+  if (card.fields.length > 0) {
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: card.fields.map((f) => `*${f.label}:* ${f.value}`).join("\n") },
+    });
+  }
+
+  if (card.note) {
+    blocks.push({ type: "section", text: { type: "mrkdwn", text: card.note } });
+  }
+
+  if (card.button) {
+    blocks.push({
+      type: "actions",
+      elements: [
+        {
+          type: "button",
+          text: { type: "plain_text", text: card.button.text, emoji: true },
+          url: absoluteAppUrl(card.button.path),
+          style: "primary",
+        },
+      ],
+    });
+  }
+
+  return blocks;
 }
 
 /** First name only ("Ananya Sharma" -> "Ananya") -- a full-name greeting
@@ -58,6 +127,91 @@ export function formatTaskAssignmentBody(requirement: TaskAssignmentRequirement,
   );
 }
 
+// Slack's own 4-color brand palette, reused so each notification family has
+// a stable, distinct accent bar (pink is reserved for LEAD_RESPONSE below).
+const TASK_ASSIGNMENT_COLOR = "#2EB67D"; // green
+const BULK_ASSIGNMENT_COLOR = "#36C5F0"; // blue
+const DUE_DATE_REMINDER_COLOR = "#8B5CF6"; // purple
+const LEAD_RESPONSE_COLOR = "#E01E5A"; // pink
+const ESCALATION_COLOR = "#E11D48"; // red -- deliberately distinct from LEAD_RESPONSE's pink
+
+/** TASK_ASSIGNMENT's Slack card. Headcount > 1 reads as a bulk assignment
+ * (different emoji/color/copy) rather than a second notification type --
+ * same underlying event, just enough candidates that "you've been assigned
+ * a task" undersells it. */
+export function formatTaskAssignmentSlackCard(requirement: TaskAssignmentRequirement): SlackCard {
+  const count = requirement.headcountNeeded;
+  const isBulk = count > 1;
+  const fields: SlackCardField[] = [
+    { label: "Task", value: requirement.title },
+    { label: "Language", value: requirement.language },
+    { label: "Type", value: requirement.service },
+    { label: "Candidates", value: String(count) },
+  ];
+  if (requirement.priority !== "STANDARD") fields.push({ label: "Priority", value: requirement.priority });
+  if (requirement.deadline) fields.push({ label: "Deadline", value: requirement.deadline.toDateString() });
+
+  const priorityNote = requirement.priority !== "STANDARD" ? ` This is a ${requirement.priority.toLowerCase()}-priority requirement.` : "";
+  return {
+    emoji: isBulk ? "📋" : "📣",
+    headline: isBulk ? "New bulk assignment" : "You've been assigned a new task!",
+    color: isBulk ? BULK_ASSIGNMENT_COLOR : TASK_ASSIGNMENT_COLOR,
+    fields,
+    note: isBulk ? `You've been assigned ${count} candidates.${priorityNote}` : "Please check the dashboard for more details.",
+    button: { text: isBulk ? "View Candidates" : "View Task", path: "/recruiter/clients" },
+  };
+}
+
+/** DUE_DATE_REMINDER's Slack card. `daysLeft` matches the same calculation
+ * due-date-reminder.job.ts already makes for its title's "is overdue" /
+ * "is due tomorrow" / "is due in N days" wording. */
+export function formatDueDateReminderSlackCard(requirement: TaskAssignmentRequirement, daysLeft: number): SlackCard {
+  const urgency = daysLeft <= 0 ? "(overdue)" : daysLeft === 1 ? "(due tomorrow)" : `(in ${daysLeft} days)`;
+  return {
+    emoji: "⏰",
+    headline: "Task reminder",
+    color: DUE_DATE_REMINDER_COLOR,
+    fields: [
+      { label: "Task", value: requirement.title },
+      { label: "Language", value: requirement.language },
+      { label: "Type", value: requirement.service },
+      { label: "Candidates", value: String(requirement.headcountNeeded) },
+      { label: "Deadline", value: `${requirement.deadline ? requirement.deadline.toDateString() : "—"} ${urgency}` },
+    ],
+    note: daysLeft <= 0 ? "This task is overdue -- please follow up as soon as possible." : "Just a reminder that this task is due soon.",
+    button: { text: "Open Task", path: "/recruiter/clients" },
+  };
+}
+
+/** LEAD_RESPONSE's Slack card -- a lead's inbound reply, quoted. */
+export function formatLeadResponseSlackCard(leadName: string, excerpt: string): SlackCard {
+  return {
+    emoji: "💬",
+    headline: "You have a new message",
+    color: LEAD_RESPONSE_COLOR,
+    fields: [
+      { label: "From", value: leadName },
+      { label: "Message", value: excerpt },
+    ],
+    note: "Please reply in the dashboard or here if needed.",
+    button: { text: "View Conversation", path: "/recruiter/leads" },
+  };
+}
+
+/** ESCALATION's Slack card -- shared by all three escalation.job.ts scan
+ * types (SLA breach, stale on-hold lead, email-queue backlog), each of
+ * which already computes its own title/detail/recommendedAction. */
+export function formatEscalationSlackCard(title: string, detail: string, recommendedAction: string, buttonPath: string): SlackCard {
+  return {
+    emoji: "⚠️",
+    headline: title,
+    color: ESCALATION_COLOR,
+    fields: [{ label: "Detail", value: detail }],
+    note: recommendedAction,
+    button: { text: "View Details", path: buttonPath },
+  };
+}
+
 /**
  * Single funnel every notification source calls through (task assignment,
  * due-date reminder, lead-response, escalation). Writes the Notification row
@@ -94,9 +248,18 @@ export async function createNotification(input: CreateNotificationInput) {
   }
 
   if (preference?.slackEnabled && recipient?.slackMemberId) {
-    sendSlackDm(recipient.slackMemberId, `${input.title}\n${body}`).catch((err) =>
-      console.error("[notifications] slack send failed:", err)
-    );
+    if (input.slackCard) {
+      sendSlackCard(
+        recipient.slackMemberId,
+        input.slackCard.color,
+        buildSlackCardBlocks(input.slackCard),
+        input.title
+      ).catch((err) => console.error("[notifications] slack send failed:", err));
+    } else {
+      sendSlackDm(recipient.slackMemberId, `${input.title}\n${body}`).catch((err) =>
+        console.error("[notifications] slack send failed:", err)
+      );
+    }
   }
 
   return notification;
