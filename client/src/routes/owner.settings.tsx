@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
@@ -403,14 +402,15 @@ function ConnectedAccountsSection() {
 }
 
 /**
- * Org-level notification integrations -- the Slack bot token and the
- * dedicated system-mail account -- managed by the owner in-app (SystemConfig,
- * via /api/system-settings) instead of only as env vars only engineering can
- * change. Lets G3 rotate the token or reconnect the mailbox themselves.
+ * Org-level notification integrations. The Slack bot token is a secret
+ * (SLACK_BOT_TOKEN, set in the deployment environment) -- not owner-editable
+ * app config, unlike the dedicated system-mail account below it, which stays
+ * in SystemConfig via /api/system-settings since it's a reference to an
+ * already-connected account, not a credential. Rotating the Slack token is
+ * an engineering/deploy action; this section only shows whether one's set.
  */
 function NotificationSystemSection() {
   const queryClient = useQueryClient();
-  const [tokenInput, setTokenInput] = useState("");
   const [connecting, setConnecting] = useState(false);
 
   const { data } = useQuery({
@@ -420,25 +420,6 @@ function NotificationSystemSection() {
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["system-notification-settings"] });
-
-  const saveTokenMutation = useMutation({
-    mutationFn: (token: string) => api.setSlackBotToken(token),
-    onSuccess: () => {
-      setTokenInput("");
-      invalidate();
-      toast.success("Slack bot token saved");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to save Slack bot token"),
-  });
-
-  const clearTokenMutation = useMutation({
-    mutationFn: () => api.setSlackBotToken(null),
-    onSuccess: () => {
-      invalidate();
-      toast.success("Slack bot token cleared");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to clear Slack bot token"),
-  });
 
   const removeEmailAccountMutation = useMutation({
     mutationFn: () => api.removeNotificationEmailAccount(),
@@ -502,50 +483,26 @@ function NotificationSystemSection() {
               <div>
                 <div className="text-sm font-semibold text-foreground">Slack bot token</div>
                 <div className="text-[11px] text-muted-foreground">
-                  From the Slack app installed to the G3 workspace
+                  A secret -- set as SLACK_BOT_TOKEN in the deployment environment, not editable here
                 </div>
               </div>
             </div>
-            {data?.slackBotTokenConfigured && (
-              <Badge
-                variant="outline"
-                className="text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 gap-1"
-              >
-                <CheckCircle2 className="h-2.5 w-2.5" /> Configured
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="password"
-              placeholder={
+            <Badge
+              variant="outline"
+              className={
                 data?.slackBotTokenConfigured
-                  ? "•••••••••••••••• (already set — paste a new token to replace)"
-                  : "xoxb-..."
+                  ? "text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 gap-1"
+                  : "text-[9px] px-1.5 py-0 border-warning/40 text-warning gap-1"
               }
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="text-xs"
-            />
-            <Button
-              size="sm"
-              disabled={!tokenInput.trim() || saveTokenMutation.isPending}
-              onClick={() => saveTokenMutation.mutate(tokenInput.trim())}
-              className="text-xs shrink-0"
             >
-              Save
-            </Button>
-            {data?.slackBotTokenConfigured && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={clearTokenMutation.isPending}
-                onClick={() => clearTokenMutation.mutate()}
-                className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
+              {data?.slackBotTokenConfigured ? (
+                <>
+                  <CheckCircle2 className="h-2.5 w-2.5" /> Configured
+                </>
+              ) : (
+                "Not configured"
+              )}
+            </Badge>
           </div>
         </div>
 

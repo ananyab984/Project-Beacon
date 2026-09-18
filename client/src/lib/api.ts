@@ -831,13 +831,6 @@ export const api = {
     return request("/api/system-settings/notifications");
   },
 
-  async setSlackBotToken(token: string | null): Promise<{ configured: boolean }> {
-    return request("/api/system-settings/slack-bot-token", {
-      method: "PATCH",
-      body: JSON.stringify({ token }),
-    });
-  },
-
   async setNotificationEmailAccount(unipileAccountId: string): Promise<{ success: boolean }> {
     return request("/api/system-settings/notification-email-account", {
       method: "POST",
