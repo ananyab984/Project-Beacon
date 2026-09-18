@@ -34,10 +34,6 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   clientUrl: resolveEnv("CLIENT_URL", "http://localhost:5173", isProduction),
   databaseUrl: process.env.DATABASE_URL || "",
-  jwtSecret: process.env.JWT_SECRET || "super_secret_jwt_access_key_global3_2026",
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "15m",
-  refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET || "super_secret_jwt_refresh_key_global3_2026",
-  refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d",
   unipileDsn: process.env.UNIPILE_DSN || "api25.unipile.com:15598",
   // Was `process.env.UNIPILE_API_KEY || ""` -- silently empty if unset,
   // unlike every other Unipile secret in this file. That let a missing key
@@ -55,6 +51,13 @@ export const config = {
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
   enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction),
+  // Shared secret proving a call to the enrichment service actually came
+  // from this server, not an arbitrary caller who found the URL -- the
+  // service has no other authentication and every call triggers real,
+  // paid BrightData/Tavily/Claude usage. Must be set to the same value on
+  // enrichment_pipeline's own deployment (ENRICHMENT_SERVICE_SHARED_SECRET
+  // there too) or every enrichment call starts failing with 401.
+  enrichmentServiceSharedSecret: requireEnv("ENRICHMENT_SERVICE_SHARED_SECRET"),
 
   // Drafting is in-process (server/src/drafting/) -- no service URL to
   // misconfigure. Not requireEnv: the orchestrator throws at call time if

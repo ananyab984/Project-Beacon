@@ -64,12 +64,15 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json());
+// Matches Express's own default (100kb) -- made explicit so it reads as a
+// deliberate choice, not an oversight, and so raising it later is a
+// one-line change.
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 
 // Health Check
 app.get("/health", (req, res) => {
-  res.json({ status: "healthy", service: "global3-server", version: "1.0.0" });
+  res.json({ status: "healthy" });
 });
 
 // API Routes

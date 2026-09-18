@@ -10,6 +10,8 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 
+OUTPUT_RETENTION_DAYS = int(os.environ.get("OUTPUT_RETENTION_DAYS", "7"))
+
 import requests
 from pydantic import BaseModel
 
@@ -66,6 +68,33 @@ def _attach_duplicate_flags(results: list, candidates: list) -> None:
         }
 
 
+def _cleanup_old_output_files(directory: str, retention_days: int) -> None:
+    """Deletes files in `directory` last modified more than `retention_days`
+    ago. CLI-batch-mode only (see run_cli below) -- the live production path
+    (--serve, called by Node's enrichment.job.ts) never writes these files at
+    all, so this never touches anything the running server depends on.
+
+    `output/duplicate_review_queue.json` is a real human-review artifact (the
+    "Danny M rule" log a few lines down exists specifically so someone reads
+    it), and the CLI's own --output result file is the deliverable an
+    operator explicitly asked for -- so this only removes files OLDER than
+    the retention window, never the one a run just wrote, rather than
+    deleting on every run. It exists to bound how long full scraped-profile
+    PII sits on disk, not to interrupt the review workflow.
+    """
+    if not os.path.isdir(directory):
+        return
+    cutoff = time.time() - (retention_days * 86400)
+    for name in os.listdir(directory):
+        path = os.path.join(directory, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                log.info("Removed output file older than %d day(s): %s", retention_days, path)
+        except OSError as exc:
+            log.warning("Could not clean up old output file %s: %s", path, exc)
+
+
 def _write_duplicate_review_queue(candidates: list, threshold: float, total_leads: int) -> None:
     os.makedirs("output", exist_ok=True)
     payload = {
@@ -86,6 +115,11 @@ def _write_duplicate_review_queue(candidates: list, threshold: float, total_lead
 def run_cli(input_path: str, output_path: str, config) -> None:
     """Run pipeline in CLI mode over input JSON file."""
     log.info("Running Enrichment Pipeline CLI on input: %s", input_path)
+    # Deliberately scoped to ONLY the pipeline's own fixed "output/" directory
+    # (where duplicate_review_queue.json lands) -- NOT output_path's directory,
+    # which is operator-supplied and could point anywhere (including the repo
+    # root), making an age-based delete there unsafe.
+    _cleanup_old_output_files("output", OUTPUT_RETENTION_DAYS)
     with open(input_path, "r", encoding="utf-8") as f:
         input_data = json.load(f)
 
@@ -178,8 +212,19 @@ def run_server(host: str, port: int, config) -> None:
     could never start at all, so every enrichment call from Node failed
     before reaching BrightData, not because of a parsing gap.
     """
+    import secrets
     import uvicorn
-    from fastapi import FastAPI, HTTPException
+    from fastapi import Depends, FastAPI, Header, HTTPException
+
+    def verify_shared_secret(x_enrichment_shared_secret: str = Header(default="")) -> None:
+        # Fails CLOSED when the secret isn't configured (see config.py's
+        # enrichment_service_shared_secret comment) -- an unset env var must
+        # never accidentally leave this endpoint open to anyone who finds
+        # its URL, since every call here triggers real, paid provider usage.
+        if not config.enrichment_service_shared_secret or not secrets.compare_digest(
+            x_enrichment_shared_secret, config.enrichment_service_shared_secret
+        ):
+            raise HTTPException(status_code=401, detail="Invalid or missing shared secret")
 
     app = FastAPI(
         title="Project Beacon — Production Enrichment Pipeline",
@@ -228,6 +273,7 @@ def run_server(host: str, port: int, config) -> None:
                 "tavily": bool(config.tavily_api_key),
                 "parallel": bool(config.parallel_api_key),
                 "claude": bool(config.claude_api_key),
+                "enrichment_shared_secret": bool(config.enrichment_service_shared_secret),
             },
             "parallel_processor": (
                 config.parallel_processor
@@ -236,7 +282,7 @@ def run_server(host: str, port: int, config) -> None:
             ),
         }
 
-    @app.post("/enrich", response_model=EnrichmentResponse)
+    @app.post("/enrich", response_model=EnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
     def enrich_single_lead(payload: LeadRequest):
         try:
             lead_dict = payload.model_dump(exclude_unset=True)
@@ -247,7 +293,7 @@ def run_server(host: str, port: int, config) -> None:
             log.exception("Error enriching lead: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @app.post("/enrich/batch", response_model=BatchEnrichmentResponse)
+    @app.post("/enrich/batch", response_model=BatchEnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
     def enrich_batch_leads(payload: List[LeadRequest]):
         try:
             results = []

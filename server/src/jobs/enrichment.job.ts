@@ -118,7 +118,11 @@ export async function enrichLeadById(leadId: string) {
             // `_unverified()`.
             Field_Sources: lead.fieldSources ?? undefined,
           },
-          { timeout: 4_200_000, signal }
+          {
+            timeout: 4_200_000,
+            signal,
+            headers: { "X-Enrichment-Shared-Secret": config.enrichmentServiceSharedSecret },
+          }
         ),
       // A documented exception to the 15s ceiling used everywhere else: this
       // call fans out to BrightData/Tavily/Parallel/Claude web search inside

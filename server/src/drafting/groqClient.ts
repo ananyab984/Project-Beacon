@@ -13,8 +13,13 @@ import Groq from "groq-sdk";
 import type { DraftingConfig } from "./config";
 import type { Completion, ChatOptions } from "./claudeClient";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
+import { CircuitBreaker } from "../lib/circuitBreaker";
 
 export class GroqError extends Error {}
+
+// Module-level, not a class field -- see claudeClient.ts's identical
+// comment. Shared by every GroqClient instance in this process.
+const groqCircuitBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000 });
 
 export class GroqClient {
   private client: Groq;
@@ -36,42 +41,44 @@ export class GroqClient {
     const maxTokens = opts.maxTokens ?? 256;
 
     try {
-      return await retryWithBackoff(
-        async (signal) => {
-          const started = Date.now();
-          const response = await this.client.chat.completions.create(
-            {
-              model,
-              temperature,
-              max_tokens: maxTokens,
-              response_format: jsonMode ? { type: "json_object" } : undefined,
-              messages: [
-                { role: "system", content: system },
-                { role: "user", content: user },
-              ],
-            },
-            { signal }
-          );
-          const latencyMs = Date.now() - started;
-          const text = response.choices[0]?.message?.content ?? "";
-
-          return {
-            text,
-            model: response.model,
-            prompt_tokens: response.usage?.prompt_tokens ?? null,
-            completion_tokens: response.usage?.completion_tokens ?? null,
-            latency_ms: latencyMs,
-          };
-        },
-        {
-          isRetryable: isRetryableByDefault,
-          deadlineMs: 15000,
-          onRetry: (err, attempt, delayMs) => {
-            console.warn(
-              `[groqClient] Groq call failed (attempt ${attempt + 1}/5): ${(err as any)?.message || err} — retrying in ${(delayMs / 1000).toFixed(1)}s`
+      return await groqCircuitBreaker.call(() =>
+        retryWithBackoff(
+          async (signal) => {
+            const started = Date.now();
+            const response = await this.client.chat.completions.create(
+              {
+                model,
+                temperature,
+                max_tokens: maxTokens,
+                response_format: jsonMode ? { type: "json_object" } : undefined,
+                messages: [
+                  { role: "system", content: system },
+                  { role: "user", content: user },
+                ],
+              },
+              { signal }
             );
+            const latencyMs = Date.now() - started;
+            const text = response.choices[0]?.message?.content ?? "";
+
+            return {
+              text,
+              model: response.model,
+              prompt_tokens: response.usage?.prompt_tokens ?? null,
+              completion_tokens: response.usage?.completion_tokens ?? null,
+              latency_ms: latencyMs,
+            };
           },
-        }
+          {
+            isRetryable: isRetryableByDefault,
+            deadlineMs: 15000,
+            onRetry: (err, attempt, delayMs) => {
+              console.warn(
+                `[groqClient] Groq call failed (attempt ${attempt + 1}/5): ${(err as any)?.message || err} — retrying in ${(delayMs / 1000).toFixed(1)}s`
+              );
+            },
+          }
+        )
       );
     } catch (err: any) {
       throw new GroqError(`Groq call failed after retries: ${err?.cause?.message ?? err?.message ?? err}`);

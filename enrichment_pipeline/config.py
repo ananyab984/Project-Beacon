@@ -155,6 +155,18 @@ class Config:
     keepalive_url: str = "http://127.0.0.1:8000"
     keepalive_interval_seconds: int = 600
 
+    # Shared secret required on every /enrich and /enrich/batch call (see
+    # main.py's verify_shared_secret) -- proves the call came from Global3's
+    # own server, not an arbitrary caller who found this service's URL. Must
+    # match server/.env's own ENRICHMENT_SERVICE_SHARED_SECRET exactly.
+    # Deliberately NOT enforced via require_keys/ConfigError like the
+    # provider keys above (this service is designed to always boot and
+    # report a degraded state via /health, never crash at startup) --
+    # instead the auth check itself fails CLOSED (rejects every request)
+    # when this is empty, so an unset secret can never accidentally leave
+    # the endpoint open.
+    enrichment_service_shared_secret: str = ""
+
     def masked_key(self, key: str) -> str:
         if not key:
             return "<empty>"
@@ -220,4 +232,5 @@ def load_config(require_keys: bool = False) -> Config:
         keepalive_enabled=keepalive_enabled,
         keepalive_url=keepalive_url or "http://127.0.0.1:8000",
         keepalive_interval_seconds=keepalive_interval_seconds,
+        enrichment_service_shared_secret=os.getenv("ENRICHMENT_SERVICE_SHARED_SECRET", "").strip(),
     )
