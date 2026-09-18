@@ -1,5 +1,4 @@
 import axios from "axios";
-import { getSystemSetting } from "./system-settings.service";
 
 /**
  * Sends a direct message via G3's one company-wide Slack bot. Uses axios
@@ -9,11 +8,13 @@ import { getSystemSetting } from "./system-settings.service";
  * no-ops if the bot isn't configured yet, or if this particular recruiter
  * hasn't pasted their Slack member id -- matches the spec: "nothing breaks."
  *
- * The bot token is owner-configurable in-app (see system-settings.routes.ts)
- * rather than an env-var-only value, so G3 can rotate/set it themselves.
+ * The bot token is a secret, not org-configuration -- it lives in
+ * SLACK_BOT_TOKEN (env var, set in the deployment environment) rather than
+ * SystemConfig, unlike the Unipile notification-mailbox setting below it in
+ * system-settings.routes.ts. Rotating it is an engineering/deploy action.
  */
 export async function sendSlackDm(slackMemberId: string, text: string): Promise<void> {
-  const botToken = await getSystemSetting("SLACK_BOT_TOKEN");
+  const botToken = process.env.SLACK_BOT_TOKEN;
   if (!botToken) {
     console.warn("[slack] Slack bot token not configured -- skipping Slack notification");
     return;

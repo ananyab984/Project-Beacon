@@ -16,14 +16,14 @@ systemSettingsRouter.use(requireRole("owner"));
 const EMAIL_PROVIDERS = ["EMAIL", "GOOGLE", "MAIL", "OUTLOOK"];
 
 // GET /api/system-settings/notifications — owner-only status view. Never
-// echoes the Slack token back, only whether one is set.
+// echoes the Slack token back, only whether one is set. The Slack bot token
+// itself is a secret (SLACK_BOT_TOKEN, set in the deployment environment),
+// not owner-editable app config -- unlike the Unipile notification-mailbox
+// setting below, there's no PATCH route for it.
 systemSettingsRouter.get(
   "/notifications",
   asyncHandler(async (_req: Request, res: Response) => {
-    const [slackBotToken, notificationAccountId] = await Promise.all([
-      getSystemSetting("SLACK_BOT_TOKEN"),
-      getSystemSetting("UNIPILE_SYSTEM_ACCOUNT_ID"),
-    ]);
+    const notificationAccountId = await getSystemSetting("UNIPILE_SYSTEM_ACCOUNT_ID");
 
     const notificationAccount = notificationAccountId
       ? await prisma.connectedAccount.findFirst({
@@ -33,19 +33,9 @@ systemSettingsRouter.get(
       : null;
 
     return res.json({
-      slackBotTokenConfigured: !!slackBotToken,
+      slackBotTokenConfigured: !!process.env.SLACK_BOT_TOKEN,
       notificationAccount,
     });
-  })
-);
-
-// PATCH /api/system-settings/slack-bot-token — set or clear (token: null) the org's Slack bot token
-systemSettingsRouter.patch(
-  "/slack-bot-token",
-  asyncHandler(async (req: Request, res: Response) => {
-    const { token } = z.object({ token: z.string().min(1).nullable() }).parse(req.body);
-    await setSystemSetting("SLACK_BOT_TOKEN", token, "Slack bot token for recruiter DM notifications");
-    return res.json({ configured: !!token });
   })
 );
 
