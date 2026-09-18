@@ -212,8 +212,19 @@ def run_server(host: str, port: int, config) -> None:
     could never start at all, so every enrichment call from Node failed
     before reaching BrightData, not because of a parsing gap.
     """
+    import secrets
     import uvicorn
-    from fastapi import FastAPI, HTTPException
+    from fastapi import Depends, FastAPI, Header, HTTPException
+
+    def verify_shared_secret(x_enrichment_shared_secret: str = Header(default="")) -> None:
+        # Fails CLOSED when the secret isn't configured (see config.py's
+        # enrichment_service_shared_secret comment) -- an unset env var must
+        # never accidentally leave this endpoint open to anyone who finds
+        # its URL, since every call here triggers real, paid provider usage.
+        if not config.enrichment_service_shared_secret or not secrets.compare_digest(
+            x_enrichment_shared_secret, config.enrichment_service_shared_secret
+        ):
+            raise HTTPException(status_code=401, detail="Invalid or missing shared secret")
 
     app = FastAPI(
         title="Project Beacon — Production Enrichment Pipeline",
@@ -262,6 +273,7 @@ def run_server(host: str, port: int, config) -> None:
                 "tavily": bool(config.tavily_api_key),
                 "parallel": bool(config.parallel_api_key),
                 "claude": bool(config.claude_api_key),
+                "enrichment_shared_secret": bool(config.enrichment_service_shared_secret),
             },
             "parallel_processor": (
                 config.parallel_processor
@@ -270,7 +282,7 @@ def run_server(host: str, port: int, config) -> None:
             ),
         }
 
-    @app.post("/enrich", response_model=EnrichmentResponse)
+    @app.post("/enrich", response_model=EnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
     def enrich_single_lead(payload: LeadRequest):
         try:
             lead_dict = payload.model_dump(exclude_unset=True)
@@ -281,7 +293,7 @@ def run_server(host: str, port: int, config) -> None:
             log.exception("Error enriching lead: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    @app.post("/enrich/batch", response_model=BatchEnrichmentResponse)
+    @app.post("/enrich/batch", response_model=BatchEnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
     def enrich_batch_leads(payload: List[LeadRequest]):
         try:
             results = []
