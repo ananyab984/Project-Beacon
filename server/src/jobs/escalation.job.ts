@@ -35,22 +35,25 @@ async function scanSlaBreaches() {
   for (const b of breaches) {
     if (await escalationExists("SLA Breach", b.leadId)) continue;
     const hoursOverdue = (Date.now() - b.occurredAt.getTime()) / 3600_000 - SLA_BREACH_HOURS;
+    const hoursSinceReply = Math.round((Date.now() - b.occurredAt.getTime()) / 3600_000);
     const title = `Unanswered high-priority reply — ${b.lead.fullName ?? b.lead.maskedLabel}`;
-    const detail = `Lead replied ${Math.round((Date.now() - b.occurredAt.getTime()) / 3600_000)}h ago and hasn't been responded to.`;
+    const detail = `Lead replied ${hoursSinceReply}h ago and hasn't been responded to.`;
+    const recommendedAction = "Respond to this lead immediately to avoid losing engagement momentum.";
     await prisma.escalation.create({
       data: {
         priority: "P1",
         category: "SLA Breach",
         title,
         detail,
-        recommendedAction: "Respond to this lead immediately to avoid losing engagement momentum.",
+        recommendedAction,
         slaHoursRemaining: -Math.round(hoursOverdue),
         leadId: b.leadId,
         recruiterId: b.lead.assignedRecruiterId,
       },
     });
     if (b.lead.assignedRecruiterId) {
-      await mirrorEscalationNotification(b.lead.assignedRecruiterId, title, detail, "/recruiter/leads");
+      const notificationBody = `${b.lead.fullName ?? b.lead.maskedLabel} replied ${hoursSinceReply}h ago and still hasn't been responded to. ${recommendedAction}`;
+      await mirrorEscalationNotification(b.lead.assignedRecruiterId, title, notificationBody, "/recruiter/leads");
     }
   }
 }
@@ -67,19 +70,21 @@ async function scanStaleLeads() {
     const ageDays = Math.round((Date.now() - lead.createdAt.getTime()) / 86_400_000);
     const title = `Lead stuck On Hold for ${ageDays}d — ${lead.fullName ?? lead.maskedLabel}`;
     const detail = "This lead has not had its identity resolved / manual enrichment completed.";
+    const recommendedAction = "Complete manual enrichment to promote this lead to the Global pool, or close it out.";
     await prisma.escalation.create({
       data: {
         priority: ageDays > STALE_ON_HOLD_DAYS * 2 ? "P2" : "P3",
         category: "Recruiter Performance",
         title,
         detail,
-        recommendedAction: "Complete manual enrichment to promote this lead to the Global pool, or close it out.",
+        recommendedAction,
         leadId: lead.id,
         recruiterId: lead.assignedRecruiterId,
       },
     });
     if (lead.assignedRecruiterId) {
-      await mirrorEscalationNotification(lead.assignedRecruiterId, title, detail, "/recruiter/performance");
+      const notificationBody = `the lead "${lead.fullName ?? lead.maskedLabel}" has been stuck on hold for ${ageDays} day${ageDays === 1 ? "" : "s"} -- its identity hasn't been resolved or manual enrichment completed yet. ${recommendedAction}`;
+      await mirrorEscalationNotification(lead.assignedRecruiterId, title, notificationBody, "/recruiter/performance");
     }
   }
 }
@@ -115,17 +120,23 @@ async function scanEmailQueueBacklog() {
     if (existing) continue;
     const title = `${r.name}'s email queue has ${backlog} unsent drafts`;
     const detail = `Backlog exceeds the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold.`;
+    const recommendedAction = "Review and send or discard queued drafts to keep outreach timely.";
     await prisma.escalation.create({
       data: {
         priority: "P2",
         category: "Email Queue Threshold Alert",
         title,
         detail,
-        recommendedAction: "Review and send or discard queued drafts to keep outreach timely.",
+        recommendedAction,
         recruiterId: r.id,
       },
     });
-    await mirrorEscalationNotification(r.id, title, detail, "/recruiter/email-queue");
+    // Fuller than the Escalation table's own `detail` -- that field is read
+    // on its own elsewhere, but the notification (bell/email/Slack) has no
+    // sibling `recommendedAction` field to fall back on, so it's folded in
+    // here as a full sentence instead of getting dropped.
+    const notificationBody = `your email queue backlog has reached ${backlog} unsent draft${backlog === 1 ? "" : "s"}, over the ${EMAIL_QUEUE_BACKLOG_THRESHOLD}-item threshold. ${recommendedAction}`;
+    await mirrorEscalationNotification(r.id, title, notificationBody, "/recruiter/email-queue");
   }
 }
 

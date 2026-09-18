@@ -1517,11 +1517,13 @@ export class UnipileService {
             });
             if (subs.length > 0) {
               const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+              const leadName = lead?.fullName ?? lead?.maskedLabel ?? "a lead";
+              const excerpt = messageText.length > 200 ? `${messageText.slice(0, 200)}…` : messageText;
               for (const sub of subs) createNotification({
                 recipientId: sub.recruiterId,
                 type: "LEAD_RESPONSE",
-                title: `${lead?.fullName ?? lead?.maskedLabel ?? "A lead"} replied`,
-                body: messageText.slice(0, 200),
+                title: `${leadName} replied`,
+                body: `${leadName} sent you a new message: "${excerpt}"`,
                 link: `/recruiter/leads`,
               }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
             }

@@ -18,7 +18,6 @@ import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFie
 import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
-import { createNotification } from "../services/notification.service";
 import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
 
 export const leadRouter = Router();
@@ -518,15 +517,11 @@ leadRouter.post(
       enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
     });
 
-    if (lead.assignedRecruiterId) {
-      await createNotification({
-        recipientId: lead.assignedRecruiterId,
-        type: "NEW_LEAD",
-        title: `New lead: ${lead.fullName || lead.maskedLabel}`,
-        body: `A new lead was added and assigned to you.`,
-        link: `/recruiter/leads`,
-      }).catch((err) => console.error("[notifications] new lead notify failed:", err));
-    }
+    // NEW_LEAD is reserved for a genuine external application landing via the
+    // public apply webhook (not built yet) -- a recruiter/owner manually
+    // adding or importing a lead here isn't "an application," so this must
+    // not fire NEW_LEAD. Wire the real trigger into that webhook handler
+    // when it exists instead of here.
 
     return res.status(201).json({ lead: withEnrichedFieldCount(lead), duplicateWarning: dup.isDuplicate ? dup : null });
   })
@@ -630,15 +625,8 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
           enrichLeadById(lead.id).catch((err) => console.error("Immediate bulk enrichment error:", err));
         });
 
-        if (lead.assignedRecruiterId) {
-          createNotification({
-            recipientId: lead.assignedRecruiterId,
-            type: "NEW_LEAD",
-            title: `New lead: ${lead.fullName || lead.maskedLabel}`,
-            body: `A new lead was imported and assigned to you.`,
-            link: `/recruiter/leads`,
-          }).catch((err) => console.error("[notifications] new lead notify failed:", err));
-        }
+        // See the single-create route above: NEW_LEAD is reserved for the
+        // (not yet built) public apply webhook, not a manual/bulk import.
 
         results.push({ index: i, status: dup.isDuplicate ? "duplicate" : "accepted", leadId: lead.id });
       } catch (err: any) {
