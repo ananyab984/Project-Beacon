@@ -33,8 +33,6 @@ const MIN_POLL_DELAY_MS = 2_000;
 const BASE_POLL_DELAY_MS = 5_000;
 const MAX_POLL_DELAY_MS = 30_000;
 
-let creditsShapeLogged = false;
-
 export interface CreditSnapshot {
   used: number | null;
   remaining: number | null;
@@ -79,10 +77,6 @@ async function autumnGet<T = any>(path: string): Promise<T> {
 async function getCreditSnapshot(): Promise<CreditSnapshot | null> {
   try {
     const data = await autumnGet<Record<string, unknown>>("/credits");
-    if (!creditsShapeLogged) {
-      console.log(`[reenrichment] raw GET /credits body: ${JSON.stringify(data)}`);
-      creditsShapeLogged = true;
-    }
     return parseCreditSnapshot(data);
   } catch (err: any) {
     console.warn(`[reenrichment] could not read credit balance: ${err?.message || err}`);

@@ -18,6 +18,7 @@ import {
 import { processInboundMessage } from "./processInboundMessage";
 import { createNotification } from "./notification.service";
 import { getSystemSetting } from "./system-settings.service";
+import { redactForLog } from "../lib/logSanitizer";
 
 // Exact, known Unipile account-status strings -> our AccountStatus enum.
 // Deliberately an exact-match table, not substring matching: a status like
@@ -1407,7 +1408,7 @@ export class UnipileService {
             });
             console.log(`[unipile webhook] Matched inbound email to conversation ${conversation.id} via lead-email identity (chatId=${chatId}).`);
           } else if (candidates.length > 1) {
-            console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${fromIdentity} -- refusing to guess.`);
+            console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${redactForLog(fromIdentity)} -- refusing to guess.`);
           }
         }
 
