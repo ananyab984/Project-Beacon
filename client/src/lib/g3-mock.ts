@@ -863,8 +863,15 @@ function parseCsvRow(line: string): string[] {
   return res;
 }
 
+/** A parsed CSV/Excel row -- the mock Lead shape plus the real contact
+ * fields (email/phone/profile_link) callers actually need to check
+ * duplicates and create the real lead against, which Lead itself has no
+ * room for (masked_label/verified_email are display/mock concerns, not
+ * contact data). */
+export type ParsedLeadRow = Omit<Lead, "id"> & { email?: string; phone?: string; profile_link?: string };
+
 /** Helper: Parse CSV/Excel sheet text content into Lead objects. */
-export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
+export function parseCsvLeads(csvText: string): ParsedLeadRow[] {
   const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length <= 1) return [];
   return mapRowsToLeads(lines.map(parseCsvRow));
@@ -881,7 +888,7 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
  * `xlsx` package into the same string[][] shape) reuse identical field
  * mapping instead of XLSX and CSV silently drifting apart.
  */
-export function mapRowsToLeads(rows: string[][]): Omit<Lead, "id">[] {
+export function mapRowsToLeads(rows: string[][]): ParsedLeadRow[] {
   if (rows.length <= 1) return [];
   const headers = rows[0].map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
   const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
@@ -898,7 +905,7 @@ export function mapRowsToLeads(rows: string[][]): Omit<Lead, "id">[] {
   const vendorIdx = findIdx(["vendorexperience", "vendor", "clients", "history"]);
   const sourceIdx = findIdx(["source", "channel", "platform", "origin"]);
 
-  const result: Array<Omit<Lead, "id"> & { email?: string; phone?: string; profile_link?: string }> = [];
+  const result: ParsedLeadRow[] = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
