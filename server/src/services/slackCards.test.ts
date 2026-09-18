@@ -43,7 +43,7 @@ function test2_multipleCandidatesReadAsBulkAssignment() {
   const card = formatTaskAssignmentSlackCard(requirement({ headcountNeeded: 8, priority: "HIGH" }));
   assert.strictEqual(card.emoji, "📋");
   assert.strictEqual(card.headline, "New bulk assignment");
-  assert.strictEqual(card.button?.text, "View Candidates");
+  assert.strictEqual(card.button?.text, "View Client");
   assert.match(card.note!, /assigned 8 candidates/);
   assert.match(card.note!, /high-priority/);
 }
