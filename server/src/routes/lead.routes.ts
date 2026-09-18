@@ -955,16 +955,23 @@ leadRouter.patch(
           });
 
           if (matchingReq) {
-            const newFilled = matchingReq.filled + 1;
-            const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
-            await prisma.requirement.update({
+            // Atomic at the DB level (UPDATE ... SET filled = filled + 1) --
+            // fixes a lost-increment race where two leads onboarding into
+            // the same requirement at once could both read the same
+            // starting `filled` value and overwrite each other. gap/status
+            // are derived from THIS update's own returned row, not the
+            // pre-write snapshot.
+            const updatedReq = await prisma.requirement.update({
               where: { id: matchingReq.id },
-              data: {
-                filled: newFilled,
-                gap: newGap,
-                status: newGap === 0 ? "FULFILLED" : matchingReq.status,
-              },
+              data: { filled: { increment: 1 } },
             });
+            const newGap = Math.max(0, updatedReq.headcountNeeded - updatedReq.filled);
+            if (newGap !== updatedReq.gap || (newGap === 0 && updatedReq.status !== "FULFILLED")) {
+              await prisma.requirement.update({
+                where: { id: matchingReq.id },
+                data: { gap: newGap, status: newGap === 0 ? "FULFILLED" : updatedReq.status },
+              });
+            }
 
             const matchingDemand = await prisma.clientDemand.findFirst({
               where: {
@@ -974,12 +981,14 @@ leadRouter.patch(
               },
             });
             if (matchingDemand) {
-              const dFilled = matchingDemand.filled + 1;
-              const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
-              await prisma.clientDemand.update({
+              const updatedDemand = await prisma.clientDemand.update({
                 where: { id: matchingDemand.id },
-                data: { filled: dFilled, gap: dGap },
+                data: { filled: { increment: 1 } },
               });
+              const dGap = Math.max(0, updatedDemand.headcountNeeded - updatedDemand.filled);
+              if (dGap !== updatedDemand.gap) {
+                await prisma.clientDemand.update({ where: { id: matchingDemand.id }, data: { gap: dGap } });
+              }
             }
           }
         } else if (existing.stage === "ONBOARDED") {
@@ -992,16 +1001,25 @@ leadRouter.patch(
           });
 
           if (matchingReq) {
-            const newFilled = Math.max(0, matchingReq.filled - 1);
-            const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
-            await prisma.requirement.update({
-              where: { id: matchingReq.id },
-              data: {
-                filled: newFilled,
-                gap: newGap,
-                status: matchingReq.status === "FULFILLED" ? "ACTIVE" : matchingReq.status,
-              },
+            // Guarded atomic decrement -- `filled` must never go below 0.
+            // The `filled: { gt: 0 }` guard on the WHERE clause makes this
+            // safe even if a concurrent decrement already brought it to 0
+            // between the findFirst above and this write: count === 0 means
+            // someone else already handled it, so there's nothing left to do.
+            const decremented = await prisma.requirement.updateMany({
+              where: { id: matchingReq.id, filled: { gt: 0 } },
+              data: { filled: { decrement: 1 } },
             });
+            if (decremented.count > 0) {
+              const updatedReq = await prisma.requirement.findUniqueOrThrow({ where: { id: matchingReq.id } });
+              const newGap = Math.max(0, updatedReq.headcountNeeded - updatedReq.filled);
+              if (newGap !== updatedReq.gap || (updatedReq.status === "FULFILLED" && newGap > 0)) {
+                await prisma.requirement.update({
+                  where: { id: matchingReq.id },
+                  data: { gap: newGap, status: updatedReq.status === "FULFILLED" ? "ACTIVE" : updatedReq.status },
+                });
+              }
+            }
 
             const matchingDemand = await prisma.clientDemand.findFirst({
               where: {
@@ -1011,12 +1029,17 @@ leadRouter.patch(
               },
             });
             if (matchingDemand) {
-              const dFilled = Math.max(0, matchingDemand.filled - 1);
-              const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
-              await prisma.clientDemand.update({
-                where: { id: matchingDemand.id },
-                data: { filled: dFilled, gap: dGap },
+              const decrementedDemand = await prisma.clientDemand.updateMany({
+                where: { id: matchingDemand.id, filled: { gt: 0 } },
+                data: { filled: { decrement: 1 } },
               });
+              if (decrementedDemand.count > 0) {
+                const updatedDemand = await prisma.clientDemand.findUniqueOrThrow({ where: { id: matchingDemand.id } });
+                const dGap = Math.max(0, updatedDemand.headcountNeeded - updatedDemand.filled);
+                if (dGap !== updatedDemand.gap) {
+                  await prisma.clientDemand.update({ where: { id: matchingDemand.id }, data: { gap: dGap } });
+                }
+              }
             }
           }
         }
