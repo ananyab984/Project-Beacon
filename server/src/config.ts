@@ -34,10 +34,6 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   clientUrl: resolveEnv("CLIENT_URL", "http://localhost:5173", isProduction),
   databaseUrl: process.env.DATABASE_URL || "",
-  jwtSecret: process.env.JWT_SECRET || "super_secret_jwt_access_key_global3_2026",
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "15m",
-  refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET || "super_secret_jwt_refresh_key_global3_2026",
-  refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d",
   unipileDsn: process.env.UNIPILE_DSN || "api25.unipile.com:15598",
   // Was `process.env.UNIPILE_API_KEY || ""` -- silently empty if unset,
   // unlike every other Unipile secret in this file. That let a missing key
