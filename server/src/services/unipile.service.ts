@@ -179,6 +179,16 @@ export function stripQuotedReplyHistory(text: string): string {
   return stripped || text.trim();
 }
 
+/** Constant-time string comparison for secrets — a plain `!==` on a fixed
+ * webhook path token/secret leaks a timing signal proportional to how many
+ * leading characters match. Exported for webhookAuth.test.ts. */
+export function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
 export class UnipileService {
   private static getUnipileBaseUrl(): string {
     let dsn = (config.unipileDsn || "api25.unipile.com:15598").trim();
@@ -985,11 +995,11 @@ export class UnipileService {
    * Unified Webhook Event Handler (Idempotent & Deduplicated)
    */
   static async handleWebhookEvent(token: string, secretHeader: string | undefined, body: any) {
-    if (token !== config.unipileWebhookPathToken) {
+    if (!safeCompare(token, config.unipileWebhookPathToken)) {
       throw { statusCode: 401, message: "Invalid webhook path token" };
     }
 
-    if (secretHeader !== config.unipileWebhookSecret) {
+    if (!safeCompare(secretHeader || "", config.unipileWebhookSecret)) {
       throw { statusCode: 401, message: "Invalid webhook secret header" };
     }
 
