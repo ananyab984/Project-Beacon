@@ -158,7 +158,7 @@ export function formatTaskAssignmentSlackCard(requirement: TaskAssignmentRequire
     color: isBulk ? BULK_ASSIGNMENT_COLOR : TASK_ASSIGNMENT_COLOR,
     fields,
     note: isBulk ? `You've been assigned ${count} candidates.${priorityNote}` : "Please check the dashboard for more details.",
-    button: { text: isBulk ? "View Candidates" : "View Task", path: "/recruiter/clients" },
+    button: { text: isBulk ? "View Client" : "View Task", path: "/recruiter/clients" },
   };
 }
 
