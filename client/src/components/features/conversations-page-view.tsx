@@ -23,6 +23,7 @@ import { api } from "@/lib/api";
 import { checkFaqAndAutofill } from "@/lib/faq";
 import type { ApiConversation, ApiConversationMessage, ApiLead } from "@/lib/api-types";
 import { SearchLeadDialog } from "@/components/features/search-lead-dialog";
+import { LeadNotifyBell } from "@/components/features/lead-notify-bell";
 import { SelectAccountDialog } from "@/components/features/select-account-dialog";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
 
@@ -309,12 +310,22 @@ export function ConversationsPageView() {
                 {searchedFiltered.map((c: ApiConversation) => {
                   const lastMessage = c.messages[c.messages.length - 1];
                   return (
-                    <button key={c.id} onClick={() => pickConv(c.id)} className={`block w-full p-3 text-left transition-colors ${conv?.id === c.id ? "bg-muted/60" : c.unread ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30"}`}>
+                    <div
+                      key={c.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => pickConv(c.id)}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pickConv(c.id); } }}
+                      className={`block w-full cursor-pointer p-3 text-left transition-colors ${conv?.id === c.id ? "bg-muted/60" : c.unread ? "bg-primary/5 hover:bg-primary/10" : "hover:bg-muted/30"}`}
+                    >
                       <div className="flex items-center gap-2">
                         <div className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-[11px] font-medium ${c.unread ? "bg-primary/20 text-primary ring-1 ring-primary/30" : "bg-muted"}`}>{candidateName(c).split(" ").map((s: string) => s[0]).slice(0, 2).join("")}</div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <span className={`truncate text-sm ${c.unread ? "font-semibold" : "font-medium"}`}>{candidateName(c)}</span>
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className={`truncate text-sm ${c.unread ? "font-semibold" : "font-medium"}`}>{candidateName(c)}</span>
+                              <LeadNotifyBell leadId={c.leadId} />
+                            </span>
                             <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo(c.lastMessageAt)}</span>
                           </div>
                           <div className={`truncate text-[11px] ${c.unread ? "text-foreground/80 font-medium" : "text-muted-foreground"}`}>{lastMessage?.text ?? "No messages yet"}</div>
@@ -326,7 +337,7 @@ export function ConversationsPageView() {
                           </div>
                         )}
                       </div>
-                    </button>
+                    </div>
                   );
                 })}
               </div>
