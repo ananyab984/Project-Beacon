@@ -37,9 +37,10 @@ const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
 export function assertContractorOwnsLead(
   requesterRole: string,
   requesterId: string,
-  lead: { createdByContractorId: string | null }
+  lead: { id?: string; createdByContractorId: string | null }
 ) {
   if (requesterRole.toLowerCase() === "contractor" && lead.createdByContractorId !== requesterId) {
+    console.warn(`[ownership] DENIED user=${requesterId} role=${requesterRole} leadId=${lead.id ?? "unknown"} -- not the owning contractor`);
     throw new ApiError(403, "FORBIDDEN", "Contractors can only act on their own submitted leads");
   }
 }
