@@ -6,7 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
-import { createNotification } from "../services/notification.service";
+import { createNotification, formatTaskAssignmentBody } from "../services/notification.service";
 
 export const requirementRouter = Router();
 
@@ -140,7 +140,7 @@ requirementRouter.post(
         recipientId: requirement.recruiterId,
         type: "TASK_ASSIGNMENT",
         title: `Assigned: ${requirement.title}`,
-        body: `You've been assigned to "${requirement.title}" (${requirement.language}, ${requirement.service}).`,
+        body: formatTaskAssignmentBody(requirement, client.name),
         link: `/recruiter/clients`,
       }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
     }
@@ -258,7 +258,10 @@ requirementRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { recruiterId, note } = assignSchema.parse(req.body);
 
-    const existing = await prisma.requirement.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.requirement.findUnique({
+      where: { id: req.params.id },
+      include: { client: { select: { name: true } } },
+    });
     if (!existing) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
 
     const newStatus = recruiterId
@@ -285,11 +288,13 @@ requirementRouter.post(
     // Unassign (recruiterId: null) fires nothing -- only a real assignment
     // is a "task assignment" someone needs to be told about.
     if (recruiterId) {
+      // Only recruiterId/status change here -- title/language/service/etc.
+      // (and the client relation) are `existing`'s, unchanged by this route.
       await createNotification({
         recipientId: recruiterId,
         type: "TASK_ASSIGNMENT",
         title: `Assigned: ${updated.title}`,
-        body: `You've been assigned to "${updated.title}" (${updated.language}, ${updated.service}).`,
+        body: formatTaskAssignmentBody(existing, existing.client.name),
         link: `/recruiter/clients`,
       }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
     }

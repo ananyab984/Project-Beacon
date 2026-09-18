@@ -21,6 +21,7 @@ export async function runDueDateReminders() {
       status: { not: "FULFILLED" },
       recruiterId: { not: null },
     },
+    include: { client: { select: { name: true } } },
     take: 200,
   });
 
@@ -48,7 +49,7 @@ export async function runDueDateReminders() {
       recipientId: requirement.recruiterId!,
       type: "DUE_DATE_REMINDER",
       title,
-      body: `${requirement.language} / ${requirement.service} — deadline ${requirement.deadline!.toDateString()}.`,
+      body: `the requirement "${requirement.title}" for ${requirement.client.name} ${dueText} -- ${requirement.headcountNeeded} candidate${requirement.headcountNeeded === 1 ? "" : "s"} needed in ${requirement.language} (${requirement.service}). Deadline: ${requirement.deadline!.toDateString()}.`,
       link: `/recruiter/clients`,
     }).catch((err) => console.error("[notifications] due-date reminder notify failed:", err));
   }
