@@ -7,6 +7,7 @@ import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { RoleGuard } from "@/components/features/role-guard";
 import { ContractorAddLeadDialog } from "@/components/features/contractor-add-lead-dialog";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
+import { RecruiterNotificationsPopover } from "@/components/features/recruiter-notifications-popover";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/contractor")({
@@ -74,6 +75,7 @@ function ContractorLayout() {
       userFallback={{ name: "Contractor", initial: "C" }}
       headerActions={
         <>
+          <RecruiterNotificationsPopover leadsTo="/contractor/leads" />
           <Button
             size="sm"
             variant="outline"

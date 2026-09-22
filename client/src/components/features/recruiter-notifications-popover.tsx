@@ -37,7 +37,13 @@ function typeIcon(type: NotificationType) {
   }
 }
 
-export function RecruiterNotificationsPopover() {
+export function RecruiterNotificationsPopover({
+  // Contractor's leads route has no scope tab/param (see contractor.leads.tsx),
+  // so the two callers of this shared popover pass their own leads path/search
+  // instead of this component assuming the recruiter-only "mine" scope.
+  leadsTo = "/recruiter/leads",
+  leadsSearch = { scope: "mine" },
+}: { leadsTo?: string; leadsSearch?: Record<string, string> } = {}) {
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -151,8 +157,8 @@ export function RecruiterNotificationsPopover() {
 
         <div className="border-t border-border p-2.5 bg-muted/10 text-center">
           <Link
-            to="/recruiter/leads"
-            search={{ scope: "mine" }}
+            to={leadsTo as any}
+            search={leadsSearch as any}
             className="text-xs font-semibold text-primary hover:underline"
           >
             View all pending leads
