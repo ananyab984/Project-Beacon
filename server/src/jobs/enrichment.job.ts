@@ -8,6 +8,7 @@ import { computeOnHoldTransition } from "../lib/onHoldTransition";
 import { mapWithConcurrency } from "../lib/mapWithConcurrency";
 import { countPopulatedFields } from "../lib/enrichmentCount";
 import { tierFromFieldSources } from "../lib/enrichmentTier";
+import { createNotification, formatEnrichmentCompleteSlackCard } from "../services/notification.service";
 import type { EnrichmentRunConclusion } from "@prisma/client";
 
 const CONCLUSION_MAP: Record<string, EnrichmentRunConclusion> = {
@@ -299,6 +300,23 @@ export async function enrichLeadById(leadId: string) {
         justEnrichedUntil: isComplete ? new Date(Date.now() + 24 * 3600_000) : undefined,
       },
     });
+
+    // Ping the contractor who added this lead once it's actually done, not on
+    // a bare "the call returned" basis -- same isComplete this function
+    // already uses to decide COMPLETE vs PENDING above. Fires regardless of
+    // entry path (poll job or immediate Add-Lead/bulk-upload call) since both
+    // funnel through this same function.
+    if (isComplete && lead.createdByContractorId) {
+      const leadName = enrichedDisplayName || lead.maskedLabel || "your lead";
+      createNotification({
+        recipientId: lead.createdByContractorId,
+        type: "ENRICHMENT_COMPLETE",
+        title: `Enrichment finished for ${leadName}`,
+        body: `enrichment finished for ${leadName} -- their profile is now fully filled in.`,
+        slackCard: formatEnrichmentCompleteSlackCard(leadName),
+        link: "/contractor/leads",
+      }).catch((err) => console.error(`[enrichment.job] enrichment-complete notify failed for lead ${lead.id}:`, err));
+    }
 
     const concludedAt = new Date();
     await prisma.enrichmentRun.create({

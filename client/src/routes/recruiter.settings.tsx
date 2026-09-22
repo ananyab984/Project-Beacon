@@ -13,7 +13,11 @@ import { Linkedin, Mail, Trash2, Plus, ShieldCheck, User, Bell, CheckCircle2 } f
 import { toast } from "sonner";
 import type { NotificationType } from "@/lib/api-types";
 
-const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+// Partial, not Record<NotificationType, string> -- recruiters only ever get
+// back these 5 types (server's RECRUITER_TYPES in notification.routes.ts);
+// the 4 contractor-only types (enrichment/digest notifications) never appear
+// in this page's `preferences` response, so this doesn't need to cover them.
+const NOTIFICATION_TYPE_LABELS: Partial<Record<NotificationType, string>> = {
   NEW_LEAD: "New lead application",
   TASK_ASSIGNMENT: "Task assignment",
   DUE_DATE_REMINDER: "Project due-date reminder",

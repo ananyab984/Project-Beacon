@@ -710,6 +710,16 @@ export const api = {
     );
   },
 
+  /** Applies emailEnabled/slackEnabled across every notification type this
+   *  user's role has, in one call -- what the contractor settings page's
+   *  single Email/Slack toggle actually flips. */
+  async updateAllNotificationPreferences(patch: { emailEnabled?: boolean; slackEnabled?: boolean }) {
+    return request<{ preferences: ApiNotificationPreference[] }>(
+      "/api/notifications/preferences",
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+  },
+
   async getLeadNotifySubscription(leadId: string): Promise<{ active: boolean }> {
     return request(`/api/leads/${leadId}/notify-subscription`);
   },

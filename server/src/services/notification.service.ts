@@ -134,6 +134,9 @@ const BULK_ASSIGNMENT_COLOR = "#36C5F0"; // blue
 const DUE_DATE_REMINDER_COLOR = "#8B5CF6"; // purple
 const LEAD_RESPONSE_COLOR = "#E01E5A"; // pink
 const ESCALATION_COLOR = "#E11D48"; // red -- deliberately distinct from LEAD_RESPONSE's pink
+const ENRICHMENT_COMPLETE_COLOR = "#2EB67D"; // green -- same family as TASK_ASSIGNMENT, both "good news"
+const DEMAND_SUMMARY_COLOR = "#36C5F0"; // blue -- matches BULK_ASSIGNMENT's "FYI digest" tone
+const WEEKLY_SUMMARY_COLOR = "#8B5CF6"; // purple -- matches DUE_DATE_REMINDER's periodic-digest tone
 
 /** TASK_ASSIGNMENT's Slack card. Headcount > 1 reads as a bulk assignment
  * (different emoji/color/copy) rather than a second notification type --
@@ -209,6 +212,67 @@ export function formatEscalationSlackCard(title: string, detail: string, recomme
     fields: [{ label: "Detail", value: detail }],
     note: recommendedAction,
     button: { text: "View Details", path: buttonPath },
+  };
+}
+
+/** ENRICHMENT_COMPLETE's Slack card -- fires once, when a lead a contractor
+ *  added finishes enrichment (enrichment.job.ts's enrichLeadById). */
+export function formatEnrichmentCompleteSlackCard(leadName: string): SlackCard {
+  return {
+    emoji: "✅",
+    headline: "Enrichment finished",
+    color: ENRICHMENT_COMPLETE_COLOR,
+    fields: [{ label: "Lead", value: leadName }],
+    note: "Their profile is now fully filled in.",
+    button: { text: "View Lead", path: "/contractor/leads" },
+  };
+}
+
+/** DAILY_DEMAND_SUMMARY's Slack card -- one broadcast a day to every
+ *  contractor, not lead- or requirement-specific, so it has no button. */
+export function formatDailyDemandSummarySlackCard(openHeadcount: number, openRequirements: number): SlackCard {
+  return {
+    emoji: "📊",
+    headline: "Today's open demand",
+    color: DEMAND_SUMMARY_COLOR,
+    fields: [
+      { label: "Open requirements", value: String(openRequirements) },
+      { label: "Total headcount still needed", value: String(openHeadcount) },
+    ],
+    note: "Keep sourcing toward these.",
+  };
+}
+
+/** WEEKLY_LEADS_SUMMARY's Slack card. */
+export function formatWeeklyLeadsSummarySlackCard(leadsAdded: number): SlackCard {
+  return {
+    emoji: "🗓️",
+    headline: "Your week in leads",
+    color: WEEKLY_SUMMARY_COLOR,
+    fields: [{ label: "Leads added this week", value: String(leadsAdded) }],
+    button: { text: "View My Leads", path: "/contractor/leads" },
+  };
+}
+
+/** WEEKLY_PERFORMANCE_SUMMARY's Slack card -- the same live pipeline numbers
+ *  performance-page-view.tsx shows (see contractorDigest.job.ts), not the
+ *  monthly rubric score (different cadence, computed separately). */
+export function formatWeeklyPerformanceSummarySlackCard(stats: {
+  active: number;
+  activePct: number;
+  unreadConversations: number;
+  followUps: number;
+}): SlackCard {
+  return {
+    emoji: "📈",
+    headline: "Your week in numbers",
+    color: WEEKLY_SUMMARY_COLOR,
+    fields: [
+      { label: "Active leads", value: `${stats.active} (${stats.activePct}%)` },
+      { label: "Unread replies", value: String(stats.unreadConversations) },
+      { label: "Follow-ups pending", value: String(stats.followUps) },
+    ],
+    button: { text: "View My Performance", path: "/contractor/performance" },
   };
 }
 

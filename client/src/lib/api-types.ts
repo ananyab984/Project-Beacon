@@ -361,7 +361,15 @@ export type EscalationPriority = "P1" | "P2" | "P3";
 export type EscalationStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS";
 
 export type NotificationType =
-  "NEW_LEAD" | "TASK_ASSIGNMENT" | "DUE_DATE_REMINDER" | "LEAD_RESPONSE" | "ESCALATION";
+  | "NEW_LEAD"
+  | "TASK_ASSIGNMENT"
+  | "DUE_DATE_REMINDER"
+  | "LEAD_RESPONSE"
+  | "ESCALATION"
+  | "ENRICHMENT_COMPLETE"
+  | "DAILY_DEMAND_SUMMARY"
+  | "WEEKLY_LEADS_SUMMARY"
+  | "WEEKLY_PERFORMANCE_SUMMARY";
 
 export interface ApiNotification {
   id: string;

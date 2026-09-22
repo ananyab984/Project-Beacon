@@ -1231,6 +1231,11 @@ enum NotificationType {
   DUE_DATE_REMINDER
   LEAD_RESPONSE
   ESCALATION
+  // Contractor-facing types (see notification.routes.ts's CONTRACTOR_TYPES).
+  ENRICHMENT_COMPLETE
+  DAILY_DEMAND_SUMMARY
+  WEEKLY_LEADS_SUMMARY
+  WEEKLY_PERFORMANCE_SUMMARY
 }
 
 model Notification {

@@ -7,21 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { KeyRound, Mail, ShieldCheck, User as UserIcon, Bell, CheckCircle2 } from "lucide-react";
+import { KeyRound, Mail, ShieldCheck, User as UserIcon, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
-import type { NotificationType } from "@/lib/api-types";
-
-// Same lookup used by recruiter.settings.tsx -- kept as its own local copy
-// rather than a shared import since each settings page owns its own display
-// text and the two are free to diverge later.
-const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
-  NEW_LEAD: "New lead application",
-  TASK_ASSIGNMENT: "Task assignment",
-  DUE_DATE_REMINDER: "Project due-date reminder",
-  LEAD_RESPONSE: "Lead response (per-lead bell, set on each lead's row)",
-  ESCALATION: "Escalated items",
-};
 
 export const Route = createFileRoute("/contractor/settings")({
   head: () => ({
@@ -42,16 +30,18 @@ function ContractorSettingsPage() {
     queryFn: api.getNotificationPreferences,
   });
 
-  const updatePrefMutation = useMutation({
-    mutationFn: ({
-      type,
-      patch,
-    }: {
-      type: NotificationType;
-      patch: { emailEnabled?: boolean; slackEnabled?: boolean };
-    }) => api.updateNotificationPreference(type, patch),
+  // One Email toggle and one Slack toggle for everything -- contractors get
+  // 5 notification types (enrichment done, lead replies, daily demand
+  // summary, weekly leads/performance digests) and per-type rows aren't
+  // worth the UI weight recruiter.settings.tsx's table carries for its own
+  // 5 types. Each toggle still fans out to every type's own preference row
+  // server-side (see the bulk PATCH /preferences route) -- the schema and
+  // send-time checks stay per-type, only this page's UI is collapsed.
+  const updateAllMutation = useMutation({
+    mutationFn: (patch: { emailEnabled?: boolean; slackEnabled?: boolean }) =>
+      api.updateAllNotificationPreferences(patch),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
-    onError: (err: any) => toast.error(err?.message || "Failed to update notification preference"),
+    onError: (err: any) => toast.error(err?.message || "Failed to update notification preferences"),
   });
 
   const [slackMemberId, setSlackMemberId] = useState(user?.slackMemberId ?? "");
@@ -62,7 +52,11 @@ function ContractorSettingsPage() {
   });
 
   const preferences = prefsData?.preferences ?? [];
-  const alwaysOnBellTypes = new Set(prefsData?.alwaysOnBellTypes ?? []);
+  // "On" only once every type actually has that channel enabled -- a mixed
+  // state (e.g. one type toggled on some other way) reads as off rather than
+  // silently claiming a partial state is fully on.
+  const emailOn = preferences.length > 0 && preferences.every((p) => p.emailEnabled);
+  const slackOn = preferences.length > 0 && preferences.every((p) => p.slackEnabled);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-24">
@@ -97,59 +91,37 @@ function ContractorSettingsPage() {
 
       <Section title="Notification Preferences" icon={<Bell className="h-3.5 w-3.5" />}>
         <p className="text-xs text-muted-foreground">
-          The in-app bell is always on for new leads, task assignments, due-date reminders, and
-          escalations. Turn on email or Slack for any type below.
+          The in-app bell is always on -- for enrichment finishing on a lead you added, a lead
+          replying, a daily summary of open demand headcount, and weekly summaries of the leads
+          you've added and your performance. Turn on email or Slack below to get those the same
+          way.
         </p>
 
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-left text-muted-foreground">
-                <th className="py-2 pr-4 font-medium">Type</th>
-                <th className="py-2 px-4 font-medium">Bell</th>
-                <th className="py-2 px-4 font-medium">Email</th>
-                <th className="py-2 px-4 font-medium">Slack</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border/60">
-              {preferences.map((p) => (
-                <tr key={p.type}>
-                  <td className="py-3 pr-4 font-medium text-foreground">
-                    {NOTIFICATION_TYPE_LABELS[p.type]}
-                  </td>
-                  <td className="py-3 px-4">
-                    {alwaysOnBellTypes.has(p.type) ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <Switch
-                      checked={p.emailEnabled}
-                      onCheckedChange={(checked) =>
-                        updatePrefMutation.mutate({
-                          type: p.type,
-                          patch: { emailEnabled: checked },
-                        })
-                      }
-                    />
-                  </td>
-                  <td className="py-3 px-4">
-                    <Switch
-                      checked={p.slackEnabled}
-                      onCheckedChange={(checked) =>
-                        updatePrefMutation.mutate({
-                          type: p.type,
-                          patch: { slackEnabled: checked },
-                        })
-                      }
-                    />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
+            <div>
+              <div className="text-xs font-semibold text-foreground">Email notifications</div>
+              <div className="text-[11px] text-muted-foreground">Send all of the above to your work email too.</div>
+            </div>
+            <Switch
+              checked={emailOn}
+              disabled={updateAllMutation.isPending}
+              onCheckedChange={(checked) => updateAllMutation.mutate({ emailEnabled: checked })}
+            />
+          </div>
+          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
+            <div>
+              <div className="text-xs font-semibold text-foreground">Slack notifications</div>
+              <div className="text-[11px] text-muted-foreground">
+                Send all of the above as a Slack DM too (needs your Slack Member ID below).
+              </div>
+            </div>
+            <Switch
+              checked={slackOn}
+              disabled={updateAllMutation.isPending}
+              onCheckedChange={(checked) => updateAllMutation.mutate({ slackEnabled: checked })}
+            />
+          </div>
         </div>
 
         <div className="mt-4 space-y-1.5 border-t border-border pt-4">

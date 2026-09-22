@@ -1567,8 +1567,13 @@ export class UnipileService {
             const subs = await prisma.leadNotificationSubscription.findMany({
               where: { leadId: conversation.leadId, active: true },
             });
-            if (subs.length > 0) {
-              const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+            // Also checked unconditionally (not gated behind subs.length),
+            // since a contractor never toggles a per-lead bell -- they get
+            // notified on every reply to a lead they added, same as the
+            // subscribing recruiters above but via createdByContractorId
+            // instead of an opt-in LeadNotificationSubscription row.
+            const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+            if (subs.length > 0 || lead?.createdByContractorId) {
               const leadName = lead?.fullName ?? lead?.maskedLabel ?? "a lead";
               const excerpt = messageText.length > 200 ? `${messageText.slice(0, 200)}…` : messageText;
               for (const sub of subs) createNotification({
@@ -1579,6 +1584,17 @@ export class UnipileService {
                 slackCard: formatLeadResponseSlackCard(leadName, excerpt),
                 link: `/recruiter/leads`,
               }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+
+              if (lead?.createdByContractorId) {
+                createNotification({
+                  recipientId: lead.createdByContractorId,
+                  type: "LEAD_RESPONSE",
+                  title: `${leadName} replied`,
+                  body: `${leadName} sent you a new message: "${excerpt}"`,
+                  slackCard: formatLeadResponseSlackCard(leadName, excerpt),
+                  link: `/contractor/leads`,
+                }).catch((err) => console.error("[notifications] contractor lead-response notify failed:", err));
+              }
             }
           }
         }
