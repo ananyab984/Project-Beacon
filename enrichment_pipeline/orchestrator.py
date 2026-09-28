@@ -33,6 +33,7 @@ from parsers.proz_parser import ProzParser
 from parsers.service_aliases import extract_services_from_text
 from parsers.tool_aliases import extract_tools_from_text
 from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
+from parsers.language_filter import NON_ENGLISH_MARKERS, looks_non_english_token
 
 log = get_logger(__name__)
 
@@ -331,37 +332,14 @@ def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
     )
 
 
-# Function words that are common and distinctive in the languages these
-# profiles actually turn up in (Spanish, French, German, Portuguese, Italian),
-# and rare-to-absent in English profile prose. Used only to decide whether a
-# payload is worth sending for translation -- a false positive costs one cheap
-# Claude call, a false negative leaves that lead's text in its own language,
-# so the list leans towards triggering.
-#
-# ponytail: a word-list sniff, not language identification. Ceiling: a mostly
-# English profile with a stray foreign phrase triggers a (harmless) pass, and
-# a very short non-English field can slip past. Upgrade path is a real
-# detector (langdetect/lingua) if this proves too blunt in practice; not worth
-# a dependency for the handful of languages seen so far.
-_NON_ENGLISH_MARKERS = frozenset(
-    {
-        # Spanish / Portuguese
-        "de", "la", "el", "los", "las", "con", "para", "por", "una", "como",
-        "muy", "más", "también", "años", "voz", "trabajo", "em", "não", "uma",
-        "del", "su", "sus", "está", "años",
-        # French
-        "le", "les", "des", "une", "du", "au", "aux", "est", "sur", "avec",
-        "pour", "dans", "traduction", "traductrice", "traducteur", "ans", "et",
-        "à", "chez", "en", "formation", "expérience", "étudiante", "étudiant",
-        "lieu", "ses", "son",
-        # German
-        "und", "der", "die", "das", "den", "von", "mit", "für", "ich", "auch",
-        "sprachen", "jahre", "übersetzer", "übersetzerin",
-        # Italian
-        "il", "lo", "gli", "che", "con", "per", "sono", "anni", "voce",
-        "traduzione", "esperienza",
-    }
-)
+# Moved to parsers/language_filter.py so parsers/linkedin_parser.py can
+# reuse the same wordlist to filter a non-English skill/service tag out of
+# Services (orchestrator.py already imports FROM parsers.linkedin_parser, so
+# the reverse import would be circular). Used here only to decide whether a
+# whole payload is worth sending for translation -- a false positive costs
+# one cheap Claude call, a false negative leaves that lead's text in its own
+# language, so the list leans towards triggering.
+_NON_ENGLISH_MARKERS = NON_ENGLISH_MARKERS
 
 
 def _payload_strings(value: Any) -> list[str]:
@@ -1158,7 +1136,14 @@ class EnrichmentOrchestrator:
         # e.g. "Voice & Dubbing Artist Punjabi Hindi" never reached Services).
         skills = parallel_data.get("skills")
         if isinstance(skills, list):
-            kept_skills = [str(s) for s in skills if s and not _is_absence_prose(str(s))]
+            # looks_non_english_token here is a defensive backstop, not the
+            # primary fix -- _normalize_parallel_language/translate_to_english
+            # already runs on parallel_data before this method is ever called,
+            # so this only catches whatever a translation pass missed.
+            kept_skills = [
+                str(s) for s in skills
+                if s and not _is_absence_prose(str(s)) and not looks_non_english_token(str(s))
+            ]
             if kept_skills:
                 mapped["Services"] = ", ".join(kept_skills)
         if not mapped.get("Services"):
