@@ -72,3 +72,45 @@ export function normalizeVendorExperience(raw: string[] | string | null | undefi
   const normalized = tokens.map(canonicalizeVendorToken).filter((t): t is string => t !== null);
   return Array.from(new Set(normalized));
 }
+
+// Keep in sync with enrichment_pipeline/parsers/vendor_aliases.py's
+// VENDOR_ALIASES -- alias PHRASES for substring-scanning free-flowing text
+// (matchVendorsInText below), distinct from SYNONYMS above (which matches
+// one already-delimiter-split token exactly).
+const VENDOR_ALIASES: Record<string, string[]> = {
+  Deluxe: ["deluxe media", "deluxe entertainment", "deluxe"],
+  SDI: ["sdi media", "sdi"],
+  "Pixel Logic": ["pixelogic", "pixel logic"],
+  "Zoo Digital": ["zoo digital group", "zoodigital", "zoo digital"],
+  VSI: ["voice & script international", "voice and script international", "vsi"],
+  Plint: ["plint ab", "plint"],
+  BTI: ["bti studios", "bti"],
+  DeepDub: ["deep dub", "deepdub"],
+  Ooona: ["ooona"],
+};
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Scans free-flowing text (not delimiter-split tokens) for a mention of
+ *  one of the 9 known vendors, in declaration order -- mirrors
+ *  enrichment_pipeline/parsers/vendor_aliases.py's extract_vendors_from_text.
+ *  Safe to run deterministically on any prose: closed list, so it can only
+ *  ever add one of these 9 canonical names, never an invented company.
+ *
+ *  Word-boundary match, not a bare substring check -- confirmed live: a
+ *  plain `.includes()` check matched bare "bti" embedded inside
+ *  "subtitle"/"subtitling"/"subtitler", reporting BTI as vendor experience
+ *  on almost every profile in this exact industry regardless of its actual
+ *  content. */
+export function matchVendorsInText(text: string): string[] {
+  const lowered = text.toLowerCase();
+  const matched: string[] = [];
+  for (const [canonical, aliases] of Object.entries(VENDOR_ALIASES)) {
+    if (!matched.includes(canonical) && aliases.some((alias) => new RegExp(`\\b${escapeRegExp(alias)}\\b`).test(lowered))) {
+      matched.push(canonical);
+    }
+  }
+  return matched;
+}

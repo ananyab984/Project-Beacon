@@ -7,9 +7,24 @@ Plint, BTI, DeepDub, Ooona), so a name this scan matches is guaranteed to be
 selectable in that UI -- an unmatched company (e.g. an unrelated past
 employer) is deliberately left out rather than invented as a false vendor
 entry, mirroring extract_services_from_text's closed-canonical-set behavior.
+
+Matching is word-boundary based (see extract_vendors_from_text's docstring)
+-- confirmed live: a plain substring check matched bare "bti" against
+"subtitle"/"subtitling"/"subtitler" (a near-universal word on this exact
+kind of profile), reporting BTI as vendor experience for almost every lead
+regardless of its actual content.
+
+ponytail: "Deluxe" is a residual risk even with word boundaries -- it's also
+an ordinary English adjective ("a deluxe setup"). Left as-is rather than
+removing it (unlike the tool list's bare "Avid", which had a safe, equally
+matchable full-phrase alternative) since bare "Deluxe" is how a profile
+plausibly names this specific, very common vendor with no more specific
+phrasing to require instead; not worth added disambiguation complexity
+unless confirmed live to actually misfire.
 """
 from __future__ import annotations
 
+import re
 from typing import Dict, List, Optional
 
 VENDOR_ALIASES: Dict[str, List[str]] = {
@@ -26,10 +41,19 @@ VENDOR_ALIASES: Dict[str, List[str]] = {
 
 
 def extract_vendors_from_text(text_blob: str) -> List[str]:
+    """Word-boundary match, not a bare substring check -- confirmed live: a
+    plain `alias in lowered` check matched bare "bti" embedded inside
+    "subtitle"/"subtitling"/"subtitler", which meant BTI was reported as
+    vendor experience on almost every profile in this exact industry,
+    regardless of what the text actually said. `\\b` on both sides of each
+    alias phrase rejects that while still matching the alias as its own
+    word/phrase."""
     lowered = text_blob.lower()
     matched: List[str] = []
     for canonical, aliases in VENDOR_ALIASES.items():
-        if canonical not in matched and any(alias in lowered for alias in aliases):
+        if canonical in matched:
+            continue
+        if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
             matched.append(canonical)
     return matched
 
@@ -62,7 +86,11 @@ def canonicalize_or_keep(name: str) -> Optional[str]:
     if not cleaned or cleaned.lower() in NON_COMPANY_EMPLOYMENT_LABELS:
         return None
     lowered = cleaned.lower()
+    # Word-boundary, not a bare substring check -- same reasoning as
+    # extract_vendors_from_text (a company literally named e.g.
+    # "Subtitleworks Productions" would otherwise falsely canonicalize to
+    # "BTI" via the embedded "bti" substring).
     for canonical, aliases in VENDOR_ALIASES.items():
-        if any(alias in lowered for alias in aliases):
+        if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
             return canonical
     return cleaned

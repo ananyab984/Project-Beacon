@@ -21,8 +21,6 @@ import requests
 from config import Config
 from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
-from parsers.tool_aliases import TOOL_ALIASES
-from parsers.vendor_aliases import VENDOR_ALIASES
 
 log = get_logger(__name__)
 
@@ -115,107 +113,17 @@ class GroqMappingClient:
             return []
         return [str(s).strip() for s in services if s and str(s).strip()]
 
-    def classify_tools_and_vendors(self, profile_text: str) -> Dict[str, List[str]]:
-        """Cleanup/broadening pass for Tools_Software and Vendor_Experience,
-        run regardless of what parsers/tool_aliases.py's and
-        parsers/vendor_aliases.py's plain substring scan already found.
-
-        For TOOLS_SOFTWARE: that deterministic scan only ever catches an
-        EXACT alias phrase -- "protools" or "pro tools" matches "Pro Tools",
-        but "I cut on Avid" (no "media composer") or "editing in Adobe's
-        Premiere suite" (word order/phrasing the alias list doesn't
-        anticipate) does not, even though a person reading the sentence
-        would recognize the tool immediately. This exists to catch exactly
-        that gap using a model's actual language understanding instead of a
-        longer and longer list of hand-written phrasings.
-
-        For VENDOR_EXPERIENCE: reports EVERY real named company/employer in
-        the text, not only the 9 largest known industry vendors -- confirmed
-        live that restricting this field to known-vendor-only matches was
-        throwing away a profile's own rich Experience section (9 distinct
-        real employers reduced to nothing, or to a leftover employment-
-        status word like "Freelancer" that isn't even a company). A company
-        matching a known vendor still gets normalized to its canonical
-        spelling; everything else is reported as stated.
-
-        Reads whatever free text the pipeline already has (Headline,
-        Current_Title, About_Snippet, Certifications, and Services -- which
-        often carries the profile's raw skills list verbatim) -- no live web
-        search, same as classify_services.
-        """
-        tool_list = ", ".join(TOOL_ALIASES.keys())
-        vendor_list = ", ".join(VENDOR_ALIASES.keys())
-        system = (
-            "You read a linguist/media-industry recruiting profile's already-extracted text "
-            "(which may include a headline, current title, about/bio, certifications, and a raw "
-            "skills/services list) and identify two things from it:\n\n"
-            f"1. TOOLS_SOFTWARE: specific named software/tools the person uses professionally "
-            f"(subtitling software, translation/CAT tools, audio/video editing software, etc). "
-            f"These are the known canonical product names: {tool_list}. When the text names one "
-            f"of these (allowing for different phrasing, abbreviations, or a minor misspelling -- "
-            f"e.g. 'cut on Avid' means Avid Media Composer, 'Adobe's Premiere suite' means Adobe "
-            f"Premiere Pro), report it using EXACTLY the canonical spelling above. If the text "
-            f"clearly names a real, specific tool that is NOT on this list, report it exactly as "
-            f"stated instead of dropping it -- never invent one that isn't actually mentioned.\n\n"
-            f"2. VENDOR_EXPERIENCE: every real, specific company, studio, or client this person "
-            f"has worked for or with, as named anywhere in the text (headline, current title, "
-            f"about, experience/work history) -- this means ANY named employer, not only major "
-            f"industry vendors. When a company matches (or is an obvious variant of) one of these "
-            f"well-known industry vendors, report it using its exact canonical spelling: "
-            f"{vendor_list} (e.g. 'SDI Media' or 'Iyuno-SDI' -> 'SDI'). Otherwise report the "
-            f"company name exactly as stated. Do NOT report a generic employment-status word "
-            f"(e.g. 'Freelancer', 'Freelance', 'Self-employed', 'Independent') or a vague, "
-            f"non-specific phrase (e.g. 'Different companies', 'Various clients') as if it were "
-            f"a company name -- these are not real company names. Do NOT report a university, "
-            f"school, or professional certification/membership body (e.g. a translators' "
-            f"institute, a chartered institute, a business school) as vendor experience -- those "
-            f"are education or certification, not an employer or client.\n\n"
-            "RULES:\n"
-            "- Only report something the text directly states -- never infer or guess from vague "
-            "context.\n"
-            "- Return SHORT canonical/company names, not full sentences or descriptions.\n"
-            "- Return an empty list for a category if nothing in the text supports it.\n\n"
-            'Respond with ONLY a JSON object of exactly this shape: '
-            '{"tools_software": [<string>, ...], "vendor_experience": [<string>, ...]}'
-        )
-        body = {
-            "model": self.config.groq_model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": "PROFILE TEXT:\n\n" + profile_text[:6000]},
-            ],
-            "temperature": 0.0,
-            "response_format": {"type": "json_object"},
-            # Higher than classify_services'/extract_missing_fields' 512 --
-            # confirmed live: this call's two-category prompt (with both full
-            # canonical lists embedded) pushed the model into reasoning
-            # tokens that ate the completion budget before it reached valid
-            # closing JSON ("max completion tokens reached before generating
-            # a valid document"), not because the actual answer is longer.
-            "max_tokens": 1024,
-        }
-
-        result = self._request(body, "Tools/Vendor classification")
-        tools = result.get("tools_software")
-        vendors = result.get("vendor_experience")
-        return {
-            "tools_software": [str(t).strip() for t in tools if t and str(t).strip()] if isinstance(tools, list) else [],
-            "vendor_experience": [str(v).strip() for v in vendors if v and str(v).strip()] if isinstance(vendors, list) else [],
-        }
-
     # Maps each supported canonical field name to (JSON response key, kind).
     # "list" -> comma-joined string on return; "text" -> returned as-is.
     _MISSING_FIELD_SPECS: Dict[str, tuple] = {
         "Current_Title": ("current_title", "text"),
-        "Tools_Software": ("tools_software", "list"),
         "Certifications": ("certifications", "list"),
-        "Vendor_Experience": ("vendor_experience", "text"),
     }
 
     def extract_missing_fields(self, text: str, missing_fields: List[str]) -> Dict[str, str]:
-        """Waterfall's last tier for whichever of Current_Title/Tools_Software/
-        Certifications/Vendor_Experience are STILL empty after Bright Data,
-        Tavily, and Parallel have all had their turn -- reads whatever free
+        """Waterfall's last tier for whichever of Current_Title/Certifications
+        are STILL empty after Bright Data, Tavily, and Parallel have all had
+        their turn -- reads whatever free
         text the pipeline already has and fills in only what that text
         directly supports, exactly as classify_services already does for
         Services. Deliberately fill-only: only asked about fields the caller
@@ -237,9 +145,7 @@ class GroqMappingClient:
 
         field_descriptions = {
             "current_title": "their current job title/role (a short string, e.g. 'Freelance Subtitler'), if the text names one",
-            "tools_software": "specific tools or software they use (e.g. 'Trados', 'Adobe Audition', 'Subtitle Edit') -- not generic skills",
             "certifications": "named certifications, diplomas, or professional credentials -- not degrees from a university unless explicitly framed as a certification",
-            "vendor_experience": "named companies/vendors/clients they've worked with or for (a short comma-separated list as one string)",
         }
         requested_keys = [spec[0] for spec in specs.values()]
         schema_lines = "\n".join(f'  "{k}": {"[<string>, ...]" if kind == "list" else "<string|null>"}' for k, (_, kind) in zip(requested_keys, specs.values()))

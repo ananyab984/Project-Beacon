@@ -135,6 +135,21 @@ function test7_htmlEntitiesAreDecoded() {
   assert.strictEqual(s.certifications[0].title, "R & Big Data");
 }
 
+function test9_certificationAndCourseSubtitleSurvives() {
+  // subtitle can carry real text too (an issuing platform, a course code) --
+  // used to be dropped entirely, which meant a tool/vendor named only there
+  // (e.g. "Ooona Certified Subtitler" / subtitle "Ooona") was invisible to
+  // any downstream text scan.
+  const s = mergeProfileSections({
+    rawScrapeData: [{
+      certifications: [{ title: "Ooona Certified Subtitler", subtitle: "Ooona" }],
+      courses: [{ title: "Advanced Editing", subtitle: "Pro Tools 101" }],
+    }],
+  });
+  assert.strictEqual(s.certifications[0].subtitle, "Ooona");
+  assert.strictEqual(s.courses[0].subtitle, "Pro Tools 101");
+}
+
 function test8_noDataAnywhereIsEmptyNotCrash() {
   for (const lead of [{}, { rawScrapeData: null, parallelData: null }, { rawScrapeData: [] }, { parallelData: {} }]) {
     const s = mergeProfileSections(lead as any);
@@ -154,6 +169,7 @@ const tests = [
   test6_emptyShellsAndPlaceholdersAreDropped,
   test7_htmlEntitiesAreDecoded,
   test8_noDataAnywhereIsEmptyNotCrash,
+  test9_certificationAndCourseSubtitleSurvives,
 ];
 
 let failed = 0;
