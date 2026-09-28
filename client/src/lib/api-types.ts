@@ -128,7 +128,7 @@ export interface ApiLead {
   secondaryLanguages: string[];
   source: LeadSource;
   yearsOfExperience: number | null;
-  vendorExperience: string | null;
+  vendorExperience: string[];
   headline: string | null;
   aboutSnippet: string | null;
   currentTitle: string | null;
@@ -232,6 +232,7 @@ export interface ApiClient {
   contactName: string | null;
   contactEmail: string | null;
   notes: string | null;
+  notificationsEnabled: boolean;
   createdAt: string;
 }
 
@@ -369,7 +370,15 @@ export type NotificationType =
   | "ENRICHMENT_COMPLETE"
   | "DAILY_DEMAND_SUMMARY"
   | "WEEKLY_LEADS_SUMMARY"
-  | "WEEKLY_PERFORMANCE_SUMMARY";
+  | "WEEKLY_PERFORMANCE_SUMMARY"
+  | "ENRICHMENT_STALLED"
+  | "DUPLICATE_REVIEW_NEEDED"
+  | "DNC_CONFIRMATION_NEEDED"
+  | "FOLLOW_UP_DUE"
+  | "LEAD_PLACED"
+  | "WEEKLY_TEAM_HEALTH_SUMMARY"
+  | "CLIENT_STATUS_UPDATE"
+  | "REQUIREMENT_FULFILLED";
 
 export interface ApiNotification {
   id: string;

@@ -77,7 +77,7 @@ function leadAttributeTerms(draft: Draft): Record<string, string[]> {
   if (langs.length) terms.language = langs;
   if (lead.country) terms.country = [lead.country];
   if (lead.services.length) terms.services = lead.services;
-  if (lead.vendorExperience) terms.experience = [lead.vendorExperience];
+  if (lead.vendorExperience.length) terms.experience = lead.vendorExperience;
   if (lead.yearsOfExp !== null) terms.experience = (terms.experience || []).concat([String(lead.yearsOfExp)]);
   return terms;
 }

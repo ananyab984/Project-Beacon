@@ -10,6 +10,7 @@ import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere, requireA
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
+import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { resolveManualFieldSources } from "../lib/manualFieldSources";
 import { withEnrichedFieldCount } from "../lib/enrichmentCount";
 import { attachReenrichmentStatus } from "../lib/reenrichmentStatus";
@@ -19,6 +20,17 @@ import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
 import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
+import {
+  createNotification,
+  getActiveOwnerIds,
+  resolveLeadNotificationRecipients,
+  notifyRequirementStatusChange,
+  formatDncConfirmationSlackCard,
+  formatLeadPlacedSlackCard,
+  formatHighPriorityFlagSlackCard,
+  basePathForRole,
+  type NotificationRole,
+} from "../services/notification.service";
 
 export const leadRouter = Router();
 
@@ -145,7 +157,7 @@ export function mapSheetRowsToLeads(rows: string[][]): z.infer<typeof createLead
       email: emailIdx >= 0 ? row[emailIdx] || undefined : undefined,
       contactNumber: phoneIdx >= 0 ? row[phoneIdx] || undefined : undefined,
       yearsOfExperience: expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined,
-      vendorExperience: vendorIdx >= 0 ? row[vendorIdx] || undefined : undefined,
+      vendorExperience: vendorIdx >= 0 && row[vendorIdx] ? normalizeVendorExperience(row[vendorIdx]) : [],
     });
     if (parsed.success) out.push(parsed.data);
   }
@@ -173,7 +185,7 @@ const createLeadSchema = z.object({
   targetLanguage: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   secondaryLanguages: z.array(z.string()).default([]),
   yearsOfExperience: z.number().min(0).max(99).optional(),
-  vendorExperience: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
+  vendorExperience: z.array(z.string()).default([]).transform((arr) => normalizeVendorExperience(arr)),
   assignedRecruiterId: z.string().uuid().optional(),
 });
 
@@ -797,7 +809,7 @@ leadRouter.patch(
       // Enrichment Details dialog's manual-entry Save) had none at all,
       // which is how a negative Years_of_Exp reached a lead undetected.
       yearsOfExperience: z.number().min(0).max(99).nullable().optional(),
-      vendorExperience: z.string().nullable().optional(),
+      vendorExperience: z.array(z.string()).optional(),
       headline: z.string().nullable().optional(),
       currentTitle: z.string().nullable().optional(),
       aboutSnippet: z.string().nullable().optional(),
@@ -954,7 +966,32 @@ leadRouter.patch(
             orderBy: { priority: "desc" },
           });
 
+          // The placement itself is the milestone, not the headcount match --
+          // fires whether or not a matching requirement happened to be found.
+          {
+            const leadName = updated.displayName || updated.fullName || updated.maskedLabel || "this lead";
+            const clientName = matchingReq
+              ? (await prisma.client.findUnique({ where: { id: matchingReq.clientId }, select: { name: true } }))?.name
+              : undefined;
+            resolveLeadNotificationRecipients(updated, { includeOwners: true })
+              .then((recipients) => {
+                for (const { recipientId, role } of recipients) {
+                  const basePath = basePathForRole(role);
+                  createNotification({
+                    recipientId,
+                    type: "LEAD_PLACED",
+                    title: `Lead placed — ${leadName}`,
+                    body: `${leadName} has been onboarded${clientName ? ` with ${clientName}` : ""}.`,
+                    slackCard: formatLeadPlacedSlackCard(leadName, clientName, basePath),
+                    link: `${basePath}/leads`,
+                  }).catch((err) => console.error("[notifications] lead-placed notify failed:", err));
+                }
+              })
+              .catch((err) => console.error("[notifications] lead-placed recipient resolution failed:", err));
+          }
+
           if (matchingReq) {
+            const previousStatus = matchingReq.status;
             // Atomic at the DB level (UPDATE ... SET filled = filled + 1) --
             // fixes a lost-increment race where two leads onboarding into
             // the same requirement at once could both read the same
@@ -967,10 +1004,13 @@ leadRouter.patch(
             });
             const newGap = Math.max(0, updatedReq.headcountNeeded - updatedReq.filled);
             if (newGap !== updatedReq.gap || (newGap === 0 && updatedReq.status !== "FULFILLED")) {
-              await prisma.requirement.update({
+              const statusUpdatedReq = await prisma.requirement.update({
                 where: { id: matchingReq.id },
                 data: { gap: newGap, status: newGap === 0 ? "FULFILLED" : updatedReq.status },
               });
+              notifyRequirementStatusChange(statusUpdatedReq, previousStatus).catch((err) =>
+                console.error("[notifications] requirement status change notify failed:", err)
+              );
             }
 
             const matchingDemand = await prisma.clientDemand.findFirst({
@@ -1012,12 +1052,16 @@ leadRouter.patch(
             });
             if (decremented.count > 0) {
               const updatedReq = await prisma.requirement.findUniqueOrThrow({ where: { id: matchingReq.id } });
+              const previousStatus = updatedReq.status;
               const newGap = Math.max(0, updatedReq.headcountNeeded - updatedReq.filled);
               if (newGap !== updatedReq.gap || (updatedReq.status === "FULFILLED" && newGap > 0)) {
-                await prisma.requirement.update({
+                const statusUpdatedReq = await prisma.requirement.update({
                   where: { id: matchingReq.id },
                   data: { gap: newGap, status: updatedReq.status === "FULFILLED" ? "ACTIVE" : updatedReq.status },
                 });
+                notifyRequirementStatusChange(statusUpdatedReq, previousStatus).catch((err) =>
+                  console.error("[notifications] requirement status change notify failed:", err)
+                );
               }
             }
 
@@ -1104,12 +1148,13 @@ leadRouter.post(
     const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
 
+    const flagStatus = provisional && flag === "DNC" ? "PROVISIONAL" : "CONFIRMED";
     await prisma.leadFlagEvent.create({
       data: {
         leadId: lead.id,
         flag,
         action: "ADDED",
-        status: provisional && flag === "DNC" ? "PROVISIONAL" : "CONFIRMED",
+        status: flagStatus,
         setByRecruiterId: req.user!.id,
         reason,
       },
@@ -1122,6 +1167,45 @@ leadRouter.post(
       where: { id: lead.id },
       data: { flags, ...(flag === "ON_HOLD" ? { onHoldReason: "MANUAL" as const } : {}) },
     });
+
+    const leadName = updated.displayName || updated.fullName || updated.maskedLabel || "this lead";
+
+    // A provisional DNC needs a human to confirm it before it's treated as
+    // final -- assigned recruiter and every owner, same as the other
+    // "needs a decision" notifications.
+    if (flag === "DNC" && flagStatus === "PROVISIONAL") {
+      const recipients = new Map<string, NotificationRole>();
+      if (updated.assignedRecruiterId) recipients.set(updated.assignedRecruiterId, "recruiter");
+      for (const ownerId of await getActiveOwnerIds()) {
+        if (!recipients.has(ownerId)) recipients.set(ownerId, "owner");
+      }
+      for (const [recipientId, role] of recipients) {
+        const basePath = basePathForRole(role);
+        createNotification({
+          recipientId,
+          type: "DNC_CONFIRMATION_NEEDED",
+          title: `DNC flag needs confirmation — ${leadName}`,
+          body: `a Do Not Contact flag was set provisionally for ${leadName} and needs your confirmation.`,
+          slackCard: formatDncConfirmationSlackCard(leadName, basePath),
+          link: `${basePath}/leads`,
+        }).catch((err) => console.error("[notifications] dnc-confirmation notify failed:", err));
+      }
+    }
+
+    // Reuses TASK_ASSIGNMENT semantics -- functionally "something now needs
+    // this recruiter's attention," same shape as a real assignment. Always a
+    // recruiter recipient (assignedRecruiterId), so basePath is fixed.
+    if (flag === "HIGH_PRIORITY" && updated.assignedRecruiterId) {
+      createNotification({
+        recipientId: updated.assignedRecruiterId,
+        type: "TASK_ASSIGNMENT",
+        title: `Lead marked high priority — ${leadName}`,
+        body: `the lead ${leadName} you're assigned to was just flagged high priority.`,
+        slackCard: formatHighPriorityFlagSlackCard(leadName, "/recruiter"),
+        link: "/recruiter/leads",
+      }).catch((err) => console.error("[notifications] high-priority notify failed:", err));
+    }
+
     return res.status(201).json({ lead: withEnrichedFieldCount(updated) });
   })
 );

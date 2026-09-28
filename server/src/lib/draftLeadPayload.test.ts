@@ -52,7 +52,7 @@ function leadRow(over: Record<string, any> = {}): any {
     targetLanguage: null,
     secondaryLanguages: [],
     yearsOfExperience: null,
-    vendorExperience: null,
+    vendorExperience: [],
     enrichmentStatus: "COMPLETE",
     headline: null,
     aboutSnippet: null,

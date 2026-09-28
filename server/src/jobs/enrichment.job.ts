@@ -3,12 +3,24 @@ import { prisma } from "../prisma";
 import { config } from "../config";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { normalizeServices } from "../lib/normalizeServices";
+import { normalizeToolsSoftware } from "../lib/normalizeToolsSoftware";
+import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
 import { mapWithConcurrency } from "../lib/mapWithConcurrency";
 import { countPopulatedFields } from "../lib/enrichmentCount";
 import { tierFromFieldSources } from "../lib/enrichmentTier";
-import { createNotification, formatEnrichmentCompleteSlackCard } from "../services/notification.service";
+import {
+  createNotification,
+  formatEnrichmentCompleteSlackCard,
+  formatDuplicateReviewSlackCard,
+  formatEnrichmentStalledSlackCard,
+  resolveLeadNotificationRecipients,
+  resolveLeadOwningRecruiterId,
+  basePathForRole,
+  type NotificationRole,
+} from "../services/notification.service";
+import { findDedupCandidatePool } from "../services/lead.service";
 import type { EnrichmentRunConclusion } from "@prisma/client";
 
 const CONCLUSION_MAP: Record<string, EnrichmentRunConclusion> = {
@@ -20,6 +32,19 @@ const CONCLUSION_MAP: Record<string, EnrichmentRunConclusion> = {
 function splitToArray(val: unknown): string[] | undefined {
   if (typeof val !== "string" || !val.trim()) return undefined;
   return val.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+/** Maps a candidate-pool Lead row onto the same PascalCase field names the
+ *  /enrich payload uses -- only the fields core/dedup.py's blocking/exact-
+ *  match steps actually read (First_Name, Full_Name, Email_Address,
+ *  Contact_Number), not the full payload shape. */
+function leadToDedupFields(l: { firstName: string | null; fullName: string | null; email: string | null; contactNumber: string | null }) {
+  return {
+    First_Name: l.firstName,
+    Full_Name: l.fullName,
+    Email_Address: l.email,
+    Contact_Number: l.contactNumber,
+  };
 }
 
 const BATCH_SIZE = 20;
@@ -54,6 +79,23 @@ export async function enrichLeadById(leadId: string) {
       where: { id: lead.id },
       data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: startedAt },
     });
+
+    // Coarse blocking shortlist for the Python fuzzy/LLM dedup waterfall
+    // (findDedupCandidatePool is deliberately cheap -- name-prefix/email-
+    // domain only; core/dedup.py's own blocking/narrowing/LLM stages do the
+    // real narrowing and judgment). Own try/catch: a pool-fetch failure must
+    // default to "no pool sent" -- dedup silently skipped for this run --
+    // never block the enrichment call itself.
+    let candidatePool: Awaited<ReturnType<typeof findDedupCandidatePool>> = [];
+    try {
+      candidatePool = await findDedupCandidatePool({
+        excludeLeadId: lead.id,
+        firstName: lead.firstName,
+        email: lead.email,
+      });
+    } catch (err) {
+      console.error(`[enrichment.job] dedup candidate-pool fetch failed for lead ${lead.id}:`, err);
+    }
 
     // Timeout raised again (4_000_000ms -> 4_200_000ms): the pipeline's own
     // cumulative cap across the whole waterfall call sequence grew from 3800s
@@ -106,7 +148,7 @@ export async function enrichLeadById(leadId: string) {
             Target_Language: lead.targetLanguage,
             Secondary_Languages: lead.secondaryLanguages.join(", "),
             Years_of_Exp: lead.yearsOfExperience ? lead.yearsOfExperience.toNumber() : undefined,
-            Vendor_Experience: lead.vendorExperience,
+            Vendor_Experience: lead.vendorExperience.join(", "),
             Source: lead.source || "LinkedIn",
             Headline: lead.headline,
             About_Snippet: lead.aboutSnippet,
@@ -118,6 +160,10 @@ export async function enrichLeadById(leadId: string) {
             // re-verifying something already settled -- see orchestrator.py's
             // `_unverified()`.
             Field_Sources: lead.fieldSources ?? undefined,
+            // Only sent when the blocking query actually turned up something
+            // worth checking -- Python's own handler treats an empty/missing
+            // pool as "dedup not requested for this run".
+            Candidate_Pool: candidatePool.length ? candidatePool.map(leadToDedupFields) : undefined,
           },
           {
             timeout: 4_200_000,
@@ -188,7 +234,7 @@ export async function enrichLeadById(leadId: string) {
         const parsed = parseInt(el.Years_of_Exp, 10);
         if (!isNaN(parsed)) enrichedYearsOfExp = parsed as any;
       }
-      if (el.Vendor_Experience) enrichedVendorExp = el.Vendor_Experience;
+      if (el.Vendor_Experience) enrichedVendorExp = normalizeVendorExperience(el.Vendor_Experience);
       const resolvedName = String(el.Full_Name || el.First_Name || "").trim();
       if (resolvedName) enrichedDisplayName = resolvedName;
 
@@ -219,7 +265,7 @@ export async function enrichLeadById(leadId: string) {
       if (el.Headline) enrichedHeadline = el.Headline;
       if (el.About_Snippet) enrichedAboutSnippet = el.About_Snippet;
       if (el.Current_Title) enrichedCurrentTitle = el.Current_Title;
-      if (el.Tools_Software) enrichedToolsSoftware = splitToArray(el.Tools_Software) ?? enrichedToolsSoftware;
+      if (el.Tools_Software) enrichedToolsSoftware = normalizeToolsSoftware(el.Tools_Software);
       if (el.Certifications) enrichedCertifications = splitToArray(el.Certifications) ?? enrichedCertifications;
     }
 
@@ -242,6 +288,28 @@ export async function enrichLeadById(leadId: string) {
     // pass actually turned up.
     const conclusion = data?.conclusion as "short_circuit_success" | "exhausted_no_match" | "timed_out" | null | undefined;
     const isComplete = conclusion !== "timed_out";
+
+    // Maps Python's matched_pool_index back to a real lead id using
+    // candidatePool (fetched above, same order sent as Candidate_Pool). Own
+    // try/catch: any failure here (malformed response, out-of-range index)
+    // must default to "not flagged" -- never touch the isComplete path above
+    // or the update/notification paths below.
+    let duplicateFlag: { leadId: string; matchedFields: string[]; reasoning: string } | null = null;
+    try {
+      const flag = data?.duplicate_flag as
+        | { flagged?: boolean; matched_pool_index?: number; matched_fields?: string[]; reasoning?: string }
+        | undefined;
+      const matchedLead = flag?.flagged && typeof flag.matched_pool_index === "number" ? candidatePool[flag.matched_pool_index] : undefined;
+      if (matchedLead) {
+        duplicateFlag = { leadId: matchedLead.id, matchedFields: flag!.matched_fields ?? [], reasoning: flag!.reasoning ?? "" };
+      }
+    } catch (err) {
+      console.error(`[enrichment.job] duplicate-flag mapping failed for lead ${lead.id}:`, err);
+    }
+    // Only ever overrides the terminal state when enrichment actually
+    // concluded -- a duplicate flag on a run that itself timed out is noise
+    // (PENDING still needs a real retry, not a review-queue entry).
+    const flaggedDuplicate = isComplete && duplicateFlag !== null;
 
     // On Hold is now driven entirely by the waterfall's own conclusion state
     // or the recruiter's own manual toggle -- never by field count/contact
@@ -293,29 +361,65 @@ export async function enrichLeadById(leadId: string) {
         // when this pass actually produced one (see parallelResult above).
         parallelData: (parallelResult ?? lead.parallelData) as any,
         identityResolved: isComplete,
-        enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
+        // FLAGGED_REVIEW takes over COMPLETE's slot specifically -- a lead
+        // whose run still timed out stays PENDING regardless of the dedup
+        // check (flaggedDuplicate is already gated on isComplete above).
+        enrichmentStatus: flaggedDuplicate ? "FLAGGED_REVIEW" : isComplete ? "COMPLETE" : "PENDING",
         flags: flags as any,
         onHoldReason,
-        promotedToGlobalAt: isComplete ? new Date() : undefined,
-        justEnrichedUntil: isComplete ? new Date(Date.now() + 24 * 3600_000) : undefined,
+        // Never promoted/highlighted while sitting in FLAGGED_REVIEW -- a
+        // suspected duplicate needs a human decision before it behaves like
+        // any other freshly-completed lead.
+        promotedToGlobalAt: isComplete && !flaggedDuplicate ? new Date() : undefined,
+        justEnrichedUntil: isComplete && !flaggedDuplicate ? new Date(Date.now() + 24 * 3600_000) : undefined,
+        ...(flaggedDuplicate
+          ? { dupFlagged: true, dupFlaggedField: "fuzzy_match", suspectedDuplicateLeadId: duplicateFlag!.leadId }
+          : {}),
       },
     });
 
-    // Ping the contractor who added this lead once it's actually done, not on
-    // a bare "the call returned" basis -- same isComplete this function
-    // already uses to decide COMPLETE vs PENDING above. Fires regardless of
-    // entry path (poll job or immediate Add-Lead/bulk-upload call) since both
-    // funnel through this same function.
-    if (isComplete && lead.createdByContractorId) {
+    // Ping every connected role (contractor who added it, whichever
+    // recruiter owns it, every owner) once enrichment is actually done, not
+    // on a bare "the call returned" basis -- same isComplete/flaggedDuplicate
+    // this function already uses to decide the terminal status above. Fires
+    // regardless of entry path (poll job or immediate Add-Lead/bulk-upload
+    // call) since both funnel through this same function. The two outcomes
+    // are mutually exclusive: a flagged lead gets DUPLICATE_REVIEW_NEEDED
+    // instead of ENRICHMENT_COMPLETE, never both.
+    if (flaggedDuplicate) {
+      const leadName = enrichedDisplayName || lead.maskedLabel || "this lead";
+      resolveLeadNotificationRecipients(lead, { includeOwners: true })
+        .then((recipients) => {
+          for (const { recipientId, role } of recipients) {
+            const basePath = basePathForRole(role);
+            createNotification({
+              recipientId,
+              type: "DUPLICATE_REVIEW_NEEDED",
+              title: `Possible duplicate lead — ${leadName}`,
+              body: `${leadName} just finished enriching and looks like a possible duplicate -- please review.`,
+              slackCard: formatDuplicateReviewSlackCard(leadName, duplicateFlag!.reasoning, basePath),
+              link: `${basePath}/leads`,
+            }).catch((err) => console.error(`[enrichment.job] duplicate-review notify failed for lead ${lead.id} -> ${recipientId}:`, err));
+          }
+        })
+        .catch((err) => console.error(`[enrichment.job] duplicate-review recipient resolution failed for lead ${lead.id}:`, err));
+    } else if (isComplete) {
       const leadName = enrichedDisplayName || lead.maskedLabel || "your lead";
-      createNotification({
-        recipientId: lead.createdByContractorId,
-        type: "ENRICHMENT_COMPLETE",
-        title: `Enrichment finished for ${leadName}`,
-        body: `enrichment finished for ${leadName} -- their profile is now fully filled in.`,
-        slackCard: formatEnrichmentCompleteSlackCard(leadName),
-        link: "/contractor/leads",
-      }).catch((err) => console.error(`[enrichment.job] enrichment-complete notify failed for lead ${lead.id}:`, err));
+      resolveLeadNotificationRecipients(lead, { includeOwners: true })
+        .then((recipients) => {
+          for (const { recipientId, role } of recipients) {
+            const basePath = basePathForRole(role);
+            createNotification({
+              recipientId,
+              type: "ENRICHMENT_COMPLETE",
+              title: `Enrichment finished for ${leadName}`,
+              body: `enrichment finished for ${leadName} -- their profile is now fully filled in.`,
+              slackCard: formatEnrichmentCompleteSlackCard(leadName, basePath),
+              link: `${basePath}/leads`,
+            }).catch((err) => console.error(`[enrichment.job] enrichment-complete notify failed for lead ${lead.id} -> ${recipientId}:`, err));
+          }
+        })
+        .catch((err) => console.error(`[enrichment.job] enrichment-complete recipient resolution failed for lead ${lead.id}:`, err));
     }
 
     const concludedAt = new Date();
@@ -452,7 +556,18 @@ export async function stallOverdueEnrichments() {
       // wait out.
       OR: [{ enrichmentStartedAt: { lt: cutoff } }, { enrichmentStartedAt: null }],
     },
-    select: { id: true, flags: true, onHoldReason: true },
+    select: {
+      id: true,
+      flags: true,
+      onHoldReason: true,
+      displayName: true,
+      fullName: true,
+      maskedLabel: true,
+      createdByContractorId: true,
+      assignedRecruiterId: true,
+      claimedByRecruiterId: true,
+      createdByRecruiterId: true,
+    },
   });
   if (overdue.length === 0) return;
 
@@ -476,6 +591,27 @@ export async function stallOverdueEnrichments() {
       where: { id: lead.id },
       data: { enrichmentStatus: "STALLED", flags: flags as any, onHoldReason },
     });
+
+    // Contractor + owning recruiter only -- deliberately NOT owners, who
+    // already see this same stuck-lead condition via the stale-lead
+    // Escalation scanStaleLeads produces (escalation.job.ts); sending
+    // ENRICHMENT_STALLED there too would just double it up.
+    const leadName = lead.displayName || lead.fullName || lead.maskedLabel || "this lead";
+    const recipients = new Map<string, NotificationRole>();
+    if (lead.createdByContractorId) recipients.set(lead.createdByContractorId, "contractor");
+    const owningRecruiterId = resolveLeadOwningRecruiterId(lead);
+    if (owningRecruiterId && !recipients.has(owningRecruiterId)) recipients.set(owningRecruiterId, "recruiter");
+    for (const [recipientId, role] of recipients) {
+      const basePath = basePathForRole(role);
+      createNotification({
+        recipientId,
+        type: "ENRICHMENT_STALLED",
+        title: `Enrichment stalled for ${leadName}`,
+        body: `enrichment for ${leadName} didn't finish in time and has been marked for review.`,
+        slackCard: formatEnrichmentStalledSlackCard(leadName, basePath),
+        link: `${basePath}/leads`,
+      }).catch((err) => console.error(`[enrichment.job] enrichment-stalled notify failed for lead ${lead.id} -> ${recipientId}:`, err));
+    }
   }
   console.warn(`[enrichment.job] Marked ${overdue.length} lead(s) STALLED after exceeding the ${STALL_TIMEOUT_MS / 60_000}min timeout: ${overdue.map((l) => l.id).join(", ")}`);
 }

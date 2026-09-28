@@ -23,7 +23,7 @@ const IMPORTED_LEAD = {
   aboutSnippet: null,
   displayName: "Jane Doe",
   yearsOfExperience: null,
-  vendorExperience: null,
+  vendorExperience: [],
   toolsSoftware: [],
   certifications: [],
   fieldSources: {
@@ -48,7 +48,7 @@ function dialogBody(overrides: Record<string, unknown> = {}) {
     currentTitle: null,
     aboutSnippet: null,
     yearsOfExperience: null,
-    vendorExperience: null,
+    vendorExperience: [],
     toolsSoftware: [],
     certifications: [],
     ...overrides,
