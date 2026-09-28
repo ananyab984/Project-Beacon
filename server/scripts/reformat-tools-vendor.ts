@@ -33,15 +33,18 @@ function buildSystemPrompt(): string {
     `Premiere Pro), report it using EXACTLY the canonical spelling above. If the text ` +
     `clearly names a real, specific tool that is NOT on this list, report it exactly as ` +
     `stated instead of dropping it -- never invent one that isn't actually mentioned.\n\n` +
-    `2. VENDOR_EXPERIENCE: named companies/studios/vendors/clients the person has worked ` +
-    `for or with, that ARE (or are an obvious variant of) one of these known industry ` +
-    `vendors: ${vendorList}. Report a name from this list (using its exact canonical ` +
-    `spelling) only when the text clearly names it or an unambiguous variant (e.g. 'SDI ` +
-    `Media' or 'Pixelogic Media Services' -> 'Pixel Logic'). Do not report any other ` +
-    `employer -- an unrelated company is not a vendor for this purpose.\n\n` +
+    `2. VENDOR_EXPERIENCE: every real, specific company, studio, or client this person has ` +
+    `worked for or with, as named anywhere in the text (headline, current title, about, ` +
+    `experience/work history) -- this means ANY named employer, not only major industry ` +
+    `vendors. When a company matches (or is an obvious variant of) one of these well-known ` +
+    `industry vendors, report it using its exact canonical spelling: ${vendorList} (e.g. 'SDI ` +
+    `Media' or 'Iyuno-SDI' -> 'SDI'). Otherwise report the company name exactly as stated. Do ` +
+    `NOT report a generic employment-status word (e.g. 'Freelancer', 'Freelance', ` +
+    `'Self-employed', 'Independent') as if it were a company name -- these describe how ` +
+    `someone works, not who they worked for.\n\n` +
     "RULES:\n" +
     "- Only report something the text directly states -- never infer or guess from vague context.\n" +
-    "- Return SHORT canonical names, not full sentences or descriptions.\n" +
+    "- Return SHORT canonical/company names, not full sentences or descriptions.\n" +
     "- Return an empty list for a category if nothing in the text supports it.\n\n" +
     'Respond with ONLY a JSON object of exactly this shape: ' +
     '{"tools_software": [<string>, ...], "vendor_experience": [<string>, ...]}'

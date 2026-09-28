@@ -44,6 +44,14 @@ function test6_vendorArrayInputDedupesCaseInsensitively() {
   assert.deepStrictEqual(normalizeVendorExperience(["SDI", "sdi", "BTI"]), ["SDI", "BTI"]);
 }
 
+function test7_vendorEmploymentStatusLabelsAreDroppedNotKept() {
+  // "Freelancer" is what BrightData puts in current_company for someone
+  // describing how they work, not a real company -- must never surface as
+  // if it were a vendor, unlike a genuine unrelated employer (test5).
+  assert.deepStrictEqual(normalizeVendorExperience(["Freelancer", "Kinotitles Srls"]), ["Kinotitles Srls"]);
+  assert.deepStrictEqual(normalizeVendorExperience("Self-employed"), []);
+}
+
 function main() {
   const tests = [
     test1_toolsCasingAndSpacingVariantsNormalize,
@@ -52,6 +60,7 @@ function main() {
     test4_vendorCasingAndSynonymVariantsNormalize,
     test5_vendorUnknownTokenIsKeptNotDropped,
     test6_vendorArrayInputDedupesCaseInsensitively,
+    test7_vendorEmploymentStatusLabelsAreDroppedNotKept,
   ];
 
   let failed = 0;

@@ -65,16 +65,28 @@ def test_linkedin_parser_matches_full_tool_list():
     assert result["Tools_Software"] == "XL8, Smartcat"
 
 
-def test_linkedin_parser_vendor_experience_is_canonical_not_raw_employer_blob():
+def test_linkedin_parser_vendor_experience_includes_every_real_employer():
+    # Every distinct named employer is reported, not only ones matching the
+    # 9 known vendors -- confirmed live that restricting to known-vendor-only
+    # matches throws away a profile's own real Experience data. A known
+    # vendor still gets canonicalized ("SDI Media" -> "SDI"); an unrelated
+    # real employer is kept exactly as stated.
     profile = {
         "name": "Jane Doe",
         "current_company": {"name": "SDI Media"},
-        "experience": [{"company": "Some Unrelated Freelance Client"}],
+        "experience": [{"company": "Kinotitles Srls"}],
     }
     result = LinkedInParser().parse("https://linkedin.com/in/jane", profile)
-    # Only the recognized industry vendor is reported -- an unrelated employer
-    # name is not invented as a false "vendor experience" dropdown entry.
-    assert result["Vendor_Experience"] == "SDI"
+    assert result["Vendor_Experience"] == "SDI, Kinotitles Srls"
+
+
+def test_linkedin_parser_vendor_experience_drops_employment_status_labels():
+    # "Freelancer" is what BrightData puts in current_company for someone
+    # describing how they work, not a real company -- must never surface as
+    # if it were a vendor.
+    profile = {"name": "Jane Doe", "current_company": {"name": "Freelancer"}}
+    result = LinkedInParser().parse("https://linkedin.com/in/jane", profile)
+    assert result.get("Vendor_Experience") is None
 
 
 # --- Parallel merge path: was LinkedIn-only for both fields, now isn't ------

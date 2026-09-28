@@ -32,7 +32,7 @@ from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 from parsers.service_aliases import extract_services_from_text
 from parsers.tool_aliases import extract_tools_from_text
-from parsers.vendor_aliases import extract_vendors_from_text
+from parsers.vendor_aliases import canonicalize_or_keep
 
 log = get_logger(__name__)
 
@@ -1187,14 +1187,26 @@ class EnrichmentOrchestrator:
         if matched_tools:
             mapped["Tools_Software"] = ", ".join(matched_tools)
 
-        vendor_companies = [
+        # Every distinct named employer from Parallel's structured experience
+        # list -- not just ones matching the 9 known vendors -- same fix as
+        # linkedin_parser.py's _extract_vendor_experience and for the same
+        # reason: a person's real work history is real vendor-experience
+        # information regardless of whether the company happens to be one of
+        # the largest known post-production vendors.
+        raw_companies = [
             str(e.get("company")) for e in (parallel_data.get("experience") or [])
             if isinstance(e, dict) and e.get("company") and not _is_absence_prose(str(e.get("company")))
         ]
-        vendor_scan_text = f"{' '.join(vendor_companies)} {free_text_blob}"
-        matched_vendors = extract_vendors_from_text(vendor_scan_text)
-        if matched_vendors:
-            mapped["Vendor_Experience"] = ", ".join(matched_vendors)
+        seen_vendors: set = set()
+        vendor_result: List[str] = []
+        for raw in raw_companies:
+            canonical = canonicalize_or_keep(raw)
+            if canonical is None or canonical.lower() in seen_vendors:
+                continue
+            seen_vendors.add(canonical.lower())
+            vendor_result.append(canonical)
+        if vendor_result:
+            mapped["Vendor_Experience"] = ", ".join(vendor_result)
 
         # Parallel's LeadProfile has no dedicated years-of-experience field --
         # only the structured `experience` list. Stage 6 (LLM web search) is

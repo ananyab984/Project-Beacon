@@ -120,16 +120,23 @@ class GroqMappingClient:
         run regardless of what parsers/tool_aliases.py's and
         parsers/vendor_aliases.py's plain substring scan already found.
 
-        That deterministic scan only ever catches an EXACT alias phrase --
-        "protools" or "pro tools" matches "Pro Tools", but "I cut on Avid"
-        (no "media composer") or "editing in Adobe's Premiere suite" (word
-        order/phrasing the alias list doesn't anticipate) does not, even
-        though a person reading the sentence would recognize the tool
-        immediately. This exists to catch exactly that gap using a model's
-        actual language understanding instead of a longer and longer list of
-        hand-written phrasings, while still reporting the same canonical
-        spelling the dropdown and the alias scan use, so results merge
-        cleanly regardless of which path found them.
+        For TOOLS_SOFTWARE: that deterministic scan only ever catches an
+        EXACT alias phrase -- "protools" or "pro tools" matches "Pro Tools",
+        but "I cut on Avid" (no "media composer") or "editing in Adobe's
+        Premiere suite" (word order/phrasing the alias list doesn't
+        anticipate) does not, even though a person reading the sentence
+        would recognize the tool immediately. This exists to catch exactly
+        that gap using a model's actual language understanding instead of a
+        longer and longer list of hand-written phrasings.
+
+        For VENDOR_EXPERIENCE: reports EVERY real named company/employer in
+        the text, not only the 9 largest known industry vendors -- confirmed
+        live that restricting this field to known-vendor-only matches was
+        throwing away a profile's own rich Experience section (9 distinct
+        real employers reduced to nothing, or to a leftover employment-
+        status word like "Freelancer" that isn't even a company). A company
+        matching a known vendor still gets normalized to its canonical
+        spelling; everything else is reported as stated.
 
         Reads whatever free text the pipeline already has (Headline,
         Current_Title, About_Snippet, Certifications, and Services -- which
@@ -150,16 +157,19 @@ class GroqMappingClient:
             f"Premiere Pro), report it using EXACTLY the canonical spelling above. If the text "
             f"clearly names a real, specific tool that is NOT on this list, report it exactly as "
             f"stated instead of dropping it -- never invent one that isn't actually mentioned.\n\n"
-            f"2. VENDOR_EXPERIENCE: named companies/studios/vendors/clients the person has worked "
-            f"for or with, that ARE (or are an obvious variant of) one of these known industry "
-            f"vendors: {vendor_list}. Report a name from this list (using its exact canonical "
-            f"spelling) only when the text clearly names it or an unambiguous variant (e.g. 'SDI "
-            f"Media' or 'Pixelogic Media Services' -> 'Pixel Logic'). Do not report any other "
-            f"employer -- an unrelated company is not a vendor for this purpose.\n\n"
+            f"2. VENDOR_EXPERIENCE: every real, specific company, studio, or client this person "
+            f"has worked for or with, as named anywhere in the text (headline, current title, "
+            f"about, experience/work history) -- this means ANY named employer, not only major "
+            f"industry vendors. When a company matches (or is an obvious variant of) one of these "
+            f"well-known industry vendors, report it using its exact canonical spelling: "
+            f"{vendor_list} (e.g. 'SDI Media' or 'Iyuno-SDI' -> 'SDI'). Otherwise report the "
+            f"company name exactly as stated. Do NOT report a generic employment-status word "
+            f"(e.g. 'Freelancer', 'Freelance', 'Self-employed', 'Independent') as if it were a "
+            f"company name -- these describe how someone works, not who they worked for.\n\n"
             "RULES:\n"
             "- Only report something the text directly states -- never infer or guess from vague "
             "context.\n"
-            "- Return SHORT canonical names, not full sentences or descriptions.\n"
+            "- Return SHORT canonical/company names, not full sentences or descriptions.\n"
             "- Return an empty list for a category if nothing in the text supports it.\n\n"
             'Respond with ONLY a JSON object of exactly this shape: '
             '{"tools_software": [<string>, ...], "vendor_experience": [<string>, ...]}'

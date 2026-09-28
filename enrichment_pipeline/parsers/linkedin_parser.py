@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from parsers.base import BaseParser
 from parsers.service_aliases import extract_services_from_text
 from parsers.tool_aliases import TOOL_ALIASES, extract_tools_from_text
-from parsers.vendor_aliases import extract_vendors_from_text
+from parsers.vendor_aliases import canonicalize_or_keep
 
 
 def _clean_text(val: Any) -> Optional[str]:
@@ -399,14 +399,25 @@ def _extract_certifications_deep(profile: dict) -> Optional[str]:
     return ", ".join(from_text) if from_text else None
 
 
-def _extract_vendor_experience(profile: dict, free_text: str) -> Optional[str]:
-    """Matches the profile's employer history AND free text (headline/About)
-    against the canonical Vendor_Experience list (parsers/vendor_aliases.py)
-    -- the same list the recruiter-facing Vendor Experience multi-select
-    offers. Used to return every raw employer name verbatim (any past
-    company, not just an industry vendor), which is why this field only ever
-    held a single free-text blob instead of the same closed, dropdown-
-    matchable set Services already gets from service_aliases.py."""
+def _extract_vendor_experience(profile: dict) -> Optional[str]:
+    """Collects every distinct real company/employer from the profile's
+    structured experience history (current_company + the full experience
+    list) -- a person's actual vendor/client portfolio, not just whichever
+    of the 9 largest known post-production vendors happens to be one of
+    them. Restricting this field to only alias-matched known vendors was
+    confirmed live to throw away exactly the rich data a profile's own
+    Experience section already has: a lead with 9 distinct named employers
+    there (Netflix, Kinotitles Srls, Baburka Production, Words in Progress
+    S.r.l., ...) still had Vendor_Experience holding only "Freelancer" --
+    which isn't even a real company, just what BrightData put in
+    `current_company` for someone describing how they work rather than who
+    they work for (see vendor_aliases.NON_COMPANY_EMPLOYMENT_LABELS).
+
+    A company matching (or an obvious variant of) one of the 9 known
+    vendors is normalized to its canonical spelling via
+    vendor_aliases.canonicalize_or_keep; every other real, named employer is
+    kept exactly as stated -- any company someone has actually worked with
+    is real vendor-experience information a recruiter wants to see."""
     companies = []
     curr = profile.get("current_company")
     if isinstance(curr, dict):
@@ -421,16 +432,26 @@ def _extract_vendor_experience(profile: dict, free_text: str) -> Optional[str]:
         for item in exp_list:
             if isinstance(item, dict):
                 cname = item.get("company") or item.get("company_name")
-                if cname and str(cname) not in companies:
+                if cname:
                     companies.append(str(cname))
 
     company_name = profile.get("company")
-    if company_name and str(company_name) not in companies:
+    if company_name:
         companies.append(str(company_name))
 
-    combined_text = " ".join(companies) + " " + free_text
-    matched = extract_vendors_from_text(combined_text)
-    return ", ".join(matched) if matched else None
+    seen: set = set()
+    result: List[str] = []
+    for raw in companies:
+        canonical = canonicalize_or_keep(raw)
+        if canonical is None:
+            continue
+        key = canonical.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(canonical)
+
+    return ", ".join(result) if result else None
 
 
 class LinkedInParser(BaseParser):
@@ -511,7 +532,7 @@ class LinkedInParser(BaseParser):
         if tools:
             result["Tools_Software"] = tools
 
-        vendors = _extract_vendor_experience(profile, free_text)
+        vendors = _extract_vendor_experience(profile)
         if vendors:
             result["Vendor_Experience"] = vendors
 
