@@ -10,7 +10,7 @@
 
 import assert from "node:assert";
 import { normalizeToolsSoftware } from "./normalizeToolsSoftware";
-import { normalizeVendorExperience } from "./normalizeVendorExperience";
+import { normalizeVendorExperience, canonicalizeVendorToken } from "./normalizeVendorExperience";
 
 function test1_toolsCasingAndSpacingVariantsNormalize() {
   assert.deepStrictEqual(
@@ -52,6 +52,17 @@ function test7_vendorEmploymentStatusLabelsAreDroppedNotKept() {
   assert.deepStrictEqual(normalizeVendorExperience("Self-employed"), []);
 }
 
+function test8_canonicalizeVendorTokenDoesNotSplitOnCommaWithinACompanyName() {
+  // A real company name can legitimately contain a comma ("Brindauto
+  // Comptoir, SA"). canonicalizeVendorToken processes one already-discrete
+  // array element, unlike normalizeVendorExperience (which correctly splits
+  // a genuinely delimited blob string, but would wrongly shred this).
+  assert.strictEqual(canonicalizeVendorToken("Brindauto Comptoir, SA"), "Brindauto Comptoir, SA");
+  assert.strictEqual(canonicalizeVendorToken("CristBet, Lda"), "CristBet, Lda");
+  assert.strictEqual(canonicalizeVendorToken("  SDI Media  "), "SDI");
+  assert.strictEqual(canonicalizeVendorToken("Freelancer"), null);
+}
+
 function main() {
   const tests = [
     test1_toolsCasingAndSpacingVariantsNormalize,
@@ -61,6 +72,7 @@ function main() {
     test5_vendorUnknownTokenIsKeptNotDropped,
     test6_vendorArrayInputDedupesCaseInsensitively,
     test7_vendorEmploymentStatusLabelsAreDroppedNotKept,
+    test8_canonicalizeVendorTokenDoesNotSplitOnCommaWithinACompanyName,
   ];
 
   let failed = 0;

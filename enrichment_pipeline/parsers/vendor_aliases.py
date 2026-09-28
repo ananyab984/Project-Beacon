@@ -44,7 +44,8 @@ def extract_vendors_from_text(text_blob: str) -> List[str]:
 NON_COMPANY_EMPLOYMENT_LABELS = {
     "freelancer", "freelance", "freelancing",
     "self-employed", "self employed", "independent", "independent contractor",
-    "various clients", "confidential", "n/a", "none",
+    "various clients", "different companies", "various companies", "multiple companies",
+    "confidential", "n/a", "none",
 }
 
 

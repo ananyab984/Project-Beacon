@@ -32,8 +32,27 @@ const CANONICAL_BY_LOWER = new Map(STANDARD_VENDORS.map((s) => [s.toLowerCase(),
 const NON_COMPANY_EMPLOYMENT_LABELS = new Set([
   "freelancer", "freelance", "freelancing",
   "self-employed", "self employed", "independent", "independent contractor",
-  "various clients", "confidential", "n/a", "none",
+  "various clients", "different companies", "various companies", "multiple companies",
+  "confidential", "n/a", "none",
 ]);
+
+/**
+ * Canonicalizes ONE already-discrete company name -- trims it, drops it
+ * (returns null) if it's an employment-status/generic label rather than a
+ * real company, and maps it to its canonical spelling when it matches a
+ * known vendor. Does NOT split on delimiters -- unlike normalizeVendorExperience
+ * below, this assumes the caller already has one company per array element
+ * (e.g. from a structured experience list), where a comma can be part of
+ * the company's own real name ("Brindauto Comptoir, SA", "CristBet, Lda").
+ * Confirmed live: running those through the comma-splitting path shredded
+ * them into "Brindauto Comptoir" + "SA" and "CristBet" + "Lda".
+ */
+export function canonicalizeVendorToken(token: string): string | null {
+  const trimmed = token.trim();
+  if (!trimmed || NON_COMPANY_EMPLOYMENT_LABELS.has(trimmed.toLowerCase())) return null;
+  const lower = trimmed.toLowerCase();
+  return CANONICAL_BY_LOWER.get(lower) ?? SYNONYMS[lower] ?? trimmed;
+}
 
 /**
  * Splits a raw vendor-experience string/array into canonical
@@ -41,18 +60,15 @@ const NON_COMPANY_EMPLOYMENT_LABELS = new Set([
  * known vendor or synonym is kept as-is (trimmed) rather than dropped --
  * normalizes what it recognizes without ever discarding real company data.
  * A generic employment-status word (not a real company) IS dropped.
+ *
+ * Splits on [,;/|] -- correct for a genuinely delimited blob (a raw CSV
+ * cell, Python's comma-joined Vendor_Experience string), but NOT for an
+ * array of already-discrete company names that might contain a literal
+ * comma -- use canonicalizeVendorToken directly for that case instead.
  */
 export function normalizeVendorExperience(raw: string[] | string | null | undefined): string[] {
   if (!raw) return [];
-  const tokens = (Array.isArray(raw) ? raw : [raw])
-    .flatMap((s) => s.split(/[,;/|]+/))
-    .map((s) => s.trim())
-    .filter((s) => s && !NON_COMPANY_EMPLOYMENT_LABELS.has(s.toLowerCase()));
-
-  const normalized = tokens.map((token) => {
-    const lower = token.toLowerCase();
-    return CANONICAL_BY_LOWER.get(lower) ?? SYNONYMS[lower] ?? token;
-  });
-
+  const tokens = (Array.isArray(raw) ? raw : [raw]).flatMap((s) => s.split(/[,;/|]+/));
+  const normalized = tokens.map(canonicalizeVendorToken).filter((t): t is string => t !== null);
   return Array.from(new Set(normalized));
 }

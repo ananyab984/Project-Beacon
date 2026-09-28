@@ -16,7 +16,7 @@ import { prisma } from "../src/prisma";
 import { loadDraftingConfig } from "../src/drafting/config";
 import { GroqClient, GroqError } from "../src/drafting/groqClient";
 import { normalizeToolsSoftware, STANDARD_TOOLS } from "../src/lib/normalizeToolsSoftware";
-import { normalizeVendorExperience, STANDARD_VENDORS } from "../src/lib/normalizeVendorExperience";
+import { canonicalizeVendorToken, STANDARD_VENDORS } from "../src/lib/normalizeVendorExperience";
 import { mergeProfileSections } from "../src/lib/profileSections";
 
 function buildSystemPrompt(): string {
@@ -41,8 +41,11 @@ function buildSystemPrompt(): string {
     `industry vendors, report it using its exact canonical spelling: ${vendorList} (e.g. 'SDI ` +
     `Media' or 'Iyuno-SDI' -> 'SDI'). Otherwise report the company name exactly as stated. Do ` +
     `NOT report a generic employment-status word (e.g. 'Freelancer', 'Freelance', ` +
-    `'Self-employed', 'Independent') as if it were a company name -- these describe how ` +
-    `someone works, not who they worked for.\n\n` +
+    `'Self-employed', 'Independent') or a vague, non-specific phrase (e.g. 'Different ` +
+    `companies', 'Various clients') as if it were a company name -- these are not real company ` +
+    `names. Do NOT report a university, school, or professional certification/membership body ` +
+    `(e.g. a translators' institute, a chartered institute, a business school) as vendor ` +
+    `experience -- those are education or certification, not an employer or client.\n\n` +
     "RULES:\n" +
     "- Only report something the text directly states -- never infer or guess from vague context.\n" +
     "- Return SHORT canonical/company names, not full sentences or descriptions.\n" +
@@ -101,8 +104,10 @@ async function main() {
     // Baburka Production, ...) live here, not in Headline/About prose, so a
     // profile with a rich Experience section but generic thin-field text
     // still needs this source, not just what Groq can read from textBlob.
-    // normalizeVendorExperience (below) handles canonicalizing/dropping these
-    // the same as any other candidate value.
+    // canonicalizeVendorToken (below) handles canonicalizing/dropping these
+    // the same as any other candidate value -- applied per-element, NOT via
+    // normalizeVendorExperience's comma-splitting, since a real company name
+    // here can legitimately contain a comma ("Brindauto Comptoir, SA").
     const sections = mergeProfileSections(lead);
     const experienceCompanies = sections.experience
       .map((e) => (typeof e.company === "string" ? e.company : ""))
@@ -145,7 +150,13 @@ async function main() {
       }
 
       const mergedTools = normalizeToolsSoftware([...lead.toolsSoftware, ...groqTools]);
-      const mergedVendors = normalizeVendorExperience([...lead.vendorExperience, ...experienceCompanies, ...groqVendors]);
+      const mergedVendors = Array.from(
+        new Set(
+          [...lead.vendorExperience, ...experienceCompanies, ...groqVendors]
+            .map(canonicalizeVendorToken)
+            .filter((v): v is string => v !== null)
+        )
+      );
 
       const toolsChanged = arraysDiffer(mergedTools, lead.toolsSoftware);
       const vendorsChanged = arraysDiffer(mergedVendors, lead.vendorExperience);
