@@ -135,7 +135,7 @@ function test9_outOfDialogFieldsAreIgnored() {
     ...EMPTY_LEAD,
     fullName: "Jane Doe",
     yearsOfExperience: 5,
-    vendorExperience: "Netflix",
+    vendorExperience: ["Netflix"],
     toolsSoftware: ["Trados"],
     certifications: ["ATA Certified"],
     fieldSources: {

@@ -31,6 +31,8 @@ from parsers.generic_parser import GenericParser
 from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 from parsers.service_aliases import extract_services_from_text
+from parsers.tool_aliases import extract_tools_from_text
+from parsers.vendor_aliases import extract_vendors_from_text
 
 log = get_logger(__name__)
 
@@ -1171,6 +1173,29 @@ class EnrichmentOrchestrator:
                 if text_services:
                     mapped["Services"] = ", ".join(text_services)
 
+        # Tools_Software / Vendor_Experience: same reasoning and same fix as
+        # Services immediately above -- both were BrightData/LinkedIn-only
+        # before this (see linkedin_parser.py's _extract_tools_software /
+        # _extract_vendor_experience), so a Parallel-sourced lead (any
+        # non-LinkedIn source, or LinkedIn itself when BrightData's Tier 1
+        # scrape came back thin) got neither field at all, regardless of what
+        # its headline/skills/about text or experience history actually said.
+        skills_text = ", ".join(str(s) for s in skills if s and not _is_absence_prose(str(s))) if isinstance(skills, list) else ""
+        free_text_blob = " | ".join(str(v) for v in (headline, current_title, about_snippet) if v)
+        tools_scan_text = f"{skills_text} {free_text_blob}"
+        matched_tools = extract_tools_from_text(tools_scan_text)
+        if matched_tools:
+            mapped["Tools_Software"] = ", ".join(matched_tools)
+
+        vendor_companies = [
+            str(e.get("company")) for e in (parallel_data.get("experience") or [])
+            if isinstance(e, dict) and e.get("company") and not _is_absence_prose(str(e.get("company")))
+        ]
+        vendor_scan_text = f"{' '.join(vendor_companies)} {free_text_blob}"
+        matched_vendors = extract_vendors_from_text(vendor_scan_text)
+        if matched_vendors:
+            mapped["Vendor_Experience"] = ", ".join(matched_vendors)
+
         # Parallel's LeadProfile has no dedicated years-of-experience field --
         # only the structured `experience` list. Stage 6 (LLM web search) is
         # the other path that could fill Years_of_Exp, but it's gated to
@@ -1336,10 +1361,19 @@ class EnrichmentOrchestrator:
             logs.append("Stage 3.76: remaining-fields extraction skipped: GROQ_API_KEY isn't set")
             return
 
+        # Includes Services -- absent before this, even though it's often the
+        # profile's raw skills list joined into text (see linkedin_parser.py's
+        # `result["Services"] = ", ".join(skill_names)` and
+        # _merge_parallel_fields's equivalent) and a Tools_Software/
+        # Vendor_Experience name mentioned only in Skills, not in Headline/
+        # Current_Title/About/Certifications, was invisible to this last-resort
+        # pass on any lead where the deterministic alias scan above (also
+        # reading skills+about text) still didn't match a canonical name.
         text_blob = " | ".join(
             str(v) for v in (
                 lead.get("Headline"), lead.get("Current_Title"),
                 lead.get("About_Snippet"), lead.get("Certifications"),
+                lead.get("Services"),
             )
             if v
         )

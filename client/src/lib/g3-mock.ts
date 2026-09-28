@@ -25,7 +25,7 @@ export interface Lead {
   country?: string;
   recruiter_id: string;
   years_experience?: number;
-  vendor_experience?: string;
+  vendor_experience?: string[];
   verified_email: boolean;
   confirmed_language_pair: boolean;
   match_confidence?: number; // 0-1, for ambiguous records
@@ -926,7 +926,10 @@ export function mapRowsToLeads(rows: string[][]): ParsedLeadRow[] {
       ? rawServices.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean)
       : [];
     const exp = expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined;
-    const vendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx].trim() : undefined;
+    const rawVendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx].trim() : "";
+    const vendor = rawVendor
+      ? rawVendor.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean)
+      : undefined;
     const rawSource = sourceIdx >= 0 && row[sourceIdx] ? row[sourceIdx].trim() : "";
     const source: Source = rawSource.toLowerCase().includes("linkedin")
       ? "LinkedIn"

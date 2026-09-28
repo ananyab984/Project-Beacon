@@ -132,7 +132,7 @@ const FIELD_DEFS: Array<{ label: string; key: string; sourceKey: string; kind: F
   { label: "Current Title", key: "currentTitle", sourceKey: "Current_Title", kind: "text" },
   { label: "About", key: "aboutSnippet", sourceKey: "About_Snippet", kind: "text" },
   { label: "Years of Experience", key: "yearsOfExperience", sourceKey: "Years_of_Exp", kind: "number" },
-  { label: "Vendor Experience", key: "vendorExperience", sourceKey: "Vendor_Experience", kind: "text" },
+  { label: "Vendor Experience", key: "vendorExperience", sourceKey: "Vendor_Experience", kind: "list", placeholder: "comma-separated" },
   { label: "Tools / Software", key: "toolsSoftware", sourceKey: "Tools_Software", kind: "list", placeholder: "comma-separated" },
   { label: "Certifications", key: "certifications", sourceKey: "Certifications", kind: "list", placeholder: "comma-separated" },
 ];

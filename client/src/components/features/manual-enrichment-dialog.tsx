@@ -3,11 +3,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { AlertTriangle, CheckCircle2, Sparkles, UserCheck } from "lucide-react";
 import { toast } from "sonner";
 import { STANDARD_SERVICES } from "@/lib/services";
+import { STANDARD_VENDORS } from "@/lib/vendors";
 
 // Curated quick-pick subset (not the full canonical list -- this is a
 // compact toggle row, not a dropdown) filtered from the single source of
@@ -29,7 +29,7 @@ export interface LeadForEnrichment {
   target_language?: string | null;
   services: string[];
   years_experience?: number | null;
-  vendor_experience?: string | null;
+  vendor_experience?: string[];
   enrichment_status?: "enriched" | "on_hold" | "pending" | "complete";
   verified_email?: boolean;
 }
@@ -51,7 +51,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
   const [targetLang, setTargetLang] = useState("");
   const [services, setServices] = useState<string[]>([]);
   const [yearsExp, setYearsExp] = useState<string>("");
-  const [notes, setNotes] = useState("");
+  const [vendors, setVendors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
   // Keyed on lead?.id, not the `lead` object itself -- the parent route
@@ -71,7 +71,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
       setTargetLang(lead.target_language || lead.language || "");
       setServices(lead.services?.length ? lead.services : []);
       setYearsExp(lead.years_experience != null ? String(lead.years_experience) : "");
-      setNotes(lead.vendor_experience || "");
+      setVendors(lead.vendor_experience?.length ? lead.vendor_experience : []);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lead?.id]);
@@ -92,6 +92,16 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
     return services.some((x) => x.toLowerCase().includes(s.toLowerCase()) || s.toLowerCase().includes(x.toLowerCase()));
   };
 
+  const toggleVendor = (v: string) => {
+    setVendors((prev) =>
+      prev.some((x) => x.toLowerCase() === v.toLowerCase())
+        ? prev.filter((x) => x.toLowerCase() !== v.toLowerCase())
+        : [...prev, v]
+    );
+  };
+
+  const isVendorSelected = (v: string) => vendors.some((x) => x.toLowerCase() === v.toLowerCase());
+
   // `null` for a cleared field (recruiter deleted what was there), not
   // `undefined` -- JSON.stringify drops `undefined` keys entirely, which was
   // the actual "I can't clear a wrong value" bug: the key never reached the
@@ -108,7 +118,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
       target_language: targetLang.trim() || null,
       services,
       years_experience: parsedYears != null && !Number.isNaN(parsedYears) ? parsedYears : null,
-      vendor_experience: notes.trim() || null,
+      vendor_experience: vendors,
       enrichment_status: status,
     };
   }
@@ -250,8 +260,26 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
           </div>
 
           <div>
-            <Label className="text-[11px] text-muted-foreground">Vendor Experience &amp; Notes</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Client history, rate info, notes..." className="mt-1 h-16 text-xs resize-none" />
+            <Label className="text-[11px] text-muted-foreground mb-1.5 block">Vendor Experience</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {STANDARD_VENDORS.map((v) => {
+                const sel = isVendorSelected(v);
+                return (
+                  <button
+                    type="button"
+                    key={v}
+                    onClick={() => toggleVendor(v)}
+                    className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                      sel
+                        ? "border-primary bg-primary/10 font-semibold text-primary"
+                        : "border-border bg-background text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {v} {sel ? "✓" : ""}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
