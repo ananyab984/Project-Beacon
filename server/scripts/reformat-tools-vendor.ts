@@ -17,6 +17,7 @@ import { loadDraftingConfig } from "../src/drafting/config";
 import { GroqClient, GroqError } from "../src/drafting/groqClient";
 import { normalizeToolsSoftware, STANDARD_TOOLS } from "../src/lib/normalizeToolsSoftware";
 import { normalizeVendorExperience, STANDARD_VENDORS } from "../src/lib/normalizeVendorExperience";
+import { mergeProfileSections } from "../src/lib/profileSections";
 
 function buildSystemPrompt(): string {
   const toolList = STANDARD_TOOLS.join(", ");
@@ -77,6 +78,8 @@ async function main() {
       services: true,
       toolsSoftware: true,
       vendorExperience: true,
+      rawScrapeData: true,
+      parallelData: true,
     },
   });
   console.log(`Found ${leads.length} leads with a profile link to reformat.\n`);
@@ -91,7 +94,21 @@ async function main() {
       .filter(Boolean)
       .join(" | ");
 
-    if (!textBlob.trim()) {
+    // Every distinct employer from the profile's STRUCTURED experience
+    // history (rawScrapeData/parallelData, merged the same way the
+    // Enrichment Details dialog's "Additional profile data found" section
+    // does) -- confirmed live these company names (Netflix, Kinotitles Srls,
+    // Baburka Production, ...) live here, not in Headline/About prose, so a
+    // profile with a rich Experience section but generic thin-field text
+    // still needs this source, not just what Groq can read from textBlob.
+    // normalizeVendorExperience (below) handles canonicalizing/dropping these
+    // the same as any other candidate value.
+    const sections = mergeProfileSections(lead);
+    const experienceCompanies = sections.experience
+      .map((e) => (typeof e.company === "string" ? e.company : ""))
+      .filter(Boolean);
+
+    if (!textBlob.trim() && experienceCompanies.length === 0) {
       console.log(`Skipping ${name} (${lead.id}): no text to read.`);
       skipped++;
       continue;
@@ -99,30 +116,36 @@ async function main() {
 
     process.stdout.write(`Reformatting ${name} (${lead.id})... `);
     try {
-      const completion = await groq.chat(systemPrompt, "PROFILE TEXT:\n\n" + textBlob.slice(0, 6000), {
-        jsonMode: true,
-        temperature: 0,
-        // Higher than a plain "list the answer" call needs -- confirmed live
-        // this account hit "max completion tokens reached before generating
-        // a valid document" at 512 (the model spends tokens reasoning before
-        // it writes the closing JSON), not because the real answer is long.
-        maxTokens: 1024,
-      });
+      let groqTools: string[] = [];
+      let groqVendors: string[] = [];
 
-      let parsed: { tools_software?: unknown; vendor_experience?: unknown };
-      try {
-        parsed = JSON.parse(completion.text);
-      } catch {
-        console.log(`SKIPPED: malformed JSON response`);
-        skipped++;
-        continue;
+      if (textBlob.trim()) {
+        const completion = await groq.chat(systemPrompt, "PROFILE TEXT:\n\n" + textBlob.slice(0, 6000), {
+          jsonMode: true,
+          temperature: 0,
+          // Higher than a plain "list the answer" call needs -- confirmed
+          // live this account hit "max completion tokens reached before
+          // generating a valid document" at 512 (the model spends tokens
+          // reasoning before it writes the closing JSON), not because the
+          // real answer is long.
+          maxTokens: 1024,
+        });
+
+        let parsed: { tools_software?: unknown; vendor_experience?: unknown };
+        try {
+          parsed = JSON.parse(completion.text);
+        } catch {
+          console.log(`SKIPPED: malformed JSON response`);
+          skipped++;
+          continue;
+        }
+
+        groqTools = Array.isArray(parsed.tools_software) ? parsed.tools_software.map(String) : [];
+        groqVendors = Array.isArray(parsed.vendor_experience) ? parsed.vendor_experience.map(String) : [];
       }
 
-      const groqTools = Array.isArray(parsed.tools_software) ? parsed.tools_software.map(String) : [];
-      const groqVendors = Array.isArray(parsed.vendor_experience) ? parsed.vendor_experience.map(String) : [];
-
       const mergedTools = normalizeToolsSoftware([...lead.toolsSoftware, ...groqTools]);
-      const mergedVendors = normalizeVendorExperience([...lead.vendorExperience, ...groqVendors]);
+      const mergedVendors = normalizeVendorExperience([...lead.vendorExperience, ...experienceCompanies, ...groqVendors]);
 
       const toolsChanged = arraysDiffer(mergedTools, lead.toolsSoftware);
       const vendorsChanged = arraysDiffer(mergedVendors, lead.vendorExperience);
