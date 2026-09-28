@@ -150,12 +150,21 @@ async function main() {
       }
 
       const mergedTools = normalizeToolsSoftware([...lead.toolsSoftware, ...groqTools]);
+      // REPLACE_VENDORS=1 recomputes Vendor_Experience purely from source
+      // (structured experience + Groq), dropping whatever's already stored,
+      // instead of the normal union-with-existing merge -- a one-time
+      // corrective pass for data already corrupted by an earlier version of
+      // this script's comma-splitting bug (real company names like
+      // "Brindauto Comptoir, SA" got shredded into "Brindauto Comptoir" +
+      // "SA" as two separate stored array entries; a plain union would keep
+      // those stale fragments forever alongside the now-correctly-extracted
+      // full name). Safe to do here since this field is purely enrichment-
+      // derived, not a value a recruiter hand-typed.
+      const vendorSources = process.env.REPLACE_VENDORS
+        ? [...experienceCompanies, ...groqVendors]
+        : [...lead.vendorExperience, ...experienceCompanies, ...groqVendors];
       const mergedVendors = Array.from(
-        new Set(
-          [...lead.vendorExperience, ...experienceCompanies, ...groqVendors]
-            .map(canonicalizeVendorToken)
-            .filter((v): v is string => v !== null)
-        )
+        new Set(vendorSources.map(canonicalizeVendorToken).filter((v): v is string => v !== null))
       );
 
       const toolsChanged = arraysDiffer(mergedTools, lead.toolsSoftware);
