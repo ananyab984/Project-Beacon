@@ -232,7 +232,6 @@ export interface ApiClient {
   contactName: string | null;
   contactEmail: string | null;
   notes: string | null;
-  notificationsEnabled: boolean;
   createdAt: string;
 }
 
@@ -370,15 +369,7 @@ export type NotificationType =
   | "ENRICHMENT_COMPLETE"
   | "DAILY_DEMAND_SUMMARY"
   | "WEEKLY_LEADS_SUMMARY"
-  | "WEEKLY_PERFORMANCE_SUMMARY"
-  | "ENRICHMENT_STALLED"
-  | "DUPLICATE_REVIEW_NEEDED"
-  | "DNC_CONFIRMATION_NEEDED"
-  | "FOLLOW_UP_DUE"
-  | "LEAD_PLACED"
-  | "WEEKLY_TEAM_HEALTH_SUMMARY"
-  | "CLIENT_STATUS_UPDATE"
-  | "REQUIREMENT_FULFILLED";
+  | "WEEKLY_PERFORMANCE_SUMMARY";
 
 export interface ApiNotification {
   id: string;

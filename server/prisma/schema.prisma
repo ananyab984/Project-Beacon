@@ -384,12 +384,7 @@ model Lead {
 
   // --- duplicate detection at submission (repo: checkDuplicate, dup_flagged) ---
   dupFlagged      Boolean @default(false) @map("dup_flagged")
-  dupFlaggedField String? @map("dup_flagged_field") // "full_name" | "profile_link" | "email_address" | "fuzzy_match"
-  // Soft reference (resolved by the caller, not a typed FK -- same pattern as
-  // Notification.link below) to the lead the fuzzy/LLM dedup waterfall
-  // (enrichment_pipeline/core/dedup.py) thinks this one duplicates. Only set
-  // when enrichmentStatus is FLAGGED_REVIEW.
-  suspectedDuplicateLeadId String? @map("suspected_duplicate_lead_id")
+  dupFlaggedField String? @map("dup_flagged_field") // "full_name" | "profile_link" | "email_address"
 
   enrichmentStatus    EnrichmentStatus @default(PENDING) @map("enrichment_status")
   // Purely descriptive of *why* the ON_HOLD flag (in `flags` below) is
@@ -882,12 +877,6 @@ model Client {
   contactEmail String?  @map("contact_email")
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at")
-  // Org-wide switch: when on, a requirement status change for this client
-  // notifies every owner (CLIENT_STATUS_UPDATE). Off by default -- opt-in per
-  // client so routine status churn on clients the owner isn't watching
-  // doesn't turn into notification noise. Independent of REQUIREMENT_FULFILLED,
-  // which always fires regardless of this flag.
-  notificationsEnabled Boolean @default(false) @map("notifications_enabled")
 
   demands      ClientDemand[]
   requirements Requirement[]
@@ -1247,17 +1236,6 @@ enum NotificationType {
   DAILY_DEMAND_SUMMARY
   WEEKLY_LEADS_SUMMARY
   WEEKLY_PERFORMANCE_SUMMARY
-  // Shared across recruiter/contractor/owner -- see notification.routes.ts's
-  // RECRUITER_TYPES/CONTRACTOR_TYPES/OWNER_TYPES for which role sees which.
-  ENRICHMENT_STALLED
-  DUPLICATE_REVIEW_NEEDED
-  DNC_CONFIRMATION_NEEDED
-  FOLLOW_UP_DUE
-  LEAD_PLACED
-  // Owner-only types.
-  WEEKLY_TEAM_HEALTH_SUMMARY
-  CLIENT_STATUS_UPDATE
-  REQUIREMENT_FULFILLED
 }
 
 model Notification {

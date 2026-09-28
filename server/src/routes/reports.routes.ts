@@ -9,55 +9,6 @@ export const reportsRouter = Router();
 
 reportsRouter.use(authenticateJwt);
 
-/** Recomputes every recruiter's current score snapshot and the org's demand
- *  fill rate -- the same current-state (not date-range-scoped) numbers
- *  GET /analytics returns under `summary`, factored out so
- *  ownerDigest.job.ts's weekly team-health notification can pull the same
- *  two figures without re-deriving the recompute/snapshot-pick logic.
- *  Returns latestScoreMap too so /analytics's own recruiterThroughput
- *  section (which needs a per-recruiter score, not just the team average)
- *  doesn't have to redo the recompute either. */
-export async function computeTeamHealthStats(): Promise<{
-  teamAvgScore: number;
-  fillRate: number;
-  latestScoreMap: Map<string, number>;
-}> {
-  const recruiters = await prisma.user.findMany({ where: { role: "RECRUITER" }, select: { id: true } });
-
-  await Promise.all(
-    recruiters.map((r) =>
-      computeRecruiterScoreSnapshot(r.id, new Date()).catch((err) =>
-        console.warn(`[reports] on-demand score computation failed for recruiter ${r.id}:`, err)
-      )
-    )
-  );
-
-  const snapshots = await prisma.recruiterScoreSnapshot.findMany({
-    where: { recruiterId: { in: recruiters.map((r) => r.id) } },
-    orderBy: { period: "desc" },
-  });
-
-  const latestScoreMap = new Map<string, number>();
-  for (const snap of snapshots) {
-    if (!latestScoreMap.has(snap.recruiterId)) {
-      const numScore = typeof snap.overallScore === "number" ? snap.overallScore : (snap.overallScore as any).toNumber?.() ?? Number(snap.overallScore);
-      latestScoreMap.set(snap.recruiterId, numScore);
-    }
-  }
-
-  const teamScores = Array.from(latestScoreMap.values());
-  const teamAvgScore = teamScores.length
-    ? Math.round(teamScores.reduce((a, b) => a + b, 0) / teamScores.length)
-    : 75;
-
-  const demands = await prisma.clientDemand.findMany({ select: { headcountNeeded: true, filled: true } });
-  const totalDemand = demands.reduce((acc, d) => acc + d.headcountNeeded, 0);
-  const totalFilled = demands.reduce((acc, d) => acc + d.filled, 0);
-  const fillRate = totalDemand > 0 ? Math.round((totalFilled / totalDemand) * 100) : 0;
-
-  return { teamAvgScore, fillRate, latestScoreMap };
-}
-
 function getSinceDate(range: string): Date {
   const now = Date.now();
   switch (range) {
@@ -100,19 +51,50 @@ reportsRouter.get(
       select: { id: true, name: true, email: true },
     });
 
-    // Score recompute/snapshot-pick + demand fill rate -- shared with
-    // ownerDigest.job.ts's weekly team-health notification, see
-    // computeTeamHealthStats's own doc comment for why.
-    const { teamAvgScore, fillRate, latestScoreMap } = await computeTeamHealthStats();
+    // Recompute every active recruiter's current-month snapshot before
+    // reading it, in parallel -- same reason as evaluation.routes.ts's
+    // GET /recruiters/:id/score: reading RecruiterScoreSnapshot rows without
+    // refreshing them first meant this dashboard could show a different
+    // (older) score for a recruiter than the roster page did, purely
+    // depending on whether someone had opened that recruiter's detail page
+    // and clicked Recalculate Score recently.
+    await Promise.all(
+      recruiters.map((r) =>
+        computeRecruiterScoreSnapshot(r.id, new Date()).catch((err) =>
+          console.warn(`[reports] on-demand score computation failed for recruiter ${r.id}:`, err)
+        )
+      )
+    );
 
-    // 3. Market Demand (fill rate itself came from computeTeamHealthStats
-    // above; this fuller fetch is for the totals below and the language
-    // breakdown further down).
+    const snapshots = await prisma.recruiterScoreSnapshot.findMany({
+      where: {
+        recruiterId: { in: recruiters.map((r) => r.id) },
+      },
+      orderBy: { period: "desc" },
+    });
+
+    // Pick latest snapshot per recruiter
+    const latestScoreMap = new Map<string, number>();
+    for (const snap of snapshots) {
+      if (!latestScoreMap.has(snap.recruiterId)) {
+        const numScore = typeof snap.overallScore === "number" ? snap.overallScore : (snap.overallScore as any).toNumber?.() ?? Number(snap.overallScore);
+        latestScoreMap.set(snap.recruiterId, numScore);
+      }
+    }
+
+    const teamScores = Array.from(latestScoreMap.values());
+    const teamAvgScore = teamScores.length
+      ? Math.round(teamScores.reduce((a, b) => a + b, 0) / teamScores.length)
+      : 75;
+
+    // 3. Market Demand & Fill Rate
     const demands = await prisma.clientDemand.findMany({
       include: { serviceBreakdown: true, client: { select: { name: true } } },
     });
+
     const totalDemand = demands.reduce((acc, d) => acc + d.headcountNeeded, 0);
     const totalFilled = demands.reduce((acc, d) => acc + d.filled, 0);
+    const fillRate = totalDemand > 0 ? Math.round((totalFilled / totalDemand) * 100) : 0;
 
     // 4. AI Drafts and Time Saved
     const aiDraftsCount = await prisma.emailQueueItem.count({
