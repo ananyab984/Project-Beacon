@@ -132,15 +132,25 @@ function fromBrightData(raw: unknown): ProfileSections {
     summary: clean(e.description ?? e.description_html),
   }));
 
+  // `subtitle` carries real text too (e.g. a certification's issuing
+  // platform, "Ooona") that a title-only extract used to drop -- kept here
+  // so a tool/vendor named only there is still visible to a text scan
+  // downstream, not just the (deduped, display-oriented) `title`.
   const certifications = asArray(p.certifications)
-    .map((e) => clean(typeof e === "string" ? e : e.title ?? e.name))
-    .filter(Boolean)
-    .map((title) => ({ source: "brightdata" as const, title: title as string }));
+    .filter((e) => (typeof e === "string" ? e.trim() : e.title ?? e.name))
+    .map((e) => ({
+      source: "brightdata" as const,
+      title: clean(typeof e === "string" ? e : e.title ?? e.name),
+      subtitle: typeof e === "string" ? undefined : clean(e.subtitle),
+    }));
 
   const courses = asArray(p.courses)
-    .map((e) => clean(typeof e === "string" ? e : e.title ?? e.name))
-    .filter(Boolean)
-    .map((title) => ({ source: "brightdata" as const, title: title as string }));
+    .filter((e) => (typeof e === "string" ? e.trim() : e.title ?? e.name))
+    .map((e) => ({
+      source: "brightdata" as const,
+      title: clean(typeof e === "string" ? e : e.title ?? e.name),
+      subtitle: typeof e === "string" ? undefined : clean(e.subtitle),
+    }));
 
   return { experience, education, languages, certifications, courses };
 }

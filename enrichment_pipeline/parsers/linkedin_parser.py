@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from parsers.base import BaseParser
 from parsers.service_aliases import extract_services_from_text
 from parsers.tool_aliases import TOOL_ALIASES, extract_tools_from_text
-from parsers.vendor_aliases import extract_vendors_from_text
+from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
 
 
 def _clean_text(val: Any) -> Optional[str]:
@@ -166,6 +166,66 @@ _ABOUT_FIELD_NAMES = ("about", "summary", "summary_text", "bio", "description", 
 
 def _about_text_blob(profile: dict) -> str:
     return " ".join(str(profile.get(f) or "") for f in _ABOUT_FIELD_NAMES)
+
+
+# Different profiles use different key names for conceptually the same
+# credentials section -- checked as separate sections that can all coexist
+# on one profile, not a first-match fallback the way _extract_certifications
+# reads them (that function only needs ONE structured value to display;
+# this one is mining every real word available for a tool/vendor mention).
+_CREDENTIAL_LIST_KEYS = ("certifications", "licenses_and_certifications", "licenses", "courses")
+
+
+def _narrative_text_blob(profile: dict) -> str:
+    """Every real narrative/title string BrightData returns beyond the thin
+    Headline/About fields -- structured credential list titles (a
+    certification or course name can itself name a tool, e.g. "Ooona
+    Certified Subtitler") and every experience entry's own free-text
+    description plus each of its per-position title/description. This is
+    what lets a tool or vendor named only in "I used Pro Tools daily on this
+    role" (a real per-role description, not prose the person wrote about
+    themselves) get picked up deterministically instead of needing an LLM to
+    read it.
+
+    HTML tags are stripped (not just entity-decoded, which _clean_text
+    already does) before matching -- these fields are raw scraped HTML, and
+    an unstripped tag sitting between two words of a multi-word alias
+    ("pro" <b> "tools") would otherwise break the substring match."""
+    parts: List[str] = []
+
+    for key in _CREDENTIAL_LIST_KEYS:
+        items = profile.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                for field in ("title", "subtitle", "name"):
+                    v = item.get(field)
+                    if v:
+                        parts.append(str(v))
+            elif item:
+                parts.append(str(item))
+
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if isinstance(exp_list, list):
+        for item in exp_list:
+            if not isinstance(item, dict):
+                continue
+            for field in ("description", "description_html"):
+                v = item.get(field)
+                if v:
+                    parts.append(str(v))
+            for pos in item.get("positions") or []:
+                if not isinstance(pos, dict):
+                    continue
+                for field in ("title", "description", "description_html"):
+                    v = pos.get(field)
+                    if v:
+                        parts.append(str(v))
+
+    raw = " ".join(parts)
+    stripped = re.sub(r"<[^>]+>", " ", raw)
+    return _clean_text(stripped) or ""
 
 
 def _extract_years_of_experience(profile: dict) -> Optional[int]:
@@ -399,14 +459,33 @@ def _extract_certifications_deep(profile: dict) -> Optional[str]:
     return ", ".join(from_text) if from_text else None
 
 
-def _extract_vendor_experience(profile: dict, free_text: str) -> Optional[str]:
-    """Matches the profile's employer history AND free text (headline/About)
-    against the canonical Vendor_Experience list (parsers/vendor_aliases.py)
-    -- the same list the recruiter-facing Vendor Experience multi-select
-    offers. Used to return every raw employer name verbatim (any past
-    company, not just an industry vendor), which is why this field only ever
-    held a single free-text blob instead of the same closed, dropdown-
-    matchable set Services already gets from service_aliases.py."""
+def _extract_vendor_experience(profile: dict, narrative_text: str = "") -> Optional[str]:
+    """Collects every distinct real company/employer from the profile's
+    structured experience history (current_company + the full experience
+    list) -- a person's actual vendor/client portfolio, not just whichever
+    of the 9 largest known post-production vendors happens to be one of
+    them. Restricting this field to only alias-matched known vendors was
+    confirmed live to throw away exactly the rich data a profile's own
+    Experience section already has: a lead with 9 distinct named employers
+    there (Netflix, Kinotitles Srls, Baburka Production, Words in Progress
+    S.r.l., ...) still had Vendor_Experience holding only "Freelancer" --
+    which isn't even a real company, just what BrightData put in
+    `current_company` for someone describing how they work rather than who
+    they work for (see vendor_aliases.NON_COMPANY_EMPLOYMENT_LABELS).
+
+    A company matching (or an obvious variant of) one of the 9 known
+    vendors is normalized to its canonical spelling via
+    vendor_aliases.canonicalize_or_keep; every other real, named employer is
+    kept exactly as stated -- any company someone has actually worked with
+    is real vendor-experience information a recruiter wants to see.
+
+    `narrative_text` is additionally scanned against the closed 9-vendor
+    alias list (vendor_aliases.extract_vendors_from_text) -- unlike the
+    structured company list above, this is NOT open extraction (it can only
+    ever add one of the 9 known names), so it stays safe to run
+    deterministically. This is what catches a known vendor named only in
+    prose ("delivered QC to Zoo Digital") that never appears as a structured
+    `company` value on its own."""
     companies = []
     curr = profile.get("current_company")
     if isinstance(curr, dict):
@@ -421,16 +500,28 @@ def _extract_vendor_experience(profile: dict, free_text: str) -> Optional[str]:
         for item in exp_list:
             if isinstance(item, dict):
                 cname = item.get("company") or item.get("company_name")
-                if cname and str(cname) not in companies:
+                if cname:
                     companies.append(str(cname))
 
     company_name = profile.get("company")
-    if company_name and str(company_name) not in companies:
+    if company_name:
         companies.append(str(company_name))
 
-    combined_text = " ".join(companies) + " " + free_text
-    matched = extract_vendors_from_text(combined_text)
-    return ", ".join(matched) if matched else None
+    companies.extend(extract_vendors_from_text(narrative_text))
+
+    seen: set = set()
+    result: List[str] = []
+    for raw in companies:
+        canonical = canonicalize_or_keep(raw)
+        if canonical is None:
+            continue
+        key = canonical.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(canonical)
+
+    return ", ".join(result) if result else None
 
 
 class LinkedInParser(BaseParser):
@@ -507,11 +598,13 @@ class LinkedInParser(BaseParser):
         if lang_pair:
             result["Source_Language"], result["Target_Language"] = lang_pair
 
-        tools = _extract_tools_software(" ".join(skill_names) + " " + free_text)
+        narrative_text = _narrative_text_blob(profile)
+
+        tools = _extract_tools_software(" ".join(skill_names) + " " + free_text + " " + narrative_text)
         if tools:
             result["Tools_Software"] = tools
 
-        vendors = _extract_vendor_experience(profile, free_text)
+        vendors = _extract_vendor_experience(profile, free_text + " " + narrative_text)
         if vendors:
             result["Vendor_Experience"] = vendors
 

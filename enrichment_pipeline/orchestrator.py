@@ -32,7 +32,7 @@ from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 from parsers.service_aliases import extract_services_from_text
 from parsers.tool_aliases import extract_tools_from_text
-from parsers.vendor_aliases import extract_vendors_from_text
+from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
 
 log = get_logger(__name__)
 
@@ -1182,19 +1182,51 @@ class EnrichmentOrchestrator:
         # its headline/skills/about text or experience history actually said.
         skills_text = ", ".join(str(s) for s in skills if s and not _is_absence_prose(str(s))) if isinstance(skills, list) else ""
         free_text_blob = " | ".join(str(v) for v in (headline, current_title, about_snippet) if v)
-        tools_scan_text = f"{skills_text} {free_text_blob}"
+        # Every experience entry's own narrative (Parallel's ExperienceEntry.
+        # summary -- "the full, complete narrative description of this role
+        # exactly as written on the profile") plus the structured
+        # certifications list -- same reasoning as linkedin_parser.py's
+        # _narrative_text_blob: a tool or vendor is often named only in a
+        # per-role description, not in the thin Headline/About fields.
+        experience_summaries = " ".join(
+            str(e.get("summary")) for e in (parallel_data.get("experience") or [])
+            if isinstance(e, dict) and e.get("summary") and not _is_absence_prose(str(e.get("summary")))
+        )
+        certifications_text = " ".join(
+            str(c) for c in (parallel_data.get("certifications") or [])
+            if c and not _is_absence_prose(str(c))
+        )
+        narrative_text = f"{experience_summaries} {certifications_text}"
+        tools_scan_text = f"{skills_text} {free_text_blob} {narrative_text}"
         matched_tools = extract_tools_from_text(tools_scan_text)
         if matched_tools:
             mapped["Tools_Software"] = ", ".join(matched_tools)
 
-        vendor_companies = [
+        # Every distinct named employer from Parallel's structured experience
+        # list -- not just ones matching the 9 known vendors -- same fix as
+        # linkedin_parser.py's _extract_vendor_experience and for the same
+        # reason: a person's real work history is real vendor-experience
+        # information regardless of whether the company happens to be one of
+        # the largest known post-production vendors. Also scans free text +
+        # experience narratives against the closed 9-vendor alias list --
+        # safe to do deterministically (can only ever add one of the 9 known
+        # names, not open extraction) and catches a known vendor named only
+        # in prose that never appears as its own structured `company` value.
+        raw_companies = [
             str(e.get("company")) for e in (parallel_data.get("experience") or [])
             if isinstance(e, dict) and e.get("company") and not _is_absence_prose(str(e.get("company")))
         ]
-        vendor_scan_text = f"{' '.join(vendor_companies)} {free_text_blob}"
-        matched_vendors = extract_vendors_from_text(vendor_scan_text)
-        if matched_vendors:
-            mapped["Vendor_Experience"] = ", ".join(matched_vendors)
+        raw_companies.extend(extract_vendors_from_text(f"{free_text_blob} {narrative_text}"))
+        seen_vendors: set = set()
+        vendor_result: List[str] = []
+        for raw in raw_companies:
+            canonical = canonicalize_or_keep(raw)
+            if canonical is None or canonical.lower() in seen_vendors:
+                continue
+            seen_vendors.add(canonical.lower())
+            vendor_result.append(canonical)
+        if vendor_result:
+            mapped["Vendor_Experience"] = ", ".join(vendor_result)
 
         # Parallel's LeadProfile has no dedicated years-of-experience field --
         # only the structured `experience` list. Stage 6 (LLM web search) is
@@ -1337,7 +1369,19 @@ class EnrichmentOrchestrator:
     # its own dedicated fill mechanism above (_infer_services_via_llm,
     # _infer_years_of_experience_from_text), so asking about them again here
     # would be a second, redundant Claude call for the same answer.
-    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Tools_Software", "Certifications", "Vendor_Experience")
+    # Tools_Software and Vendor_Experience are also excluded -- Stage 3/3.5's
+    # deterministic extraction (parsers/tool_aliases.py, vendor_aliases.py)
+    # now scans every structured/semi-structured section a profile has
+    # (skills, certifications, courses, per-role experience narratives), not
+    # just the thin Headline/About fields, which covers what an LLM fallback
+    # for these two fields used to be needed for. A dedicated Groq stage
+    # here (Stage 3.77, removed) ran unconditionally on every lead and
+    # measurably hallucinated on thin-text profiles (certification bodies
+    # and universities reported as "vendor experience", a vague phrase
+    # reported as a company name) -- exactly the condition a fill-only gate
+    # would still trigger on, so gating it narrower wasn't a fix, only
+    # removing it was.
+    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Certifications")
 
     def _infer_remaining_fields_via_llm(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
