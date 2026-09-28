@@ -21,6 +21,8 @@ import requests
 from config import Config
 from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
+from parsers.tool_aliases import TOOL_ALIASES
+from parsers.vendor_aliases import VENDOR_ALIASES
 
 log = get_logger(__name__)
 
@@ -112,6 +114,80 @@ class GroqMappingClient:
         if not isinstance(services, list):
             return []
         return [str(s).strip() for s in services if s and str(s).strip()]
+
+    def classify_tools_and_vendors(self, profile_text: str) -> Dict[str, List[str]]:
+        """Cleanup/broadening pass for Tools_Software and Vendor_Experience,
+        run regardless of what parsers/tool_aliases.py's and
+        parsers/vendor_aliases.py's plain substring scan already found.
+
+        That deterministic scan only ever catches an EXACT alias phrase --
+        "protools" or "pro tools" matches "Pro Tools", but "I cut on Avid"
+        (no "media composer") or "editing in Adobe's Premiere suite" (word
+        order/phrasing the alias list doesn't anticipate) does not, even
+        though a person reading the sentence would recognize the tool
+        immediately. This exists to catch exactly that gap using a model's
+        actual language understanding instead of a longer and longer list of
+        hand-written phrasings, while still reporting the same canonical
+        spelling the dropdown and the alias scan use, so results merge
+        cleanly regardless of which path found them.
+
+        Reads whatever free text the pipeline already has (Headline,
+        Current_Title, About_Snippet, Certifications, and Services -- which
+        often carries the profile's raw skills list verbatim) -- no live web
+        search, same as classify_services.
+        """
+        tool_list = ", ".join(TOOL_ALIASES.keys())
+        vendor_list = ", ".join(VENDOR_ALIASES.keys())
+        system = (
+            "You read a linguist/media-industry recruiting profile's already-extracted text "
+            "(which may include a headline, current title, about/bio, certifications, and a raw "
+            "skills/services list) and identify two things from it:\n\n"
+            f"1. TOOLS_SOFTWARE: specific named software/tools the person uses professionally "
+            f"(subtitling software, translation/CAT tools, audio/video editing software, etc). "
+            f"These are the known canonical product names: {tool_list}. When the text names one "
+            f"of these (allowing for different phrasing, abbreviations, or a minor misspelling -- "
+            f"e.g. 'cut on Avid' means Avid Media Composer, 'Adobe's Premiere suite' means Adobe "
+            f"Premiere Pro), report it using EXACTLY the canonical spelling above. If the text "
+            f"clearly names a real, specific tool that is NOT on this list, report it exactly as "
+            f"stated instead of dropping it -- never invent one that isn't actually mentioned.\n\n"
+            f"2. VENDOR_EXPERIENCE: named companies/studios/vendors/clients the person has worked "
+            f"for or with, that ARE (or are an obvious variant of) one of these known industry "
+            f"vendors: {vendor_list}. Report a name from this list (using its exact canonical "
+            f"spelling) only when the text clearly names it or an unambiguous variant (e.g. 'SDI "
+            f"Media' or 'Pixelogic Media Services' -> 'Pixel Logic'). Do not report any other "
+            f"employer -- an unrelated company is not a vendor for this purpose.\n\n"
+            "RULES:\n"
+            "- Only report something the text directly states -- never infer or guess from vague "
+            "context.\n"
+            "- Return SHORT canonical names, not full sentences or descriptions.\n"
+            "- Return an empty list for a category if nothing in the text supports it.\n\n"
+            'Respond with ONLY a JSON object of exactly this shape: '
+            '{"tools_software": [<string>, ...], "vendor_experience": [<string>, ...]}'
+        )
+        body = {
+            "model": self.config.groq_model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": "PROFILE TEXT:\n\n" + profile_text[:6000]},
+            ],
+            "temperature": 0.0,
+            "response_format": {"type": "json_object"},
+            # Higher than classify_services'/extract_missing_fields' 512 --
+            # confirmed live: this call's two-category prompt (with both full
+            # canonical lists embedded) pushed the model into reasoning
+            # tokens that ate the completion budget before it reached valid
+            # closing JSON ("max completion tokens reached before generating
+            # a valid document"), not because the actual answer is longer.
+            "max_tokens": 1024,
+        }
+
+        result = self._request(body, "Tools/Vendor classification")
+        tools = result.get("tools_software")
+        vendors = result.get("vendor_experience")
+        return {
+            "tools_software": [str(t).strip() for t in tools if t and str(t).strip()] if isinstance(tools, list) else [],
+            "vendor_experience": [str(v).strip() for v in vendors if v and str(v).strip()] if isinstance(vendors, list) else [],
+        }
 
     # Maps each supported canonical field name to (JSON response key, kind).
     # "list" -> comma-joined string on return; "text" -> returned as-is.

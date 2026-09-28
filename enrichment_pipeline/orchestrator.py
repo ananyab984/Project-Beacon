@@ -1337,7 +1337,12 @@ class EnrichmentOrchestrator:
     # its own dedicated fill mechanism above (_infer_services_via_llm,
     # _infer_years_of_experience_from_text), so asking about them again here
     # would be a second, redundant Claude call for the same answer.
-    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Tools_Software", "Certifications", "Vendor_Experience")
+    # Tools_Software and Vendor_Experience are excluded for the same reason as
+    # of the Stage 3.77 addition below (_infer_tools_vendor_via_llm) -- that
+    # stage now owns both fields, runs regardless of prior emptiness (not
+    # fill-only), and reads the identical text blob this stage builds, so
+    # asking about them here too would be a second, redundant Claude call.
+    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Certifications")
 
     def _infer_remaining_fields_via_llm(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
@@ -1400,6 +1405,74 @@ class EnrichmentOrchestrator:
         if still_missing:
             logs.append(f"Stage 3.76: no groundable text for {still_missing}")
 
+    def _infer_tools_vendor_via_llm(
+        self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+    ) -> None:
+        """Stage 3.77: Groq-based cleanup/broadening pass for Tools_Software
+        and Vendor_Experience (GroqMappingClient.classify_tools_and_vendors) --
+        runs regardless of whether Stage 3/3.5's deterministic alias scan
+        (parsers/tool_aliases.py, parsers/vendor_aliases.py) already found
+        something for either field, unlike every other LLM stage above, which
+        is fill-only.
+
+        That deterministic scan is a plain substring match against a fixed
+        alias list, so it only ever catches a tool/vendor named in one of the
+        phrasings the list anticipates -- "cut on Avid" or "editing in
+        Adobe's Premiere suite" names a real, recognizable tool that no
+        substring match would catch, however many aliases the list grows to.
+        Since a repeat enrichment run is exactly how an ALREADY-populated
+        lead (extracted before this stage existed, or before the alias lists
+        were corrected) gets its Tools_Software/Vendor_Experience refreshed,
+        this stage merges (union, not replace) with whatever's already
+        there -- a real deterministic match is never lost to an LLM miss, and
+        a stale/incomplete prior value is never permanently locked in as
+        "already resolved" the way FILL_ONLY_ENRICHABLE_FIELDS/
+        _REMAINING_FILL_ONLY_FIELDS's fields are.
+
+        Runs unconditionally (given text to read), not gated on emptiness --
+        the "should we even bother" cost control here is `is_empty_value`-free
+        by design, mirroring _infer_services_via_llm's reasoning that this
+        kind of local, no-web-search Groq call is cheap enough not to need a
+        thinness gate the way Stage 6's live web search does.
+        """
+        if not self.groq_mapper:
+            logs.append("Stage 3.77: tools/vendor cleanup skipped: GROQ_API_KEY isn't set")
+            return
+
+        text_blob = " | ".join(
+            str(v) for v in (
+                lead.get("Headline"), lead.get("Current_Title"),
+                lead.get("About_Snippet"), lead.get("Certifications"),
+                lead.get("Services"),
+            )
+            if v
+        )
+        if not text_blob:
+            logs.append("Stage 3.77: tools/vendor cleanup skipped: no free text to read")
+            return
+
+        try:
+            result = self.groq_mapper.classify_tools_and_vendors(text_blob)
+        except GroqMappingError as exc:
+            logs.append(f"Stage 3.77: tools/vendor cleanup failed: {exc}")
+            return
+
+        existing_tools = [t.strip() for t in str(lead.get("Tools_Software") or "").split(",") if t.strip()]
+        merged_tools = list(dict.fromkeys(existing_tools + result["tools_software"]))
+        merged_tools_str = ", ".join(merged_tools)
+        if merged_tools and merged_tools_str != (lead.get("Tools_Software") or ""):
+            lead["Tools_Software"] = merged_tools_str
+            field_sources["Tools_Software"] = "llm_fallback"
+            logs.append(f"Stage 3.77: Tools_Software = {merged_tools_str!r} (merged deterministic match + llm_fallback cleanup)")
+
+        existing_vendors = [v.strip() for v in str(lead.get("Vendor_Experience") or "").split(",") if v.strip()]
+        merged_vendors = list(dict.fromkeys(existing_vendors + result["vendor_experience"]))
+        merged_vendors_str = ", ".join(merged_vendors)
+        if merged_vendors and merged_vendors_str != (lead.get("Vendor_Experience") or ""):
+            lead["Vendor_Experience"] = merged_vendors_str
+            field_sources["Vendor_Experience"] = "llm_fallback"
+            logs.append(f"Stage 3.77: Vendor_Experience = {merged_vendors_str!r} (merged deterministic match + llm_fallback cleanup)")
+
     def process_lead(self, lead_input: Dict[str, Any], known_field_sources: Optional[Dict[str, str]] = None) -> PipelineResult:
         start_time = time.monotonic()
         lead = dict(lead_input)
@@ -1461,6 +1534,7 @@ class EnrichmentOrchestrator:
         # it. See _infer_services_via_llm's docstring for the confirmed case.
         self._infer_services_via_llm(lead, field_sources, logs)
         self._infer_years_of_experience_from_text(lead, field_sources, logs)
+        self._infer_tools_vendor_via_llm(lead, field_sources, logs)
         self._infer_remaining_fields_via_llm(lead, field_sources, logs)
 
         post_stage3_audit = audit_lead_fields(lead)

@@ -1,7 +1,7 @@
 // Keep in sync with enrichment_pipeline/parsers/vendor_aliases.py -- same
 // deliberate-duplication convention as normalizeToolsSoftware.ts /
 // normalizeServices.ts.
-const STANDARD_VENDORS = ["Deluxe", "SDI", "Pixel Logic", "Zoo Digital", "VSI", "Plint", "BTI", "DeepDub", "Ooona"];
+export const STANDARD_VENDORS = ["Deluxe", "SDI", "Pixel Logic", "Zoo Digital", "VSI", "Plint", "BTI", "DeepDub", "Ooona"];
 
 // Real variant spellings a plain case-insensitive match against
 // STANDARD_VENDORS wouldn't catch.

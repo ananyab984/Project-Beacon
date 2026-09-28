@@ -2,7 +2,7 @@
 // and this Node service are separate projects with no shared package, so
 // this list is duplicated deliberately, same convention as
 // normalizeServices.ts / STANDARD_SERVICES.
-const STANDARD_TOOLS = [
+export const STANDARD_TOOLS = [
   "Ableton Live",
   "Adobe Audition",
   "Adobe Premiere Pro",
