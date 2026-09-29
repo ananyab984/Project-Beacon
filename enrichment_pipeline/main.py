@@ -280,6 +280,10 @@ def run_server(host: str, port: int, config) -> None:
                 if config.parallel_processor in KNOWN_PARALLEL_PROCESSORS
                 else f"INVALID -- not one of {sorted(KNOWN_PARALLEL_PROCESSORS)}"
             ),
+            # Off by default (see config.py's stage6_websearch_enabled) -- a
+            # real, non-secret toggle, so this answers "is Stage 6 actually on
+            # in this environment?" without guessing from render.yaml.
+            "stage6_websearch_enabled": config.stage6_websearch_enabled,
         }
 
     @app.post("/enrich", response_model=EnrichmentResponse, dependencies=[Depends(verify_shared_secret)])

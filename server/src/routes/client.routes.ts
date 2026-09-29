@@ -15,6 +15,7 @@ const createClientSchema = z.object({
   contactName: z.string().max(160).optional(),
   contactEmail: z.string().email().optional(),
   notes: z.string().optional(),
+  notificationsEnabled: z.boolean().optional(),
 });
 
 // GET /api/clients — list all clients (bounded table, no pagination needed)

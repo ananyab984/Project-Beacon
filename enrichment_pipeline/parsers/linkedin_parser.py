@@ -11,6 +11,7 @@ from parsers.base import BaseParser
 from parsers.service_aliases import extract_services_from_text
 from parsers.tool_aliases import TOOL_ALIASES, extract_tools_from_text
 from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
+from parsers.language_filter import looks_non_english_token
 
 
 def _clean_text(val: Any) -> Optional[str]:
@@ -570,9 +571,19 @@ class LinkedInParser(BaseParser):
         skills = profile.get("skills")
         skill_names: List[str] = []
         if isinstance(skills, list):
-            skill_names = [str(s.get("name")) if isinstance(s, dict) and s.get("name") else str(s) for s in skills if s]
-            result["Services"] = ", ".join([n for n in skill_names if n])
-        elif skills:
+            raw_skill_names = [str(s.get("name")) if isinstance(s, dict) and s.get("name") else str(s) for s in skills if s]
+            # Unlike Parallel's Services path (translated via orchestrator.py's
+            # _normalize_parallel_language before it's ever read), BrightData's
+            # structured `skills` list has no language normalization at all --
+            # confirmed live: a real profile's skills list held both an
+            # English tag and its own-language duplicate side by side
+            # ("Teamwork" and "Trabalho em equipe"), both joined straight into
+            # Services. Dropped here rather than translated (cheaper, no LLM
+            # call, and the English counterpart is already present in the
+            # same list in every confirmed case).
+            skill_names = [n for n in raw_skill_names if n and not looks_non_english_token(n)]
+            result["Services"] = ", ".join(skill_names)
+        elif skills and not looks_non_english_token(str(skills)):
             result["Services"] = str(skills)
 
         headline = _extract_headline(profile)

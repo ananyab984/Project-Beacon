@@ -420,6 +420,7 @@ export const api = {
       contactName: string;
       contactEmail: string;
       notes: string;
+      notificationsEnabled: boolean;
     }>,
   ) {
     return request<{ client: ApiClient }>(`/api/clients/${id}`, {

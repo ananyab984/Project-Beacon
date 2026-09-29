@@ -1,3 +1,5 @@
+import { looksNonEnglishToken } from "./languageFilter";
+
 // Keep in sync with client/src/lib/services.ts -- client and server are
 // separate TS projects with no shared package, so this list is duplicated
 // deliberately rather than silently drifting the way the un-normalized raw
@@ -80,7 +82,15 @@ export function normalizeServices(raw: string[] | string | null | undefined): st
   const tokens = (Array.isArray(raw) ? raw : [raw])
     .flatMap((s) => tokenizeServiceInput(s))
     .map((s) => s.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    // A non-English duplicate of an already-listed English service (e.g.
+    // "Teamwork" and "Trabalho em equipe" side by side in a BrightData
+    // `skills` list) is dropped, not kept-as-unknown -- unlike every other
+    // "not a known service" token, which stays verbatim, this one is
+    // deliberately excluded because it's the same fact stated twice, not a
+    // second real fact. See languageFilter.ts's own docstring for the
+    // confirmed live case and its known ceiling.
+    .filter((s) => !looksNonEnglishToken(s));
 
   const normalized = tokens.map((token) => {
     const lower = token.toLowerCase();

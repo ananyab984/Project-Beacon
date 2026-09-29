@@ -137,6 +137,8 @@ const ESCALATION_COLOR = "#E11D48"; // red -- deliberately distinct from LEAD_RE
 const ENRICHMENT_COMPLETE_COLOR = "#2EB67D"; // green -- same family as TASK_ASSIGNMENT, both "good news"
 const DEMAND_SUMMARY_COLOR = "#36C5F0"; // blue -- matches BULK_ASSIGNMENT's "FYI digest" tone
 const WEEKLY_SUMMARY_COLOR = "#8B5CF6"; // purple -- matches DUE_DATE_REMINDER's periodic-digest tone
+const REVIEW_NEEDED_COLOR = "#ECB22E"; // amber -- "needs a human decision," distinct from red ESCALATION
+const PLACED_COLOR = "#2EB67D"; // green -- milestone, same "good news" family as ENRICHMENT_COMPLETE
 
 /** TASK_ASSIGNMENT's Slack card. Headcount > 1 reads as a bulk assignment
  * (different emoji/color/copy) rather than a second notification type --
@@ -186,8 +188,11 @@ export function formatDueDateReminderSlackCard(requirement: TaskAssignmentRequir
   };
 }
 
-/** LEAD_RESPONSE's Slack card -- a lead's inbound reply, quoted. */
-export function formatLeadResponseSlackCard(leadName: string, excerpt: string): SlackCard {
+/** LEAD_RESPONSE's Slack card -- a lead's inbound reply, quoted. Fired to
+ *  both a subscribed recruiter and (separately) the contractor who added the
+ *  lead (unipile.service.ts), so `basePath` must reflect whichever it is --
+ *  previously hardcoded to "/recruiter/leads" for both. */
+export function formatLeadResponseSlackCard(leadName: string, excerpt: string, basePath: string): SlackCard {
   return {
     emoji: "💬",
     headline: "You have a new message",
@@ -197,7 +202,7 @@ export function formatLeadResponseSlackCard(leadName: string, excerpt: string): 
       { label: "Message", value: excerpt },
     ],
     note: "Please reply in the dashboard or here if needed.",
-    button: { text: "View Conversation", path: "/recruiter/leads" },
+    button: { text: "View Conversation", path: `${basePath}/leads` },
   };
 }
 
@@ -215,16 +220,19 @@ export function formatEscalationSlackCard(title: string, detail: string, recomme
   };
 }
 
-/** ENRICHMENT_COMPLETE's Slack card -- fires once, when a lead a contractor
- *  added finishes enrichment (enrichment.job.ts's enrichLeadById). */
-export function formatEnrichmentCompleteSlackCard(leadName: string): SlackCard {
+/** ENRICHMENT_COMPLETE's Slack card -- fires to every connected role (the
+ *  contractor who added the lead, the recruiter who owns it, every owner)
+ *  once it finishes enrichment (enrichment.job.ts's enrichLeadById /
+ *  reenrichment.job.ts). `basePath` is the recipient's own role section --
+ *  previously hardcoded to "/contractor/leads" for everyone. */
+export function formatEnrichmentCompleteSlackCard(leadName: string, basePath: string): SlackCard {
   return {
     emoji: "✅",
     headline: "Enrichment finished",
     color: ENRICHMENT_COMPLETE_COLOR,
     fields: [{ label: "Lead", value: leadName }],
     note: "Their profile is now fully filled in.",
-    button: { text: "View Lead", path: "/contractor/leads" },
+    button: { text: "View Lead", path: `${basePath}/leads` },
   };
 }
 
@@ -240,6 +248,7 @@ export function formatDailyDemandSummarySlackCard(openHeadcount: number, openReq
       { label: "Total headcount still needed", value: String(openHeadcount) },
     ],
     note: "Keep sourcing toward these.",
+    button: { text: "View Open Requirements", path: "/contractor/requirements" },
   };
 }
 
@@ -306,7 +315,16 @@ export async function createNotification(input: CreateNotificationInput) {
   });
 
   if (preference?.emailEnabled && recipient?.email) {
-    UnipileService.sendSystemEmail(recipient.email, input.title, body).catch((err) =>
+    // Same destination the Slack card's button points at (or, if this
+    // notification has no card, `link` itself) -- every notification that
+    // can navigate somewhere gets a matching button in both channels, not
+    // just Slack.
+    const emailButton = input.slackCard?.button
+      ? { text: input.slackCard.button.text, url: absoluteAppUrl(input.slackCard.button.path) }
+      : input.link
+        ? { text: "View in G3", url: absoluteAppUrl(input.link) }
+        : undefined;
+    UnipileService.sendSystemEmail(recipient.email, input.title, body, emailButton).catch((err) =>
       console.error("[notifications] system email send failed:", err)
     );
   }
@@ -327,4 +345,265 @@ export async function createNotification(input: CreateNotificationInput) {
   }
 
   return notification;
+}
+
+/** Every active owner -- the fan-out target for org-wide oversight
+ * notifications (enrichment complete/stalled, duplicate review, DNC
+ * confirmation, lead placed, client/requirement updates, team health). */
+export async function getActiveOwnerIds(): Promise<string[]> {
+  const owners = await prisma.user.findMany({ where: { role: "OWNER", isActive: true }, select: { id: true } });
+  return owners.map((o) => o.id);
+}
+
+/** Resolves the lead's owning recruiter the same way everywhere a
+ * lead-level event needs to reach "whoever owns this lead" -- assigned
+ * takes priority, then a Global-pool claim, then whoever originally sourced
+ * it. Returns null if none of the three is set (a contractor-only lead with
+ * no recruiter touch yet). */
+export function resolveLeadOwningRecruiterId(lead: {
+  assignedRecruiterId: string | null;
+  claimedByRecruiterId: string | null;
+  createdByRecruiterId: string | null;
+}): string | null {
+  return lead.assignedRecruiterId ?? lead.claimedByRecruiterId ?? lead.createdByRecruiterId ?? null;
+}
+
+export type NotificationRole = "contractor" | "recruiter" | "owner";
+
+export interface LeadNotificationRecipient {
+  recipientId: string;
+  role: NotificationRole;
+}
+
+/** Each role's own section of the app -- the bell's `link` and the Slack/
+ * email button must point somewhere that role can actually open (a
+ * recruiter-only route isn't reachable by a contractor or owner account), so
+ * every multi-role fan-out below resolves this per recipient instead of
+ * sharing one hardcoded path. */
+export function basePathForRole(role: NotificationRole): string {
+  return role === "contractor" ? "/contractor" : role === "owner" ? "/owner" : "/recruiter";
+}
+
+/** The deduped 3-way fan-out shared by ENRICHMENT_COMPLETE, ENRICHMENT_STALLED
+ * (recruiter+contractor only, see callers), DUPLICATE_REVIEW_NEEDED, and
+ * LEAD_PLACED: the contractor who submitted the lead (if any), the recruiter
+ * who owns it (if any), and every active owner -- each tagged with its role
+ * so the caller can build a role-correct link/button per recipient. A single
+ * user in more than one of those roles (e.g. an owner who's also the assigned
+ * recruiter on a small team) is only notified once, keeping whichever role
+ * resolved first. */
+export async function resolveLeadNotificationRecipients(
+  lead: {
+    createdByContractorId: string | null;
+    assignedRecruiterId: string | null;
+    claimedByRecruiterId: string | null;
+    createdByRecruiterId: string | null;
+  },
+  options: { includeOwners: boolean } = { includeOwners: true }
+): Promise<LeadNotificationRecipient[]> {
+  const recipients = new Map<string, NotificationRole>();
+  if (lead.createdByContractorId) recipients.set(lead.createdByContractorId, "contractor");
+  const owningRecruiterId = resolveLeadOwningRecruiterId(lead);
+  if (owningRecruiterId) recipients.set(owningRecruiterId, "recruiter");
+  if (options.includeOwners) {
+    for (const ownerId of await getActiveOwnerIds()) {
+      if (!recipients.has(ownerId)) recipients.set(ownerId, "owner");
+    }
+  }
+  return [...recipients.entries()].map(([recipientId, role]) => ({ recipientId, role }));
+}
+
+/** DUPLICATE_REVIEW_NEEDED's Slack card -- fires instead of
+ *  ENRICHMENT_COMPLETE when the dedup waterfall flags a likely match.
+ *  `basePath` is the recipient's own role section (see basePathForRole) --
+ *  the button must not always point at the recruiter's pages. */
+export function formatDuplicateReviewSlackCard(leadName: string, reasoning: string, basePath: string): SlackCard {
+  return {
+    emoji: "🔍",
+    headline: "Possible duplicate lead",
+    color: REVIEW_NEEDED_COLOR,
+    fields: [
+      { label: "Lead", value: leadName },
+      { label: "Why", value: reasoning },
+    ],
+    note: "Please review and confirm whether this is a duplicate.",
+    button: { text: "Review Lead", path: `${basePath}/leads` },
+  };
+}
+
+/** ENRICHMENT_STALLED's Slack card -- a lead stuck IN_PROGRESS past the
+ *  timeout (stallOverdueEnrichments). Goes to contractor + owning recruiter
+ *  only, never owners (see enrichment.job.ts). */
+export function formatEnrichmentStalledSlackCard(leadName: string, basePath: string): SlackCard {
+  return {
+    emoji: "⏸️",
+    headline: "Enrichment stalled",
+    color: REVIEW_NEEDED_COLOR,
+    fields: [{ label: "Lead", value: leadName }],
+    note: "This lead's enrichment run didn't finish in time and has been marked for review.",
+    button: { text: "View Lead", path: `${basePath}/leads` },
+  };
+}
+
+/** DNC_CONFIRMATION_NEEDED's Slack card -- a DNC flag set provisional,
+ *  awaiting human sign-off (lead.routes.ts's flags endpoint). */
+export function formatDncConfirmationSlackCard(leadName: string, basePath: string): SlackCard {
+  return {
+    emoji: "🚫",
+    headline: "DNC flag awaiting confirmation",
+    color: REVIEW_NEEDED_COLOR,
+    fields: [{ label: "Lead", value: leadName }],
+    note: "A Do Not Contact flag was set provisionally and needs confirmation.",
+    button: { text: "Review Lead", path: `${basePath}/leads` },
+  };
+}
+
+/** TASK_ASSIGNMENT's Slack card when reused for a HIGH_PRIORITY flag ping
+ *  (lead.routes.ts's flags endpoint) -- always a recruiter recipient, so
+ *  `basePath` is always "/recruiter", but it's still a parameter rather than
+ *  hardcoded so this stays consistent with every other card here. */
+export function formatHighPriorityFlagSlackCard(leadName: string, basePath: string): SlackCard {
+  return {
+    emoji: "🔺",
+    headline: "Lead marked high priority",
+    color: TASK_ASSIGNMENT_COLOR,
+    fields: [{ label: "Lead", value: leadName }],
+    note: "This lead you're assigned to was just bumped to high priority.",
+    button: { text: "View Lead", path: `${basePath}/leads` },
+  };
+}
+
+/** FOLLOW_UP_DUE's Slack card -- outreach sent, no reply after N days
+ *  (followup-nudge.job.ts). Nudge only: no AI draft is attached. Always a
+ *  recruiter recipient (only recruiters send outreach). `link` is the exact
+ *  same deep link the caller already put on `Notification.link` (it encodes
+ *  the lead/step so the bell can jump straight to that lead's follow-up
+ *  composer) -- passed in rather than hardcoded so Slack/email and the bell
+ *  always land on the identical page. */
+export function formatFollowUpDueSlackCard(leadName: string, daysSince: number, link: string): SlackCard {
+  return {
+    emoji: "🔔",
+    headline: "Time to follow up",
+    color: DUE_DATE_REMINDER_COLOR,
+    fields: [
+      { label: "Lead", value: leadName },
+      { label: "Days since contact", value: String(daysSince) },
+    ],
+    note: "No reply yet -- consider sending a follow-up.",
+    button: { text: "Open Email Queue", path: link },
+  };
+}
+
+/** LEAD_PLACED's Slack card -- a lead reached ONBOARDED (lead.routes.ts's
+ *  stage-sync block). */
+export function formatLeadPlacedSlackCard(leadName: string, clientName: string | null | undefined, basePath: string): SlackCard {
+  return {
+    emoji: "🎉",
+    headline: "Lead placed!",
+    color: PLACED_COLOR,
+    fields: [{ label: "Lead", value: leadName }, ...(clientName ? [{ label: "Client", value: clientName }] : [])],
+    note: "This lead has been onboarded.",
+    button: { text: "View Lead", path: `${basePath}/leads` },
+  };
+}
+
+/** CLIENT_STATUS_UPDATE's Slack card -- a requirement's status changed for
+ *  a client with notifications switched on. */
+export function formatClientStatusUpdateSlackCard(clientName: string, requirementTitle: string, status: string): SlackCard {
+  return {
+    emoji: "📋",
+    headline: `${clientName} status update`,
+    color: DEMAND_SUMMARY_COLOR,
+    fields: [
+      { label: "Requirement", value: requirementTitle },
+      { label: "Status", value: status },
+    ],
+    button: { text: "View Client", path: "/owner/clients" },
+  };
+}
+
+/** REQUIREMENT_FULFILLED's Slack card -- a single requirement hit FULFILLED,
+ *  for any client, regardless of that client's notification toggle. */
+export function formatRequirementFulfilledSlackCard(clientName: string, requirementTitle: string): SlackCard {
+  return {
+    emoji: "✅",
+    headline: "Requirement fulfilled",
+    color: PLACED_COLOR,
+    fields: [
+      { label: "Client", value: clientName },
+      { label: "Requirement", value: requirementTitle },
+    ],
+    button: { text: "View Client", path: "/owner/clients" },
+  };
+}
+
+/** WEEKLY_TEAM_HEALTH_SUMMARY's Slack card (ownerDigest.job.ts). */
+export function formatWeeklyTeamHealthSlackCard(stats: {
+  teamAvgScore: number;
+  fillRate: number;
+  escalationCount: number;
+}): SlackCard {
+  return {
+    emoji: "🩺",
+    headline: "Your team's week in numbers",
+    color: WEEKLY_SUMMARY_COLOR,
+    fields: [
+      { label: "Team avg. score", value: String(stats.teamAvgScore) },
+      { label: "Fill rate", value: `${stats.fillRate}%` },
+      { label: "Escalations this week", value: String(stats.escalationCount) },
+    ],
+    button: { text: "View Reports", path: "/owner/reports" },
+  };
+}
+
+/** Shared by both places a Requirement's status can change --
+ * lead.routes.ts's ONBOARDED headcount-sync block and requirement.routes
+ * .ts's manual status PATCH -- so the client/requirement notification rules
+ * (4b/4c) live in exactly one place. `previousStatus` guards
+ * REQUIREMENT_FULFILLED against re-firing on a no-op edit (already
+ * FULFILLED, saved again unchanged). */
+export async function notifyRequirementStatusChange(
+  requirement: { id: string; title: string; clientId: string; status: string },
+  previousStatus: string
+): Promise<void> {
+  if (requirement.status === previousStatus) return;
+
+  const client = await prisma.client.findUnique({
+    where: { id: requirement.clientId },
+    select: { name: true, notificationsEnabled: true },
+  });
+  if (!client) return;
+
+  const ownerIds = await getActiveOwnerIds();
+  if (ownerIds.length === 0) return;
+
+  if (requirement.status === "FULFILLED") {
+    await Promise.all(
+      ownerIds.map((recipientId) =>
+        createNotification({
+          recipientId,
+          type: "REQUIREMENT_FULFILLED",
+          title: `Requirement fulfilled — ${requirement.title}`,
+          body: `the requirement "${requirement.title}" for ${client.name} has been fully staffed.`,
+          slackCard: formatRequirementFulfilledSlackCard(client.name, requirement.title),
+          link: "/owner/clients",
+        }).catch((err) => console.error("[notifications] requirement-fulfilled notify failed:", err))
+      )
+    );
+    return;
+  }
+
+  if (!client.notificationsEnabled) return;
+  await Promise.all(
+    ownerIds.map((recipientId) =>
+      createNotification({
+        recipientId,
+        type: "CLIENT_STATUS_UPDATE",
+        title: `${client.name} — requirement status changed`,
+        body: `the requirement "${requirement.title}" for ${client.name} is now ${requirement.status}.`,
+        slackCard: formatClientStatusUpdateSlackCard(client.name, requirement.title, requirement.status),
+        link: "/owner/clients",
+      }).catch((err) => console.error("[notifications] client-status notify failed:", err))
+    )
+  );
 }

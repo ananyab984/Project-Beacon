@@ -70,10 +70,20 @@ function test5_dueDateReminderShowsOverdueVsUpcomingWording() {
 }
 
 function test6_leadResponseCardQuotesTheExcerpt() {
-  const card = formatLeadResponseSlackCard("Priya Kumar", "hi can you share some more details");
+  const card = formatLeadResponseSlackCard("Priya Kumar", "hi can you share some more details", "/recruiter");
   assert.deepStrictEqual(card.fields[0], { label: "From", value: "Priya Kumar" });
   assert.strictEqual(card.fields[1].value, "hi can you share some more details");
   assert.strictEqual(card.button?.text, "View Conversation");
+}
+
+function test6b_leadResponseCardButtonMatchesTheRecipientsOwnRole() {
+  // Regression check: this card is fired to both a recruiter and (separately)
+  // the contractor who added the lead -- the button must route each to
+  // their own section, not always to /recruiter/... (the bug this fixed).
+  const recruiterCard = formatLeadResponseSlackCard("Priya Kumar", "hello", "/recruiter");
+  assert.strictEqual(recruiterCard.button?.path, "/recruiter/leads");
+  const contractorCard = formatLeadResponseSlackCard("Priya Kumar", "hello", "/contractor");
+  assert.strictEqual(contractorCard.button?.path, "/contractor/leads");
 }
 
 function test7_escalationCardUsesTheGivenLinkPath() {
@@ -83,7 +93,7 @@ function test7_escalationCardUsesTheGivenLinkPath() {
 }
 
 function test8_buildSlackCardBlocksIncludesHeadlineFieldsNoteAndButton() {
-  const card = formatLeadResponseSlackCard("Priya Kumar", "hello");
+  const card = formatLeadResponseSlackCard("Priya Kumar", "hello", "/recruiter");
   const blocks = buildSlackCardBlocks(card) as any[];
   assert.strictEqual(blocks.length, 4); // headline, fields, note, actions
   assert.match(blocks[0].text.text, /💬/);
@@ -105,6 +115,7 @@ async function main() {
     test4_deadlineOnlyAppearsWhenSet,
     test5_dueDateReminderShowsOverdueVsUpcomingWording,
     test6_leadResponseCardQuotesTheExcerpt,
+    test6b_leadResponseCardButtonMatchesTheRecipientsOwnRole,
     test7_escalationCardUsesTheGivenLinkPath,
     test8_buildSlackCardBlocksIncludesHeadlineFieldsNoteAndButton,
     test9_buildSlackCardBlocksOmitsActionsWhenNoButton,

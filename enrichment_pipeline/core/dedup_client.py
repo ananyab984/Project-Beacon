@@ -31,7 +31,12 @@ class DedupGroqClient:
                 "Content-Type": "application/json",
             }
         )
-        self._policy = RetryPolicy(retries=config.max_retries)
+        # See config.py's fast_provider_deadline_seconds: the shared default
+        # 15s deadline left this client's retries structurally unreachable
+        # (one 10s attempt + 1s backoff leaves ~4s of a 15s budget), same bug
+        # Bright Data was pulled out of.
+        self._policy = RetryPolicy(retries=config.max_retries, deadline_seconds=config.fast_provider_deadline_seconds)
+        self._request_timeout = config.fast_provider_request_timeout
 
     def find_matches(self, tested_lead: Dict[str, Any], candidates: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Ask the model whether `tested_lead` is the same person as any of `candidates`.
@@ -71,10 +76,10 @@ class DedupGroqClient:
             resp = self.session.post(
                 self.config.groq_base_url,
                 json=body,
-                timeout=self.config.request_timeout,
+                timeout=self._request_timeout,
             )
         except requests.exceptions.Timeout as exc:
-            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+            raise TransientError(f"Request timed out after {self._request_timeout}s") from exc
         except requests.exceptions.RequestException as exc:
             raise TransientError(f"Network error: {exc}") from exc
 

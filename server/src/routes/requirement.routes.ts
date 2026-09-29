@@ -6,7 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
-import { createNotification, formatTaskAssignmentBody, formatTaskAssignmentSlackCard } from "../services/notification.service";
+import { createNotification, formatTaskAssignmentBody, formatTaskAssignmentSlackCard, notifyRequirementStatusChange } from "../services/notification.service";
 
 export const requirementRouter = Router();
 
@@ -235,6 +235,13 @@ requirementRouter.patch(
         recruiter: { select: { name: true } },
       },
     });
+
+    // Manual status edit -- notifyRequirementStatusChange no-ops internally
+    // when status didn't actually change, so this is safe to fire unconditionally.
+    notifyRequirementStatusChange(updated, existing.status).catch((err) =>
+      console.error("[notifications] requirement status change notify failed:", err)
+    );
+
     return res.json({ requirement: updated });
   })
 );

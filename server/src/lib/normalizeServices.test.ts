@@ -47,6 +47,15 @@ function test6_emptyOrNullInputReturnsEmptyArray() {
   assert.deepStrictEqual(normalizeServices(""), []);
 }
 
+function test7_nonEnglishDuplicateIsDroppedNotKept() {
+  // Real case: BrightData's `skills` list held both an English tag and its
+  // own-language duplicate side by side -- the non-English one is the same
+  // fact stated twice, not a second real fact, so it's dropped rather than
+  // kept-as-unknown (unlike every other genuinely-unrecognized token).
+  assert.deepStrictEqual(normalizeServices(["Teamwork", "Trabalho em equipe", "Translation"]), ["Teamwork", "Translation"]);
+  assert.deepStrictEqual(normalizeServices(["翻訳", "Transcription"]), ["Transcription"]);
+}
+
 function main() {
   const tests = [
     test1_legacyColonDelimitedStringUnaffected,
@@ -55,6 +64,7 @@ function main() {
     test4_duplicateTaskValuesAcrossObjectsCollapseViaExistingDedupe,
     test5_malformedJsonStartingWithBracketFallsBackGracefully,
     test6_emptyOrNullInputReturnsEmptyArray,
+    test7_nonEnglishDuplicateIsDroppedNotKept,
   ];
 
   let failed = 0;

@@ -71,17 +71,47 @@ notificationRouter.post(
 // never assigned a Requirement, a recruiter never gets an enrichment-finished
 // ping) -- seeding the other role's types would just be dead rows.
 const ALWAYS_ON_BELL_TYPES: NotificationType[] = ["NEW_LEAD", "TASK_ASSIGNMENT", "DUE_DATE_REMINDER", "ESCALATION"];
-const RECRUITER_TYPES: NotificationType[] = ["NEW_LEAD", "TASK_ASSIGNMENT", "DUE_DATE_REMINDER", "LEAD_RESPONSE", "ESCALATION"];
+const RECRUITER_TYPES: NotificationType[] = [
+  "NEW_LEAD",
+  "TASK_ASSIGNMENT",
+  "DUE_DATE_REMINDER",
+  "LEAD_RESPONSE",
+  "ESCALATION",
+  "ENRICHMENT_COMPLETE",
+  "ENRICHMENT_STALLED",
+  "DUPLICATE_REVIEW_NEEDED",
+  "DNC_CONFIRMATION_NEEDED",
+  "FOLLOW_UP_DUE",
+  "LEAD_PLACED",
+];
 // LEAD_RESPONSE is shared with RECRUITER_TYPES -- same type, different trigger
 // source (see unipile.service.ts's contractor-owned-lead branch).
 const CONTRACTOR_TYPES: NotificationType[] = [
   "LEAD_RESPONSE",
   "ENRICHMENT_COMPLETE",
+  "ENRICHMENT_STALLED",
+  "DUPLICATE_REVIEW_NEEDED",
+  "LEAD_PLACED",
   "DAILY_DEMAND_SUMMARY",
   "WEEKLY_LEADS_SUMMARY",
   "WEEKLY_PERFORMANCE_SUMMARY",
 ];
-const ALL_TYPES: NotificationType[] = [...new Set([...RECRUITER_TYPES, ...CONTRACTOR_TYPES])];
+// Owner-only oversight types -- deliberately not a copy of RECRUITER_TYPES.
+// ESCALATION is left out: today's escalation-mirroring only ever targets an
+// individual recruiter (see escalation.job.ts), never an owner, so it would
+// seed a preference row that never fires -- the owner's existing
+// EscalationsBell (reads the Escalation table directly) remains their real
+// escalations view.
+const OWNER_TYPES: NotificationType[] = [
+  "ENRICHMENT_COMPLETE",
+  "DUPLICATE_REVIEW_NEEDED",
+  "DNC_CONFIRMATION_NEEDED",
+  "LEAD_PLACED",
+  "WEEKLY_TEAM_HEALTH_SUMMARY",
+  "CLIENT_STATUS_UPDATE",
+  "REQUIREMENT_FULFILLED",
+];
+const ALL_TYPES: NotificationType[] = [...new Set([...RECRUITER_TYPES, ...CONTRACTOR_TYPES, ...OWNER_TYPES])];
 
 // PDF's "recommended starting defaults": due-date reminder gets email on by
 // default; everything else starts bell-only (email/Slack off) until the
@@ -89,7 +119,9 @@ const ALL_TYPES: NotificationType[] = [...new Set([...RECRUITER_TYPES, ...CONTRA
 const DEFAULT_EMAIL_ENABLED: Partial<Record<NotificationType, boolean>> = { DUE_DATE_REMINDER: true };
 
 function typesForRole(role: string): NotificationType[] {
-  return role === "contractor" ? CONTRACTOR_TYPES : RECRUITER_TYPES;
+  if (role === "contractor") return CONTRACTOR_TYPES;
+  if (role === "owner") return OWNER_TYPES;
+  return RECRUITER_TYPES;
 }
 
 notificationRouter.get(
