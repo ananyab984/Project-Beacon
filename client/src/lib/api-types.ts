@@ -233,6 +233,9 @@ export interface ApiClient {
   contactEmail: string | null;
   notes: string | null;
   createdAt: string;
+  // Mirrors server/prisma/schema.prisma's Client.notificationsEnabled --
+  // added by migration 20260924120000_expand_notifications.
+  notificationsEnabled: boolean;
 }
 
 export type RequirementStatus = "UNASSIGNED" | "ACTIVE" | "PAUSED" | "FULFILLED";
@@ -369,7 +372,17 @@ export type NotificationType =
   | "ENRICHMENT_COMPLETE"
   | "DAILY_DEMAND_SUMMARY"
   | "WEEKLY_LEADS_SUMMARY"
-  | "WEEKLY_PERFORMANCE_SUMMARY";
+  | "WEEKLY_PERFORMANCE_SUMMARY"
+  // Mirrors server/prisma/schema.prisma's NotificationType enum -- added by
+  // migration 20260924120000_expand_notifications.
+  | "ENRICHMENT_STALLED"
+  | "DUPLICATE_REVIEW_NEEDED"
+  | "DNC_CONFIRMATION_NEEDED"
+  | "FOLLOW_UP_DUE"
+  | "LEAD_PLACED"
+  | "WEEKLY_TEAM_HEALTH_SUMMARY"
+  | "CLIENT_STATUS_UPDATE"
+  | "REQUIREMENT_FULFILLED";
 
 export interface ApiNotification {
   id: string;
