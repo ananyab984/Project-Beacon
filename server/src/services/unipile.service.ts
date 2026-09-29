@@ -931,7 +931,12 @@ export class UnipileService {
    * if the system mailbox isn't configured yet, matching the notification
    * feature's "email/Slack channels no-op until provisioned" design.
    */
-  static async sendSystemEmail(toEmail: string, subject: string, body: string): Promise<void> {
+  static async sendSystemEmail(
+    toEmail: string,
+    subject: string,
+    body: string,
+    button?: { text: string; url: string }
+  ): Promise<void> {
     // Owner-configurable in-app (see system-settings.routes.ts) rather than
     // env-var-only, so G3 can connect/change the notification mailbox
     // themselves without an engineering redeploy.
@@ -941,12 +946,19 @@ export class UnipileService {
       return;
     }
 
+    // Every notification's Slack card has a button that deep-links back into
+    // G3 -- the email side previously had no equivalent at all (plain text
+    // only), so a recipient without Slack enabled had no click-through path.
+    const buttonHtml = button
+      ? `<p style="margin:1.5em 0 0 0;"><a href="${button.url}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">${escapeHtml(button.text)}</a></p>`
+      : "";
+
     const unipileBaseUrl = this.getUnipileBaseUrl();
     const payload = {
       account_id: accountId,
       to: [{ identifier: toEmail.trim(), display_name: "" }],
       subject,
-      body: plainTextToEmailHtml(body),
+      body: plainTextToEmailHtml(body) + buttonHtml,
     };
 
     await retryWithBackoff(
@@ -1581,7 +1593,7 @@ export class UnipileService {
                 type: "LEAD_RESPONSE",
                 title: `${leadName} replied`,
                 body: `${leadName} sent you a new message: "${excerpt}"`,
-                slackCard: formatLeadResponseSlackCard(leadName, excerpt),
+                slackCard: formatLeadResponseSlackCard(leadName, excerpt, "/recruiter"),
                 link: `/recruiter/leads`,
               }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
 
@@ -1591,7 +1603,7 @@ export class UnipileService {
                   type: "LEAD_RESPONSE",
                   title: `${leadName} replied`,
                   body: `${leadName} sent you a new message: "${excerpt}"`,
-                  slackCard: formatLeadResponseSlackCard(leadName, excerpt),
+                  slackCard: formatLeadResponseSlackCard(leadName, excerpt, "/contractor"),
                   link: `/contractor/leads`,
                 }).catch((err) => console.error("[notifications] contractor lead-response notify failed:", err));
               }

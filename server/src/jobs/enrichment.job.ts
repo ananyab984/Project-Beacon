@@ -338,7 +338,7 @@ export async function enrichLeadById(leadId: string) {
         type: "ENRICHMENT_COMPLETE",
         title: `Enrichment finished for ${leadName}`,
         body: `enrichment finished for ${leadName} -- their profile is now fully filled in.`,
-        slackCard: formatEnrichmentCompleteSlackCard(leadName),
+        slackCard: formatEnrichmentCompleteSlackCard(leadName, "/contractor"),
         link: "/contractor/leads",
       }).catch((err) => console.error(`[enrichment.job] enrichment-complete notify failed for lead ${lead.id}:`, err));
     }

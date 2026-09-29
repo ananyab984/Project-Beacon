@@ -5,6 +5,7 @@ import type { ApiRequirement, ApiUser } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Plus,
   Search,
@@ -114,6 +115,15 @@ function ClientsPage() {
       queryClient.invalidateQueries({ queryKey: ["requirements"] });
     },
     onError: (e: any) => toast.error(e.message || "Failed to update deadline"),
+  });
+
+  const updateClientNotificationsMutation = useMutation({
+    mutationFn: ({ id, notificationsEnabled }: { id: string; notificationsEnabled: boolean }) =>
+      api.updateClient(id, { notificationsEnabled }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+    },
+    onError: (e: any) => toast.error(e.message || "Failed to update client notifications"),
   });
 
   // Overall metrics
@@ -236,6 +246,8 @@ function ClientsPage() {
                   ? Math.min(100, (req.filled / req.headcountNeeded) * 100)
                   : 0;
 
+              const client = clients.find((c) => c.id === req.clientId);
+
               return (
                 <tr
                   key={req.id}
@@ -252,6 +264,21 @@ function ClientsPage() {
                           {req.title} {req.projectName ? `· ${req.projectName}` : ""}
                         </div>
                       </div>
+                      {client && (
+                        <div
+                          className="ml-auto flex items-center gap-1.5 shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                          title="Notify owners on this client's requirement status changes"
+                        >
+                          <Switch
+                            checked={client.notificationsEnabled}
+                            disabled={updateClientNotificationsMutation.isPending}
+                            onCheckedChange={(checked) =>
+                              updateClientNotificationsMutation.mutate({ id: client.id, notificationsEnabled: checked })
+                            }
+                          />
+                        </div>
+                      )}
                     </div>
                   </td>
 

@@ -110,6 +110,32 @@ export async function findDuplicateLead(input: {
   return { isDuplicate: false, matchedField: null, leadId: null, matchedName: null };
 }
 
+/** Coarse blocking shortlist for the Python fuzzy/LLM dedup waterfall
+ *  (enrichment_pipeline/core/dedup.py's own blocking/narrowing/LLM stages
+ *  do the real precision work) -- not a duplicate verdict itself, just a
+ *  cheap enough-to-run-on-every-enrichment first pass: matching first-name
+ *  prefix OR matching email domain, capped at 30 rows. `excludeLeadId` keeps
+ *  a lead from being compared against itself. */
+export async function findDedupCandidatePool(input: {
+  excludeLeadId: string;
+  firstName?: string | null;
+  email?: string | null;
+}) {
+  const firstNamePrefix = input.firstName?.trim().slice(0, 4);
+  const emailDomain = input.email?.includes("@") ? input.email.split("@")[1] : undefined;
+
+  if (!firstNamePrefix && !emailDomain) return [];
+
+  const or: Prisma.LeadWhereInput[] = [];
+  if (firstNamePrefix) or.push({ firstName: { startsWith: firstNamePrefix, mode: "insensitive" } });
+  if (emailDomain) or.push({ email: { endsWith: `@${emailDomain}`, mode: "insensitive" } });
+
+  return prisma.lead.findMany({
+    where: { id: { not: input.excludeLeadId }, deletedAt: null, OR: or },
+    take: 30,
+  });
+}
+
 /** Builds the merged, time-sorted activity timeline for a single lead. */
 export async function getLeadTimeline(leadId: string) {
   const [stageHistory, flagEvents, interactionEvents, manualActivityLogs] = await Promise.all([

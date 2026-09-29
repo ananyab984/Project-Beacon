@@ -7,6 +7,7 @@ import {
   AUTUMN_OUTPUT_SCHEMA,
   mapAutumnOutputToLeadFields,
 } from "../lib/reenrichmentFieldMapping";
+import { createNotification, formatEnrichmentCompleteSlackCard, resolveLeadNotificationRecipients, basePathForRole } from "../services/notification.service";
 
 /**
  * Recruiter-triggered re-enrichment via Autumn.ai.
@@ -355,6 +356,31 @@ export async function runAutumnReenrichment(runId: string): Promise<void> {
       `[reenrichment] lead ${lead.id}: wrote ${mapped.writtenFields.length} field(s)` +
         (mapped.skippedManual.length ? `, preserved ${mapped.skippedManual.length} manual field(s)` : "")
     );
+
+    // Same 3-way fan-out (contractor/owning recruiter/owners) the waterfall's
+    // own enrichLeadById fires on ENRICHMENT_COMPLETE (enrichment.job.ts) --
+    // this path previously fired no completion notification at all. No
+    // duplicate-flag wiring here: unlike a fresh lead's first enrichment,
+    // re-enrichment only ever runs on a lead a recruiter already has open and
+    // deliberately re-ran, well past initial dedup review, so a fuzzy-match
+    // check at this point has no one left to usefully flag it to.
+    const reenrichedName = (mapped.updates as { displayName?: unknown }).displayName as string | undefined;
+    const leadName = reenrichedName || current.displayName || current.fullName || current.maskedLabel || "your lead";
+    resolveLeadNotificationRecipients(current, { includeOwners: true })
+      .then((recipients) => {
+        for (const { recipientId, role } of recipients) {
+          const basePath = basePathForRole(role);
+          createNotification({
+            recipientId,
+            type: "ENRICHMENT_COMPLETE",
+            title: `Enrichment finished for ${leadName}`,
+            body: `re-enrichment finished for ${leadName} -- their profile has been refreshed.`,
+            slackCard: formatEnrichmentCompleteSlackCard(leadName, basePath),
+            link: `${basePath}/leads`,
+          }).catch((err) => console.error(`[reenrichment] enrichment-complete notify failed for lead ${lead.id} -> ${recipientId}:`, err));
+        }
+      })
+      .catch((err) => console.error(`[reenrichment] enrichment-complete recipient resolution failed for lead ${lead.id}:`, err));
   } catch (err: any) {
     const status = err?.response?.status;
     const message =

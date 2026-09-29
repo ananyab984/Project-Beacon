@@ -158,6 +158,56 @@ reportsRouter.get(
   })
 );
 
+/** Team avg score + fill rate only -- the two numbers ownerDigest.job.ts's
+ *  weekly team-health digest needs, computed the same way GET /analytics
+ *  above computes them (recompute every recruiter's current snapshot before
+ *  reading it, same reasoning as that route). Kept as its own small query
+ *  rather than sharing /analytics's richer result (which also carries
+ *  per-recruiter names/throughput and the full demand breakdown the digest
+ *  doesn't use) -- the two aren't wired together, so if the scoring or
+ *  fill-rate formula ever changes, update both. */
+export async function computeTeamHealthStats(): Promise<{ teamAvgScore: number; fillRate: number }> {
+  const recruiters = await prisma.user.findMany({
+    where: { role: "RECRUITER" },
+    select: { id: true },
+  });
+
+  await Promise.all(
+    recruiters.map((r) =>
+      computeRecruiterScoreSnapshot(r.id, new Date()).catch((err) =>
+        console.warn(`[reports] on-demand score computation failed for recruiter ${r.id}:`, err)
+      )
+    )
+  );
+
+  const snapshots = await prisma.recruiterScoreSnapshot.findMany({
+    where: { recruiterId: { in: recruiters.map((r) => r.id) } },
+    orderBy: { period: "desc" },
+  });
+
+  const latestScoreMap = new Map<string, number>();
+  for (const snap of snapshots) {
+    if (!latestScoreMap.has(snap.recruiterId)) {
+      const numScore = typeof snap.overallScore === "number" ? snap.overallScore : (snap.overallScore as any).toNumber?.() ?? Number(snap.overallScore);
+      latestScoreMap.set(snap.recruiterId, numScore);
+    }
+  }
+
+  const teamScores = Array.from(latestScoreMap.values());
+  const teamAvgScore = teamScores.length
+    ? Math.round(teamScores.reduce((a, b) => a + b, 0) / teamScores.length)
+    : 75;
+
+  const demands = await prisma.clientDemand.findMany({
+    select: { headcountNeeded: true, filled: true },
+  });
+  const totalDemand = demands.reduce((acc, d) => acc + d.headcountNeeded, 0);
+  const totalFilled = demands.reduce((acc, d) => acc + d.filled, 0);
+  const fillRate = totalDemand > 0 ? Math.round((totalFilled / totalDemand) * 100) : 0;
+
+  return { teamAvgScore, fillRate };
+}
+
 const FUNNEL_CATEGORIES = ["contacted", "awaiting_reply", "replied", "in_negotiation", "dnc", "onboarded"] as const;
 type FunnelCategory = (typeof FUNNEL_CATEGORIES)[number];
 
