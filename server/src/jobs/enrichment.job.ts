@@ -28,11 +28,34 @@ const BATCH_SIZE = 20;
 // How many leads pollPendingEnrichment works on at once. A real Parallel call
 // measured 150-170s (up to 486s for a thin lead that falls through to Stage
 // 6), so BATCH_SIZE=20 processed one at a time -- as this used to be -- took
-// ~50-60 minutes per batch. 4 keeps a batch to roughly the per-lead time
-// instead of a multiple of it, while staying within
-// providers/parallel_client.py's own 8-worker bulkhead (`_parallel_executor`)
-// on the enrichment service side, so this can't starve it either.
-const POLL_CONCURRENCY = 4;
+// ~50-60 minutes per batch. Raised from 4 to 8 now that pollInFlight below
+// makes total concurrency actually equal to this number instead of an
+// uncontrolled multiple of it (see that comment) -- 8 is the natural
+// ceiling, matching BOTH of the enrichment service's own bulkheads exactly
+// (`_parallel_executor` in providers/parallel_client.py and
+// `_tier_overlap_executor` in orchestrator.py, each `max_workers=8`), so this
+// uses the capacity that's already provisioned there without exceeding it.
+const POLL_CONCURRENCY = 8;
+
+// node-cron does not prevent overlapping invocations of the same scheduled
+// callback -- it fires on the wall-clock schedule regardless of whether the
+// previous pollPendingEnrichment call has resolved. The atomic updateMany
+// claim below (re-checking enrichmentStatus: "PENDING") already stops two
+// overlapping ticks from double-processing the SAME lead, but does nothing to
+// cap TOTAL concurrent Parallel calls across ticks: once a backlog exists and
+// leads routinely take longer than the 3-minute tick interval, an
+// unguarded next tick claims a fresh batch and starts its own
+// POLL_CONCURRENCY-wide pool on top of the still-running one, stacking
+// without limit across however many ticks overlap -- silently exceeding
+// providers/parallel_client.py's and orchestrator.py's 8-worker bulkheads,
+// which then queue the excess invisibly. This flag makes a tick a no-op
+// while a previous one is still mid-flight, so total concurrency is always
+// exactly POLL_CONCURRENCY, never a multiple of it. Plain in-memory state is
+// enough (not a DB-level lock): this service runs as a single Render
+// instance, and a boolean that resets to false on every process
+// restart/redeploy can never stay stuck "locked" the way a DB row surviving
+// a crash could.
+let pollInFlight = false;
 
 /** Enriches a single lead by calling the real Python enrichment_pipeline and
  *  trusting ITS verdict on completeness (`enrichment_status`) instead of
@@ -518,38 +541,54 @@ export async function stallOverdueEnrichments() {
  *  "claim first" does not apply -- a human just triggered exactly this one
  *  lead. */
 export async function pollPendingEnrichment() {
-  const candidates = await prisma.lead.findMany({
-    where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
-    take: BATCH_SIZE,
-    orderBy: { createdAt: "asc" },
-    select: { id: true },
-  });
-  if (candidates.length === 0) return;
+  // See pollInFlight's own comment above -- skip this tick entirely rather
+  // than let it stack a second concurrent claim-and-process cycle on top of
+  // one still running.
+  if (pollInFlight) {
+    console.log("[enrichment.job] pollPendingEnrichment: previous run still in flight, skipping this tick");
+    return;
+  }
+  pollInFlight = true;
+  try {
+    const candidates = await prisma.lead.findMany({
+      where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
+      take: BATCH_SIZE,
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (candidates.length === 0) return;
 
-  const candidateIds = candidates.map((l) => l.id);
-  await prisma.lead.updateMany({
-    where: { id: { in: candidateIds }, enrichmentStatus: "PENDING", deletedAt: null },
-    data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
-  });
+    const candidateIds = candidates.map((l) => l.id);
+    await prisma.lead.updateMany({
+      where: { id: { in: candidateIds }, enrichmentStatus: "PENDING", deletedAt: null },
+      data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
+    });
 
-  // Re-read which of the candidates THIS run actually claimed -- fewer than
-  // `candidateIds.length` if a concurrent run claimed some of them first in
-  // the gap between the query above and this one; those are simply left to
-  // whichever run claimed them; process the rest.
-  const claimed = await prisma.lead.findMany({
-    where: { id: { in: candidateIds }, enrichmentStatus: "IN_PROGRESS" },
-    select: { id: true },
-  });
-  if (claimed.length === 0) return;
+    // Re-read which of the candidates THIS run actually claimed -- fewer than
+    // `candidateIds.length` if a concurrent run claimed some of them first in
+    // the gap between the query above and this one; those are simply left to
+    // whichever run claimed them; process the rest. (In practice pollInFlight
+    // above means there shouldn't be another pollPendingEnrichment run
+    // concurrently, but enrichLeadById is also called directly from
+    // lead.routes.ts, so this re-check stays as real, load-bearing defense,
+    // not a leftover.)
+    const claimed = await prisma.lead.findMany({
+      where: { id: { in: candidateIds }, enrichmentStatus: "IN_PROGRESS" },
+      select: { id: true },
+    });
+    if (claimed.length === 0) return;
 
-  await mapWithConcurrency(claimed, POLL_CONCURRENCY, async (lead) => {
-    // enrichLeadById's own catch path handles a failed call (reverts to
-    // PENDING, flags ON_HOLD/SYSTEM_ERROR) -- this outer catch exists only so
-    // one lead throwing something outside that try/catch (a bug, not a
-    // provider failure) can't take the whole concurrent batch down, mirroring
-    // every other fire-and-forget call site's `.catch((err) => console.error(...))`.
-    await enrichLeadById(lead.id).catch((err) =>
-      console.error(`[enrichment.job] pollPendingEnrichment: lead ${lead.id} failed:`, err)
-    );
-  });
+    await mapWithConcurrency(claimed, POLL_CONCURRENCY, async (lead) => {
+      // enrichLeadById's own catch path handles a failed call (reverts to
+      // PENDING, flags ON_HOLD/SYSTEM_ERROR) -- this outer catch exists only so
+      // one lead throwing something outside that try/catch (a bug, not a
+      // provider failure) can't take the whole concurrent batch down, mirroring
+      // every other fire-and-forget call site's `.catch((err) => console.error(...))`.
+      await enrichLeadById(lead.id).catch((err) =>
+        console.error(`[enrichment.job] pollPendingEnrichment: lead ${lead.id} failed:`, err)
+      );
+    });
+  } finally {
+    pollInFlight = false;
+  }
 }

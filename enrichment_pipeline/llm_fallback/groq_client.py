@@ -53,7 +53,12 @@ class GroqMappingClient:
                 "Content-Type": "application/json",
             }
         )
-        self._policy = RetryPolicy(retries=config.max_retries)
+        # See config.py's fast_provider_deadline_seconds: the shared default
+        # 15s deadline left this client's retries structurally unreachable
+        # (one 10s attempt + 1s backoff leaves ~4s of a 15s budget), same bug
+        # Bright Data was pulled out of.
+        self._policy = RetryPolicy(retries=config.max_retries, deadline_seconds=config.fast_provider_deadline_seconds)
+        self._request_timeout = config.fast_provider_request_timeout
 
     def classify_services(self, profile_text: str) -> List[str]:
         """Identify the real professional service(s)/specialty a person
@@ -208,10 +213,10 @@ class GroqMappingClient:
             resp = self.session.post(
                 self.config.groq_base_url,
                 json=body,
-                timeout=self.config.request_timeout,
+                timeout=self._request_timeout,
             )
         except requests.exceptions.Timeout as exc:
-            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+            raise TransientError(f"Request timed out after {self._request_timeout}s") from exc
         except requests.exceptions.RequestException as exc:
             raise TransientError(f"Network error: {exc}") from exc
 

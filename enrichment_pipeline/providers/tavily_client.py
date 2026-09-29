@@ -34,7 +34,12 @@ class TavilyClient:
                 "Content-Type": "application/json",
             }
         )
-        self._policy = RetryPolicy(retries=config.max_retries)
+        # See config.py's fast_provider_deadline_seconds: the shared default
+        # 15s deadline left Tavily's retries structurally unreachable (one
+        # 10s attempt + 1s backoff leaves ~4s of a 15s budget), same bug
+        # Bright Data was pulled out of.
+        self._policy = RetryPolicy(retries=config.max_retries, deadline_seconds=config.fast_provider_deadline_seconds)
+        self._request_timeout = config.fast_provider_request_timeout
 
     def extract_url(self, url: str) -> Dict[str, Any]:
         """Extract public page markdown/HTML content via Tavily Extract API."""
@@ -75,10 +80,10 @@ class TavilyClient:
             resp = self.session.post(
                 self.config.tavily_extract_url,
                 json=payload,
-                timeout=self.config.request_timeout,
+                timeout=self._request_timeout,
             )
         except requests.exceptions.Timeout as exc:
-            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+            raise TransientError(f"Request timed out after {self._request_timeout}s") from exc
         except requests.exceptions.RequestException as exc:
             raise TransientError(f"Network error: {exc}") from exc
 
@@ -156,10 +161,10 @@ class TavilyClient:
             resp = self.session.post(
                 self.config.tavily_search_url,
                 json=payload,
-                timeout=self.config.request_timeout,
+                timeout=self._request_timeout,
             )
         except requests.exceptions.Timeout as exc:
-            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+            raise TransientError(f"Request timed out after {self._request_timeout}s") from exc
         except requests.exceptions.RequestException as exc:
             raise TransientError(f"Network error: {exc}") from exc
 

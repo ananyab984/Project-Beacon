@@ -129,6 +129,19 @@ def retry_with_backoff(
         if remaining <= 0:
             break  # budget already gone -- don't start a new attempt
 
+        # Queue-depth visibility for the 8-worker bulkheads (Parallel's
+        # `_parallel_executor`, orchestrator.py's `_tier_overlap_executor`) --
+        # there was previously no way to tell whether a raised Node-side
+        # POLL_CONCURRENCY was actually oversubscribing them, since excess
+        # work just queues here silently. `_work_queue` is a private
+        # attribute (no public ThreadPoolExecutor introspection API exists),
+        # but reading its size costs nothing and every submission goes
+        # through this one chokepoint. Only logs when something is actually
+        # waiting, so a healthy pool stays silent.
+        queued = exec_._work_queue.qsize()  # noqa: SLF001 -- see comment above
+        if queued > 0:
+            log.warning("retry_with_backoff: %s executor backing up (%d call(s) queued behind %d workers)",
+                        exec_._thread_name_prefix or "unnamed", queued, exec_._max_workers)
         future = exec_.submit(fn)
         try:
             return future.result(timeout=remaining)
