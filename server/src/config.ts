@@ -34,7 +34,17 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || "development",
   clientUrl: resolveEnv("CLIENT_URL", "http://localhost:5173", isProduction),
   databaseUrl: process.env.DATABASE_URL || "",
-  unipileDsn: process.env.UNIPILE_DSN || "api25.unipile.com:15598",
+  // Unipile's DSN is account-specific (each customer gets its own dedicated
+  // subdomain/port) -- a key that's genuinely valid for one account will
+  // still get a flat 401 invalid_credentials from a DIFFERENT account's DSN,
+  // which looks identical to "the key is wrong" from the response alone.
+  // The literal string below is a real DSN from whenever this file was
+  // first written, not a placeholder -- silently falling back to it if
+  // UNIPILE_DSN is ever unset (or a rotated key's own DSN was never updated
+  // to match) means every hosted-auth mint 401s with no indication the
+  // DSN, not the key, is the actual mismatch. requireInProduction so a real
+  // deploy fails loudly at boot instead, matching unipileApiKey below.
+  unipileDsn: resolveEnv("UNIPILE_DSN", "api25.unipile.com:15598", isProduction),
   // Was `process.env.UNIPILE_API_KEY || ""` -- silently empty if unset,
   // unlike every other Unipile secret in this file. That let a missing key
   // reach production undetected: every Unipile call sent an empty API key,

@@ -358,16 +358,32 @@ export class UnipileService {
     // Minting a link session isn't safe to auto-retry (a second mint on top
     // of a first that actually succeeded server-side just orphans a session)
     // -- bound with a deadline only, no retry.
-    const response = await retryWithBackoff(
-      (signal) =>
-        axios.post(targetUrl, payload, {
-          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
-          signal,
-        }),
-      { retries: 0, deadlineMs: 15000 }
-    );
+    try {
+      const response = await retryWithBackoff(
+        (signal) =>
+          axios.post(targetUrl, payload, {
+            headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+            signal,
+          }),
+        { retries: 0, deadlineMs: 15000 }
+      );
 
-    return { url: response.data.url, nonce };
+      return { url: response.data.url, nonce };
+    } catch (err) {
+      // The UnipileAuthAttempt row above was created BEFORE this call, on
+      // the assumption it would succeed -- if Unipile itself rejects the
+      // request (bad credentials, invalid DSN/provider combo, timeout,
+      // anything), this never reaches the recruiter as a usable link, but
+      // the 10-minute pending lock was already live. Without this cleanup,
+      // every failed mint (not just an abandoned popup, which
+      // cancelPendingAuthAttempt already handles) left CONNECTION_PENDING
+      // blocking the next real attempt for the full TTL -- confirmed live:
+      // a run of 401s from an invalid API key left a stuck attempt row that
+      // outlived the key actually getting fixed, so the very next click
+      // still failed, just with a different, more confusing error.
+      await prisma.unipileAuthAttempt.delete({ where: { nonce } }).catch(() => {});
+      throw err;
+    }
   }
 
   // EMAIL groups GOOGLE/OUTLOOK/MAIL/EMAIL together since a hosted link
