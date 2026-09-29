@@ -443,30 +443,63 @@ function NotificationSystemSection() {
     setConnecting(true);
     try {
       const res = await api.connectAccount("EMAIL");
-      if (!res?.url) return;
+      if (!res?.url) {
+        setConnecting(false);
+        return;
+      }
       const before = await api.getConnectedAccounts();
       const beforeIds = new Set(before.map((a: any) => a.unipileAccountId));
 
       const popup = window.open(res.url, "_blank", "width=600,height=700");
       toast.success("Opening Unipile connection window…");
 
-      const poll = setInterval(async () => {
+      const poll = setInterval(() => {
         if (!popup || popup.closed) {
           clearInterval(poll);
-          const after = await api.getConnectedAccounts();
-          const fresh = after.find(
-            (a: any) => !beforeIds.has(a.unipileAccountId) && a.status !== "DISCONNECTED",
-          );
-          if (fresh) {
-            await api.setNotificationEmailAccount(fresh.unipileAccountId);
-            invalidate();
-            toast.success("Notification email account connected");
-          }
-          setConnecting(false);
+          // Same ~6s grace delay as ConnectAccountDialog's
+          // watchForAbandonedPopup, not an immediate check: the popup can
+          // close itself the instant OAuth completes, before Unipile's
+          // webhook necessarily lands, so checking right away would treat a
+          // just-succeeded connection as abandoned.
+          setTimeout(async () => {
+            const after = await api.getConnectedAccounts();
+            const fresh = after.find(
+              (a: any) => !beforeIds.has(a.unipileAccountId) && a.status !== "DISCONNECTED",
+            );
+            if (fresh) {
+              await api.setNotificationEmailAccount(fresh.unipileAccountId);
+              invalidate();
+              toast.success("Notification email account connected");
+            } else {
+              // Nothing new showed up -- genuinely abandoned (popup closed
+              // without finishing OAuth). Clear the pending-attempt lock so
+              // the next click doesn't hit CONNECTION_PENDING; this was the
+              // missing piece here (ConnectAccountDialog already does this).
+              await api.cancelPendingConnection("EMAIL").catch(() => {});
+            }
+            setConnecting(false);
+          }, 6_000);
         }
       }, 1_000);
     } catch (err: any) {
-      toast.error(err?.message || "Failed to connect notification email account");
+      if (err.code === "CONNECTION_PENDING") {
+        toast.error(err.message, {
+          action: {
+            label: "Cancel and retry",
+            onClick: async () => {
+              try {
+                await api.cancelPendingConnection("EMAIL");
+                handleConnectNotificationEmail();
+              } catch (cancelErr: any) {
+                toast.error(cancelErr.message || "Failed to cancel pending connection attempt");
+                setConnecting(false);
+              }
+            },
+          },
+        });
+      } else {
+        toast.error(err?.message || "Failed to connect notification email account");
+      }
       setConnecting(false);
     }
   }
