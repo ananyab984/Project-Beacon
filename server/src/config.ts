@@ -68,7 +68,11 @@ const appBaseUrl = resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduct
 // Set SHORT_LINK_BASE_URL to a Global3 domain pointed at this service
 // (Render custom domain + a CNAME). Until it's set, this falls back to
 // APP_BASE_URL so nothing breaks -- the links just aren't branded yet.
-const shortLinkBaseUrl = resolveEnv("SHORT_LINK_BASE_URL", appBaseUrl, false);
+// Trailing slashes are stripped: this value gets pasted into a dashboard by
+// hand, and "https://apply.global3.co/" would otherwise build
+// "https://apply.global3.co//g/<token>" into every outreach message. Same
+// normalization keepaliveUrl and absoluteAppUrl already do.
+const shortLinkBaseUrl = resolveEnv("SHORT_LINK_BASE_URL", appBaseUrl, false).replace(/\/+$/, "");
 
 const G3_APPLY_DEV_FORM = "https://app.dev.global3.co/apply";
 const g3ApplyBaseUrl = resolveEnv("G3_APPLY_BASE_URL", G3_APPLY_DEV_FORM, false);

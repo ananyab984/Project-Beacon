@@ -230,6 +230,18 @@ function test16_shortLinkUsesItsOwnDomainSetting() {
   );
 }
 
+function test17_trailingSlashOnTheDomainDoesNotDoubleUp() {
+  // The value is typed into a hosting dashboard by hand, so a trailing slash
+  // is a question of when, not if. It must never reach a candidate as
+  // "https://apply.global3.co//g/<token>".
+  assert.ok(!buildShortApplyUrl(LEAD_ID).includes("//g/"), "short link must not contain a doubled slash");
+  assert.strictEqual(
+    buildShortApplyUrl(LEAD_ID).split("/g/").length,
+    2,
+    "short link should have exactly one /g/ segment"
+  );
+}
+
 function main() {
   const tests = [
     test1_shortLinkRoundTripsToTheSameLead,
@@ -248,6 +260,7 @@ function main() {
     test14_everyStandardLanguageStillMaps,
     test15_namesSplitSensiblyWhenFirstNameIsMissing,
     test16_shortLinkUsesItsOwnDomainSetting,
+    test17_trailingSlashOnTheDomainDoesNotDoubleUp,
   ];
   let failed = 0;
   for (const t of tests) {
