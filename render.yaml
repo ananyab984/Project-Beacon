@@ -119,11 +119,13 @@ services:
         sync: false
       # The apply form outreach short links redirect candidates to, with
       # their enriched data pre-filled (lib/onboarding/buildApplyUrl.ts).
-      # An explicit value, not sync:false -- it's a public URL, not a
-      # secret, and config.ts REQUIRES it in production (NODE_ENV is
-      # hardcoded to production above), so leaving it unset fails this
-      # service's boot outright. Currently the DEV form; change this line
-      # when a production apply form exists.
+      # An explicit value, not sync:false -- it's a public URL, not a secret.
+      # config.ts defaults to this same DEV form when unset, so this is
+      # documentation of intent rather than something the service needs to
+      # boot. NOTE: the live service was not created from this blueprint
+      # (it's named Project-Beacon-server, not g3-server), so nothing here
+      # reaches it -- set the variable in that service's own dashboard too.
+      # Change this line when a production apply form exists.
       - key: G3_APPLY_BASE_URL
         value: https://app.dev.global3.co/apply
       - key: CLAUDE_API_KEY
