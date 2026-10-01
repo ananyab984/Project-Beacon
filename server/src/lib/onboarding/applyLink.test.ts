@@ -71,7 +71,7 @@ function test3_everyShortLinkIsTheAdvertisedLength() {
   // so that number has to match what buildShortApplyUrl actually produces --
   // if they drift, notes get drafted over the cap.
   assert.strictEqual(buildShortApplyUrl(LEAD_ID).length, shortApplyUrlLength());
-  assert.ok(buildShortApplyUrl(LEAD_ID).startsWith(`${config.appBaseUrl}/g/`));
+  assert.ok(buildShortApplyUrl(LEAD_ID).startsWith(`${config.shortLinkBaseUrl}/g/`));
 }
 
 function test4_linkedInNoteStillFitsWithTheLinkAppended() {
@@ -219,6 +219,17 @@ function test15_namesSplitSensiblyWhenFirstNameIsMissing() {
   assert.strictEqual(p.get("last_name"), "Buchanan");
 }
 
+function test16_shortLinkUsesItsOwnDomainSetting() {
+  // The link a candidate sees must be brandable independently of
+  // APP_BASE_URL, which also drives the Unipile webhook URL. If these ever
+  // get re-coupled, pointing links at a Global3 domain would silently move
+  // the webhook endpoint too.
+  assert.ok(
+    buildShortApplyUrl(LEAD_ID).startsWith(`${config.shortLinkBaseUrl}/g/`),
+    "short link must be built from shortLinkBaseUrl, not appBaseUrl"
+  );
+}
+
 function main() {
   const tests = [
     test1_shortLinkRoundTripsToTheSameLead,
@@ -236,6 +247,7 @@ function main() {
     test13_urlPointsAtTheConfiguredApplyForm,
     test14_everyStandardLanguageStillMaps,
     test15_namesSplitSensiblyWhenFirstNameIsMissing,
+    test16_shortLinkUsesItsOwnDomainSetting,
   ];
   let failed = 0;
   for (const t of tests) {
