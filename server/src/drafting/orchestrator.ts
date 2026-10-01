@@ -47,13 +47,14 @@ export class DraftingOrchestrator {
     leadRecord: Record<string, any>,
     channel: string = "email",
     manualOverride = false,
-    // Our own database id for this lead. Kept as a separate top-level
-    // parameter (like `channel`) rather than folded into leadRecord/the Lead
-    // class, which are a direct port of drafting_service's Python types and
-    // never carried our id. Required, not optional, so a caller can't
-    // silently omit it and fall back to an unpersonalized apply link --
-    // see ensureLinks() in draftGenerator.ts.
-    leadId: string
+    // The apply link to embed, already resolved for this channel by the
+    // caller (lib/onboarding/applyLinkFor.ts): the full pre-filled URL for
+    // email, the short link for LinkedIn. Passed in rather than derived here
+    // because building the full URL needs the Prisma lead row, which the
+    // routes have and this ported Python-shaped Lead type never carried.
+    // Required, not optional, so a caller cannot silently fall back to an
+    // unpersonalized link -- see ensureLinks() in draftGenerator.ts.
+    applyUrl: string
   ): Promise<PipelineDraftResult> {
     const startTime = Date.now();
     const draftId = `draft_${randomBytes(4).toString("hex")}`;
@@ -108,8 +109,8 @@ export class DraftingOrchestrator {
 
     const draft: Draft =
       channel === "email"
-        ? await generateEmail(this.client, this.config, lead, leadId, rateMatch, rateFlag)
-        : await generateLinkedin(this.client, this.config, lead, leadId, rateMatch, rateFlag);
+        ? await generateEmail(this.client, this.config, lead, applyUrl, rateMatch, rateFlag)
+        : await generateLinkedin(this.client, this.config, lead, applyUrl, rateMatch, rateFlag);
 
     // Stage 4: Programmatic Rule Evaluation (evaluator.ts)
     const ev = evaluate(draft);

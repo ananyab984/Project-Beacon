@@ -57,6 +57,30 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Renders a bare URL in the draft as a real anchor whose VISIBLE text is just
+ * the host and path, with the query string hidden in the href.
+ *
+ * This is what lets the pre-filled apply link work in email without any
+ * redirect: the body carries the full
+ * "https://app.dev.global3.co/apply?first_name=...&email=..." (median ~170
+ * chars, up to 515), while the candidate simply sees
+ * "app.dev.global3.co/apply" -- Global3's own domain, no wall of query
+ * params, and nothing pointing at our own servers.
+ *
+ * Runs AFTER escapeHtml, so "&" is already "&amp;" -- which is the correct
+ * encoding for a literal "&" inside an href attribute, so the link resolves
+ * with every param intact. The character class deliberately excludes the
+ * quote and angle brackets escapeHtml would have produced, so a match can
+ * never run past the end of the URL into surrounding markup.
+ */
+function linkifyUrls(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<>"']+/g, (url) => {
+    const display = url.replace(/^https?:\/\//, "").replace(/\?[\s\S]*$/, "").replace(/\/+$/, "");
+    return `<a href="${url}" style="color:#1a73e8;text-decoration:underline;">${display}</a>`;
+  });
+}
+
 // Unipile renders `body` as HTML, so a plain-text draft's "\n\n" paragraph
 // breaks are just whitespace to the recipient's mail client and collapse
 // into one run-on block (this was the actual bug behind the squashed-looking
@@ -65,9 +89,11 @@ function escapeHtml(text: string): string {
 function plainTextToEmailHtml(text: string): string {
   return text
     .split(/\n{2,}/)
-    .map((para) => `<p style="margin:0 0 1em 0;">${escapeHtml(para).replace(/\n/g, "<br>")}</p>`)
+    .map((para) => `<p style="margin:0 0 1em 0;">${linkifyUrls(escapeHtml(para)).replace(/\n/g, "<br>")}</p>`)
     .join("");
 }
+
+export const __emailHtmlTesting = { plainTextToEmailHtml, linkifyUrls };
 
 function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS): string {
   if (text.length <= max) return text;
