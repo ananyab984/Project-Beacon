@@ -10,5 +10,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  // Tests are standalone assert scripts run directly via ts-node (see any
+  // *.test.ts header), never imported by src -- keep them out of dist/ so the
+  // deployed artifact carries no test code.
+  "exclude": ["src/**/*.test.ts", "src/**/__tests__/**"]
 }

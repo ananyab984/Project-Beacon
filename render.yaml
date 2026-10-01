@@ -47,6 +47,10 @@ services:
         sync: false
       - key: CLAUDE_WEBSEARCH_DEADLINE_SECONDS
         sync: false
+      # Stage 6 live web-search fallback. Defaults to false in config.py, so
+      # without this key the stage stays off in production regardless of intent.
+      - key: STAGE6_WEBSEARCH_ENABLED
+        sync: false
       - key: DEDUP_MATCH_THRESHOLD
         sync: false
       - key: REQUEST_TIMEOUT

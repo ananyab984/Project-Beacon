@@ -257,6 +257,7 @@ function test15_leadsOwnNameIsNotCreditedWhenFullNameCameFromDisplayName() {
     secondaryLanguages: [],
     toolsSoftware: [],
     certifications: [],
+    vendorExperience: [],
     yearsOfExperience: null,
     parallelData: { name: "Ruturaaj k", experience: [{ summary: "Voice work." }] },
   } as any);
