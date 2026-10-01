@@ -57,6 +57,22 @@ export const config = {
   unipileWebhookSecret: requireEnv("UNIPILE_WEBHOOK_SECRET"),
   unipileWebhookPathToken: requireEnv("UNIPILE_WEBHOOK_PATH_TOKEN"),
   appBaseUrl,
+
+  // The public linguist onboarding/apply form G3 operates. Outreach messages
+  // never embed this directly -- they embed a per-lead short link
+  // ({appBaseUrl}/g/{token}, see lib/onboarding/shortLink.ts), which redirects
+  // here with that lead's enriched data pre-filled as query params
+  // (first_name, last_name, email, address_country, source_language,
+  // target_language, service, years_of_experience, vendor_experience,
+  // linkedin -- the confirmed contract with G3's tech team).
+  //
+  // Defaults to the DEV form, which is a real but non-production host: safe
+  // for a dev/staging run to point at, and a broken link in dev is a visible
+  // failure rather than a silent one. Production must set G3_APPLY_BASE_URL
+  // explicitly and refuses to boot without it, so a prod deploy can never
+  // silently send candidates to the dev form. Tests pin their own value
+  // rather than relying on either.
+  g3ApplyBaseUrl: resolveEnv("G3_APPLY_BASE_URL", "https://app.dev.global3.co/apply", isProduction),
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.

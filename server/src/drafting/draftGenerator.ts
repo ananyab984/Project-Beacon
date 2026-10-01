@@ -14,6 +14,7 @@ import { ClaudeClient } from "./claudeClient";
 import type { DraftingConfig } from "./config";
 import { citedNamedSpecifics, Lead } from "./leads";
 import { BRAND, buildEmailPrompt, buildLinkedinPrompt, RateMatch } from "./promptBuilder";
+import { buildShortApplyUrl } from "../lib/onboarding/shortLink";
 import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 
 export interface Draft {
@@ -64,12 +65,23 @@ export function specificityTarget(strongFacts: string[]): number {
  * LinkedIn connection notes are hard-capped at 200 characters -- only the
  * apply link is enforced there, since it's the one actual call to action;
  * the separate "Visit: site" line email gets would otherwise burn chars that
- * should go to the lead's actual enriched facts (e.g. years of experience). */
-function ensureLinks(body: string, channel: string): string {
+ * should go to the lead's actual enriched facts (e.g. years of experience).
+ *
+ * `applyUrl` is THIS lead's personalized short link
+ * ({appBaseUrl}/g/{token}, see lib/onboarding/shortLink.ts), which redirects
+ * to the apply form with their enriched data pre-filled. The prompt still
+ * describes the canonical BRAND.apply_url -- that carefully-tuned text is
+ * left alone, and this is the single place the static URL the model wrote
+ * gets swapped for the real per-lead one before the text reaches anybody. */
+function ensureLinks(body: string, channel: string, applyUrl: string): string {
   let text = body;
-  if (!text.includes(BRAND.apply_url) && !text.includes("app.global3.io/apply")) {
+  if (text.includes(BRAND.apply_url)) {
+    text = text.split(BRAND.apply_url).join(applyUrl);
+  } else if (text.includes("app.global3.io/apply")) {
+    text = text.split("app.global3.io/apply").join(applyUrl);
+  } else if (!text.includes(applyUrl)) {
     const sep = channel === "linkedin" ? " " : "\n\n";
-    text += `${sep}Apply here: ${BRAND.apply_url}`;
+    text += `${sep}Apply here: ${applyUrl}`;
   }
   if (channel !== "linkedin" && !text.includes(BRAND.site)) {
     text += `\n\nVisit: ${BRAND.site}`;
@@ -100,6 +112,7 @@ export async function generateEmail(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
+  leadId: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -132,7 +145,7 @@ export async function generateEmail(
   }
 
   const subject = (data.subject || `Freelance partnership with ${BRAND.company}`).trim();
-  const body = ensureLinks((data.body || "").trim(), "email");
+  const body = ensureLinks((data.body || "").trim(), "email", buildShortApplyUrl(leadId));
   return {
     channel: "email",
     lead,
@@ -152,6 +165,7 @@ export async function generateLinkedin(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
+  leadId: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -177,6 +191,7 @@ export async function generateLinkedin(
   //    Asking for a shorter rewrite is strictly better than shipping a note
   //    that will be cut, or than holding one a rewrite could fix.
   const specificFacts = lead.specificFactCandidates();
+  const applyUrl = buildShortApplyUrl(leadId);
   const complaints = (draftBody: string): string[] => {
     const out: string[] = [];
     if (lead.strongFactCandidates().length && countSpecificFacts(lead, draftBody) < 1) {
@@ -185,7 +200,7 @@ export async function generateLinkedin(
     // Measured on the body AFTER ensureLinks, since that's what actually
     // gets sent -- a note that fits only until the apply URL is appended is
     // still over the limit.
-    const sendable = ensureLinks(draftBody.trim(), "linkedin");
+    const sendable = ensureLinks(draftBody.trim(), "linkedin", applyUrl);
     if (sendable.length > LINKEDIN_NOTE_MAX_CHARS) {
       out.push(
         `Your previous note was ${sendable.length} characters once the apply link was included -- ` +
@@ -214,7 +229,7 @@ export async function generateLinkedin(
     }
   }
 
-  const body = ensureLinks((data.body || "").trim(), "linkedin");
+  const body = ensureLinks((data.body || "").trim(), "linkedin", applyUrl);
   return {
     channel: "linkedin",
     lead,
