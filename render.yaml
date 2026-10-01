@@ -113,6 +113,15 @@ services:
       # rejects every frontend request otherwise.
       - key: CLIENT_URL
         sync: false
+      # The apply form outreach short links redirect candidates to, with
+      # their enriched data pre-filled (lib/onboarding/buildApplyUrl.ts).
+      # An explicit value, not sync:false -- it's a public URL, not a
+      # secret, and config.ts REQUIRES it in production (NODE_ENV is
+      # hardcoded to production above), so leaving it unset fails this
+      # service's boot outright. Currently the DEV form; change this line
+      # when a production apply form exists.
+      - key: G3_APPLY_BASE_URL
+        value: https://app.dev.global3.co/apply
       - key: CLAUDE_API_KEY
         sync: false
       - key: CLAUDE_MODEL
