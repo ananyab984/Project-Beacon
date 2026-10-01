@@ -29,8 +29,13 @@ function avatarHue(id: string): number {
 
 export function RecruiterLanguageMappingDialog({ open, onOpenChange }: RecruiterLanguageMappingDialogProps) {
   const queryClient = useQueryClient();
+  // Language mappings drive auto-assignment in the Create Demand dialog,
+  // which assigns contractors as readily as recruiters -- so a contractor
+  // with no languages here can never be auto-matched to a market. Both
+  // rosters, hence two calls (api.getUsers requires an explicit role).
   const { data } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
-  const recruiters = data?.users ?? [];
+  const { data: contractorData } = useQuery({ queryKey: ["users", "CONTRACTOR"], queryFn: () => api.getUsers("CONTRACTOR") });
+  const recruiters = [...(data?.users ?? []), ...(contractorData?.users ?? [])];
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newLangInput, setNewLangInput] = useState("");
@@ -45,7 +50,7 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
     mutationFn: (input: { name: string; email: string; languages: string[] }) =>
       api.createUser({ name: input.name, email: input.email, role: "RECRUITER", languages: input.languages }),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      queryClient.invalidateQueries({ queryKey: ["users"] });
       toast.success(
         `Recruiter "${result.user.name}" added. They can now sign up at /signup with ${result.user.email} to set their own password.`,
         { duration: 12000 },
@@ -60,13 +65,13 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
 
   const deactivateMutation = useMutation({
     mutationFn: (id: string) => api.deactivateUser(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
     onError: (err: any) => toast.error(err?.message || "Failed to deactivate recruiter"),
   });
 
   const updateLanguagesMutation = useMutation({
     mutationFn: ({ id, languages }: { id: string; languages: string[] }) => api.updateUserLanguages(id, languages),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["users"] }),
     onError: (err: any) => toast.error(err?.message || "Failed to update languages"),
   });
 
@@ -111,9 +116,9 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                 <Users className="h-5 w-5" />
               </div>
               <div>
-                <DialogTitle className="text-lg font-semibold">Recruiter Language Profiles</DialogTitle>
+                <DialogTitle className="text-lg font-semibold">Language Profiles</DialogTitle>
                 <DialogDescription className="text-xs">
-                  Configure recruiter roster and associated languages.
+                  Configure the recruiter and contractor roster and their associated languages.
                 </DialogDescription>
               </div>
             </div>
@@ -224,7 +229,14 @@ export function RecruiterLanguageMappingDialog({ open, onOpenChange }: Recruiter
                       {recruiter.name[0]}
                     </div>
                     <div>
-                      <div className="text-sm font-semibold text-foreground">{recruiter.name}</div>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-semibold text-foreground">{recruiter.name}</span>
+                        {recruiter.role === "CONTRACTOR" && (
+                          <span className="rounded border border-border px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                            Contractor
+                          </span>
+                        )}
+                      </div>
                       <div className="text-[11px] text-muted-foreground">
                         {mappedLangs.length} language{mappedLangs.length !== 1 ? "s" : ""} associated
                       </div>

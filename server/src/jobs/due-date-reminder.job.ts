@@ -1,6 +1,6 @@
 import { prisma } from "../prisma";
 import { config } from "../config";
-import { createNotification, formatDueDateReminderSlackCard } from "../services/notification.service";
+import { createNotification, formatDueDateReminderSlackCard, requirementLinkForRole } from "../services/notification.service";
 
 /** Scans assigned, not-yet-fulfilled Requirements whose deadline falls
  *  within the configured window and reminds the assigned recruiter, once per
@@ -21,7 +21,10 @@ export async function runDueDateReminders() {
       status: { not: "FULFILLED" },
       recruiterId: { not: null },
     },
-    include: { client: { select: { name: true } } },
+    // The assignee may be a contractor (Requirement.recruiterId is not
+    // role-restricted), and their Clients page lives under a different base
+    // path -- see requirementLinkForRole.
+    include: { client: { select: { name: true } }, recruiter: { select: { role: true } } },
     take: 200,
   });
 
@@ -45,13 +48,14 @@ export async function runDueDateReminders() {
     });
     if (alreadySentToday) continue;
 
+    const link = requirementLinkForRole(requirement.recruiter?.role);
     await createNotification({
       recipientId: requirement.recruiterId!,
       type: "DUE_DATE_REMINDER",
       title,
       body: `the requirement "${requirement.title}" for ${requirement.client.name} ${dueText} -- ${requirement.headcountNeeded} candidate${requirement.headcountNeeded === 1 ? "" : "s"} needed in ${requirement.language} (${requirement.service}). Deadline: ${requirement.deadline!.toDateString()}.`,
-      slackCard: formatDueDateReminderSlackCard(requirement, daysLeft),
-      link: `/recruiter/clients`,
+      slackCard: formatDueDateReminderSlackCard(requirement, daysLeft, link),
+      link,
     }).catch((err) => console.error("[notifications] due-date reminder notify failed:", err));
   }
 }

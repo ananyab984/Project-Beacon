@@ -243,7 +243,10 @@ export type ClientDemandPriority = "STANDARD" | "HIGH" | "CRITICAL";
 
 export interface ApiRequirement {
   id: string;
-  clientId: string;
+  /** Absent, along with `client`, on requirements a contractor isn't assigned
+   * to -- GET /api/requirements strips both (see redactClientUnlessAssigned)
+   * so a contractor sees their clients and never the global client list. */
+  clientId?: string;
   client?: { name: string };
   recruiter?: { name: string } | null;
   title: string;
