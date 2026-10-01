@@ -47,7 +47,7 @@ export function decodeShortLinkToken(token: string | null | undefined): string |
 /** The short link to embed in an outreach message in place of the old
  * static, unpersonalized apply_url -- e.g. "{appBaseUrl}/g/{token}". */
 export function buildShortApplyUrl(leadId: string): string {
-  return `${config.appBaseUrl}/g/${encodeLeadIdToken(leadId)}`;
+  return `${config.shortLinkBaseUrl}/g/${encodeLeadIdToken(leadId)}`;
 }
 
 /**
@@ -62,5 +62,5 @@ export function buildShortApplyUrl(leadId: string): string {
  * against the wrong number and notes land over the 200-char cap.
  */
 export function shortApplyUrlLength(): number {
-  return `${config.appBaseUrl}/g/`.length + 22;
+  return `${config.shortLinkBaseUrl}/g/`.length + 22;
 }

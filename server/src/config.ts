@@ -50,6 +50,26 @@ const appBaseUrl = resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduct
 // Production still announces it on every boot, so once a real production
 // apply form exists, a box still pointing at the dev form shows up in the
 // logs rather than passing silently.
+// Base URL for the per-lead short links embedded in outreach
+// ({shortLinkBaseUrl}/g/{token}, see lib/onboarding/shortLink.ts). This is a
+// link a CANDIDATE sees and clicks in a cold email or LinkedIn note, so it
+// has to read as Global3's own domain -- a bare Render hostname like
+// project-beacon-server-6zmg.onrender.com looks like a redirect to someone
+// else's server and gets treated as suspicious.
+//
+// Separate from APP_BASE_URL on purpose, even though it defaults to it:
+// APP_BASE_URL also builds the Unipile webhook notify_url
+// (unipile.service.ts), so repointing that to a pretty domain would move the
+// webhook endpoint for every new account connection as a side effect. These
+// two just answer different questions -- "where do Unipile's callbacks go"
+// vs "what domain do we show a candidate" -- and only the second needs to be
+// presentable.
+//
+// Set SHORT_LINK_BASE_URL to a Global3 domain pointed at this service
+// (Render custom domain + a CNAME). Until it's set, this falls back to
+// APP_BASE_URL so nothing breaks -- the links just aren't branded yet.
+const shortLinkBaseUrl = resolveEnv("SHORT_LINK_BASE_URL", appBaseUrl, false);
+
 const G3_APPLY_DEV_FORM = "https://app.dev.global3.co/apply";
 const g3ApplyBaseUrl = resolveEnv("G3_APPLY_BASE_URL", G3_APPLY_DEV_FORM, false);
 if (isProduction && g3ApplyBaseUrl === G3_APPLY_DEV_FORM) {
@@ -88,6 +108,7 @@ export const config = {
   appBaseUrl,
 
   g3ApplyBaseUrl,
+  shortLinkBaseUrl,
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.

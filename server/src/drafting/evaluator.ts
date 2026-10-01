@@ -214,7 +214,7 @@ export function evaluate(draft: Draft): Evaluation {
   const hasApply =
     body.includes(BRAND.apply_url) ||
     body.includes("app.global3.io/apply") ||
-    body.includes(`${config.appBaseUrl}/g/`);
+    body.includes(`${config.shortLinkBaseUrl}/g/`);
   const hasSite = body.includes(BRAND.site);
   const hasCta = CTA_VERBS.some((v) => body.toLowerCase().includes(v));
   let reqOk: boolean;
