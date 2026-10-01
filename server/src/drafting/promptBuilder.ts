@@ -20,11 +20,21 @@ import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 // value specifics regardless, so truncation here only loses secondary detail.
 const MAX_PARALLEL_BLOCK_CHARS = 6000;
 
+import { shortApplyUrlLength } from "../lib/onboarding/shortLink";
+import { config } from "../config";
+
 // --- Brand constants (single source of truth for every draft) --------------
 export const BRAND = {
   company: "Global3",
   site: "global3.io",
-  apply_url: "https://app.global3.io/apply",
+  // The canonical apply form, as the PROMPT describes it to the model. The
+  // text that actually ships never contains this: ensureLinks() in
+  // draftGenerator.ts swaps it for the lead's own short link, which
+  // redirects here with their data pre-filled. Sourced from config rather
+  // than hardcoded so there is exactly one place the apply destination is
+  // defined -- a stale literal here would become the fallback URL on any
+  // path where substitution didn't fire.
+  apply_url: config.g3ApplyBaseUrl,
   contact_email: "resources@global3.io",
   email_sign_off: "Best regards,\nResources Team",
   team: "Resource Management team at Global3",
@@ -281,9 +291,9 @@ including the apply link. No subject line.
 
 DO THE ARITHMETIC BEFORE YOU WRITE -- "be brief" is not enough, and drafts keep
 landing 5-15 characters over:
-  - the apply URL alone is ${BRAND.apply_url.length} characters
+  - the apply URL alone is ${shortApplyUrlLength()} characters
   - the closing that introduces it costs ~50 more (see the PATTERN below)
-  - that leaves you roughly ${LINKEDIN_NOTE_CHAR_CAP - BRAND.apply_url.length - 50} characters
+  - that leaves you roughly ${LINKEDIN_NOTE_CHAR_CAP - shortApplyUrlLength() - 50} characters
     -- about 18-20 words -- for the greeting and the specific detail COMBINED. If the
     lead's named detail is itself long (a full certification title, say), the greeting
     has to shrink to almost nothing: "Hi [Name], your [detail] stood out —" is enough.

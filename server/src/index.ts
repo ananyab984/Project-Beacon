@@ -16,6 +16,7 @@ import { emailQueueRouter } from "./routes/email-queue.routes";
 import { conversationRouter } from "./routes/conversation.routes";
 import { escalationRouter } from "./routes/escalation.routes";
 import { evaluationRouter } from "./routes/evaluation.routes";
+import { onboardingShortLinkRouter } from "./routes/onboardingShortLink.routes";
 import { reportsRouter } from "./routes/reports.routes";
 import { enrichmentEvaluationRouter } from "./routes/enrichmentEvaluation.routes";
 import { faqRouter } from "./routes/faq.routes";
@@ -95,6 +96,9 @@ app.use("/api/reply-categories", replyCategoriesRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/system-settings", systemSettingsRouter);
 app.use("/api", evaluationRouter);
+// Deliberately NOT under /api: this is a public link a candidate opens in a
+// browser, and every character counts against the LinkedIn note cap.
+app.use("/g", onboardingShortLinkRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
