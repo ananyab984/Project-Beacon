@@ -1,15 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
 import { KeyRound, Mail, ShieldCheck, User as UserIcon, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { NotificationChannelPrefs } from "@/components/features/notification-channel-prefs";
 
 export const Route = createFileRoute("/contractor/settings")({
   head: () => ({
@@ -23,40 +22,6 @@ export const Route = createFileRoute("/contractor/settings")({
 
 function ContractorSettingsPage() {
   const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const { data: prefsData } = useQuery({
-    queryKey: ["notification-preferences"],
-    queryFn: api.getNotificationPreferences,
-  });
-
-  // One Email toggle and one Slack toggle for everything -- contractors get
-  // 5 notification types (enrichment done, lead replies, daily demand
-  // summary, weekly leads/performance digests) and per-type rows aren't
-  // worth the UI weight recruiter.settings.tsx's table carries for its own
-  // 5 types. Each toggle still fans out to every type's own preference row
-  // server-side (see the bulk PATCH /preferences route) -- the schema and
-  // send-time checks stay per-type, only this page's UI is collapsed.
-  const updateAllMutation = useMutation({
-    mutationFn: (patch: { emailEnabled?: boolean; slackEnabled?: boolean }) =>
-      api.updateAllNotificationPreferences(patch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
-    onError: (err: any) => toast.error(err?.message || "Failed to update notification preferences"),
-  });
-
-  const [slackMemberId, setSlackMemberId] = useState(user?.slackMemberId ?? "");
-  const slackMutation = useMutation({
-    mutationFn: () => api.updateSlackMemberId(user!.id, slackMemberId.trim() || null),
-    onSuccess: () => toast.success("Slack member ID saved"),
-    onError: (err: any) => toast.error(err?.message || "Failed to save Slack member ID"),
-  });
-
-  const preferences = prefsData?.preferences ?? [];
-  // "On" only once every type actually has that channel enabled -- a mixed
-  // state (e.g. one type toggled on some other way) reads as off rather than
-  // silently claiming a partial state is fully on.
-  const emailOn = preferences.length > 0 && preferences.every((p) => p.emailEnabled);
-  const slackOn = preferences.length > 0 && preferences.every((p) => p.slackEnabled);
 
   return (
     <div className="mx-auto max-w-2xl space-y-6 pb-24">
@@ -90,64 +55,7 @@ function ContractorSettingsPage() {
       </Section>
 
       <Section title="Notification Preferences" icon={<Bell className="h-3.5 w-3.5" />}>
-        <p className="text-xs text-muted-foreground">
-          The in-app bell is always on -- for enrichment finishing on a lead you added, a lead
-          replying, a daily summary of open demand headcount, and weekly summaries of the leads
-          you've added and your performance. Turn on email or Slack below to get those the same
-          way.
-        </p>
-
-        <div className="mt-4 space-y-3">
-          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
-            <div>
-              <div className="text-xs font-semibold text-foreground">Email notifications</div>
-              <div className="text-[11px] text-muted-foreground">Send all of the above to your work email too.</div>
-            </div>
-            <Switch
-              checked={emailOn}
-              disabled={updateAllMutation.isPending}
-              onCheckedChange={(checked) => updateAllMutation.mutate({ emailEnabled: checked })}
-            />
-          </div>
-          <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
-            <div>
-              <div className="text-xs font-semibold text-foreground">Slack notifications</div>
-              <div className="text-[11px] text-muted-foreground">
-                Send all of the above as a Slack DM too (needs your Slack Member ID below).
-              </div>
-            </div>
-            <Switch
-              checked={slackOn}
-              disabled={updateAllMutation.isPending}
-              onCheckedChange={(checked) => updateAllMutation.mutate({ slackEnabled: checked })}
-            />
-          </div>
-        </div>
-
-        <div className="mt-4 space-y-1.5 border-t border-border pt-4">
-          <Label className="text-xs">Slack Member ID</Label>
-          <p className="text-[11px] text-muted-foreground">
-            Copy your member ID from your Slack profile and paste it here to receive Slack
-            notifications.
-          </p>
-          <div className="flex items-center gap-2">
-            <Input
-              value={slackMemberId}
-              onChange={(e) => setSlackMemberId(e.target.value)}
-              placeholder="U0XXXXXXX"
-              className="text-xs max-w-xs"
-            />
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={slackMutation.isPending}
-              onClick={() => slackMutation.mutate()}
-              className="text-xs"
-            >
-              Save
-            </Button>
-          </div>
-        </div>
+        <NotificationChannelPrefs desc="The in-app bell is always on -- for a client requirement assigned to you and its due-date reminders, enrichment finishing on a lead you added, a lead replying, a daily summary of open demand headcount, and weekly summaries of the leads you've added and your performance. Turn on email or Slack below to get those the same way." />
       </Section>
 
       <Section title="Security" icon={<ShieldCheck className="h-3.5 w-3.5" />}>

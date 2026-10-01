@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { NotificationChannelPrefs } from "@/components/features/notification-channel-prefs";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
 import { EnrichmentEvaluationDialog } from "@/components/features/enrichment-evaluation-dialog";
 import {
@@ -598,90 +599,9 @@ function NotificationSystemSection() {
  * per-type table -- OWNER_TYPES is 7 types, same reasoning as contractor's 5).
  */
 function OwnerNotificationPreferencesSection() {
-  const { user } = useAuth();
-  const queryClient = useQueryClient();
-
-  const { data: prefsData } = useQuery({
-    queryKey: ["notification-preferences"],
-    queryFn: api.getNotificationPreferences,
-  });
-
-  const updateAllMutation = useMutation({
-    mutationFn: (patch: { emailEnabled?: boolean; slackEnabled?: boolean }) =>
-      api.updateAllNotificationPreferences(patch),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
-    onError: (err: any) => toast.error(err?.message || "Failed to update notification preferences"),
-  });
-
-  const [slackMemberId, setSlackMemberId] = useState(user?.slackMemberId ?? "");
-  const slackMutation = useMutation({
-    mutationFn: () => api.updateSlackMemberId(user!.id, slackMemberId.trim() || null),
-    onSuccess: () => toast.success("Slack member ID saved"),
-    onError: (err: any) => toast.error(err?.message || "Failed to save Slack member ID"),
-  });
-
-  const preferences = prefsData?.preferences ?? [];
-  // "On" only once every type actually has that channel enabled -- see
-  // contractor.settings.tsx for why a mixed state reads as off.
-  const emailOn = preferences.length > 0 && preferences.every((p) => p.emailEnabled);
-  const slackOn = preferences.length > 0 && preferences.every((p) => p.slackEnabled);
-
   return (
-    <Section
-      title="Your Notification Preferences"
-      desc="The in-app bell is always on -- for enrichment completing, duplicate/DNC flags needing review, a lead placement, the weekly team-health digest, and client/requirement status updates. Turn on email or Slack below to get those the same way."
-    >
-      <div className="space-y-3">
-        <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
-          <div>
-            <div className="text-xs font-semibold text-foreground">Email notifications</div>
-            <div className="text-[11px] text-muted-foreground">Send all of the above to your work email too.</div>
-          </div>
-          <Switch
-            checked={emailOn}
-            disabled={updateAllMutation.isPending}
-            onCheckedChange={(checked) => updateAllMutation.mutate({ emailEnabled: checked })}
-          />
-        </div>
-        <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
-          <div>
-            <div className="text-xs font-semibold text-foreground">Slack notifications</div>
-            <div className="text-[11px] text-muted-foreground">
-              Send all of the above as a Slack DM too (needs your Slack Member ID below).
-            </div>
-          </div>
-          <Switch
-            checked={slackOn}
-            disabled={updateAllMutation.isPending}
-            onCheckedChange={(checked) => updateAllMutation.mutate({ slackEnabled: checked })}
-          />
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-1.5 border-t border-border pt-4">
-        <Label className="text-xs">Slack Member ID</Label>
-        <p className="text-[11px] text-muted-foreground">
-          Copy your member ID from your Slack profile and paste it here to receive Slack
-          notifications.
-        </p>
-        <div className="flex items-center gap-2">
-          <Input
-            value={slackMemberId}
-            onChange={(e) => setSlackMemberId(e.target.value)}
-            placeholder="U0XXXXXXX"
-            className="text-xs max-w-xs"
-          />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={slackMutation.isPending}
-            onClick={() => slackMutation.mutate()}
-            className="text-xs"
-          >
-            Save
-          </Button>
-        </div>
-      </div>
+    <Section title="Your Notification Preferences">
+      <NotificationChannelPrefs desc="The in-app bell is always on -- for enrichment completing, duplicate/DNC flags needing review, a lead placement, the weekly team-health digest, and client/requirement status updates. Turn on email or Slack below to get those the same way." />
     </Section>
   );
 }
