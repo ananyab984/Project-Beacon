@@ -248,15 +248,22 @@ function SettingsPage() {
 function Section({
   title,
   desc,
+  icon,
   children,
 }: {
   title: string;
   desc?: string;
+  /** Optional -- only the sections that have a counterpart on another role's
+   * settings page pass one, to keep the heading identical across the three. */
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-2xl border border-border bg-card p-6">
-      <h3 className="text-base font-semibold">{title}</h3>
+      <h3 className="text-base font-semibold flex items-center gap-2">
+        {icon}
+        {title}
+      </h3>
       {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
       <div className="mt-4">{children}</div>
     </section>
@@ -595,13 +602,15 @@ function NotificationSystemSection() {
  * The owner's own Slack ID + delivery preferences -- distinct from
  * NotificationSystemSection above (org-wide bot-token/system-email config).
  * Copies contractor.settings.tsx's pattern exactly: one Email switch + one
- * Slack switch covering all of OWNER_TYPES at once (not the recruiter's
- * per-type table -- OWNER_TYPES is 7 types, same reasoning as contractor's 5).
+ * Slack switch covering all of OWNER_TYPES at once -- the same single-pair
+ * control contractor and recruiter settings use, so the three pages stay
+ * consistent and there's no per-type label map to keep in sync as the role's
+ * type list grows.
  */
 function OwnerNotificationPreferencesSection() {
   return (
-    <Section title="Your Notification Preferences">
-      <NotificationChannelPrefs desc="The in-app bell is always on -- for enrichment completing, duplicate/DNC flags needing review, a lead placement, the weekly team-health digest, and client/requirement status updates. Turn on email or Slack below to get those the same way." />
+    <Section title="Your Notification Preferences" icon={<Bell className="h-5 w-5 text-primary" />}>
+      <NotificationChannelPrefs desc="The in-app bell is always on -- for a reply on any lead you've switched 'notify me' on for, enrichment completing, duplicate/DNC flags needing review, a lead placement, the weekly team-health digest, and client/requirement status updates. Turn on email or Slack below to get those the same way." />
     </Section>
   );
 }

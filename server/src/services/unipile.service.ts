@@ -16,7 +16,7 @@ import {
   InboundChannel,
 } from "@prisma/client";
 import { processInboundMessage } from "./processInboundMessage";
-import { createNotification, formatLeadResponseSlackCard } from "./notification.service";
+import { createNotification, formatLeadResponseSlackCard, basePathForRole } from "./notification.service";
 import { getSystemSetting } from "./system-settings.service";
 import { redactForLog } from "../lib/logSanitizer";
 
@@ -1604,14 +1604,31 @@ export class UnipileService {
             if (subs.length > 0 || lead?.createdByContractorId) {
               const leadName = lead?.fullName ?? lead?.maskedLabel ?? "a lead";
               const excerpt = messageText.length > 200 ? `${messageText.slice(0, 200)}…` : messageText;
-              for (const sub of subs) createNotification({
-                recipientId: sub.recruiterId,
-                type: "LEAD_RESPONSE",
-                title: `${leadName} replied`,
-                body: `${leadName} sent you a new message: "${excerpt}"`,
-                slackCard: formatLeadResponseSlackCard(leadName, excerpt, "/recruiter"),
-                link: `/recruiter/leads`,
-              }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+              // Subscribers aren't only recruiters -- an owner can switch the
+              // same per-lead bell on (see the notify-subscription route's
+              // requireRole) -- and /recruiter/leads is a route RoleGuard
+              // bounces them off, so resolve each subscriber's own section.
+              const subRoles = new Map(
+                subs.length === 0
+                  ? []
+                  : (
+                      await prisma.user.findMany({
+                        where: { id: { in: subs.map((s) => s.recruiterId) } },
+                        select: { id: true, role: true },
+                      })
+                    ).map((u) => [u.id, u.role.toLowerCase() === "owner" ? ("owner" as const) : ("recruiter" as const)])
+              );
+              for (const sub of subs) {
+                const basePath = basePathForRole(subRoles.get(sub.recruiterId) ?? "recruiter");
+                createNotification({
+                  recipientId: sub.recruiterId,
+                  type: "LEAD_RESPONSE",
+                  title: `${leadName} replied`,
+                  body: `${leadName} sent you a new message: "${excerpt}"`,
+                  slackCard: formatLeadResponseSlackCard(leadName, excerpt, basePath),
+                  link: `${basePath}/leads`,
+                }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+              }
 
               if (lead?.createdByContractorId) {
                 createNotification({

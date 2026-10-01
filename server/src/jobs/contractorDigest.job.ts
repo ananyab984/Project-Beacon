@@ -33,7 +33,7 @@ export async function sendDailyDemandSummary() {
         title: `${openHeadcount} candidate${openHeadcount === 1 ? "" : "s"} needed across ${openRequirements.length} open requirement${openRequirements.length === 1 ? "" : "s"}`,
         body: `there ${openRequirements.length === 1 ? "is" : "are"} ${openRequirements.length} open requirement${openRequirements.length === 1 ? "" : "s"} right now, needing ${openHeadcount} more candidate${openHeadcount === 1 ? "" : "s"} in total.`,
         slackCard: formatDailyDemandSummarySlackCard(openHeadcount, openRequirements.length),
-        link: "/contractor/requirements",
+        link: "/contractor/clients",
       }).catch((err) => console.error(`[contractorDigest.job] daily demand summary failed for ${c.id}:`, err))
     )
   );

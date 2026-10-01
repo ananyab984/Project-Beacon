@@ -24,7 +24,7 @@ import { useAuth } from "@/lib/auth";
  * `desc`, which names that role's always-on bell types.
  */
 export function NotificationChannelPrefs({ desc }: { desc: string }) {
-  const { user } = useAuth();
+  const { user, patchUser } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: prefsData } = useQuery({
@@ -42,7 +42,14 @@ export function NotificationChannelPrefs({ desc }: { desc: string }) {
   const [slackMemberId, setSlackMemberId] = useState(user?.slackMemberId ?? "");
   const slackMutation = useMutation({
     mutationFn: () => api.updateSlackMemberId(user!.id, slackMemberId.trim() || null),
-    onSuccess: () => toast.success("Slack member ID saved"),
+    // The saved value has to land back on the signed-in user, not just in this
+    // input's local state: `user` is a snapshot from hydration, so without this
+    // the field re-seeds from the stale snapshot on the next remount and shows
+    // the old value, as if the save had failed. See patchUser in lib/auth.
+    onSuccess: (res) => {
+      patchUser({ slackMemberId: res.user.slackMemberId ?? null });
+      toast.success(slackMemberId.trim() ? "Slack member ID saved" : "Slack member ID cleared");
+    },
     onError: (err: any) => toast.error(err?.message || "Failed to save Slack member ID"),
   });
 

@@ -1,7 +1,7 @@
 import { createFileRoute, Outlet } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { LayoutGrid, ContactRound, Mail, MessagesSquare, LineChart, Settings as SettingsIcon, Plus, ClipboardList, Link2 } from "lucide-react";
+import { LayoutGrid, ContactRound, Mail, MessagesSquare, LineChart, Settings as SettingsIcon, Plus, Building2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { RoleGuard } from "@/components/features/role-guard";
@@ -21,7 +21,7 @@ export const Route = createFileRoute("/contractor")({
 const nav: NavItem[] = [
   { to: "/contractor", label: "Dashboard", icon: LayoutGrid },
   { to: "/contractor/leads", label: "My Leads", icon: ContactRound },
-  { to: "/contractor/requirements", label: "Requirements", icon: ClipboardList },
+  { to: "/contractor/clients", label: "Clients", icon: Building2 },
   { to: "/contractor/email-queue", label: "Email Queue", icon: Mail },
   { to: "/contractor/conversations", label: "Conversations", icon: MessagesSquare },
   { to: "/contractor/performance", label: "My Performance", icon: LineChart },

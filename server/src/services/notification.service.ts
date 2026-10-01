@@ -144,7 +144,7 @@ const PLACED_COLOR = "#2EB67D"; // green -- milestone, same "good news" family a
  * (different emoji/color/copy) rather than a second notification type --
  * same underlying event, just enough candidates that "you've been assigned
  * a task" undersells it. */
-export function formatTaskAssignmentSlackCard(requirement: TaskAssignmentRequirement): SlackCard {
+export function formatTaskAssignmentSlackCard(requirement: TaskAssignmentRequirement, link: string): SlackCard {
   const count = requirement.headcountNeeded;
   const isBulk = count > 1;
   const fields: SlackCardField[] = [
@@ -163,14 +163,14 @@ export function formatTaskAssignmentSlackCard(requirement: TaskAssignmentRequire
     color: isBulk ? BULK_ASSIGNMENT_COLOR : TASK_ASSIGNMENT_COLOR,
     fields,
     note: isBulk ? `You've been assigned ${count} candidates.${priorityNote}` : "Please check the dashboard for more details.",
-    button: { text: isBulk ? "View Client" : "View Task", path: "/recruiter/clients" },
+    button: { text: isBulk ? "View Client" : "View Task", path: link },
   };
 }
 
 /** DUE_DATE_REMINDER's Slack card. `daysLeft` matches the same calculation
  * due-date-reminder.job.ts already makes for its title's "is overdue" /
  * "is due tomorrow" / "is due in N days" wording. */
-export function formatDueDateReminderSlackCard(requirement: TaskAssignmentRequirement, daysLeft: number): SlackCard {
+export function formatDueDateReminderSlackCard(requirement: TaskAssignmentRequirement, daysLeft: number, link: string): SlackCard {
   const urgency = daysLeft <= 0 ? "(overdue)" : daysLeft === 1 ? "(due tomorrow)" : `(in ${daysLeft} days)`;
   return {
     emoji: "⏰",
@@ -184,7 +184,7 @@ export function formatDueDateReminderSlackCard(requirement: TaskAssignmentRequir
       { label: "Deadline", value: `${requirement.deadline ? requirement.deadline.toDateString() : "—"} ${urgency}` },
     ],
     note: daysLeft <= 0 ? "This task is overdue -- please follow up as soon as possible." : "Just a reminder that this task is due soon.",
-    button: { text: "Open Task", path: "/recruiter/clients" },
+    button: { text: "Open Task", path: link },
   };
 }
 
@@ -248,7 +248,7 @@ export function formatDailyDemandSummarySlackCard(openHeadcount: number, openReq
       { label: "Total headcount still needed", value: String(openHeadcount) },
     ],
     note: "Keep sourcing toward these.",
-    button: { text: "View Open Requirements", path: "/contractor/requirements" },
+    button: { text: "View Open Requirements", path: "/contractor/clients" },
   };
 }
 
@@ -382,6 +382,17 @@ export interface LeadNotificationRecipient {
  * sharing one hardcoded path. */
 export function basePathForRole(role: NotificationRole): string {
   return role === "contractor" ? "/contractor" : role === "owner" ? "/owner" : "/recruiter";
+}
+
+/** Where a requirement notification (TASK_ASSIGNMENT, DUE_DATE_REMINDER)
+ * should land for its recipient. Requirement.recruiterId holds a contractor
+ * as readily as a recruiter, and both roles now have their own Clients page,
+ * so this must be resolved per recipient -- these three call sites used to
+ * hardcode "/recruiter/clients", which RoleGuard bounces a contractor off.
+ * Takes the raw User.role string (either case) since the callers read it
+ * straight off the assignee row. */
+export function requirementLinkForRole(role: string | null | undefined): string {
+  return `${basePathForRole((role || "").toLowerCase() === "contractor" ? "contractor" : "recruiter")}/clients`;
 }
 
 /** The deduped 3-way fan-out shared by ENRICHMENT_COMPLETE, ENRICHMENT_STALLED

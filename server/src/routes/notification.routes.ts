@@ -86,8 +86,18 @@ const RECRUITER_TYPES: NotificationType[] = [
 ];
 // LEAD_RESPONSE is shared with RECRUITER_TYPES -- same type, different trigger
 // source (see unipile.service.ts's contractor-owned-lead branch).
+// TASK_ASSIGNMENT/DUE_DATE_REMINDER are shared too: Requirement.recruiterId
+// holds a contractor just as readily as a recruiter (requirement.routes.ts
+// never checks role, and both the Create Demand dialog and the Clients &
+// Market Demand list offer contractors), so omitting them here meant an
+// assigned contractor got a bell row and nothing else -- createNotification
+// reads a per-(user,type) preference row that was never seeded for them, and
+// the contractor settings page's single Email/Slack toggle (which writes
+// exactly typesForRole) could never turn them on.
 const CONTRACTOR_TYPES: NotificationType[] = [
   "LEAD_RESPONSE",
+  "TASK_ASSIGNMENT",
+  "DUE_DATE_REMINDER",
   "ENRICHMENT_COMPLETE",
   "ENRICHMENT_STALLED",
   "DUPLICATE_REVIEW_NEEDED",
@@ -103,6 +113,13 @@ const CONTRACTOR_TYPES: NotificationType[] = [
 // EscalationsBell (reads the Escalation table directly) remains their real
 // escalations view.
 const OWNER_TYPES: NotificationType[] = [
+  // An owner can switch on a lead's "notify me on response" bell exactly like
+  // a recruiter can (PATCH /leads/:id/notify-subscription allows "owner", and
+  // the conversations page that hosts the bell is mounted for all three
+  // roles), so LEAD_RESPONSE genuinely reaches owners -- leaving it out meant
+  // a subscribed owner got a bell row their Email/Slack toggle could never
+  // cover, since that toggle writes exactly typesForRole.
+  "LEAD_RESPONSE",
   "ENRICHMENT_COMPLETE",
   "DUPLICATE_REVIEW_NEEDED",
   "DNC_CONFIRMATION_NEEDED",
@@ -118,7 +135,38 @@ const ALL_TYPES: NotificationType[] = [...new Set([...RECRUITER_TYPES, ...CONTRA
 // recruiter opts in.
 const DEFAULT_EMAIL_ENABLED: Partial<Record<NotificationType, boolean>> = { DUE_DATE_REMINDER: true };
 
-function typesForRole(role: string): NotificationType[] {
+/** What a preference row should start as when a type is seeded for a user.
+ *
+ * A user with no rows yet is seeing this for the first time: they get the
+ * recommended defaults. A user who already HAS rows has made a choice, and a
+ * type added to their role list later must inherit it rather than reset --
+ * otherwise adding a type silently flips the single Email/Slack switch on
+ * contractor.settings.tsx back to off (it reads every()) and quietly stops
+ * delivering a channel they had turned on. That is exactly what happened when
+ * TASK_ASSIGNMENT/DUE_DATE_REMINDER joined CONTRACTOR_TYPES.
+ *
+ * every(), not some(): inheriting "on" out of a partially-on state would turn
+ * a channel on for a type the user never agreed to. Default-deny on a mix. */
+export function seedChannelsFor(
+  type: NotificationType,
+  existing: { emailEnabled: boolean; slackEnabled: boolean }[]
+): { emailEnabled: boolean; slackEnabled: boolean } {
+  if (existing.length === 0) {
+    return { emailEnabled: DEFAULT_EMAIL_ENABLED[type] ?? false, slackEnabled: false };
+  }
+  return {
+    emailEnabled: existing.every((p) => p.emailEnabled),
+    slackEnabled: existing.every((p) => p.slackEnabled),
+  };
+}
+
+/** The types whose preference rows GET /preferences seeds, and which the
+ * settings pages' single Email/Slack switch writes (bulk PATCH /preferences).
+ * A type NOT in here can still create a bell row, but its email/Slack
+ * preference never exists, so those channels can never be turned on for it --
+ * see notificationRoleCoverage.test.ts, which pins every (role, type) pair
+ * the codebase actually emits against this. */
+export function typesForRole(role: string): NotificationType[] {
   if (role === "contractor") return CONTRACTOR_TYPES;
   if (role === "owner") return OWNER_TYPES;
   return RECRUITER_TYPES;
@@ -134,12 +182,7 @@ notificationRouter.get(
     const missing = roleTypes.filter((t) => !byType.has(t));
     if (missing.length > 0) {
       await prisma.notificationPreference.createMany({
-        data: missing.map((type) => ({
-          userId: req.user!.id,
-          type,
-          emailEnabled: DEFAULT_EMAIL_ENABLED[type] ?? false,
-          slackEnabled: false,
-        })),
+        data: missing.map((type) => ({ userId: req.user!.id, type, ...seedChannelsFor(type, existing) })),
         skipDuplicates: true,
       });
     }

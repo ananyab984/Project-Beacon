@@ -63,8 +63,14 @@ function ClientsPage() {
   const { data: clientsData } = useQuery({ queryKey: ["clients"], queryFn: () => api.getClients() });
   const clients = clientsData?.clients ?? [];
 
+  // Contractors are assignable to a requirement exactly like recruiters --
+  // the assign endpoint never cared about role, and the Create Demand dialog
+  // already offers both rosters -- so this list has to as well, or a
+  // contractor-assigned requirement shows blank here and can't be reassigned.
+  // api.getUsers requires an explicit role, hence two calls.
   const { data: recruitersData } = useQuery({ queryKey: ["users", "RECRUITER"], queryFn: () => api.getUsers("RECRUITER") });
-  const recruiters = recruitersData?.users ?? [];
+  const { data: contractorsData } = useQuery({ queryKey: ["users", "CONTRACTOR"], queryFn: () => api.getUsers("CONTRACTOR") });
+  const recruiters = [...(recruitersData?.users ?? []), ...(contractorsData?.users ?? [])];
 
   // Unfiltered set — used for the summary metric tiles with auto-sync.
   const { data: allReqData } = useQuery({
@@ -345,6 +351,11 @@ function ClientsPage() {
                                 {r.name[0]}
                               </span>
                               <span className="font-medium">{r.name}</span>
+                              {r.role === "CONTRACTOR" && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                  Contractor
+                                </span>
+                              )}
                             </div>
                           </SelectItem>
                         ))}

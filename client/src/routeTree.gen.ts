@@ -20,6 +20,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as UnauthorizedRouteImport } from './routes/unauthorized'
 import { Route as VerifyEmailRouteImport } from './routes/verify-email'
 import { Route as ContractorIndexRouteImport } from './routes/contractor.index'
+import { Route as ContractorClientsRouteImport } from './routes/contractor.clients'
 import { Route as ContractorConversationsRouteImport } from './routes/contractor.conversations'
 import { Route as ContractorEmailQueueRouteImport } from './routes/contractor.email-queue'
 import { Route as ContractorLeadsRouteImport } from './routes/contractor.leads'
@@ -104,6 +105,11 @@ const VerifyEmailRoute = VerifyEmailRouteImport.update({
 const ContractorIndexRoute = ContractorIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => ContractorRoute,
+} as any)
+const ContractorClientsRoute = ContractorClientsRouteImport.update({
+  id: '/clients',
+  path: '/clients',
   getParentRoute: () => ContractorRoute,
 } as any)
 const ContractorConversationsRoute = ContractorConversationsRouteImport.update({
@@ -270,6 +276,7 @@ export interface FileRoutesByFullPath {
   '/signup': typeof SignupRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/contractor/clients': typeof ContractorClientsRoute
   '/contractor/conversations': typeof ContractorConversationsRoute
   '/contractor/email-queue': typeof ContractorEmailQueueRoute
   '/contractor/leads': typeof ContractorLeadsRoute
@@ -310,6 +317,7 @@ export interface FileRoutesByTo {
   '/signup': typeof SignupRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/contractor/clients': typeof ContractorClientsRoute
   '/contractor/conversations': typeof ContractorConversationsRoute
   '/contractor/email-queue': typeof ContractorEmailQueueRoute
   '/contractor/leads': typeof ContractorLeadsRoute
@@ -354,6 +362,7 @@ export interface FileRoutesById {
   '/signup': typeof SignupRoute
   '/unauthorized': typeof UnauthorizedRoute
   '/verify-email': typeof VerifyEmailRoute
+  '/contractor/clients': typeof ContractorClientsRoute
   '/contractor/conversations': typeof ContractorConversationsRoute
   '/contractor/email-queue': typeof ContractorEmailQueueRoute
   '/contractor/leads': typeof ContractorLeadsRoute
@@ -399,6 +408,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/unauthorized'
     | '/verify-email'
+    | '/contractor/clients'
     | '/contractor/conversations'
     | '/contractor/email-queue'
     | '/contractor/leads'
@@ -439,6 +449,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/unauthorized'
     | '/verify-email'
+    | '/contractor/clients'
     | '/contractor/conversations'
     | '/contractor/email-queue'
     | '/contractor/leads'
@@ -482,6 +493,7 @@ export interface FileRouteTypes {
     | '/signup'
     | '/unauthorized'
     | '/verify-email'
+    | '/contractor/clients'
     | '/contractor/conversations'
     | '/contractor/email-queue'
     | '/contractor/leads'
@@ -606,6 +618,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/contractor/'
       preLoaderRoute: typeof ContractorIndexRouteImport
+      parentRoute: typeof ContractorRoute
+    }
+    '/contractor/clients': {
+      id: '/contractor/clients'
+      path: '/clients'
+      fullPath: '/contractor/clients'
+      preLoaderRoute: typeof ContractorClientsRouteImport
       parentRoute: typeof ContractorRoute
     }
     '/contractor/conversations': {
@@ -822,6 +841,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface ContractorRouteChildren {
+  ContractorClientsRoute: typeof ContractorClientsRoute
   ContractorConversationsRoute: typeof ContractorConversationsRoute
   ContractorEmailQueueRoute: typeof ContractorEmailQueueRoute
   ContractorLeadsRoute: typeof ContractorLeadsRoute
@@ -832,6 +852,7 @@ interface ContractorRouteChildren {
 }
 
 const ContractorRouteChildren: ContractorRouteChildren = {
+  ContractorClientsRoute: ContractorClientsRoute,
   ContractorConversationsRoute: ContractorConversationsRoute,
   ContractorEmailQueueRoute: ContractorEmailQueueRoute,
   ContractorLeadsRoute: ContractorLeadsRoute,

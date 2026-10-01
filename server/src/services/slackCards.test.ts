@@ -13,7 +13,10 @@ import {
   formatLeadResponseSlackCard,
   formatEscalationSlackCard,
   buildSlackCardBlocks,
+  requirementLinkForRole,
 } from "./notification.service";
+
+const REQ_LINK = "/recruiter/clients";
 
 function requirement(over: Partial<Parameters<typeof formatTaskAssignmentSlackCard>[0]> = {}) {
   return {
@@ -29,7 +32,7 @@ function requirement(over: Partial<Parameters<typeof formatTaskAssignmentSlackCa
 }
 
 function test1_singleCandidateReadsAsANewTaskNotBulk() {
-  const card = formatTaskAssignmentSlackCard(requirement({ headcountNeeded: 1, priority: "HIGH" }));
+  const card = formatTaskAssignmentSlackCard(requirement({ headcountNeeded: 1, priority: "HIGH" }), REQ_LINK);
   assert.strictEqual(card.emoji, "📣");
   assert.strictEqual(card.headline, "You've been assigned a new task!");
   assert.strictEqual(card.button?.text, "View Task");
@@ -40,7 +43,7 @@ function test1_singleCandidateReadsAsANewTaskNotBulk() {
 }
 
 function test2_multipleCandidatesReadAsBulkAssignment() {
-  const card = formatTaskAssignmentSlackCard(requirement({ headcountNeeded: 8, priority: "HIGH" }));
+  const card = formatTaskAssignmentSlackCard(requirement({ headcountNeeded: 8, priority: "HIGH" }), REQ_LINK);
   assert.strictEqual(card.emoji, "📋");
   assert.strictEqual(card.headline, "New bulk assignment");
   assert.strictEqual(card.button?.text, "View Client");
@@ -49,24 +52,42 @@ function test2_multipleCandidatesReadAsBulkAssignment() {
 }
 
 function test3_standardPriorityOmitsThePriorityField() {
-  const card = formatTaskAssignmentSlackCard(requirement({ priority: "STANDARD" }));
+  const card = formatTaskAssignmentSlackCard(requirement({ priority: "STANDARD" }), REQ_LINK);
   assert.ok(!card.fields.some((f) => f.label === "Priority"));
 }
 
 function test4_deadlineOnlyAppearsWhenSet() {
-  const withDeadline = formatTaskAssignmentSlackCard(requirement({ deadline: new Date("2026-10-01T00:00:00Z") }));
+  const withDeadline = formatTaskAssignmentSlackCard(requirement({ deadline: new Date("2026-10-01T00:00:00Z") }), REQ_LINK);
   assert.ok(withDeadline.fields.some((f) => f.label === "Deadline"));
-  const without = formatTaskAssignmentSlackCard(requirement({ deadline: null }));
+  const without = formatTaskAssignmentSlackCard(requirement({ deadline: null }), REQ_LINK);
   assert.ok(!without.fields.some((f) => f.label === "Deadline"));
 }
 
 function test5_dueDateReminderShowsOverdueVsUpcomingWording() {
-  const overdue = formatDueDateReminderSlackCard(requirement({ deadline: new Date() }), 0);
+  const overdue = formatDueDateReminderSlackCard(requirement({ deadline: new Date() }), 0, REQ_LINK);
   assert.match(overdue.fields.find((f) => f.label === "Deadline")!.value, /overdue/);
   assert.match(overdue.note!, /overdue/i);
 
-  const upcoming = formatDueDateReminderSlackCard(requirement({ deadline: new Date() }), 3);
+  const upcoming = formatDueDateReminderSlackCard(requirement({ deadline: new Date() }), 3, REQ_LINK);
   assert.match(upcoming.fields.find((f) => f.label === "Deadline")!.value, /in 3 days/);
+}
+
+function test5b_requirementCardsRouteToTheAssigneesOwnClientsPage() {
+  // Requirement.recruiterId holds a contractor as readily as a recruiter, and
+  // RoleGuard bounces a contractor off /recruiter/*. Both card families take
+  // the resolved link rather than hardcoding the recruiter path.
+  assert.strictEqual(requirementLinkForRole("CONTRACTOR"), "/contractor/clients");
+  assert.strictEqual(requirementLinkForRole("contractor"), "/contractor/clients");
+  assert.strictEqual(requirementLinkForRole("RECRUITER"), "/recruiter/clients");
+  // Unknown/missing role must not silently send a contractor to a page they
+  // can't open -- but it also must not break a recruiter, so it stays the
+  // recruiter default, which is what every non-contractor assignee is.
+  assert.strictEqual(requirementLinkForRole(null), "/recruiter/clients");
+
+  const assignment = formatTaskAssignmentSlackCard(requirement(), requirementLinkForRole("contractor"));
+  assert.strictEqual(assignment.button?.path, "/contractor/clients");
+  const reminder = formatDueDateReminderSlackCard(requirement({ deadline: new Date() }), 2, requirementLinkForRole("contractor"));
+  assert.strictEqual(reminder.button?.path, "/contractor/clients");
 }
 
 function test6_leadResponseCardQuotesTheExcerpt() {
@@ -114,6 +135,7 @@ async function main() {
     test3_standardPriorityOmitsThePriorityField,
     test4_deadlineOnlyAppearsWhenSet,
     test5_dueDateReminderShowsOverdueVsUpcomingWording,
+    test5b_requirementCardsRouteToTheAssigneesOwnClientsPage,
     test6_leadResponseCardQuotesTheExcerpt,
     test6b_leadResponseCardButtonMatchesTheRecipientsOwnRole,
     test7_escalationCardUsesTheGivenLinkPath,
