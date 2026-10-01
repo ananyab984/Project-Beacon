@@ -25,6 +25,9 @@ import type { ClaudeClient } from "./claudeClient";
 
 const LEAD_ID = "11111111-1111-1111-1111-111111111111";
 const SHORT = buildShortApplyUrl(LEAD_ID);
+// Email now embeds the full pre-filled URL (rendered with clean visible text
+// by plainTextToEmailHtml); LinkedIn still gets the short link.
+const FULL = "https://app.dev.global3.co/apply?first_name=Ana&email=ana%40example.com";
 
 function fakeConfig(): DraftingConfig {
   return {
@@ -64,25 +67,29 @@ function fakeClient(body: string, subject = "Hello"): ClaudeClient {
 
 async function test1_emailSwapsCanonicalUrlForThisLeadsShortLink() {
   const client = fakeClient(`Hi Ana,\n\nApply here: ${BRAND.apply_url}\n\nBest,\nResources Team`);
-  const draft = await generateEmail(client, fakeConfig(), fakeLead(), LEAD_ID);
+  const draft = await generateEmail(client, fakeConfig(), fakeLead(), FULL);
 
-  assert.ok(draft.body.includes(SHORT), "body should carry this lead's short link");
-  assert.ok(!draft.body.includes(BRAND.apply_url), "the unpersonalized canonical URL must not survive");
+  assert.ok(draft.body.includes(FULL), "email body should carry the full pre-filled URL");
+  // BRAND.apply_url is a prefix of FULL, so "not included" is the wrong
+  // assertion -- what matters is that it appears exactly once, as the head of
+  // the pre-filled URL, never a second time as a bare unpersonalized link.
+  assert.strictEqual(draft.body.split(BRAND.apply_url).length - 1, 1, "apply URL should appear exactly once");
+  assert.ok(!/apply\?[^\s]*\?/.test(draft.body), "query string must not be spliced in twice");
 }
 
 async function test2_emailAppendsTheLinkWhenTheModelOmitsItEntirely() {
   const client = fakeClient("Hi Ana,\n\nWe'd love to work with you.\n\nBest,\nResources Team");
-  const draft = await generateEmail(client, fakeConfig(), fakeLead(), LEAD_ID);
+  const draft = await generateEmail(client, fakeConfig(), fakeLead(), FULL);
 
-  assert.ok(draft.body.includes(SHORT), "a draft with no link at all should still get one appended");
+  assert.ok(draft.body.includes(FULL), "a draft with no link at all should still get one appended");
 }
 
 async function test3_linkedinSwapsTheUrlAndStaysUnderTheCap() {
   const client = fakeClient(`Hi Ana, your subtitling work stood out. Apply: ${BRAND.apply_url}`);
-  const draft = await generateLinkedin(client, fakeConfig(), fakeLead(), LEAD_ID);
+  const draft = await generateLinkedin(client, fakeConfig(), fakeLead(), SHORT);
 
-  assert.ok(draft.body.includes(SHORT), "LinkedIn note should carry the short link too");
-  assert.ok(!draft.body.includes(BRAND.apply_url), "canonical URL must not survive on LinkedIn either");
+  assert.ok(draft.body.includes(SHORT), "LinkedIn note should carry the short link");
+  assert.ok(!draft.body.includes(BRAND.apply_url), "the bare form URL must not survive on LinkedIn");
   assert.ok(
     draft.body.length <= LINKEDIN_NOTE_MAX_CHARS,
     `note must fit ${LINKEDIN_NOTE_MAX_CHARS} chars once the link is in, got ${draft.body.length}`
@@ -95,12 +102,21 @@ async function test4_twoLeadsGetDifferentLinks() {
   const other = "22222222-2222-2222-2222-222222222222";
   const client = fakeClient(`Hi Ana,\n\nApply here: ${BRAND.apply_url}\n\nBest`);
 
-  const a = await generateEmail(client, fakeConfig(), fakeLead(), LEAD_ID);
-  const b = await generateEmail(client, fakeConfig(), fakeLead(), other);
+  const a = await generateEmail(client, fakeConfig(), fakeLead(), buildShortApplyUrl(LEAD_ID));
+  const b = await generateEmail(client, fakeConfig(), fakeLead(), buildShortApplyUrl(other));
 
   assert.ok(a.body.includes(buildShortApplyUrl(LEAD_ID)));
   assert.ok(b.body.includes(buildShortApplyUrl(other)));
   assert.notStrictEqual(buildShortApplyUrl(LEAD_ID), buildShortApplyUrl(other), "links must differ per lead");
+}
+
+async function test5_anAlreadyCorrectLinkIsNotSubstitutedTwice() {
+  // Guards the prefix trap directly: a draft that already contains the full
+  // pre-filled URL must come out byte-identical, not with the params doubled.
+  const client = fakeClient(`Hi Ana,\n\nApply here: ${FULL}\n\nBest`);
+  const draft = await generateEmail(client, fakeConfig(), fakeLead(), FULL);
+  assert.strictEqual(draft.body.split(FULL).length - 1, 1, "link should appear exactly once");
+  assert.ok(!/apply\?[^\s]*\?/.test(draft.body), "params must not be duplicated");
 }
 
 async function main() {
@@ -109,6 +125,7 @@ async function main() {
     test2_emailAppendsTheLinkWhenTheModelOmitsItEntirely,
     test3_linkedinSwapsTheUrlAndStaysUnderTheCap,
     test4_twoLeadsGetDifferentLinks,
+    test5_anAlreadyCorrectLinkIsNotSubstitutedTwice,
   ];
   let failed = 0;
   for (const t of tests) {

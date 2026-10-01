@@ -14,7 +14,6 @@ import { ClaudeClient } from "./claudeClient";
 import type { DraftingConfig } from "./config";
 import { citedNamedSpecifics, Lead } from "./leads";
 import { BRAND, buildEmailPrompt, buildLinkedinPrompt, RateMatch } from "./promptBuilder";
-import { buildShortApplyUrl } from "../lib/onboarding/shortLink";
 import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 
 export interface Draft {
@@ -75,11 +74,17 @@ export function specificityTarget(strongFacts: string[]): number {
  * gets swapped for the real per-lead one before the text reaches anybody. */
 function ensureLinks(body: string, channel: string, applyUrl: string): string {
   let text = body;
-  if (text.includes(BRAND.apply_url)) {
+  // Check for the finished link FIRST. BRAND.apply_url is now a prefix of the
+  // email channel's applyUrl (the same form URL, plus the query string), so
+  // testing the prefix first would match an already-correct link and splice
+  // the params in twice -- ".../apply?first_name=Ana?first_name=Ana".
+  if (text.includes(applyUrl)) {
+    // Already carries this lead's link; nothing to substitute or append.
+  } else if (text.includes(BRAND.apply_url)) {
     text = text.split(BRAND.apply_url).join(applyUrl);
   } else if (text.includes("app.global3.io/apply")) {
     text = text.split("app.global3.io/apply").join(applyUrl);
-  } else if (!text.includes(applyUrl)) {
+  } else {
     const sep = channel === "linkedin" ? " " : "\n\n";
     text += `${sep}Apply here: ${applyUrl}`;
   }
@@ -112,7 +117,7 @@ export async function generateEmail(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
-  leadId: string,
+  applyUrl: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -145,7 +150,7 @@ export async function generateEmail(
   }
 
   const subject = (data.subject || `Freelance partnership with ${BRAND.company}`).trim();
-  const body = ensureLinks((data.body || "").trim(), "email", buildShortApplyUrl(leadId));
+  const body = ensureLinks((data.body || "").trim(), "email", applyUrl);
   return {
     channel: "email",
     lead,
@@ -165,7 +170,7 @@ export async function generateLinkedin(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
-  leadId: string,
+  applyUrl: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -191,7 +196,6 @@ export async function generateLinkedin(
   //    Asking for a shorter rewrite is strictly better than shipping a note
   //    that will be cut, or than holding one a rewrite could fix.
   const specificFacts = lead.specificFactCandidates();
-  const applyUrl = buildShortApplyUrl(leadId);
   const complaints = (draftBody: string): string[] => {
     const out: string[] = [];
     if (lead.strongFactCandidates().length && countSpecificFacts(lead, draftBody) < 1) {
