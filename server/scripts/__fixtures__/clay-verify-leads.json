@@ -1,0 +1,301 @@
+{
+  "avik": {
+    "linkedin_enrichment": {
+      "connections": 364,
+      "country": "India",
+      "courses": [
+        {
+          "course_number": "A+",
+          "title": "Radio Production"
+        }
+      ],
+      "current_experience": [
+        {
+          "company": "Soundtrack Studios",
+          "is_current": true,
+          "locality": "Kolkata Area, India",
+          "start_date": "2017-05-01",
+          "title": "Proprietor"
+        },
+        {
+          "company": "Media",
+          "is_current": true,
+          "locality": "Kolkata, India",
+          "start_date": "2011-02-01",
+          "summary": "\u2022\tAt present I am a  Radio Presenter at Community Radio JU 90.8 MHz for last 6 years.\n\u2022\tI have lent my voice for National Geographic Channel Bengali, Fox Life Bengali, Discovery Bengali.\n\u2022\tI have also lent my voice for TV shows like \u201cAdaalat Bengali\u201d, \u201cAahat Bengali\u201d, \u201cCrime Petrol Dastak Bengali\u201d, \"Crime Petrol Satark Bengali\", \u201cEkela Bengali\u201d, \"Jokhon Bhut Ashey\", \"Surya The Super Cop - Bengali\", \"Encounter Bengali\" and others.\n\u2022\tI have also lent my voice for commercial TV ads like, Xoxo quit addiction, Ayurwin Nutrislim, Ayurwin Nutrigain, Moshk Agarbatti (Bengali), Supply Medicine Dot Com and Others.\n\u2022\tI have lent my voice For Hollywood\u2019s Renowned Production House \u201cPARAMOUNT PICTURES\u201d. I have work with them for feature films like, Kung Fu Panda \u2013I (Bengali), Kung Fu Panda \u2013II (Bengali) & How To Train Your Dragon (Bengali).\n\u2022\tI have lent my voice for a Super Hit American Daily Soap Called \u201cFEAR THE WALKING DEAD\u201d, \u201cFEAR THE WALKING DEAD - ii\u201d for the character \u201cChristopher\u201d in Bengali Language.\n\u2022\tI have also lent my voice for corporate films. Those corporate companies are \u201cHindustan Unilever\u201d and \u201cLafarge Cement\u201d.\n\u2022\tI have also lent my voice for a Bengali Documentary named, \u201cUTTAR DINAJPUR KOTHO KOTHA\u201d. \n\n\u2022\tMy Upcoming TV Shows On Sony Aath \u2013  Aahat Season 6 (Bengali), CID (Bengali).\n\u2022\tI have also work with Radio Mirchi 98.3 Fm in a project named \u201cMirchi Singha Bahini\u201d for 2 months in the year 2010.",
+          "title": "Voice Over Artist"
+        },
+        {
+          "company": "Media",
+          "is_current": true,
+          "locality": "Greater Kolkata Area",
+          "start_date": "2011-03-01",
+          "summary": "\u2022\tWritten over 800 translated script for National Geographic Channel Bengali, Fox Life Bengali, Discovery Bengali & Sony Aath.\n\u2022\tI have written Scripts for shows like \u201cAdaalat (Bengali)\u201d, \u201cAahat (Bengali)\u201d, \u201cJokhon Bhut Ashey (Bengali)\u201d & Many More.\n\u2022\tProduced over 200 program for Community Radio JU 90.8 MHz for last 6 years. \n\u2022\tWritten Bengali Dialogues For Feature Films \u2013 Darr @ the mall (Hindi), Don Sheenu (Telegu) & Walking With Dinosoure (English).",
+          "title": "Script Writer"
+        }
+      ],
+      "education": [
+        {
+          "degree": "Bachelor of Arts (B.A.)",
+          "end_date": "2013-01-01",
+          "field_of_study": "Arts, Entertainment, and Media Management",
+          "school_name": "University Of Calcutta",
+          "start_date": "2010-01-01"
+        },
+        {
+          "degree": "Higher Secondary",
+          "end_date": "2010-01-01",
+          "school_name": "Hatthuba Adarsha Vidyapith (H.S)",
+          "start_date": "2002-01-01"
+        }
+      ],
+      "experience": [
+        {
+          "company": "Soundtrack Studios",
+          "is_current": true,
+          "locality": "Kolkata Area, India",
+          "start_date": "2017-05-01",
+          "title": "Proprietor"
+        },
+        {
+          "company": "Media",
+          "is_current": true,
+          "locality": "Kolkata, India",
+          "start_date": "2011-02-01",
+          "summary": "\u2022\tAt present I am a  Radio Presenter at Community Radio JU 90.8 MHz for last 6 years.\n\u2022\tI have lent my voice for National Geographic Channel Bengali, Fox Life Bengali, Discovery Bengali.\n\u2022\tI have also lent my voice for TV shows like \u201cAdaalat Bengali\u201d, \u201cAahat Bengali\u201d, \u201cCrime Petrol Dastak Bengali\u201d, \"Crime Petrol Satark Bengali\", \u201cEkela Bengali\u201d, \"Jokhon Bhut Ashey\", \"Surya The Super Cop - Bengali\", \"Encounter Bengali\" and others.\n\u2022\tI have also lent my voice for commercial TV ads like, Xoxo quit addiction, Ayurwin Nutrislim, Ayurwin Nutrigain, Moshk Agarbatti (Bengali), Supply Medicine Dot Com and Others.\n\u2022\tI have lent my voice For Hollywood\u2019s Renowned Production House \u201cPARAMOUNT PICTURES\u201d. I have work with them for feature films like, Kung Fu Panda \u2013I (Bengali), Kung Fu Panda \u2013II (Bengali) & How To Train Your Dragon (Bengali).\n\u2022\tI have lent my voice for a Super Hit American Daily Soap Called \u201cFEAR THE WALKING DEAD\u201d, \u201cFEAR THE WALKING DEAD - ii\u201d for the character \u201cChristopher\u201d in Bengali Language.\n\u2022\tI have also lent my voice for corporate films. Those corporate companies are \u201cHindustan Unilever\u201d and \u201cLafarge Cement\u201d.\n\u2022\tI have also lent my voice for a Bengali Documentary named, \u201cUTTAR DINAJPUR KOTHO KOTHA\u201d. \n\n\u2022\tMy Upcoming TV Shows On Sony Aath \u2013  Aahat Season 6 (Bengali), CID (Bengali).\n\u2022\tI have also work with Radio Mirchi 98.3 Fm in a project named \u201cMirchi Singha Bahini\u201d for 2 months in the year 2010.",
+          "title": "Voice Over Artist"
+        },
+        {
+          "company": "Media",
+          "is_current": true,
+          "locality": "Greater Kolkata Area",
+          "start_date": "2011-03-01",
+          "summary": "\u2022\tWritten over 800 translated script for National Geographic Channel Bengali, Fox Life Bengali, Discovery Bengali & Sony Aath.\n\u2022\tI have written Scripts for shows like \u201cAdaalat (Bengali)\u201d, \u201cAahat (Bengali)\u201d, \u201cJokhon Bhut Ashey (Bengali)\u201d & Many More.\n\u2022\tProduced over 200 program for Community Radio JU 90.8 MHz for last 6 years. \n\u2022\tWritten Bengali Dialogues For Feature Films \u2013 Darr @ the mall (Hindi), Don Sheenu (Telegu) & Walking With Dinosoure (English).",
+          "title": "Script Writer"
+        },
+        {
+          "company": "Community Radio JU 90.8MHz",
+          "end_date": "2017-04-01",
+          "is_current": false,
+          "locality": "Jadavpur Kolkata",
+          "start_date": "2011-02-01",
+          "summary": "I worked here as a radio jockey, content producer & sound engineer. i started working here from 2010 and doing programs for theme from February 2011.",
+          "title": "Radio Jockey"
+        },
+        {
+          "company": "Radio Mirchi 98.3Fm",
+          "end_date": "2010-10-01",
+          "is_current": false,
+          "locality": "Greater Kolkata Area",
+          "start_date": "2010-09-01",
+          "title": "O B Reporter"
+        }
+      ],
+      "first_name": "Avik",
+      "headline": "A Bengali voice actor with over 15 years of experience and lent voice for #tvc #radiospots #elearning #explainervideos #narration #ivr #audiobooks #corporatevideos #dubbing and many more.",
+      "jobs_count": 5,
+      "languages": [
+        {
+          "language": "Bengali",
+          "proficiency": "Full professional proficiency"
+        },
+        {
+          "language": "English",
+          "proficiency": "Full professional proficiency"
+        },
+        {
+          "language": "Hindi",
+          "proficiency": "Full professional proficiency"
+        }
+      ],
+      "last_name": "Chakraborty",
+      "last_refresh": "2026-08-25 07:47:15.382",
+      "latest_experience": {
+        "company": "Soundtrack Studios",
+        "is_current": true,
+        "locality": "Kolkata Area, India",
+        "start_date": "2017-05-01",
+        "title": "Proprietor"
+      },
+      "location_name": "Kolkata, West Bengal, India",
+      "name": "Avik Teddy Chakraborty",
+      "org": "Soundtrack Studios",
+      "profile_id": 179878974,
+      "projects": [
+        {
+          "start_date": "2011-02",
+          "title": "Voice Over Show Reel"
+        }
+      ],
+      "slug": "aviktheteddy",
+      "structured_location": {
+        "city": "Kolkata",
+        "country": "India",
+        "country_iso": "IN",
+        "region": "APAC",
+        "state": "West Bengal"
+      },
+      "summary": "To develop my career in the field of media, where I will be a valuable team member, contributing quality ideas and work for an organization where growth and prospects are ultimate, deliver to fullest of my capabilities & Technical expertise to become an asset to the Organization.",
+      "title": "Proprietor",
+      "url": "https://www.linkedin.com/in/aviktheteddy",
+      "volunteering": [
+        {
+          "end_date": "2011-08",
+          "role": "Sound Recordist",
+          "start_date": "2010-08"
+        }
+      ]
+    },
+    "contact_details": null,
+    "source_row_index": 4
+  },
+  "alex": {
+    "linkedin_enrichment": {
+      "connections": 681,
+      "country": "India",
+      "current_experience": [
+        {
+          "company": "Global3",
+          "company_domain": "global3.io",
+          "is_current": true,
+          "locality": "Bengaluru, Karnataka, India",
+          "location_type": "Hybrid",
+          "org_id": 105600529,
+          "start_date": "2025-10-01",
+          "title": "Sr. Project Coordinator",
+          "url": "https://www.linkedin.com/company/global3",
+          "yearly_revenue_range": "1M-5M"
+        }
+      ],
+      "education": [
+        {
+          "degree": "Bachelor of Computer Science",
+          "end_date": "2011-04-01",
+          "school_name": "CMS College of Science and Commerce, Coimbatore",
+          "start_date": "2008-06-01"
+        },
+        {
+          "end_date": "2008-04-01",
+          "school_name": "Bhavans Vidya Mandir",
+          "start_date": "2006-06-01"
+        }
+      ],
+      "experience": [
+        {
+          "company": "Global3",
+          "company_domain": "global3.io",
+          "is_current": true,
+          "locality": "Bengaluru, Karnataka, India",
+          "location_type": "Hybrid",
+          "org_id": 105600529,
+          "start_date": "2025-10-01",
+          "title": "Sr. Project Coordinator",
+          "url": "https://www.linkedin.com/company/global3",
+          "yearly_revenue_range": "1M-5M"
+        },
+        {
+          "company": "Absolute Translations Ltd",
+          "company_domain": "absolutetranslations.com",
+          "end_date": "2025-04-01",
+          "is_current": false,
+          "org_id": 9347250,
+          "start_date": "2024-01-01",
+          "summary": "Absolute Translations is a UK-based company offering comprehensive 360\u00b0 language services. It specializes in legal document translation and subtitling, consistently earning a Trustpilot rating of 4.8.\nEnd-to-End Project Oversight: Managed all projects from post-sales to final delivery, ensuring seamless transitions and on-time completions.\nResource Coordination & Profit Optimization: Assessed assets and scheduled projects with available resources while negotiating rates to maximize profits.\nRigorous Tracking & Timely Delivery: Maintained daily progress tracking to ensure every project was delivered on or ahead of schedule.\nQuality Assurance & Finalization: Conducted meticulous quality checks and finalized delivery bundles to meet high standards.\nClient Relationship Management: Handled client inquiries and resolved complaints promptly, fostering strong, lasting relationships.\nSoftware Proficiency: Leveraged tools like Phrase and Trados to manage a diverse range of projects\u2014from simple official documents to extensive, month-long assignments.\nDiverse Project Portfolio: Successfully managed a variety of projects, including:\nLegal Documents: Primary focus, with approximately 50% of clients being solicitors.\nCreative Content: Projects for marketing agencies.\nMultimedia: Subtitling and audio transcription assignments.\nOfficial Translations: Notarization and legalization of translations for official documents.",
+          "title": "Project Manager",
+          "url": "https://www.linkedin.com/company/absolute-translations-ltd",
+          "yearly_revenue_range": "10M-25M"
+        },
+        {
+          "company": "2G Digital",
+          "company_domain": "2gdigital.com",
+          "end_date": "2023-06-01",
+          "is_current": false,
+          "org_id": 432642,
+          "start_date": "2020-03-01",
+          "summary": "2G Digital is a part of an American based Company specializing in post production work\nSimilar to my profile in Deluxe but with more client facing aspects\nHandle multiple client queries daily and negotiate various project related timelines\nConnect with clients through phone/mail and include their updates to the project by cross department conversations\nHandle client tickets for various queries from our online portal, manage linguist interactions and assist in-house teams",
+          "title": "Senior Account Manager",
+          "url": "https://www.linkedin.com/company/2g-digital-post",
+          "yearly_revenue_range": "10M-25M"
+        },
+        {
+          "company": "Deluxe",
+          "company_domain": "bydeluxe.com",
+          "end_date": "2020-03-01",
+          "is_current": false,
+          "org_id": 12690,
+          "start_date": "2018-08-01",
+          "summary": "Deluxe is an American based company that creates, transforms and distributes content for motion picture studios, television and digital content providers.\nHandle localization assets and access to secure client specific servers to post assets.\nHandle clients through calls and emails regarding their queries for various projects and ingest requests\nResearch among internal servers and provide data to client specific needs.\nHandle localization traffic between servers and prioritize depending on its urgency. Perform script cleaning to ensure zero fault assets are being circulated among all clients.\nApart from localization assets, I have also dealt with high priority proxies and transfer them according to the work order",
+          "title": "Asset Coordinator",
+          "url": "https://www.linkedin.com/company/deluxe1915",
+          "yearly_revenue_range": "1B-10B"
+        },
+        {
+          "company": "sferastudios (now part of Deluxe Entertainment Services)",
+          "company_domain": "sferastudios.com",
+          "end_date": "2018-08-01",
+          "is_current": false,
+          "org_id": 2519016,
+          "start_date": "2017-01-01",
+          "summary": "As a Freelance English Editor I have specialized in the below:\nEnglish Sub (Open Captions)\nEnglish CC and SDH (Closed Captions)\nLanguage Conforms and Audio Checks\nJob types ranging from origination, complex conform, simple conform, timing.\nI have extensive knowledge on all major subtitling software and creating subtitles from scratch with client specified guidelines",
+          "title": "English Editor",
+          "url": "https://www.linkedin.com/company/sferastudios",
+          "yearly_revenue_range": "25M-75M"
+        },
+        {
+          "company": "JT Performing Arts Center",
+          "company_domain": "jtpac.org",
+          "end_date": "2016-09-01",
+          "is_current": false,
+          "org_id": 1029773,
+          "start_date": "2015-06-01",
+          "summary": "The Jose Thomas Performing Arts Centre (JT Pac) is a theatre of performing arts situated in Kochi, Kerala.\nIt was founded by actor Mohanlal and The Choice Group chairman Jose Thomas who respectively serves as the Chairman and President of the arts centre.\nHandling event co-ordination as a whole. This includes Event management, Artist management and marketing of the event through various media.",
+          "title": "Marketing Executive",
+          "url": "https://www.linkedin.com/company/jt-performing-arts-center",
+          "yearly_revenue_range": "1M-5M"
+        },
+        {
+          "company": "Radio Mango 91.9",
+          "end_date": "2015-06-01",
+          "is_current": false,
+          "start_date": "2013-05-01",
+          "summary": "Radio Mango is an Indian FM Radio network channel headquartered in Kochi, Kerala and has spanned across in the UAE.\nIt was established as a venture of the Malayala Manorama group, and its programming includes entertainment, music and new.\nManaged clients within India and internationally to co-ordinate work and assignments depending on the time-frame available for the radio station.\nMonitor the event and show calendar for Radio Mango and make sure conflicts between time and place do not exist.\nAssist in the overall day to day activities of the outdoor branding events\nAdditionally, I consult with various clients and vendors regarding new potential in the business and arrange meeting and calls to discuss further negotiations.",
+          "title": "Event Consultant"
+        }
+      ],
+      "first_name": "Alex",
+      "headline": "Project Manager with expertise in Localization and Quality Assurance",
+      "jobs_count": 7,
+      "last_name": "Anthraper",
+      "last_refresh": "2026-08-25 07:47:15.515",
+      "latest_experience": {
+        "company": "Global3",
+        "company_domain": "global3.io",
+        "is_current": true,
+        "locality": "Bengaluru, Karnataka, India",
+        "location_type": "Hybrid",
+        "org_id": 105600529,
+        "start_date": "2025-10-01",
+        "title": "Sr. Project Coordinator",
+        "url": "https://www.linkedin.com/company/global3",
+        "yearly_revenue_range": "1M-5M"
+      },
+      "location_name": "Bengaluru, Karnataka, India",
+      "name": "Alex Anthraper",
+      "org": "Global3",
+      "profile_id": 506333835,
+      "slug": "alex-anthraper",
+      "structured_location": {
+        "city": "Bengaluru",
+        "country": "India",
+        "country_iso": "IN",
+        "region": "APAC",
+        "state": "Karnataka"
+      },
+      "summary": "Experienced project manager and multilingual content specialist with 10+ years in media, localization, and client services. Expert in managing full project lifecycles with a focus on quality, efficiency, and client satisfaction. Skilled in localization workflows, subtitling, and cross-team collaboration. Combines creative insight with technical precision to deliver results.",
+      "title": "Sr. Project Coordinator",
+      "url": "https://www.linkedin.com/in/alex-anthraper"
+    },
+    "contact_details": null,
+    "source_row_index": 3
+  }
+}

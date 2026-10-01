@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+
+# Logs
+*.log
+logs/
+
+# One-off validation script output -- these capture real lead rows
+# (names, profile URLs, scraped bios) from live runs, so they must never
+# be committed.
+scripts/__output__/
+
+# OS
+.DS_Store

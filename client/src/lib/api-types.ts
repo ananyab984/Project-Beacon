@@ -1,0 +1,555 @@
+// Types mirroring server/prisma/schema.prisma exactly (camelCase, matching
+// Prisma's generated client) -- the source of truth for every real API call.
+// Do not confuse these with the snake_case mock types in g3-mock.ts /
+// recruiter-mock.ts, which are a different, legacy shape being replaced.
+
+export type UserRole = "OWNER" | "RECRUITER" | "CONTRACTOR";
+export type WorkStatus = "PERMANENT" | "CONTRACTOR";
+
+export type LeadStage =
+  "NEW" | "CONTACTED" | "REPLIED" | "NEGOTIATING" | "INVITE_SENT" | "ONBOARDED" | "COLD";
+export type LeadStatus =
+  | "NEW"
+  | "CONTACTED"
+  | "AWAITING_REPLY"
+  | "REPLIED"
+  | "SCREENING"
+  | "INTERVIEW_SCHEDULED"
+  | "INTERVIEW_COMPLETED"
+  | "NEGOTIATION"
+  | "OFFERED"
+  | "PLACED"
+  | "ON_HOLD"
+  | "CLOSED"
+  | "REJECTED";
+export type LeadPriority = "P0" | "P1" | "P2" | "P3";
+export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
+export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
+export type EnrichmentStatus =
+  "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
+export type LeadSource =
+  "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
+/** Why the ON_HOLD flag is currently set -- purely descriptive, doesn't
+ * drive ON_HOLD by itself. MANUAL only clears via the flags toggle;
+ * TIMEOUT/SYSTEM_ERROR auto-clear the next time a re-enrichment run
+ * concludes cleanly. */
+export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
+
+export type OutreachFunnelCategory =
+  "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc" | "onboarded";
+
+/** One row in a funnel tile's drill-down list -- deliberately lighter than
+ *  ApiLead, matching what GET /reports/outreach-funnel/leads selects. */
+export interface OutreachFunnelLead {
+  id: string;
+  displayName: string | null;
+  fullName: string | null;
+  maskedLabel: string | null;
+  status: string;
+  stage: string;
+  country: string | null;
+  targetLanguage: string | null;
+  source: string;
+  assignedTo: { name: string } | null;
+}
+
+export type ReenrichmentStatus = "IDLE" | "RUNNING" | "COMPLETED" | "FAILED" | "TIMED_OUT";
+
+/** Summary attached to each lead so the table can disable Re-enrich for a run
+ *  that's still going — including one started before the page was reloaded. */
+export interface ReenrichmentSummary {
+  status: ReenrichmentStatus;
+  lastRunAt: string | null;
+}
+
+/** A populated field where Autumn disagrees with what the lead already has.
+ *  Never applied until the recruiter picks a side. */
+export interface ReenrichmentConflict {
+  field: string;
+  current: string | string[];
+  proposed: string | string[];
+}
+
+/** One re-enrichment run, as polled by the re-enrichment modal. */
+export interface ReenrichmentRun {
+  id: string;
+  status: Exclude<ReenrichmentStatus, "IDLE">;
+  creditsUsed: number | null;
+  fieldsWritten: number | null;
+  message: string | null;
+  conflicts: ReenrichmentConflict[] | null;
+  resolvedAt: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export interface ApiLead {
+  id: string;
+  createdByRecruiterId: string | null;
+  createdByContractorId: string | null;
+  assignedRecruiterId: string | null;
+  assignedAt: string | null;
+  isSelfSourced: boolean;
+  claimedByRecruiterId: string | null;
+  claimedAt: string | null;
+  dupFlagged: boolean;
+  dupFlaggedField: string | null;
+  enrichmentStatus: EnrichmentStatus;
+  onHoldReason: OnHoldReason | null;
+  promotedToGlobalAt: string | null;
+  justEnrichedUntil: string | null;
+  /** Stamped by enrichLeadById the moment the pipeline call actually starts
+   *  (null while still PENDING/queued, not yet running). The only signal the
+   *  client has for "how long has this genuinely been in flight" -- there is
+   *  no real per-stage progress feed, so enrichment-status-cell.tsx uses this
+   *  to render an elapsed-time ESTIMATE, not a true completion percentage. */
+  enrichmentStartedAt: string | null;
+  stage: LeadStage;
+  status: LeadStatus;
+  priority: LeadPriority | null;
+  flags: LeadFlagType[];
+  closureReason: string | null;
+  closureReasonLoggedAt: string | null;
+  maskedLabel: string | null;
+  identityResolved: boolean;
+  displayName: string | null;
+  firstName: string | null;
+  fullName: string | null;
+  profileLink: string | null;
+  country: string | null;
+  contactNumber: string | null;
+  email: string | null;
+  emailVerified: boolean;
+  reachoutDate: string | null;
+  applicationDate: string | null;
+  services: string[];
+  sourceLanguage: string | null;
+  targetLanguage: string | null;
+  secondaryLanguages: string[];
+  source: LeadSource;
+  yearsOfExperience: number | null;
+  vendorExperience: string[];
+  headline: string | null;
+  aboutSnippet: string | null;
+  currentTitle: string | null;
+  toolsSoftware: string[];
+  certifications: string[];
+  /** Per-field provenance: "brightdata" | "tavily" | "parallel" | "llm_fallback" | "existing" | "manual" */
+  fieldSources: Record<string, string> | null;
+  /** How many of the ENRICHMENT_FIELD_TOTAL dialog fields enrichment (or a
+   * recruiter's manual stand-in) actually found -- fields the lead was
+   * imported with don't count. Computed fresh server-side on every read, not
+   * stored. Powers the "Enriched (n)"/"On Hold (n)" status display. */
+  enrichedFieldCount: number;
+  /** Full-fidelity Parallel enrichment: { experience, education, languages, certifications, ... } */
+  parallelData: Record<string, any> | null;
+  /** The deep profile sections, normalized to one shape and merged across
+   *  EVERY source that found them, each entry tagged with its provider.
+   *  Computed server-side on every read (see lib/profileSections.ts).
+   *
+   *  Read this instead of `parallelData` for these five sections. Parallel is
+   *  the deep tier for ProZ/Bodalgo/personal sites, but LinkedIn keeps
+   *  experience/education/languages/certifications behind its login wall, so
+   *  on LinkedIn only Bright Data can see them -- rendering `parallelData`
+   *  alone showed "None found" over 4 languages, 10 certifications and 29
+   *  courses that were sitting in the row. */
+  profileSections: ProfileSections | null;
+  /** Latest Autumn re-enrichment run for this lead. Attached by the list and
+   *  detail endpoints only, so it's optional on leads returned by mutations. */
+  reenrichment?: ReenrichmentSummary;
+  availability: Availability;
+  availabilityFromDate: string | null;
+  replyCategoryId: string | null;
+  replyClassificationSource: "AUTO" | "MANUAL" | null;
+  replyClassifiedAt: string | null;
+  createdAt: string;
+  lastActivityAt: string | null;
+  /** Set once this lead is soft-deleted into the Global Leads recycle bin
+   *  (POST /batch-delete); cleared on restore. Normal list/export endpoints
+   *  never return a lead with this set -- only GET /api/leads/bin does. */
+  deletedAt: string | null;
+  deletedByUserId: string | null;
+}
+
+/** GET /api/leads/bin row: an ApiLead plus its own recycle-bin countdown
+ *  (see server/src/lib/recycleBin.ts -- each item ages out independently,
+ *  Windows Recycle Bin style, not on one bin-wide clock). */
+export interface ApiBinLead extends ApiLead {
+  purgeAt: string;
+  daysUntilPurge: number;
+}
+
+/** One normalized profile-section entry. Keys vary by section (language/
+ *  proficiency, institution/degree, title/company/…) and always carry the
+ *  provider that found it. Mirrors server/src/lib/profileSections.ts. */
+export interface SectionEntry {
+  source: "brightdata" | "parallel";
+  [key: string]: unknown;
+}
+
+export interface ProfileSections {
+  experience: SectionEntry[];
+  education: SectionEntry[];
+  languages: SectionEntry[];
+  certifications: SectionEntry[];
+  courses: SectionEntry[];
+}
+
+export interface LeadTimelineEvent {
+  type: "STAGE_CHANGE" | "FLAG" | "INTERACTION" | "MANUAL_ACTIVITY";
+  at: string;
+  data: Record<string, any>;
+}
+
+export interface ApiUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  workStatus: WorkStatus;
+  languages: string[];
+  slackMemberId?: string | null;
+  emailVerified: boolean;
+  isActive: boolean;
+  startDate: string;
+  createdAt: string;
+  /** Only present on role=CONTRACTOR listings. */
+  managingRecruiterId?: string | null;
+  /** Outreach accounts connected by this recruiter */
+  connectedAccounts?: Array<{
+    id?: string;
+    provider: string;
+    accountName?: string | null;
+    status: string;
+    unipileAccountId: string;
+  }>;
+}
+
+export interface ApiClient {
+  id: string;
+  name: string;
+  industry: string | null;
+  contactName: string | null;
+  contactEmail: string | null;
+  notes: string | null;
+  createdAt: string;
+  // Mirrors server/prisma/schema.prisma's Client.notificationsEnabled --
+  // added by migration 20260924120000_expand_notifications.
+  notificationsEnabled: boolean;
+}
+
+export type RequirementStatus = "UNASSIGNED" | "ACTIVE" | "PAUSED" | "FULFILLED";
+export type ClientDemandPriority = "STANDARD" | "HIGH" | "CRITICAL";
+
+export interface ApiRequirement {
+  id: string;
+  clientId: string;
+  client?: { name: string };
+  recruiter?: { name: string } | null;
+  title: string;
+  language: string;
+  service: string;
+  region: string | null;
+  projectName: string | null;
+  headcountNeeded: number;
+  filled: number;
+  gap: number;
+  priority: ClientDemandPriority;
+  status: RequirementStatus;
+  recruiterId: string | null;
+  deadline: string | null;
+  notes: string | null;
+  createdAt: string;
+}
+
+export interface ApiClientDemandService {
+  id: string;
+  service: string;
+  needed: number;
+  filled: number;
+  gap: number;
+}
+
+export interface ApiClientDemand {
+  id: string;
+  clientId: string;
+  client?: { name: string };
+  language: string;
+  recruiterId: string | null;
+  headcountNeeded: number;
+  filled: number;
+  gap: number;
+  projectName: string | null;
+  priority: ClientDemandPriority;
+  deadline: string | null;
+  status: "ACTIVE" | "PAUSED" | "FULFILLED";
+  contactName: string | null;
+  contactEmail: string | null;
+  notes: string | null;
+  submittedAt: string;
+  serviceBreakdown: ApiClientDemandService[];
+}
+
+export type EmailQueueStatus = "AI_DRAFTED" | "FOLLOW_UP" | "REVIEW_NEEDED" | "SENT";
+
+export interface ApiEmailQueueItem {
+  id: string;
+  leadId: string;
+  lead?: {
+    fullName: string | null;
+    displayName: string | null;
+    email?: string | null;
+    profileLink?: string | null;
+    replyCategoryId?: string | null;
+    replyClassificationSource?: "AUTO" | "MANUAL" | null;
+  };
+  recruiterId: string;
+  candidateName: string;
+  candidateRole: string | null;
+  status: EmailQueueStatus;
+  // The recipient address actually used for this draft/send -- distinct
+  // from lead.email, which can drift after enrichment corrects it or a
+  // recruiter overrides the target before sending. Null until either
+  // happens; falls back to lead.email until then.
+  to: string | null;
+  subject: string;
+  body: string;
+  aiGenerated: boolean;
+  receivedAt: string;
+  sentAt: string | null;
+  sentChannel: "LINKEDIN" | "EMAIL" | null;
+  // The most recent message text from this lead's EMAIL conversation, if
+  // any -- distinct from `body`, which is this item's own draft and never
+  // updated when the candidate replies. Only present on GET /api/email-queue
+  // (the list view); absent (undefined) on other endpoints' responses.
+  latestMessageText?: string | null;
+}
+
+export type ConversationChannel = "LINKEDIN" | "EMAIL" | "INSTAGRAM" | "WHATSAPP" | "SMS";
+export type MessageSender = "ME" | "THEM";
+
+export interface ApiConversationMessage {
+  id: string;
+  conversationId: string;
+  sender: MessageSender;
+  text: string;
+  sentAt: string;
+  // Unipile's own id for this specific message -- for a EMAIL "THEM"
+  // message, this is exactly what a reply needs to pass as `reply_to` so
+  // Unipile threads the outbound reply under the right message.
+  externalMessageId: string | null;
+}
+
+export interface ApiConversation {
+  id: string;
+  leadId: string;
+  lead?: {
+    fullName: string | null;
+    displayName: string | null;
+    email?: string | null;
+    profileLink?: string | null;
+    replyCategoryId?: string | null;
+    replyClassificationSource?: "AUTO" | "MANUAL" | null;
+  };
+  recruiterId: string;
+  candidateName: string;
+  candidateRole: string | null;
+  channel: ConversationChannel;
+  unread: boolean;
+  lastMessageAt: string | null;
+  messages: ApiConversationMessage[];
+}
+
+export type EscalationPriority = "P1" | "P2" | "P3";
+export type EscalationStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS";
+
+export type NotificationType =
+  | "NEW_LEAD"
+  | "TASK_ASSIGNMENT"
+  | "DUE_DATE_REMINDER"
+  | "LEAD_RESPONSE"
+  | "ESCALATION"
+  | "ENRICHMENT_COMPLETE"
+  | "DAILY_DEMAND_SUMMARY"
+  | "WEEKLY_LEADS_SUMMARY"
+  | "WEEKLY_PERFORMANCE_SUMMARY"
+  // Mirrors server/prisma/schema.prisma's NotificationType enum -- added by
+  // migration 20260924120000_expand_notifications.
+  | "ENRICHMENT_STALLED"
+  | "DUPLICATE_REVIEW_NEEDED"
+  | "DNC_CONFIRMATION_NEEDED"
+  | "FOLLOW_UP_DUE"
+  | "LEAD_PLACED"
+  | "WEEKLY_TEAM_HEALTH_SUMMARY"
+  | "CLIENT_STATUS_UPDATE"
+  | "REQUIREMENT_FULFILLED";
+
+export interface ApiNotification {
+  id: string;
+  recipientId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  read: boolean;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export interface ApiNotificationPreference {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  emailEnabled: boolean;
+  slackEnabled: boolean;
+}
+
+export interface ApiEscalation {
+  id: string;
+  priority: EscalationPriority;
+  status: EscalationStatus;
+  category: string;
+  ownerUserId: string | null;
+  title: string;
+  detail: string;
+  recommendedAction: string;
+  slaHoursRemaining: number | null;
+  impact: string | null;
+  recruiterId: string | null;
+  leadId: string | null;
+  clientId: string | null;
+  createdAt: string;
+}
+
+export interface ApiKpiConfig {
+  id: string;
+  metricKey: string;
+  group: string;
+  label: string;
+  unit: string;
+  weight: number | null;
+  target: number | null;
+  goodBand: number | null;
+  direction: "HIGHER_IS_BETTER" | "LOWER_IS_BETTER";
+  scored: boolean;
+  effectiveDate: string;
+  notes: string | null;
+}
+
+export interface ApiRecruiterMetricSnapshot {
+  id: string;
+  scoreSnapshotId: string;
+  metricKey: string;
+  currentValue: number;
+  previousValue: number | null;
+  baseline: number | null;
+  changePct: number | null;
+  trend: string | null;
+  metricStatus: string | null;
+  normalized: number;
+}
+
+export interface ApiRecruiterScoreSnapshot {
+  id: string;
+  recruiterId: string;
+  period: string;
+  isNew: boolean;
+  overallScore: number;
+  previousScore: number | null;
+  bandLabel: string | null;
+  summary: string | null;
+  computedAt: string;
+}
+
+export interface ApiRecruiterKpiSummary {
+  id: string;
+  recruiterId: string;
+  outreachEffectiveness: number;
+  responseRate: number;
+  slaAdherence: number;
+  overallScore: number;
+  outreachVolume: number;
+  dncPct: number;
+  interviewToOffer: number;
+  offerAcceptance: number;
+  profileQuality: number;
+  clientSatisfaction: number;
+  aiAdoption: number;
+  pipelineHealth: number;
+  emailOpenRate: number;
+  avgTurnaroundDays: number;
+  computedAt: string;
+}
+
+export interface ApiSheetSyncConfig {
+  sheetUrl: string | null;
+  lastSyncedAt: string | null;
+}
+
+export interface ApiReportsAnalytics {
+  range: string;
+  since: string;
+  summary: {
+    outreachVolume: number;
+    activeRecruitersCount: number;
+    teamAvgScore: number;
+    totalDemand: number;
+    totalFilled: number;
+    fillRate: number;
+    aiDraftsCount: number;
+    savedHours: number;
+  };
+  languageBreakdown: Array<{
+    language: string;
+    needed: number;
+    filled: number;
+    gap: number;
+  }>;
+  recruiterThroughput: Array<{
+    id: string;
+    name: string;
+    leadsOnboarded: number;
+    score: number;
+  }>;
+}
+
+export interface ApiRecentReport {
+  id: string;
+  name: string;
+  type: "pdf" | "csv" | "log";
+  range: string;
+  generated: string;
+  description?: string;
+}
+
+/** Same 3 tiers for every platform -- Clay (the old LinkedIn-only Tier 2)
+ *  was fully replaced by Parallel, which runs for every platform, and Tier 3
+ *  (Claude web search) is likewise platform-agnostic. Never render a
+ *  collapsed 2-tier shape for non-LinkedIn platforms. */
+export type EnrichmentTier = "TIER_1" | "TIER_2" | "TIER_3";
+export type EnrichmentRunConclusion = "SHORT_CIRCUIT_SUCCESS" | "EXHAUSTED_NO_MATCH" | "TIMED_OUT" | "SYSTEM_ERROR";
+
+export interface ApiEnrichmentEvaluation {
+  totalRuns: number;
+  enrichmentPct: { enriched: number; exhausted: number; onHold: number };
+  timeTaken: {
+    avgMs: number;
+    medianMs: number;
+    byConclusion: Record<EnrichmentRunConclusion, { avgMs: number; medianMs: number }>;
+    referenceLines: { perStepDeadlineMs: number; leadLevelCeilingMs: number };
+  };
+  tierAttribution: Record<EnrichmentTier, number>;
+  qualityByTier: Record<EnrichmentTier, number>;
+  manualOverrideRate: number;
+}
+
+/** Shape of every thrown error from the `request()` helper in api.ts. */
+export interface ApiRequestError extends Error {
+  code?: string;
+  status?: number;
+}
+
+/** Denominator of `enrichedFieldCount`: the fields the enrichment-details
+ *  dialog shows. Mirrors ENRICHMENT_COUNT_TOTAL in
+ *  server/src/lib/enrichmentCount.ts. */
+export const ENRICHMENT_FIELD_TOTAL = 10;

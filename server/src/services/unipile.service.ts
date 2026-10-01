@@ -1,0 +1,1634 @@
+import axios from "axios";
+import FormData from "form-data";
+import crypto from "crypto";
+import { config } from "../config";
+import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
+import { prisma } from "../prisma";
+import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
+import { markContactedOnFirstOutreach } from "../lib/leadStageTransitions";
+import {
+  AccountStatus,
+  UnipileProvider,
+  InteractionDirection,
+  InteractionChannel,
+  MessageSender,
+  ConversationChannel,
+  InboundChannel,
+} from "@prisma/client";
+import { processInboundMessage } from "./processInboundMessage";
+import { createNotification, formatLeadResponseSlackCard } from "./notification.service";
+import { getSystemSetting } from "./system-settings.service";
+import { redactForLog } from "../lib/logSanitizer";
+
+// Exact, known Unipile account-status strings -> our AccountStatus enum.
+// Deliberately an exact-match table, not substring matching: a status like
+// "CREATION_SUCCESS" contains both "CREAT" and "SUCCESS", so any
+// includes()-based check ends up ambiguous between two different real
+// stages of the connect flow. See Documents/Unipile_Authentication_and_
+// Subscription_Management_Implementation_Plan.md for what each string means.
+const ACCOUNT_STATUS_MAP: Record<string, AccountStatus> = {
+  CREATION_SUCCESS: AccountStatus.CONNECTING,
+  SYNC_SUCCESS: AccountStatus.OK,
+  RECONNECTED: AccountStatus.OK,
+  CREDENTIALS: AccountStatus.RECONNECTION_NEEDED,
+  PERMISSIONS: AccountStatus.PERMISSION_REVOKED,
+  // No dedicated "failed" status exists in AccountStatus yet -- closest
+  // existing bucket that still prompts the recruiter to act again.
+  CREATION_FAIL: AccountStatus.RECONNECTION_NEEDED,
+  DELETED: AccountStatus.DISCONNECTED,
+};
+
+function mapAccountStatus(raw: string): AccountStatus {
+  const mapped = ACCOUNT_STATUS_MAP[raw.toUpperCase()];
+  if (!mapped) {
+    console.warn(`Unrecognized Unipile account status "${raw}" -- defaulting to OK. Add it to ACCOUNT_STATUS_MAP.`);
+    return AccountStatus.OK;
+  }
+  return mapped;
+}
+
+// Truncation backstop for a note that somehow arrives over the cap; drafting
+// now generates to the same limit (see lib/linkedinNoteCap for why 200, and
+// what went wrong when these two numbers disagreed). Cuts on a word boundary
+// rather than mid-word.
+const INVITE_NOTE_MAX_CHARS = LINKEDIN_NOTE_MAX_CHARS;
+
+function escapeHtml(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+// Unipile renders `body` as HTML, so a plain-text draft's "\n\n" paragraph
+// breaks are just whitespace to the recipient's mail client and collapse
+// into one run-on block (this was the actual bug behind the squashed-looking
+// outreach emails) -- wrap each paragraph in its own <p> so the spacing the
+// template author intended actually survives.
+function plainTextToEmailHtml(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((para) => `<p style="margin:0 0 1em 0;">${escapeHtml(para).replace(/\n/g, "<br>")}</p>`)
+    .join("");
+}
+
+function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS): string {
+  if (text.length <= max) return text;
+  const ellipsis = "…";
+  const sliced = text.slice(0, max - ellipsis.length);
+  const lastSpace = sliced.lastIndexOf(" ");
+  const cut = lastSpace > max * 0.6 ? sliced.slice(0, lastSpace) : sliced;
+  return `${cut.trimEnd()}${ellipsis}`;
+}
+
+// Gmail/Apple Mail/Outlook all prefix a reply's quoted history with a
+// recognizable header line, then the previous message body. Confirmed live:
+// Unipile's `body_plain` does NOT strip this -- a real inbound reply's
+// body_plain still contained the full "On <date> <name> wrote: > ..." chain
+// (Unipile's docs never actually guarantee body_plain excludes quoting,
+// despite this file's earlier comment assuming otherwise). Unipile exposes
+// no field/parameter/webhook setting to suppress quoted history, so this has
+// to be cut server-side -- cut everything from the first recognized header
+// onward so only the new reply text is stored.
+const QUOTE_HEADER_PATTERNS: RegExp[] = [
+  // Gmail / Apple Mail: "On Wed, 26 Aug 2026, 4:39 pm Ananth Ram <x@y.com> wrote:"
+  // Plaintext mail hard-wraps long lines (commonly the "<name@domain.com>"
+  // part), so the header can span two physical lines -- confirmed live, a
+  // real reply's "On ... wrote:" line broke right after "<" and the old
+  // `.{0,120}` (which can't cross a newline) missed it entirely, leaving the
+  // whole quoted chain unstripped. [\s\S] matches across the line break;
+  // the lazy quantifier plus the 200-char cap keeps it from ever eating past
+  // the next actual "wrote:".
+  /^On [\s\S]{0,200}?wrote:[ \t]*$/m,
+  // Outlook plaintext divider
+  /^-{2,}\s*Original Message\s*-{2,}$/im,
+  // Outlook plaintext header block
+  /^From:\s.+\r?\nSent:\s.+\r?\nTo:\s.+\r?\n(Cc:\s.+\r?\n)?Subject:\s.+$/im,
+];
+
+/** Finds the specific message id (Unipile's own, or the provider's -- either
+ * works per their docs) an outbound EMAIL send should thread under, when the
+ * caller doesn't already know which exact message it's replying to: the
+ * lead's most recent reply in this conversation, if any.
+ *
+ * sendEmail's own doc comment already established that Unipile needs a real
+ * message id as `reply_to` -- a thread-id guess was tried live and Unipile
+ * silently ignored it, starting a brand-new unrelated thread instead.
+ * Sending with NO reply_to at all has the identical effect. Confirmed live:
+ * a real conversation fragmented across several different Unipile-side
+ * thread ids because more than one outbound send in the same exchange went
+ * out with nothing to thread under, and several of the lead's genuine
+ * replies to those fragments then had no way back to the Conversation the
+ * app displays. */
+export async function findReplyAnchor(leadId: string, recruiterId: string): Promise<string | undefined> {
+  const latestReply = await prisma.conversationMessage.findFirst({
+    where: { conversation: { leadId, recruiterId, channel: "EMAIL" }, sender: "THEM" },
+    orderBy: { sentAt: "desc" },
+    select: { externalMessageId: true },
+  });
+  return latestReply?.externalMessageId ?? undefined;
+}
+
+/** The correct `Re: <subject>` for a threaded email reply, given the exact
+ * message id it's anchored to -- ported out of conversation.routes.ts's
+ * POST /:id/messages so email-queue.routes.ts's send route can apply the
+ * same protection when a caller supplies an explicit replyToMessageId.
+ *
+ * Unipile validates a threaded reply's subject against the real thread it's
+ * attached to via `reply_to`, rejecting a mismatch with "The reply subject
+ * is invalid" -- confirmed live. EmailQueueItem's own `subject` field is NOT
+ * a reliable source for that: it can be silently regenerated after the
+ * original send (generate-draft has no guard against re-running on an
+ * already-sent item), drifting away from whatever was actually delivered on
+ * the thread being replied to -- and if the caller is replying to an OLDER
+ * message than the one that subject reflects, it may not even be that
+ * thread's subject at all. The one place the real subject is always
+ * available is the inbound webhook event for the specific message being
+ * replied to -- prefer that, and only fall back to a queue item's guess when
+ * there's no prior thread to match (i.e. `replyToMessageId` is undefined). */
+export async function resolveReplySubject(
+  leadId: string,
+  recruiterId: string,
+  replyToMessageId: string | undefined,
+  fallbackLabel: string
+): Promise<string> {
+  let originalSubject: string | null = null;
+  if (replyToMessageId) {
+    const webhookEvent = await prisma.unipileWebhookEvent.findFirst({
+      where: { eventType: "mail_received", payload: { path: ["email_id"], equals: replyToMessageId } },
+      orderBy: { processedAt: "desc" },
+    });
+    originalSubject = (webhookEvent?.payload as any)?.subject || null;
+  }
+  if (!originalSubject) {
+    const latestQueueItem = await prisma.emailQueueItem.findFirst({
+      where: { leadId, recruiterId },
+      orderBy: { receivedAt: "desc" },
+    });
+    originalSubject = latestQueueItem?.subject || fallbackLabel;
+  }
+  return /^re:/i.test(originalSubject) ? originalSubject : `Re: ${originalSubject}`;
+}
+
+export function stripQuotedReplyHistory(text: string): string {
+  let cutIndex = text.length;
+  for (const pattern of QUOTE_HEADER_PATTERNS) {
+    const match = pattern.exec(text);
+    if (match && match.index < cutIndex) cutIndex = match.index;
+  }
+  const stripped = text.slice(0, cutIndex).trim();
+  // A message that's entirely a forwarded quote (no new text above the
+  // header) would otherwise disappear -- fall back to the untouched
+  // original rather than storing an empty reply.
+  return stripped || text.trim();
+}
+
+/** Constant-time string comparison for secrets — a plain `!==` on a fixed
+ * webhook path token/secret leaks a timing signal proportional to how many
+ * leading characters match. Exported for webhookAuth.test.ts. */
+export function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/** The local ConnectedAccount rows that no longer appear anywhere in
+ * Unipile's live /accounts response -- i.e. removed directly from Unipile's
+ * own dashboard rather than through this app. Exported as a plain function
+ * of its inputs (no Prisma/axios) so the diff itself is directly
+ * unit-testable; getUserConnectedAccounts is the only caller. */
+export function accountsVanishedFromUnipile<T extends { unipileAccountId: string }>(
+  localAccounts: T[],
+  liveAccountIds: Set<string>
+): T[] {
+  return localAccounts.filter((account) => !liveAccountIds.has(account.unipileAccountId));
+}
+
+export class UnipileService {
+  private static getUnipileBaseUrl(): string {
+    let dsn = (config.unipileDsn || "api25.unipile.com:15598").trim();
+    if (!dsn.startsWith("http://") && !dsn.startsWith("https://")) {
+      dsn = `https://${dsn}`;
+    }
+    dsn = dsn.replace(/\/+$/, "");
+    if (!dsn.includes("/api/v1")) {
+      dsn = `${dsn}/api/v1`;
+    }
+    return dsn;
+  }
+
+  // Kill switch checked first thing inside every method that actually
+  // dispatches a message to a real third party (direct DM, connection
+  // invite, email send) -- NOT account-connect/lookup/webhook methods,
+  // which don't reach anyone's inbox. See config.unipileLiveSendsEnabled.
+  private static assertLiveSendsAllowed(): void {
+    if (!config.unipileLiveSendsEnabled) {
+      throw {
+        statusCode: 403,
+        code: "LIVE_SENDS_DISABLED",
+        message:
+          "Real outbound sends are disabled in this environment. Set UNIPILE_ALLOW_LIVE_SENDS=true to enable a deliberate test window.",
+      };
+    }
+  }
+
+  private static getUnipileHostUrl(): string {
+    let dsn = (config.unipileDsn || "api25.unipile.com:15598").trim();
+    if (!dsn.startsWith("http://") && !dsn.startsWith("https://")) {
+      dsn = `https://${dsn}`;
+    }
+    dsn = dsn.replace(/\/+$/, "");
+    dsn = dsn.replace(/\/api\/v1\/?$/, "");
+    return dsn;
+  }
+
+  private static getUnipileHeaders(extraHeaders: Record<string, string> = {}) {
+    const apiKey = (config.unipileApiKey || "").trim();
+    return {
+      "X-API-KEY": apiKey,
+      Authorization: `Bearer ${apiKey}`,
+      Accept: "application/json",
+      ...extraHeaders,
+    };
+  }
+
+  /**
+   * Mints a Unipile hosted-auth link for connecting LinkedIn/Email accounts
+   */
+  static async mintHostedAuthLink(
+    userId: string,
+    provider: string,
+    mode: "create" | "reconnect" = "create",
+    clientUrl?: string,
+    rolePath: string = "/recruiter"
+  ): Promise<{ url: string; nonce: string }> {
+    const pUpper = (provider || "").toUpperCase();
+    const validProviders = Object.values(UnipileProvider);
+    if (!pUpper || !validProviders.includes(pUpper as UnipileProvider)) {
+      throw { statusCode: 400, message: `Provider must be one of: ${validProviders.join(", ")}` };
+    }
+    const providerEnum = pUpper as UnipileProvider;
+
+    let targetProviders: string[] = [providerEnum];
+    let bypassSuccess = true;
+
+    if (providerEnum === UnipileProvider.EMAIL) {
+      targetProviders = ["MAIL", "GOOGLE", "OUTLOOK"];
+      bypassSuccess = false;
+    }
+
+    // One connected account per user per provider group. A fresh "create"
+    // link when the user already has a working (OK) connection for this
+    // provider would mint a second, unrelated Unipile account -- the
+    // reconnect-in-place logic in upsertConnectedAccountForUser would then
+    // silently swap their existing connection out for it, which is only
+    // correct when the user actually intended to re-authenticate the SAME
+    // mailbox/profile (mode: "reconnect"), not when they just clicked
+    // Connect again by mistake. EMAIL groups GOOGLE/OUTLOOK/MAIL/EMAIL
+    // together since a hosted link minted for "EMAIL" can land as any of them.
+    if (mode === "create") {
+      const dedupeProviders = this.getDedupeProviders(providerEnum);
+      const existingConnected = await prisma.connectedAccount.findFirst({
+        where: { userId, provider: { in: dedupeProviders }, status: AccountStatus.OK },
+      });
+      if (existingConnected) {
+        throw {
+          statusCode: 409,
+          code: "ALREADY_CONNECTED",
+          message: `You already have a connected ${provider} account (${existingConnected.accountName}). Disconnect it first, or use Reconnect to re-authenticate the same one.`,
+        };
+      }
+
+      // Without this, a connect that appears stuck (webhook attribution
+      // lagging or failing) invites the user to hit "Connect" again --
+      // each click mints a brand-new Unipile-side account for the SAME real
+      // LinkedIn/email profile, since Unipile has no idea it's a repeat.
+      // That's the actual mechanism behind "multiple accounts via the same
+      // profile": not a DB dedup gap, but nothing stopping a second in-flight
+      // attempt while the first hasn't resolved yet. Block a new attempt
+      // while an unexpired one for this provider group already exists.
+      const pendingAttempt = await prisma.unipileAuthAttempt.findFirst({
+        where: { userId, provider: { in: dedupeProviders }, expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (pendingAttempt) {
+        const minutesLeft = Math.max(1, Math.ceil((pendingAttempt.expiresAt.getTime() - Date.now()) / 60000));
+        throw {
+          statusCode: 409,
+          code: "CONNECTION_PENDING",
+          message: `A ${provider} connection is already in progress. If you closed that window without finishing, wait ${minutesLeft} more minute(s) for it to expire, then try again.`,
+        };
+      }
+    }
+
+    const nonce = crypto.randomBytes(16).toString("hex");
+    // Was 15 minutes -- shortened as one of three complementary layers (see
+    // cancelPendingAuthAttempt and the dialog's popup-close detection) so an
+    // abandoned attempt no longer leaves a recruiter blocked for anywhere
+    // near that long. Still generous enough for a real login + 2FA flow.
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+    await prisma.unipileAuthAttempt.create({
+      data: {
+        userId,
+        provider: providerEnum,
+        nonce,
+        expiresAt,
+      },
+    });
+
+    const unipileBaseUrl = this.getUnipileBaseUrl();
+    const unipileHostUrl = this.getUnipileHostUrl();
+    const webhookNotifyUrl = `${config.appBaseUrl}/api/unipile/webhook/${config.unipileWebhookPathToken}`;
+
+    const baseClient = (clientUrl || config.clientUrl).replace(/\/+$/, "");
+
+    const payload = {
+      type: mode,
+      providers: targetProviders,
+      api_url: unipileHostUrl,
+      expiresOn: expiresAt.toISOString(),
+      name: `g3_${userId}_${nonce}`,
+      notify_url: webhookNotifyUrl,
+      success_redirect_url: `${baseClient}${rolePath}?status=connected&provider=${providerEnum}`,
+      failure_redirect_url: `${baseClient}${rolePath}?status=failed&provider=${providerEnum}`,
+      bypass_success_screen: bypassSuccess,
+      single_use: true,
+    };
+
+    const targetUrl = `${unipileBaseUrl}/hosted/accounts/link`;
+    // Minting a link session isn't safe to auto-retry (a second mint on top
+    // of a first that actually succeeded server-side just orphans a session)
+    // -- bound with a deadline only, no retry.
+    try {
+      const response = await retryWithBackoff(
+        (signal) =>
+          axios.post(targetUrl, payload, {
+            headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+            signal,
+          }),
+        { retries: 0, deadlineMs: 15000 }
+      );
+
+      return { url: response.data.url, nonce };
+    } catch (err) {
+      // The UnipileAuthAttempt row above was created BEFORE this call, on
+      // the assumption it would succeed -- if Unipile itself rejects the
+      // request (bad credentials, invalid DSN/provider combo, timeout,
+      // anything), this never reaches the recruiter as a usable link, but
+      // the 10-minute pending lock was already live. Without this cleanup,
+      // every failed mint (not just an abandoned popup, which
+      // cancelPendingAuthAttempt already handles) left CONNECTION_PENDING
+      // blocking the next real attempt for the full TTL -- confirmed live:
+      // a run of 401s from an invalid API key left a stuck attempt row that
+      // outlived the key actually getting fixed, so the very next click
+      // still failed, just with a different, more confusing error.
+      await prisma.unipileAuthAttempt.delete({ where: { nonce } }).catch(() => {});
+      throw err;
+    }
+  }
+
+  // EMAIL groups GOOGLE/OUTLOOK/MAIL/EMAIL together since a hosted link
+  // minted for "EMAIL" can land as any of them -- shared by every place that
+  // needs to treat those four as one dedupe group (the ALREADY_CONNECTED
+  // check, the CONNECTION_PENDING check, and cancelPendingAuthAttempt below).
+  private static getDedupeProviders(providerEnum: UnipileProvider): UnipileProvider[] {
+    return providerEnum === UnipileProvider.EMAIL
+      ? [UnipileProvider.EMAIL, UnipileProvider.GOOGLE, UnipileProvider.OUTLOOK, UnipileProvider.MAIL]
+      : [providerEnum];
+  }
+
+  /**
+   * Clears an outstanding connect attempt for this user+provider so an
+   * abandoned flow doesn't have to wait out the full expiry window --
+   * called automatically ~6s after the connect popup closes without
+   * succeeding, and manually via a "Cancel and retry" action in the dialog
+   * for any case that misses (popup blocked, browser closed outright).
+   *
+   * SECURITY/CORRECTNESS: guards against the one real race this creates --
+   * for LinkedIn the hosted link is minted with bypass_success_screen, so
+   * the popup can close itself the instant OAuth completes, before
+   * Unipile's completion webhook has necessarily reached us yet. If this
+   * deleted the attempt row unconditionally, it could delete it out from
+   * under a webhook that's about to need it to attribute a real, just-
+   * succeeded connection -- silently failing to sync a real success and
+   * risking the user retrying into a genuine duplicate account (the exact
+   * bug the CONNECTION_PENDING check exists to prevent). So: if a
+   * ConnectedAccount already exists for this user+provider group, treat
+   * that as "it already succeeded" and do nothing, rather than deleting
+   * anything live.
+   */
+  static async cancelPendingAuthAttempt(userId: string, provider: string): Promise<void> {
+    const pUpper = (provider || "").toUpperCase();
+    const validProviders = Object.values(UnipileProvider);
+    if (!pUpper || !validProviders.includes(pUpper as UnipileProvider)) return;
+    const providerEnum = pUpper as UnipileProvider;
+    const dedupeProviders = this.getDedupeProviders(providerEnum);
+
+    const alreadyConnected = await prisma.connectedAccount.findFirst({
+      where: { userId, provider: { in: dedupeProviders }, status: AccountStatus.OK },
+    });
+    if (alreadyConnected) return;
+
+    await prisma.unipileAuthAttempt.deleteMany({
+      where: { userId, provider: { in: dedupeProviders } },
+    });
+  }
+
+  /**
+   * Get connected accounts for a specific user, syncing with Unipile API
+   */
+  static async getUserConnectedAccounts(userId: string) {
+    try {
+      const unipileBaseUrl = this.getUnipileBaseUrl();
+      const response = await retryWithBackoff(
+        (signal) =>
+          axios.get(`${unipileBaseUrl}/accounts`, {
+            headers: this.getUnipileHeaders(),
+            timeout: 4000,
+            signal,
+          }),
+        { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
+      );
+      const items = response.data?.items || response.data || [];
+      const liveAccountIds = new Set<string>();
+      if (Array.isArray(items) && items.length > 0) {
+        for (const item of items) {
+          liveAccountIds.add(item.id);
+          // `/accounts` is scoped to the whole Unipile API key, i.e. every
+          // user's accounts, not just this one, and (unlike the webhook's
+          // `body.name`) items here carry no correlator back to our
+          // UnipileAuthAttempt -- `item.name` is the account's own
+          // display name/email, not our `g3_${userId}_${nonce}` string.
+          const existing = await prisma.connectedAccount.findUnique({
+            where: { unipileAccountId: item.id },
+          });
+          // SECURITY: never attribute an unclaimed account to whichever user
+          // happens to be polling. This used to fall through to a "best
+          // effort" guess (findRecentAttemptForProvider) that matched on
+          // nothing more than "this viewer created some connect attempt for
+          // this provider at some point" -- no correlation to the specific
+          // account, no expiry check, no single-use check. Since the dialog
+          // polls every few seconds for ANY user who has it open, whichever
+          // user's poll happened to run first in the brief window before the
+          // notify_url webhook landed would silently claim a DIFFERENT
+          // user's real LinkedIn/email account. Confirmed live: this is
+          // exactly how one user's connection ended up attributed to two
+          // other people's accounts in sequence.
+          //
+          // The webhook (handleWebhookEvent -> resolveAuthAttemptFromName)
+          // is the only path that can prove which user an account belongs
+          // to, via the exact nonce minted in mintHostedAuthLink. This sync
+          // loop is now read-only for un-attributed accounts: it refreshes
+          // the status of accounts THIS user already legitimately owns, and
+          // otherwise waits for the webhook -- it never claims anything.
+          if (!existing || existing.userId !== userId) continue;
+
+          const rawProvider = (item.provider || item.type || "").toUpperCase();
+          let provider: UnipileProvider = UnipileProvider.EMAIL;
+          if (rawProvider.includes("LINKEDIN")) provider = UnipileProvider.LINKEDIN;
+          else if (rawProvider.includes("GOOGLE")) provider = UnipileProvider.GOOGLE;
+          else if (rawProvider.includes("OUTLOOK")) provider = UnipileProvider.OUTLOOK;
+          else if (rawProvider.includes("MAIL")) provider = UnipileProvider.MAIL;
+
+          const rawStatus = (item.status || "OK").toUpperCase();
+          const mappedStatus = rawStatus === "OK" || rawStatus === "CONNECTED" ? AccountStatus.OK : AccountStatus.RECONNECTION_NEEDED;
+          const accountName = item.name || item.username || `${provider} Account`;
+
+          await this.upsertConnectedAccountForUser(userId, provider, item.id, accountName, mappedStatus, rawStatus);
+        }
+      }
+
+      // Reverse direction: the loop above only ever touches accounts
+      // Unipile's /accounts still returns. If this user disconnected/removed
+      // an account directly from Unipile's own dashboard, it simply stops
+      // appearing in that response -- there's no "deleted" entry to map a
+      // status onto -- so a local row left at OK/RECONNECTION_NEEDED read as
+      // "Connected" here forever, Refresh included. `/accounts` is scoped to
+      // the whole Unipile API key (every user, not just this one -- see the
+      // SECURITY comment above), so it's a complete live list to diff
+      // against.
+      const localAccounts = await prisma.connectedAccount.findMany({
+        where: { userId, status: { not: AccountStatus.DISCONNECTED } },
+      });
+      for (const account of accountsVanishedFromUnipile(localAccounts, liveAccountIds)) {
+        await prisma.accountDegradation.create({
+          data: {
+            connectedAccountId: account.id,
+            fromStatus: account.status,
+            toStatus: AccountStatus.DISCONNECTED,
+            reason: "No longer present in Unipile's connected-accounts list",
+          },
+        });
+        await prisma.connectedAccount.update({
+          where: { id: account.id },
+          data: { status: AccountStatus.DISCONNECTED, statusMessage: "Disconnected directly from Unipile" },
+        });
+      }
+    } catch (err: any) {
+      console.warn("Could not sync live Unipile accounts:", err.message);
+    }
+
+    return prisma.connectedAccount.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+    });
+  }
+
+  /**
+   * Writes a ConnectedAccount for this user+provider, respecting the
+   * `@@unique([userId, provider])` DB constraint. Every reconnect of the same
+   * mailbox/LinkedIn profile mints a brand new Unipile account id, so a plain
+   * upsert-by-id tries to INSERT a second row for a provider this user
+   * already has -- which violates that constraint and either throws (in the
+   * webhook handler, killing the whole webhook call) or gets silently
+   * swallowed (in the old sync loop's `.catch(() => null)`), so the
+   * reconnect just vanishes and the recruiter sees nothing happen. Instead:
+   * if this user already has a row for this provider under a *different*
+   * unipileAccountId, treat it as a replace (update in place); otherwise
+   * upsert normally by id.
+   */
+  private static async upsertConnectedAccountForUser(
+    userId: string,
+    provider: UnipileProvider,
+    unipileAccountId: string,
+    accountName: string,
+    status: AccountStatus,
+    statusMessage: string
+  ) {
+    const existingForProvider = await prisma.connectedAccount.findUnique({
+      where: { userId_provider: { userId, provider } },
+    });
+
+    if (existingForProvider && existingForProvider.unipileAccountId !== unipileAccountId) {
+      return prisma.connectedAccount.update({
+        where: { id: existingForProvider.id },
+        data: { unipileAccountId, accountName, status, statusMessage },
+      }).catch((err) => {
+        console.warn("Failed to replace reconnected account:", err.message);
+        return null;
+      });
+    }
+
+    return prisma.connectedAccount.upsert({
+      where: { unipileAccountId },
+      create: { userId, provider, unipileAccountId, accountName, status, statusMessage },
+      update: { status, statusMessage, accountName },
+    }).catch((err) => {
+      console.warn("Failed to upsert connected account:", err.message);
+      return null;
+    });
+  }
+
+  /**
+   * Disconnect an account in Unipile & mark DISCONNECTED in DB
+   */
+  static async disconnectAccount(userId: string, unipileAccountId: string) {
+    const acc = await prisma.connectedAccount.findFirst({
+      where: { userId, unipileAccountId },
+    });
+
+    if (!acc) {
+      throw { statusCode: 404, message: "Connected account not found for this user" };
+    }
+
+    // Deliberately falls through to the local DISCONNECTED update even if the
+    // remote delete ultimately fails after retries -- a user must always be
+    // able to disconnect locally, even during a Unipile outage. The failure
+    // is still surfaced structurally (below) rather than only logged, so it
+    // isn't silently swallowed.
+    let remoteDeleteError: string | undefined;
+    try {
+      const unipileBaseUrl = this.getUnipileBaseUrl();
+      await retryWithBackoff(
+        (signal) =>
+          axios.delete(`${unipileBaseUrl}/accounts/${unipileAccountId}`, {
+            headers: this.getUnipileHeaders(),
+            signal,
+          }),
+        { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
+      );
+    } catch (err: any) {
+      remoteDeleteError = err?.response?.data?.message || err?.message || String(err);
+      console.warn("Unipile delete account API warning:", remoteDeleteError);
+    }
+
+    const updated = await prisma.connectedAccount.update({
+      where: { unipileAccountId },
+      data: {
+        status: AccountStatus.DISCONNECTED,
+        statusMessage: "Disconnected by user",
+      },
+    });
+
+    return remoteDeleteError ? { ...updated, remoteDeleteFailed: true, remoteDeleteError } : updated;
+  }
+
+  /**
+   * Smart LinkedIn message outreach with automatic 1st-degree DM or 2nd/3rd degree Invite fallback
+   */
+  static async sendLinkedInMessage(
+    userId: string,
+    leadId: string,
+    profileUrlOrId: string,
+    text: string,
+    preferredAccountId?: string
+  ) {
+    this.assertLiveSendsAllowed();
+
+    // 1. Find user's active LinkedIn account
+    let connectedAcc: any = null;
+    if (preferredAccountId) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: { userId, unipileAccountId: preferredAccountId, status: AccountStatus.OK },
+      });
+    }
+    if (!connectedAcc) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: { userId, provider: UnipileProvider.LINKEDIN, status: AccountStatus.OK },
+      });
+    }
+
+    if (!connectedAcc) {
+      throw {
+        statusCode: 409,
+        code: "ACCOUNT_NOT_CONNECTED",
+        message: "LinkedIn account not connected or requires reconnection. Please connect your account first.",
+      };
+    }
+
+    const account_id = connectedAcc.unipileAccountId;
+
+    let cleanIdentifier = (profileUrlOrId || "").trim();
+    if (cleanIdentifier.includes("linkedin.com/in/")) {
+      const match = cleanIdentifier.match(/linkedin\.com\/in\/([^\/\?#]+)/);
+      if (match) cleanIdentifier = match[1];
+    }
+
+    const unipileBaseUrl = this.getUnipileBaseUrl();
+    const headers = this.getUnipileHeaders();
+
+    // Step 1: Profile lookup -- read-only, safe to retry on transient
+    // failure. The invite/DM/invite-fallback sends below are deliberately
+    // NOT wrapped in the same retry: each already falls through to the next
+    // strategy on failure (its own cascade), and layering a full 4-retry/
+    // ~15s cycle under each branch would turn one slow send into a 45s+
+    // hang before even reaching the final fallback, plus risks a duplicate
+    // send on a non-idempotent write if a "failed" request actually landed
+    // upstream. Retrying the read-only lookup carries neither risk.
+    let userProfile: any = null;
+    try {
+      const profileRes = await retryWithBackoff(
+        (signal) =>
+          axios.get(`${unipileBaseUrl}/users/${encodeURIComponent(cleanIdentifier)}?account_id=${account_id}`, {
+            headers,
+            signal,
+          }),
+        { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
+      );
+      userProfile = profileRes.data;
+    } catch (err: any) {
+      console.warn(`LinkedIn profile lookup failed for ${cleanIdentifier}, proceeding directly:`, err.message);
+    }
+
+    const providerId = userProfile?.provider_id || cleanIdentifier;
+    let mode = "direct_message";
+    let externalMessageId: string | null = null;
+    let unipileChatId: string | null = null;
+    let responseData: any = null;
+
+    // Step 2: 2nd/3rd degree -> Send Connection Invite with Note
+    if (userProfile?.network_distance && userProfile.network_distance !== "FIRST_DEGREE") {
+      try {
+        // Bounded by a deadline only, deliberately not wrapped in the usual
+        // retry -- see the Step 1 comment above (real send, no fallback-safe
+        // way to auto-retry without risking a duplicate invite).
+        const inviteRes = await retryWithBackoff(
+          (signal) =>
+            axios.post(
+              `${unipileBaseUrl}/users/invite`,
+              {
+                account_id,
+                provider_id: providerId,
+                message: truncateForInviteNote(text),
+              },
+              { headers: { ...headers, "Content-Type": "application/json" }, signal }
+            ),
+          { retries: 0, deadlineMs: 15000 }
+        );
+        mode = "connection_invite";
+        responseData = inviteRes.data;
+        // Confirmed live: `id`/`invitation_id` here is LinkedIn's invitation
+        // id (e.g. "7498301028656902144"), a completely different id space
+        // from the real chat id Unipile's message webhooks use (e.g.
+        // "vYCl26x0V0WeDp2ETbClZg") -- so unlike the direct_message branch
+        // below, do NOT fall back to `.id` for unipileChatId here; that would
+        // store the invitation id as if it were a chat id, which would just
+        // as permanently prevent replies from ever matching, but silently.
+        // Only trust an explicit chat_id if Unipile's invite response ever
+        // includes one -- otherwise leave it null and rely on the webhook
+        // backfill in handleWebhookEvent (see "self-echo" comment there),
+        // which learns the real chat id from Unipile itself once the
+        // resulting thread shows up in a message_received event.
+        externalMessageId = responseData?.id || responseData?.invitation_id || `inv_${Date.now()}`;
+        unipileChatId = responseData?.chat_id || null;
+      } catch (inviteErr: any) {
+        console.warn("Invite attempt failed, falling back to direct message:", inviteErr?.response?.data || inviteErr.message);
+      }
+    }
+
+    // Step 3: Direct DM attempt if not already sent via Invite
+    if (!responseData) {
+      try {
+        const form = new FormData();
+        form.append("account_id", account_id);
+        form.append("attendees_ids", providerId);
+        form.append("text", text);
+
+        const formHeaders = this.getUnipileHeaders(form.getHeaders() as Record<string, string>);
+        // Deadline only, no retry -- same reasoning as the invite send above.
+        const chatRes = await retryWithBackoff(
+          (signal) => axios.post(`${unipileBaseUrl}/chats`, form, { headers: formHeaders, signal }),
+          { retries: 0, deadlineMs: 15000 }
+        );
+
+        mode = "direct_message";
+        responseData = chatRes.data;
+        externalMessageId = responseData?.id || responseData?.chat_id || `msg_${Date.now()}`;
+        // The chat/thread id itself (as distinct from this one message's id) --
+        // used to correlate future inbound replies back to this conversation.
+        unipileChatId = responseData?.chat_id || responseData?.id || null;
+      } catch (dmErr: any) {
+        // Fallback: Connection request with note
+        try {
+          // Deadline only, no retry -- same reasoning as the two send sites above.
+          const inviteRes = await retryWithBackoff(
+            (signal) =>
+              axios.post(
+                `${unipileBaseUrl}/users/invite`,
+                {
+                  account_id,
+                  provider_id: providerId,
+                  message: truncateForInviteNote(text),
+                },
+                { headers: { ...headers, "Content-Type": "application/json" }, signal }
+              ),
+            { retries: 0, deadlineMs: 15000 }
+          );
+          mode = "connection_invite_fallback";
+          responseData = inviteRes.data;
+          // Same invitation-id-vs-chat-id distinction as the Step 2 invite
+          // branch above -- don't fall back to `.id` for unipileChatId here.
+          externalMessageId = responseData?.id || responseData?.invitation_id || `inv_${Date.now()}`;
+          unipileChatId = responseData?.chat_id || null;
+        } catch (fallbackErr: any) {
+          const details = fallbackErr?.response?.data || fallbackErr.message;
+          throw new Error(`Failed to send LinkedIn DM or Invite: ${JSON.stringify(details)}`);
+        }
+      }
+    }
+
+    // Save InteractionEvent in DB
+    const event = await prisma.interactionEvent.create({
+      data: {
+        leadId,
+        direction: InteractionDirection.OUTBOUND,
+        channel: InteractionChannel.LINKEDIN_DM,
+        recruiterId: userId,
+        occurredAt: new Date(),
+        sentText: text,
+        deliveryStatus: mode,
+        externalMessageId,
+      },
+    });
+
+    // Also sync to Conversation table
+    await this.syncToConversation(leadId, userId, "LINKEDIN", text, externalMessageId, unipileChatId);
+    await markContactedOnFirstOutreach(leadId, userId);
+
+    return {
+      success: true,
+      mode,
+      externalMessageId,
+      eventId: event.id,
+      data: responseData,
+    };
+  }
+
+  /**
+   * Send tracked email via Unipile
+   */
+  static async sendEmail(
+    userId: string,
+    leadId: string,
+    toEmail: string,
+    subject: string,
+    body: string,
+    preferredAccountId?: string,
+    // Unipile's own id (or the email provider's id -- either works per
+    // their docs) of the SPECIFIC inbound message being replied to. This is
+    // `reply_to` in Unipile's actual /emails API (confirmed via their
+    // reference docs, mailscontroller_sendmail) -- NOT a thread id. A first
+    // guess at sending the conversation's `unipileChatId` as `thread_id`
+    // was tested live and confirmed wrong: Unipile silently ignored it and
+    // created a brand-new unrelated thread instead of threading the reply.
+    replyToMessageId?: string | null
+  ) {
+    this.assertLiveSendsAllowed();
+
+    // Find active Email account
+    let connectedAcc: any = null;
+    if (preferredAccountId) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: { userId, unipileAccountId: preferredAccountId, status: AccountStatus.OK },
+      });
+    }
+    if (!connectedAcc) {
+      connectedAcc = await prisma.connectedAccount.findFirst({
+        where: {
+          userId,
+          provider: { in: [UnipileProvider.GOOGLE, UnipileProvider.MAIL, UnipileProvider.OUTLOOK, UnipileProvider.EMAIL] },
+          status: AccountStatus.OK,
+        },
+      });
+    }
+
+    if (!connectedAcc) {
+      throw {
+        statusCode: 409,
+        code: "ACCOUNT_NOT_CONNECTED",
+        message: "Email account not connected or requires reconnection. Please connect your Email account first.",
+      };
+    }
+
+    const account_id = connectedAcc.unipileAccountId;
+    const unipileBaseUrl = this.getUnipileBaseUrl();
+
+    const payload: Record<string, unknown> = {
+      account_id,
+      to: [
+        {
+          identifier: toEmail.trim(),
+          display_name: "",
+        },
+      ],
+      subject,
+      body: plainTextToEmailHtml(body),
+      tracking_options: {
+        opens: true,
+        links: true,
+        label: "global3-outreach",
+      },
+    };
+    if (replyToMessageId) {
+      payload.reply_to = replyToMessageId;
+    }
+
+    // Single write, no fallback cascade (unlike sendLinkedInMessage above) --
+    // but still a real outbound email to a real lead, so treated the same as
+    // the LinkedIn invite/DM cascade: deadline-bounded, deliberately NOT
+    // retried. A prior version of this comment argued "no fallback cascade"
+    // made retrying safe, but that reasoning addressed a different risk
+    // (cascade-branch interaction) than the one that actually matters here --
+    // a retry after an ambiguous failure can duplicate a real send.
+    const response = await retryWithBackoff(
+      (signal) =>
+        axios.post(`${unipileBaseUrl}/emails`, payload, {
+          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+          signal,
+        }),
+      { retries: 0, deadlineMs: 15000 }
+    );
+
+    const externalMessageId = response.data.tracking_id || response.data.id || `mail_${Date.now()}`;
+    // Best-effort: capture the real email thread id if Unipile's send
+    // response includes one, the same way sendLinkedInMessage's direct-DM
+    // path captures chat_id -- lets a reply match immediately by thread id
+    // instead of waiting on a self-echo that emails may never produce (no
+    // "mail_sent"-type event is subscribed to, unlike LinkedIn's messaging
+    // webhook, which does echo our own sends back through message_received).
+    const unipileThreadId = response.data.thread_id || null;
+
+    // Record InteractionEvent
+    const event = await prisma.interactionEvent.create({
+      data: {
+        leadId,
+        direction: InteractionDirection.OUTBOUND,
+        channel: InteractionChannel.EMAIL,
+        recruiterId: userId,
+        occurredAt: new Date(),
+        sentText: body,
+        deliveryStatus: "sent",
+        externalMessageId,
+      },
+    });
+
+    // Also sync to Conversation table (same as LinkedIn's sendLinkedInMessage)
+    await this.syncToConversation(leadId, userId, "EMAIL", body, externalMessageId, unipileThreadId);
+    await markContactedOnFirstOutreach(leadId, userId);
+
+    return {
+      success: true,
+      externalMessageId,
+      eventId: event.id,
+      data: response.data,
+    };
+  }
+
+  /**
+   * Send a plain system/transactional email (e.g. a notification to a
+   * recruiter about their own lead/requirement) via one dedicated,
+   * pre-connected Unipile mailbox (UNIPILE_SYSTEM_ACCOUNT_ID) -- NOT a
+   * recruiter's own outreach account. Deliberately skips everything
+   * candidate-outreach-specific that sendEmail() above does: no leadId (a
+   * task/due-date notification has no candidate to attach one to), no
+   * InteractionEvent/Conversation writes (this isn't a real outreach
+   * interaction, and writing one would corrupt SLA/response-time tracking
+   * that reads those tables), and no assertLiveSendsAllowed gate (that's a
+   * safety switch for real candidate-facing sends, not system mail). No-ops
+   * if the system mailbox isn't configured yet, matching the notification
+   * feature's "email/Slack channels no-op until provisioned" design.
+   */
+  static async sendSystemEmail(
+    toEmail: string,
+    subject: string,
+    body: string,
+    button?: { text: string; url: string }
+  ): Promise<void> {
+    // Owner-configurable in-app (see system-settings.routes.ts) rather than
+    // env-var-only, so G3 can connect/change the notification mailbox
+    // themselves without an engineering redeploy.
+    const accountId = await getSystemSetting("UNIPILE_SYSTEM_ACCOUNT_ID");
+    if (!accountId) {
+      console.warn("[unipile] Notification email account not configured -- skipping system notification email");
+      return;
+    }
+
+    // Every notification's Slack card has a button that deep-links back into
+    // G3 -- the email side previously had no equivalent at all (plain text
+    // only), so a recipient without Slack enabled had no click-through path.
+    const buttonHtml = button
+      ? `<p style="margin:1.5em 0 0 0;"><a href="${button.url}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">${escapeHtml(button.text)}</a></p>`
+      : "";
+
+    const unipileBaseUrl = this.getUnipileBaseUrl();
+    const payload = {
+      account_id: accountId,
+      to: [{ identifier: toEmail.trim(), display_name: "" }],
+      subject,
+      body: plainTextToEmailHtml(body) + buttonHtml,
+    };
+
+    await retryWithBackoff(
+      (signal) =>
+        axios.post(`${unipileBaseUrl}/emails`, payload, {
+          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+          signal,
+        }),
+      { retries: 0, deadlineMs: 15000 }
+    );
+  }
+
+  /**
+   * Helper to sync outbound message to Conversation & ConversationMessage models
+   */
+  private static async syncToConversation(
+    leadId: string,
+    recruiterId: string,
+    channel: "LINKEDIN" | "EMAIL",
+    text: string,
+    externalMessageId: string | null,
+    unipileChatId: string | null = null
+  ) {
+    try {
+      const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+      const candidateName = lead?.fullName || lead?.firstName || "Candidate";
+      const conversationChannel = channel === "LINKEDIN" ? ConversationChannel.LINKEDIN : ConversationChannel.EMAIL;
+
+      // LinkedIn and Email are always distinct Conversation rows per
+      // lead+recruiter (confirmed live: a missing channel filter here once
+      // let an outreach email's body get appended into the candidate's
+      // LinkedIn thread). Existence-or-create is now one atomic upsert
+      // (enforced by the (leadId, recruiterId, channel) unique constraint)
+      // instead of a findFirst-then-create/update -- two messages for the
+      // same lead+channel arriving milliseconds apart could otherwise both
+      // see "no conversation yet" and both create one, fragmenting history
+      // exactly like the chat_id-rotation bug this file already guards
+      // against elsewhere.
+      const conv = await prisma.conversation.upsert({
+        where: { leadId_recruiterId_channel: { leadId, recruiterId, channel: conversationChannel } },
+        update: { lastMessageAt: new Date() },
+        create: {
+          leadId,
+          recruiterId,
+          candidateName,
+          channel: conversationChannel,
+          lastMessageAt: new Date(),
+          unipileChatId: unipileChatId || undefined,
+        },
+      });
+      // Backfill the chat id the first time we actually learn it (e.g. the
+      // first message went via invite with no chat id, a later one
+      // succeeds) -- kept as a separate follow-up write rather than folded
+      // into the upsert's `update`, since Prisma's upsert can't
+      // conditionally reference the row's own pre-existing value.
+      if (unipileChatId && !conv.unipileChatId) {
+        await prisma.conversation.update({ where: { id: conv.id }, data: { unipileChatId } });
+      }
+
+      await prisma.conversationMessage.create({
+        data: {
+          conversationId: conv.id,
+          sender: MessageSender.ME,
+          text,
+          externalMessageId,
+        },
+      });
+    } catch (err: any) {
+      console.warn("Failed to sync Conversation record:", err.message);
+    }
+  }
+
+  /**
+   * Resolve the UnipileAuthAttempt that a notify_url callback belongs to, via
+   * the nonce embedded in `name` at mint time (`g3_${userId}_${nonce}`) --
+   * NOT "whichever attempt happens to be newest," which would misattribute a
+   * new connection whenever two users are connecting accounts around the
+   * same time.
+   */
+  private static async resolveAuthAttemptFromName(name: string | undefined) {
+    if (!name) return null;
+    const nonce = name.slice(name.lastIndexOf("_") + 1);
+    if (!nonce) return null;
+    return prisma.unipileAuthAttempt.findUnique({ where: { nonce } });
+  }
+
+  /**
+   * Unified Webhook Event Handler (Idempotent & Deduplicated)
+   */
+  static async handleWebhookEvent(token: string, secretHeader: string | undefined, body: any) {
+    if (!safeCompare(token, config.unipileWebhookPathToken)) {
+      throw { statusCode: 401, message: "Invalid webhook path token" };
+    }
+
+    if (!safeCompare(secretHeader || "", config.unipileWebhookSecret)) {
+      throw { statusCode: 401, message: "Invalid webhook secret header" };
+    }
+
+    // Deduplicate via SHA256 of body
+    const bodyStr = JSON.stringify(body || {});
+    const dedupeKey = crypto.createHash("sha256").update(bodyStr).digest("hex");
+
+    // Cheap up-front check for the common case (an exact retry) -- not what
+    // actually closes the race, since two near-simultaneous deliveries of
+    // the same webhook could both see "not found" here before either
+    // commits. The dedupeKey unique constraint is what's actually atomic:
+    // attempt the create, and treat a conflict on it exactly like the
+    // already-processed case rather than letting the second delivery
+    // duplicate-process (double-count a reply, double-fire an auto-reply).
+    const existing = await prisma.unipileWebhookEvent.findUnique({ where: { dedupeKey } });
+    if (existing) {
+      return { status: "already_processed", id: existing.id };
+    }
+
+    const eventType = body.event || body.AccountStatus?.message || body.status || "unknown_event";
+
+    try {
+      await prisma.unipileWebhookEvent.create({
+        data: {
+          dedupeKey,
+          eventType,
+          payload: body,
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === "P2002") {
+        const raced = await prisma.unipileWebhookEvent.findUniqueOrThrow({ where: { dedupeKey } });
+        return { status: "already_processed", id: raced.id };
+      }
+      throw err;
+    }
+
+    // 1. Account status webhook handling
+    const accountId = body.AccountStatus?.account_id ?? body.account_id ?? null;
+    const rawStatus = body.AccountStatus?.message ?? body.status ?? body.event ?? null;
+
+    if (accountId && rawStatus) {
+      const mappedStatus = mapAccountStatus(rawStatus);
+
+      let connAcc = await prisma.connectedAccount.findUnique({
+        where: { unipileAccountId: accountId },
+      });
+
+      if (!connAcc) {
+        // Only reachable on the very first callback for this account. The
+        // specific provider type as Unipile itself reports it (GOOGLE_OAUTH,
+        // LINKEDIN, etc.) -- computed once, used both for attempt matching
+        // and for the ConnectedAccount row itself, so it's never out of sync
+        // between the two.
+        const rawProviderType = (body.AccountStatus?.account_type || body.account_type || "").toUpperCase();
+        let specificProvider: UnipileProvider | null = null;
+        if (rawProviderType.includes("LINKEDIN")) specificProvider = UnipileProvider.LINKEDIN;
+        else if (rawProviderType.includes("GOOGLE")) specificProvider = UnipileProvider.GOOGLE;
+        else if (rawProviderType.includes("OUTLOOK")) specificProvider = UnipileProvider.OUTLOOK;
+        else if (rawProviderType.includes("MAIL")) specificProvider = UnipileProvider.MAIL;
+
+        let attempt = await this.resolveAuthAttemptFromName(body.name);
+
+        if (!attempt) {
+          // FALLBACK: confirmed live (2026-08-26) that Unipile's
+          // dashboard-registered account_status webhook -- as opposed to the
+          // per-request notify_url -- never echoes back our minted name/nonce
+          // at all (every real CREATION_SUCCESS event observed arrived with
+          // body.name undefined; notify_url's own named payload shape never
+          // appeared even once). This is the only account-status delivery
+          // that actually fires in this environment, so without a fallback
+          // no new account is ever attributed to anyone.
+          //
+          // SECURITY: this must NOT repeat the original bug (matching any
+          // historical attempt by whichever user happened to be polling).
+          // Match only an UNEXPIRED UnipileAuthAttempt for the same provider
+          // GROUP, and ONLY when there is EXACTLY ONE such candidate system-
+          // wide at this instant. If more than one unexpired attempt exists
+          // for the same group (two people connecting concurrently), refuse
+          // and log rather than guess between them -- ambiguity must never be
+          // resolved by picking one, that's exactly what caused the
+          // cross-user attribution incident. The attempt is deleted
+          // immediately after a successful match so it can never be reused
+          // (single-use, same guarantee `single_use: true` gives Unipile's
+          // own side of the link).
+          //
+          // BUG FIX: every hosted link for GOOGLE/OUTLOOK/MAIL is minted
+          // under the generic EMAIL provider (see mintHostedAuthLink -- one
+          // link targets all three), so the stored UnipileAuthAttempt.provider
+          // is EMAIL, never the specific resolved type. Matching only on the
+          // specific type (e.g. GOOGLE) against attempts stored as EMAIL
+          // silently found zero candidates every time -- confirmed live, this
+          // is why the fallback never actually attributed anything.
+          //
+          // BUG FIX 2: if `account_type` is absent or spelled differently
+          // than expected in this webhook's actual payload, specificProvider
+          // stays null -- and gating the whole candidate lookup on
+          // `if (specificProvider)` meant we NEVER even looked for a
+          // candidate in that case, guaranteeing "No UnipileAuthAttempt
+          // matched" regardless of whether exactly one pending attempt truly
+          // existed. Payload field names for this webhook have already been
+          // wrong once (see BUG FIX above) so don't gate on it a second time
+          // -- fall back to searching across every unexpired attempt
+          // (LINKEDIN + EMAIL group) when we can't resolve a specific type.
+          // The exactly-one-candidate safety rule still applies either way.
+          const candidateProviders = specificProvider
+            ? specificProvider === UnipileProvider.LINKEDIN
+              ? [UnipileProvider.LINKEDIN]
+              : [UnipileProvider.EMAIL, specificProvider]
+            : [UnipileProvider.LINKEDIN, UnipileProvider.EMAIL];
+          const candidates = await prisma.unipileAuthAttempt.findMany({
+            where: { provider: { in: candidateProviders }, expiresAt: { gt: new Date() } },
+            orderBy: { createdAt: "desc" },
+          });
+          if (candidates.length === 1) {
+            attempt = candidates[0];
+          } else if (candidates.length > 1) {
+            console.warn(
+              `[unipile webhook] Ambiguous attribution for new ${specificProvider || "unknown-type"} account ${accountId}: ${candidates.length} concurrent unexpired connect attempts -- refusing to guess between them.`
+            );
+          } else {
+            console.warn(
+              `[unipile webhook] No unexpired UnipileAuthAttempt candidates for new account ${accountId} (resolved type=${specificProvider || "unresolved, raw=" + rawProviderType}). Raw payload: ${JSON.stringify(body).slice(0, 500)}`
+            );
+          }
+        }
+
+        if (attempt) {
+          // Goes through the same userId+provider-aware helper as the manual
+          // sync path -- a recruiter reconnecting (new Unipile account id,
+          // same provider) must replace their existing row, not attempt a
+          // second INSERT that violates @@unique([userId, provider]) and
+          // throws, which would otherwise fail this whole webhook call and
+          // make the reconnect look like it silently didn't work. Prefer the
+          // specific resolved provider (GOOGLE/OUTLOOK/MAIL/LINKEDIN) over the
+          // attempt's own generic EMAIL for storage, matching how every other
+          // ConnectedAccount row in the system is typed.
+          const storedProvider = specificProvider || attempt.provider;
+          connAcc = await this.upsertConnectedAccountForUser(
+            attempt.userId,
+            storedProvider,
+            accountId,
+            body.name || body.account_name || `${storedProvider} Account`,
+            mappedStatus,
+            rawStatus
+          );
+          // Single-use: burn the attempt immediately so it can never be
+          // matched again, by this fallback or the nonce path.
+          await prisma.unipileAuthAttempt.delete({ where: { id: attempt.id } }).catch(() => {});
+        } else {
+          console.warn(`No UnipileAuthAttempt matched for new account ${accountId} (name=${body.name}) -- dropping status update.`);
+        }
+      } else {
+        if (connAcc.status !== mappedStatus) {
+          await prisma.accountDegradation.create({
+            data: {
+              connectedAccountId: connAcc.id,
+              fromStatus: connAcc.status,
+              toStatus: mappedStatus,
+              reason: rawStatus,
+            },
+          });
+
+          await prisma.connectedAccount.update({
+            where: { id: connAcc.id },
+            data: {
+              status: mappedStatus,
+              statusMessage: rawStatus,
+            },
+          });
+        }
+      }
+    }
+
+    // 2. Email tracking webhooks (mail_opened, mail_link_clicked)
+    const trackingId = body.tracking_id || body.email_id;
+    if (trackingId) {
+      const eventName = body.event;
+      let newDeliveryStatus: string | null = null;
+      if (eventName === "mail_opened") newDeliveryStatus = "opened";
+      if (eventName === "mail_link_clicked") newDeliveryStatus = "clicked";
+
+      if (newDeliveryStatus) {
+        await prisma.interactionEvent.updateMany({
+          where: { externalMessageId: trackingId },
+          data: { deliveryStatus: newDeliveryStatus },
+        });
+      }
+    }
+
+    // 3. Messaging webhook (inbound and external outbound) per Unipile Metrics Guide
+    // Handles both LinkedIn (message_received) and Email (mail_received) events.
+    // Confirmed live: Unipile's actual registered email event is "mail_received",
+    // not "email.received" -- the latter never matched a real payload, so every
+    // inbound email reply was silently skipped by this whole block.
+    const isMessageEvent = eventType === "message_received" || eventType === "mail_received" || eventType === "email.received";
+    const inboundChannel = eventType === "mail_received" || eventType === "email.received" ? InboundChannel.EMAIL : InboundChannel.LINKEDIN;
+
+    let inboundMessageId: string | null = null;
+    // Unipile echoes the recruiter's OWN sent messages back through this same
+    // webhook, and the InboundMessage row above is deliberately created for
+    // those echoes too (load-bearing for the self-echo chat-id backfill
+    // below). This flag is computed in the `connAcc` block further down and
+    // hoisted here so it can ride out on the return value -- the async
+    // classifier (processInboundMessage) needs it to avoid classifying our
+    // own outbound text as if it were the candidate's reply.
+    let isOutbound = false;
+
+    if (isMessageEvent && (body.message || body.text || body.body_plain || body.body) && accountId) {
+      const connAcc = await prisma.connectedAccount.findUnique({
+        where: { unipileAccountId: accountId },
+      });
+
+      // Computed here, immediately after connAcc resolves and BEFORE the
+      // existingInbound early-return below -- previously this lived further
+      // down inside the `if (connAcc)` ConversationMessage-sync block, which
+      // sits after that early-return. A message-id-retry delivery (Unipile
+      // resending the same message_id with a slightly different body, which
+      // does NOT get caught by the exact-duplicate dedupeKey check) hit that
+      // early-return and shipped isOutbound's stale `false` default straight
+      // to processInboundMessage, defeating the outbound-echo classification
+      // gate for exactly the delivery shape most likely to actually occur.
+      // `ownIdentity`/`fromIdentity` are reused further below both to decide
+      // the current event's direction and to reconcile earlier InboundMessage
+      // rows -- kept in this same function-body scope so both sites read the
+      // one computation.
+      let providerUserId: string | undefined;
+      let senderProviderId: string | undefined;
+      let fromIdentity = "";
+      let ownIdentity: string | null = null;
+      if (connAcc) {
+        providerUserId = body.account_info?.user_id;
+        senderProviderId = body.sender?.attendee_provider_id || body.sender_id;
+        fromIdentity = (body.from_attendee?.identifier || "").toLowerCase();
+        const ownEmailIdentity = (connAcc.accountName || "").toLowerCase();
+        ownIdentity = providerUserId || connAcc.accountName || null;
+        isOutbound = !!(
+          (providerUserId && senderProviderId && providerUserId === senderProviderId) ||
+          body.is_sender === true ||
+          (!!ownEmailIdentity && !!fromIdentity && ownEmailIdentity === fromIdentity)
+        );
+      }
+
+      // Prefer body_plain for email -- body/body.body is the raw HTML including
+      // a 1x1 tracking pixel <img>. body_plain is still the raw quoted-reply
+      // chain, though (see stripQuotedReplyHistory) -- it's just plaintext,
+      // not "new text only".
+      const messageText = stripQuotedReplyHistory(body.message || body.text || body.body_plain || body.body || "");
+      // Unipile overloads `message_id` differently per channel: for LinkedIn
+      // it's Unipile's own native message id (safe to reuse as-is), but for
+      // email it's the raw RFC822 `Message-ID:` header (e.g.
+      // "<abc@mail.gmail.com>") -- confirmed live against a real mail_received
+      // payload, which carries Unipile's actual native id under `email_id`
+      // instead. Storing the RFC822 header as externalMessageId silently
+      // broke replies: sendEmail forwards it straight through as `reply_to`,
+      // and Unipile 422s because that's not an id in its own id space.
+      const externalMsgId =
+        inboundChannel === InboundChannel.EMAIL
+          ? body.email_id || body.message_id || body.id || null
+          : body.message_id || body.id || null;
+
+      // --- InboundMessage table insert (idempotency via unipile_message_id) ---
+      if (externalMsgId) {
+        const existingInbound = await prisma.inboundMessage.findUnique({
+          where: { unipileMessageId: externalMsgId },
+        });
+
+        if (existingInbound) {
+          // Already stored — return 200 immediately, do nothing else.
+          return { status: "already_processed", inboundMessageId: existingInbound.id, dedupeKey, isOutbound };
+        }
+
+        // Provider timestamp (acknowledged send time per Unipile guide, with safe NaN fallback)
+        let eventTimestamp = new Date();
+        if (body.timestamp) {
+          const parsed = new Date(body.timestamp);
+          if (!isNaN(parsed.getTime())) eventTimestamp = parsed;
+        }
+
+        // Email payloads carry the sender under `from_attendee`, not `sender`/
+        // `from` -- confirmed live (identical bug pattern to the LinkedIn
+        // payload-shape mismatches already found this session). Prefer the
+        // raw identifier (email address / provider id) over any display name
+        // here since this value is never shown to end users -- it's compared
+        // against connAcc/providerUserId below to detect our own messages,
+        // and needs to be exact for that comparison to work.
+        const senderName = body.sender?.attendee_provider_id || body.from_attendee?.identifier
+          || body.from?.identifier || body.sender_id || "unknown";
+        const chatId = body.chat_id || body.thread_id || null;
+
+        const inboundRow = await prisma.inboundMessage.create({
+          data: {
+            unipileMessageId: externalMsgId,
+            channel: inboundChannel,
+            accountId,
+            threadId: chatId,
+            sender: senderName,
+            content: messageText,
+            receivedAt: eventTimestamp,
+          },
+        });
+        inboundMessageId = inboundRow.id;
+      }
+
+      // --- ConversationMessage + InteractionEvent (existing logic, now for both channels) ---
+      if (connAcc) {
+        // isOutbound/providerUserId/fromIdentity/ownIdentity are already
+        // computed above, before the existingInbound early-return -- reused
+        // here as-is (see the comment at their declaration for why).
+
+        let eventTimestamp = new Date();
+        if (body.timestamp) {
+          const parsed = new Date(body.timestamp);
+          if (!isNaN(parsed.getTime())) eventTimestamp = parsed;
+        }
+
+        const chatId = body.chat_id || body.thread_id || null;
+
+        // SECURITY/CORRECTNESS: only attach to a conversation we can positively
+        // identify by chat id. This used to fall back to "this recruiter's
+        // most recently active conversation" when chatId didn't match --
+        // same class of bug as the account-attribution issue: guessing
+        // instead of only acting on a confirmed match. A reply from Candidate
+        // A on a not-yet-tracked thread would silently land in Candidate B's
+        // conversation just because B was the recruiter's last activity. The
+        // InboundMessage row above is already captured unconditionally
+        // (verbatim, keyed by chatId as threadId) regardless of whether we
+        // can resolve a Conversation here, so nothing is lost by not guessing
+        // -- it's just not surfaced in the Conversations UI until it can be
+        // matched with certainty.
+        let conversation = chatId
+          ? await prisma.conversation.findUnique({ where: { unipileChatId: chatId } })
+          : null;
+
+        // Self-echo backfill: sendLinkedInMessage's invite-with-note path (the
+        // common case for 2nd/3rd-degree cold outreach) never learns Unipile's
+        // real chat id at send time -- LinkedIn only creates the thread once
+        // the note lands, and the invite API response only ever returns the
+        // invitation id, a different id space entirely (confirmed live: our
+        // own recorded externalMessageId for an invite was LinkedIn's numeric
+        // invitation id, not the alphanumeric chat id the message webhook
+        // later reported for the same thread). Unipile echoes our OWN sent
+        // message back through this same webhook (isOutbound === true)
+        // carrying that real chat_id -- the only ground truth we get. Match
+        // it to the Conversation created synchronously at send time by exact
+        // outbound text + same recruiter + not yet backfilled. Never guess:
+        // refuse if more than one Conversation is an equally exact match
+        // (e.g. the identical template sent to two leads back to back).
+        if (!conversation && chatId && isOutbound && connAcc) {
+          const candidates = await prisma.conversation.findMany({
+            where: {
+              recruiterId: connAcc.userId,
+              unipileChatId: null,
+              messages: { some: { sender: MessageSender.ME, text: messageText } },
+            },
+          });
+          if (candidates.length === 1) {
+            conversation = await prisma.conversation.update({
+              where: { id: candidates[0].id },
+              data: { unipileChatId: chatId },
+            });
+            console.log(`[unipile webhook] Backfilled chat id ${chatId} onto conversation ${conversation.id} via self-echo match.`);
+          } else if (candidates.length > 1) {
+            console.warn(`[unipile webhook] Ambiguous self-echo backfill for chatId=${chatId}: ${candidates.length} candidate conversations share identical outbound text -- refusing to guess.`);
+          }
+        }
+
+        // Email-identity backfill: unlike LinkedIn, email sends don't self-echo
+        // through this webhook (only "mail_received" is subscribed, nothing
+        // fires for our own outgoing mail), so a genuine inbound reply is the
+        // only event this thread will ever produce -- there's no echo to wait
+        // for. Positively identify the Conversation via the lead's own stored
+        // email address matching who this reply came from (from_attendee),
+        // the same certainty guarantee as the account nonce match: an email
+        // address is who sent it, not a guess.
+        //
+        // Deliberately NOT scoped to `unipileChatId: null` (i.e. "only the
+        // first time"): confirmed live, Unipile does not keep one stable
+        // chat_id for the life of an email exchange the way it does for
+        // LinkedIn -- an outbound send with no reply_to anchor (see
+        // findReplyAnchor) starts a logically new thread from Unipile's side
+        // even though it's the same real conversation, so a single lead
+        // legitimately produced several different chat_ids over time. The
+        // old `unipileChatId: null` guard meant only the FIRST-ever id could
+        // ever be learned; every later reply that arrived under a different
+        // (but equally genuine) id had no path back to the Conversation and
+        // was silently dropped into InboundMessage-only, invisible in the
+        // Conversations/Email Queue UI despite being a real, correctly-
+        // delivered reply. Re-matching on every miss instead of only once
+        // makes this self-healing: whichever chat_id Unipile is currently
+        // using for this lead's thread gets picked up, not just whichever
+        // one happened to arrive first.
+        if (!conversation && chatId && !isOutbound && connAcc && inboundChannel === InboundChannel.EMAIL && fromIdentity) {
+          const candidates = await prisma.conversation.findMany({
+            where: {
+              recruiterId: connAcc.userId,
+              channel: ConversationChannel.EMAIL,
+              lead: { email: { equals: fromIdentity, mode: "insensitive" } },
+            },
+          });
+          if (candidates.length === 1) {
+            conversation = await prisma.conversation.update({
+              where: { id: candidates[0].id },
+              data: { unipileChatId: chatId },
+            });
+            console.log(`[unipile webhook] Matched inbound email to conversation ${conversation.id} via lead-email identity (chatId=${chatId}).`);
+          } else if (candidates.length > 1) {
+            console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${redactForLog(fromIdentity)} -- refusing to guess.`);
+          }
+        }
+
+        // Webhook delivery order across two events of the same send (our
+        // echo vs. the candidate's real reply) isn't guaranteed -- confirmed
+        // live, the real reply was processed before its own echo, so the
+        // reply's earlier attempt at this same match found nothing yet and
+        // was dropped into InboundMessage-only. Once a chat id resolves
+        // (above), catch up on any other InboundMessage rows for this exact
+        // thread that are still missing from the conversation, in receipt
+        // order, before handling the current event below. Only ever surface
+        // the OTHER party's messages here -- our own outbound messages are
+        // already recorded synchronously at send time (syncToConversation),
+        // so re-inserting an echo would just duplicate (or, worse, mislabel)
+        // something already shown.
+        //
+        // BUG FIX: direction must be decided against `ownIdentity` (this
+        // connected account's OWN stable id/email, same value on every
+        // event) -- NOT against THIS event's own sender. Confirmed live:
+        // comparing against the triggering event's sender broke exactly when
+        // that event was itself the other party's genuine reply -- e.g.
+        // candidate's "are you hiring for more roles" reconciling an earlier
+        // self-echo compared that echo's sender against the CANDIDATE's id,
+        // never matched, and silently mislabeled our own outreach message as
+        // coming from them.
+        if (conversation && chatId) {
+          const priorUnmatched = await prisma.inboundMessage.findMany({
+            where: { threadId: chatId, channel: inboundChannel },
+            orderBy: { receivedAt: "asc" },
+          });
+          for (const prior of priorUnmatched) {
+            if (prior.unipileMessageId === externalMsgId) continue; // this event, handled below
+            const priorIsOutbound = !!ownIdentity && prior.sender.toLowerCase() === ownIdentity.toLowerCase();
+            if (priorIsOutbound) continue; // our own echo -- already recorded at send time
+            const already = await prisma.conversationMessage.findFirst({
+              where: { externalMessageId: prior.unipileMessageId },
+            });
+            if (already) continue;
+            await prisma.conversationMessage.create({
+              data: {
+                conversationId: conversation.id,
+                sender: MessageSender.THEM,
+                text: prior.content,
+                externalMessageId: prior.unipileMessageId,
+                sentAt: prior.receivedAt,
+              },
+            });
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                unread: true,
+                lastMessageAt: prior.receivedAt,
+              },
+            });
+          }
+        }
+
+        if (!conversation && chatId) {
+          console.warn(`[unipile webhook] No Conversation matched chatId=${chatId} for account ${accountId} -- message captured in InboundMessage only, not surfaced in Conversations UI.`);
+        }
+
+        // Every outbound send in this app goes through sendLinkedInMessage,
+        // which already writes its own ConversationMessage/InteractionEvent
+        // synchronously at send time (syncToConversation) -- so a webhook
+        // echo of our own message (isOutbound) is never new information here,
+        // only useful above for learning the real chat id. Inserting it again
+        // would at best duplicate that message and at worst mislabel it as
+        // coming from the candidate if isOutbound is ever computed wrong (as
+        // confirmed happened live: identical-looking payload, `sender: THEM`
+        // ended up stored regardless -- never trust this branch with content
+        // that's already ours by construction). Only ever insert the other
+        // party's real reply here.
+        if (conversation && !isOutbound) {
+          // Idempotency: prevent double-inserting if externalMessageId already exists
+          const existingMsg = externalMsgId
+            ? await prisma.conversationMessage.findFirst({ where: { externalMessageId: externalMsgId } })
+            : null;
+
+          if (!existingMsg) {
+            await prisma.conversationMessage.create({
+              data: {
+                conversationId: conversation.id,
+                sender: MessageSender.THEM,
+                text: messageText,
+                externalMessageId: externalMsgId,
+                sentAt: eventTimestamp,
+              },
+            });
+
+            await prisma.interactionEvent.create({
+              data: {
+                leadId: conversation.leadId,
+                recruiterId: connAcc.userId,
+                direction: InteractionDirection.INBOUND,
+                channel: connAcc.provider === "LINKEDIN" ? InteractionChannel.LINKEDIN_DM : InteractionChannel.EMAIL,
+                occurredAt: eventTimestamp,
+                sentText: messageText,
+                deliveryStatus: "received",
+                externalMessageId: externalMsgId,
+              },
+            });
+
+            await prisma.conversation.update({
+              where: { id: conversation.id },
+              data: {
+                unread: true,
+                lastMessageAt: eventTimestamp,
+              },
+            });
+
+            // "Notify me on response" -- a plain per-lead subscription, left
+            // active after firing (see LeadNotificationSubscription doc
+            // comment in schema.prisma), so it fires again on every future
+            // reply from this lead until the recruiter turns it off.
+            const subs = await prisma.leadNotificationSubscription.findMany({
+              where: { leadId: conversation.leadId, active: true },
+            });
+            // Also checked unconditionally (not gated behind subs.length),
+            // since a contractor never toggles a per-lead bell -- they get
+            // notified on every reply to a lead they added, same as the
+            // subscribing recruiters above but via createdByContractorId
+            // instead of an opt-in LeadNotificationSubscription row.
+            const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+            if (subs.length > 0 || lead?.createdByContractorId) {
+              const leadName = lead?.fullName ?? lead?.maskedLabel ?? "a lead";
+              const excerpt = messageText.length > 200 ? `${messageText.slice(0, 200)}…` : messageText;
+              for (const sub of subs) createNotification({
+                recipientId: sub.recruiterId,
+                type: "LEAD_RESPONSE",
+                title: `${leadName} replied`,
+                body: `${leadName} sent you a new message: "${excerpt}"`,
+                slackCard: formatLeadResponseSlackCard(leadName, excerpt, "/recruiter"),
+                link: `/recruiter/leads`,
+              }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+
+              if (lead?.createdByContractorId) {
+                createNotification({
+                  recipientId: lead.createdByContractorId,
+                  type: "LEAD_RESPONSE",
+                  title: `${leadName} replied`,
+                  body: `${leadName} sent you a new message: "${excerpt}"`,
+                  slackCard: formatLeadResponseSlackCard(leadName, excerpt, "/contractor"),
+                  link: `/contractor/leads`,
+                }).catch((err) => console.error("[notifications] contractor lead-response notify failed:", err));
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { status: "processed", dedupeKey, inboundMessageId, isOutbound };
+  }
+}

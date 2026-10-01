@@ -1,0 +1,546 @@
+import { ReactNode, useState } from "react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Upload, Download, FileSpreadsheet } from "lucide-react";
+import { toast } from "sonner";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import type { ApiLead, LeadSource } from "@/lib/api-types";
+import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
+import { STANDARD_LANGUAGES as LANGUAGES } from "@/lib/languages";
+import { CountrySelect, ServicePicker, resolveServiceValue, SERVICE_OTHERS_VALUE } from "@/components/features/lead-form-fields";
+import * as XLSX from "xlsx";
+
+const SOURCES = [
+  "LinkedIn",
+  "ProZ",
+  "Ada",
+  "ATA",
+  "ATAA",
+  "Bodalgo",
+  "Freelancer",
+  "Apollo",
+  "Referral",
+  "Import",
+];
+
+const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+
+const INITIAL_VALUES = {
+  first_name: "",
+  last_name: "",
+  country_of_residence: "",
+  source: "LinkedIn",
+  profile_link: "",
+  email_address: "",
+  contact_number: "",
+  reachout_date: "",
+  source_language: "",
+  target_language: "",
+  secondary_languages: "",
+  services: "",
+};
+
+/** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
+function mapToLeadSource(raw: string | undefined | null): LeadSource {
+  if (!raw) return "LINKEDIN";
+  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
+  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
+  return hit ?? "LINKEDIN";
+}
+
+export function ContractorAddLeadDialog({
+  open: controlledOpen,
+  setOpen: controlledSetOpen,
+  trigger,
+}: {
+  open?: boolean;
+  setOpen?: (open: boolean) => void;
+  trigger?: ReactNode;
+}) {
+  const queryClient = useQueryClient();
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = controlledOpen ?? internalOpen;
+  const setOpen = controlledSetOpen ?? setInternalOpen;
+  const [values, setValues] = useState(INITIAL_VALUES);
+  const [customService, setCustomService] = useState("");
+  const [customTask, setCustomTask] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  function invalidateLeads() {
+    queryClient.invalidateQueries({ queryKey: ["leads"] });
+  }
+
+  // Without this, the dialog kept showing the just-submitted lead's data the
+  // next time it was opened -- component state persists across open/close
+  // since the dialog never unmounts, so a contractor adding several leads in
+  // a row would see the previous one's name/profile link still sitting in
+  // the form instead of a blank one.
+  function resetForm() {
+    setValues(INITIAL_VALUES);
+    setCustomService("");
+    setCustomTask("");
+    setErrors({});
+  }
+
+  const createMutation = useMutation({
+    mutationFn: (lead: Partial<ApiLead> & { fullName: string; source: string }) => api.createLead(lead),
+    onSuccess: (_res, lead) => {
+      toast.success(`Lead ${lead.fullName} submitted to pipeline!`);
+      invalidateLeads();
+      setOpen(false);
+      resetForm();
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Failed to submit lead"),
+  });
+
+  const bulkCreateMutation = useMutation({
+    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    onSuccess: (res) => {
+      const succeeded = res.results.filter((r) => !!r.leadId).length;
+      const duplicates = res.results.filter((r) => r.status === "duplicate").length;
+      const errors = res.results.filter((r) => r.status === "error").length;
+      // A batch that produced zero real leads must never read as success --
+      // this used to always call toast.success regardless of outcome, so
+      // e.g. "Imported 0 of 12 rows" (all duplicates or all invalid) still
+      // showed a green success toast.
+      if (succeeded === 0) {
+        toast.error(
+          errors > 0
+            ? `No leads submitted — ${errors} row(s) had errors${duplicates > 0 ? `, ${duplicates} duplicate(s)` : ""}.`
+            : `No leads submitted — all ${duplicates} row(s) were duplicates.`
+        );
+      } else if (duplicates > 0 || errors > 0) {
+        toast.info(
+          `Submitted ${succeeded} unique lead${succeeded === 1 ? "" : "s"}.` +
+            (duplicates > 0 ? ` ${duplicates} duplicate(s) excluded.` : "") +
+            (errors > 0 ? ` ${errors} row(s) had errors.` : "")
+        );
+      } else {
+        toast.success(`Submitted ${succeeded} of ${res.results.length} rows`);
+      }
+      invalidateLeads();
+      setOpen(false);
+    },
+    onError: (err: any) => toast.error(err?.message ?? "Bulk upload failed"),
+  });
+
+  function set(k: string, v: string) {
+    setValues((prev) => ({ ...prev, [k]: v }));
+    setErrors((prev) => ({ ...prev, [k]: "" }));
+  }
+
+  function validate() {
+    const next: Record<string, string> = {};
+    if (!values.last_name.trim()) next.last_name = "Last name is required";
+    if (!values.source) next.source = "Source is required";
+    if (values.services === SERVICE_OTHERS_VALUE && (!customService.trim() || !customTask.trim())) {
+      next.services = "Please enter both custom service and custom task";
+    }
+    if (values.email_address && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email_address)) {
+      next.email_address = "Enter a valid email address";
+    }
+    setErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!validate()) return;
+
+    const trimmed = [values.first_name.trim(), values.last_name.trim()].filter(Boolean).join(" ");
+    const resolvedService = resolveServiceValue(values.services, customService, customTask);
+    // No fake fallback here -- an unselected service must stay genuinely
+    // empty, not a guessed default the drafting prompt would later treat
+    // as a verified fact about this candidate's real background.
+    const services = resolvedService
+      ? resolvedService.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
+
+    // Automatic, non-blocking hint only -- same as add-lead-dialog.tsx
+    // (recruiter/owner): no separate "Check for duplicates" button or
+    // persistent checked/hit state, just a toast if the backend's own
+    // create-time duplicate check (the real source of truth) would flag
+    // this. Never blocks submission.
+    try {
+      const dup = await api.checkDuplicateLead({
+        email: values.email_address || undefined,
+        contactNumber: values.contact_number || undefined,
+        fullName: trimmed,
+        profileLink: values.profile_link || undefined,
+      });
+      if (dup.isDuplicate) toast.warning("A similar lead may already exist — submitting anyway.");
+    } catch {
+      // Non-blocking hint only -- proceed even if the duplicate check itself fails.
+    }
+
+    createMutation.mutate({
+      fullName: trimmed,
+      firstName: values.first_name || undefined,
+      source: mapToLeadSource(values.source),
+      profileLink: values.profile_link || undefined,
+      email: values.email_address || undefined,
+      contactNumber: values.contact_number || undefined,
+      reachoutDate: values.reachout_date || undefined,
+      sourceLanguage: values.source_language || undefined,
+      targetLanguage: values.target_language || undefined,
+      secondaryLanguages: values.secondary_languages
+        ? values.secondary_languages.split(",").map((l) => l.trim()).filter(Boolean)
+        : [],
+      services,
+      country: values.country_of_residence || undefined,
+    });
+  }
+
+  const [duplicateCheckResult, setDuplicateCheckResult] = useState<{
+    fileName: string;
+    duplicateCount: number;
+    duplicateNames: string[];
+    totalCount: number;
+    newCount: number;
+    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+  } | null>(null);
+  const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+
+  const handleExcelDownload = () => {
+    const worksheet = XLSX.utils.aoa_to_sheet([
+      ["Full Name", "Country", "Source", "Profile Link", "Email", "Contact", "Reachout Date", "Source Language", "Target Language", "Secondary Languages", "Services"],
+      ["Alex Chen", "Germany", "LinkedIn", "https://linkedin.com/in/alexchen", "alex@example.com", "+49 1234567", "2026-08-01", "English", "German", "French", "Dubbing; Subtitling"],
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Leads");
+    XLSX.writeFile(workbook, "global3_lead_import_template.xlsx");
+    toast.success("Downloaded Excel (.xlsx) lead import template!");
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const isExcel = /\.xlsx?$/i.test(file.name);
+    const reader = new FileReader();
+
+    const finish = async (parsed: ReturnType<typeof parseCsvLeads>) => {
+      if (parsed.length === 0) {
+        toast.info(`Uploaded ${file.name}. Ensure sheet contains Name, Email, Language, or Services columns.`);
+        e.target.value = "";
+        return;
+      }
+
+      const rows = parsed.map((l) => ({
+        fullName: l.display_name ?? l.masked_label,
+        source: mapToLeadSource(l.source),
+        services: l.services,
+        targetLanguage: l.language,
+        email: l.email || undefined,
+        contactNumber: l.phone || undefined,
+      }));
+
+      setCheckingDuplicates(true);
+      try {
+        const dupRes = await api.checkBulkDuplicateLeads(
+          rows.map((r) => ({ fullName: r.fullName, email: r.email, contactNumber: r.contactNumber }))
+        );
+
+        if (dupRes.hasDuplicates) {
+          const namesList = dupRes.duplicateNames.slice(0, 3).join(", ") + (dupRes.duplicateNames.length > 3 ? "..." : "");
+          toast.error(
+            `⚠️ ${dupRes.duplicateCount} lead(s) (${namesList}) already exist in the database. Please upload another file or skip duplicates.`,
+            { duration: 6000 }
+          );
+          setDuplicateCheckResult({
+            fileName: file.name,
+            duplicateCount: dupRes.duplicateCount,
+            duplicateNames: dupRes.duplicateNames,
+            totalCount: dupRes.totalCount,
+            newCount: dupRes.newCount,
+            rows,
+          });
+        } else {
+          bulkCreateMutation.mutate(rows);
+          toast.success(`Uploaded ${file.name}. Submitting ${parsed.length} candidate leads…`);
+          setDuplicateCheckResult(null);
+        }
+      } catch {
+        bulkCreateMutation.mutate(rows);
+      } finally {
+        setCheckingDuplicates(false);
+        e.target.value = "";
+      }
+    };
+
+    if (isExcel) {
+      reader.onload = (event) => {
+        try {
+          const buffer = event.target?.result as ArrayBuffer;
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const sheet = workbook.Sheets[workbook.SheetNames[0]];
+          // See add-lead-dialog.tsx's identical fix -- reading a binary
+          // .xlsx/.xls file with readAsText() produces garbled noise in
+          // every field, not delimited text, which is why every row's email
+          // used to fail validation regardless of the sheet's real content.
+          const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+          const stringRows = rows.map((row) => row.map((cell) => String(cell ?? "")));
+          finish(mapRowsToLeads(stringRows));
+        } catch (err: any) {
+          toast.error(`Could not read ${file.name} as an Excel file: ${err?.message || "unknown error"}`);
+          e.target.value = "";
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      reader.onload = (event) => {
+        const text = (event.target?.result as string) || "";
+        finish(parseCsvLeads(text));
+      };
+      reader.readAsText(file);
+    }
+  };
+
+  const handleImportSkippingDuplicates = () => {
+    if (!duplicateCheckResult) return;
+    // The mutation-level onSuccess above reports the real, server-verified
+    // outcome (including a "0 succeeded" case) -- avoid repeating a
+    // pre-check-numbers toast here that could say "Submitted N" even when
+    // the server rejected those rows.
+    bulkCreateMutation.mutate(duplicateCheckResult.rows, {
+      onSuccess: () => setDuplicateCheckResult(null),
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      {trigger && <div onClick={() => setOpen(true)}>{trigger}</div>}
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add a Lead</DialogTitle>
+          <DialogDescription>
+            Capture what you have now. Years of experience and vendor history enrich automatically in the background.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Duplicate Leads Detected Alert Box */}
+        {duplicateCheckResult && (
+          <div className="rounded-xl border border-destructive/40 bg-destructive/10 p-3.5 space-y-2.5 animate-in fade-in slide-in-from-top-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-destructive">
+                <span className="h-2 w-2 rounded-full bg-destructive animate-ping" />
+                ⚠️ {duplicateCheckResult.duplicateCount} Lead(s) Already Exist in Database
+              </div>
+              <span className="text-[11px] font-medium text-muted-foreground">{duplicateCheckResult.fileName}</span>
+            </div>
+
+            <p className="text-xs text-foreground leading-relaxed">
+              <strong>{duplicateCheckResult.duplicateCount}</strong> out of <strong>{duplicateCheckResult.totalCount}</strong> leads in this sheet already exist:
+              <span className="font-semibold text-destructive ml-1">
+                {duplicateCheckResult.duplicateNames.join(", ")}
+              </span>
+              . You can upload another file or submit only the <strong>{duplicateCheckResult.newCount}</strong> new leads.
+            </p>
+
+            <div className="flex items-center gap-2 pt-1 flex-wrap">
+              <label className="cursor-pointer">
+                <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" />
+                <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-secondary text-secondary-foreground text-xs font-semibold hover:bg-secondary/80 transition-colors border border-border">
+                  <Upload className="h-3.5 w-3.5" /> Upload Another File
+                </div>
+              </label>
+
+              {duplicateCheckResult.newCount > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={handleImportSkippingDuplicates}
+                  className="h-8 text-xs font-semibold bg-primary text-primary-foreground gap-1.5"
+                >
+                  Submit {duplicateCheckResult.newCount} New Leads Only
+                </Button>
+              )}
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDuplicateCheckResult(null)}
+                className="h-8 text-xs text-muted-foreground hover:text-foreground"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Upload CSV/Excel Template Box */}
+        <div className="rounded-xl border border-dashed border-primary/40 bg-primary/5 p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+              <Upload className="h-4 w-4 text-primary" />
+              <span>Have many? Bulk import via CSV or Excel.</span>
+            </div>
+            {checkingDuplicates && <span className="text-[11px] font-medium text-accent animate-pulse">Checking for database duplicates…</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => toast.success("Downloaded CSV lead template!")}
+              className="h-8 text-xs gap-1.5 bg-card"
+            >
+              <Download className="h-3.5 w-3.5" /> CSV template
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleExcelDownload}
+              className="h-8 text-xs gap-1.5 bg-card"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-accent" /> Excel template
+            </Button>
+            <label className="cursor-pointer">
+              <input type="file" accept=".csv, .xlsx, .xls" onChange={handleFileUpload} className="hidden" disabled={checkingDuplicates} />
+              <div className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors">
+                <Upload className="h-3.5 w-3.5" /> Upload file
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <form onSubmit={submit} className="grid grid-cols-1 md:grid-cols-2 gap-4 py-2">
+          <Field label="First Name" error={errors.first_name}>
+            <Input value={values.first_name} onChange={(e) => set("first_name", e.target.value)} placeholder="Alex" />
+          </Field>
+
+          <Field label="Last Name *" error={errors.last_name}>
+            <Input value={values.last_name} onChange={(e) => set("last_name", e.target.value)} placeholder="Chen" />
+          </Field>
+
+          <Field label="Country of Residence" error={errors.country_of_residence}>
+            <CountrySelect value={values.country_of_residence} onChange={(v) => set("country_of_residence", v)} />
+          </Field>
+
+          <Field label="Source *" error={errors.source}>
+            <Select
+              value={SOURCES.includes(values.source) ? values.source : values.source ? "__custom__" : ""}
+              onValueChange={(v) => {
+                if (v === "__custom__") {
+                  set("source", "");
+                } else {
+                  set("source", v);
+                }
+              }}
+            >
+              <SelectTrigger><SelectValue placeholder="Select source" /></SelectTrigger>
+              <SelectContent>
+                {SOURCES.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                <SelectItem value="__custom__">
+                  <span className="flex items-center gap-1.5 text-primary font-medium">+ Custom</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            {!SOURCES.includes(values.source) && (
+              <Input
+                className="mt-2"
+                value={values.source}
+                onChange={(e) => set("source", e.target.value)}
+                placeholder="Enter custom source…"
+                autoFocus
+              />
+            )}
+          </Field>
+
+          <Field label="Profile Link" error={errors.profile_link} full>
+            <Input value={values.profile_link} onChange={(e) => set("profile_link", e.target.value)} placeholder="https://linkedin.com/in/…" />
+          </Field>
+
+          <Field label="Email Address" error={errors.email_address}>
+            <Input type="email" value={values.email_address} onChange={(e) => set("email_address", e.target.value)} placeholder="alex@example.com" />
+          </Field>
+
+          <Field label="Contact Number" error={errors.contact_number}>
+            <Input value={values.contact_number} onChange={(e) => set("contact_number", e.target.value)} placeholder="+49 …" />
+          </Field>
+
+          <Field label="Reachout Date" error={errors.reachout_date}>
+            <Input type="date" value={values.reachout_date} onChange={(e) => set("reachout_date", e.target.value)} />
+          </Field>
+
+          {/* Source Language Dropdown */}
+          <Field label="Source Language" error={errors.source_language}>
+            <Select value={values.source_language} onValueChange={(v) => set("source_language", v)}>
+              <SelectTrigger className="h-9 text-xs bg-card">
+                <SelectValue placeholder="Select Source Language" />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {/* Target Language Dropdown */}
+          <Field label="Target Language" error={errors.target_language}>
+            <Select value={values.target_language} onValueChange={(v) => set("target_language", v)}>
+              <SelectTrigger className="h-9 text-xs bg-card">
+                <SelectValue placeholder="Select Target Language" />
+              </SelectTrigger>
+              <SelectContent>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {/* Secondary Languages Dropdown */}
+          <Field label="Secondary Languages" error={errors.secondary_languages}>
+            <Select value={values.secondary_languages} onValueChange={(v) => set("secondary_languages", v)}>
+              <SelectTrigger className="h-9 text-xs bg-card">
+                <SelectValue placeholder="Select Secondary Language" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="None">None</SelectItem>
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l} value={l}>{l}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+
+          {/* Services picker: a real service, or Others -> Custom Service + Custom Task */}
+          <Field label="Services" error={errors.services}>
+            <ServicePicker
+              value={values.services}
+              onChange={(v) => set("services", v)}
+              customService={customService}
+              onCustomServiceChange={setCustomService}
+              customTask={customTask}
+              onCustomTaskChange={setCustomTask}
+            />
+          </Field>
+
+          <DialogFooter className="md:col-span-2 pt-2 border-t border-border">
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={createMutation.isPending} className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold">
+              {createMutation.isPending ? "Submitting…" : "Submit lead"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({ label, error, children, full }: { label: string; error?: string; children: ReactNode; full?: boolean }) {
+  return (
+    <div className={`space-y-1.5 ${full ? "md:col-span-2" : ""}`}>
+      <Label className="text-xs font-semibold text-muted-foreground">{label}</Label>
+      {children}
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
+  );
+}

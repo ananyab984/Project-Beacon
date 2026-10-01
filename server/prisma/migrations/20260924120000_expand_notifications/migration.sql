@@ -1,0 +1,15 @@
+-- AlterEnum
+ALTER TYPE "NotificationType" ADD VALUE 'ENRICHMENT_STALLED';
+ALTER TYPE "NotificationType" ADD VALUE 'DUPLICATE_REVIEW_NEEDED';
+ALTER TYPE "NotificationType" ADD VALUE 'DNC_CONFIRMATION_NEEDED';
+ALTER TYPE "NotificationType" ADD VALUE 'FOLLOW_UP_DUE';
+ALTER TYPE "NotificationType" ADD VALUE 'LEAD_PLACED';
+ALTER TYPE "NotificationType" ADD VALUE 'WEEKLY_TEAM_HEALTH_SUMMARY';
+ALTER TYPE "NotificationType" ADD VALUE 'CLIENT_STATUS_UPDATE';
+ALTER TYPE "NotificationType" ADD VALUE 'REQUIREMENT_FULFILLED';
+
+-- AlterTable
+ALTER TABLE "leads" ADD COLUMN "suspected_duplicate_lead_id" TEXT;
+
+-- AlterTable
+ALTER TABLE "clients" ADD COLUMN "notifications_enabled" BOOLEAN NOT NULL DEFAULT false;

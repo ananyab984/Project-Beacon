@@ -1,0 +1,269 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api";
+import { ArrowUpRight, Mail, UserPlus, MailOpen, MessageSquare, Handshake, ShieldOff, Radio, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { DateRangeSelect, useDateRange } from "@/components/features/date-range-toggle";
+import { OutreachFunnelLeadsDialog } from "@/components/features/outreach-funnel-leads-dialog";
+import type { OutreachFunnelCategory } from "@/lib/api-types";
+import { useMemo, useState } from "react";
+
+export const Route = createFileRoute("/contractor/")({
+  head: () => ({ meta: [{ title: "Dashboard — Global3 Contractor" }] }),
+  component: DashboardPage,
+});
+
+function DashboardPage() {
+  const { data: myLeadsData } = useQuery({ queryKey: ["leads", "mine"], queryFn: api.getMyLeads });
+  const mine = myLeadsData?.leads ?? [];
+  const dupCount = mine.filter((l) => l.dupFlagged).length;
+  const { range, label: rangeLabel } = useDateRange();
+  // Same real endpoint recruiter.index.tsx uses (now open to contractor role
+  // too, scoped to the contractor's own leads server-side) -- replaces the
+  // hardcoded g3-mock outreachBatch this page used to read from, which never
+  // reflected anything real.
+  const { data: funnelData } = useQuery({
+    queryKey: ["outreach-funnel", range],
+    queryFn: () => api.getOutreachFunnel(range),
+  });
+  const funnel = funnelData ?? { contacted: 0, awaiting_reply: 0, replied: 0, in_negotiation: 0, dnc: 0, onboarded: 0 };
+  const [funnelCategory, setFunnelCategory] = useState<OutreachFunnelCategory | null>(null);
+
+  // No real backend endpoint for a contractor's own email queue exists (email
+  // queue is recruiter/owner-scoped) -- this tile is left off rather than
+  // pointing at data a contractor was never meant to see.
+
+  const activities = mine.slice(0, 6).map((l) => ({
+    id: l.id,
+    icon: l.dupFlagged ? AlertTriangle : UserPlus,
+    title: l.dupFlagged ? `Duplicate flagged · ${l.fullName}` : `Lead submitted · ${l.fullName}`,
+    detail: `${l.fullName}${l.services?.length ? " · " + l.services.join(", ") : ""}`,
+    ago: relative(l.createdAt),
+  }));
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-6">
+      <section>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <div className="flex items-center gap-2 text-[10px] font-medium uppercase tracking-widest text-accent">
+              <Radio className="h-3 w-3" /> Current batch
+            </div>
+            <div className="mt-0.5 text-sm font-semibold">My outreach · {rangeLabel.toLowerCase()}</div>
+          </div>
+          <DateRangeSelect />
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <BatchTile icon={Mail} label="Contacted" value={funnel.contacted} tone="primary" onClick={() => setFunnelCategory("contacted")} />
+          <BatchTile icon={MailOpen} label="Awaiting Reply" value={funnel.awaiting_reply} tone="muted" onClick={() => setFunnelCategory("awaiting_reply")} />
+          <BatchTile icon={MessageSquare} label="Replied" value={funnel.replied} tone="accent" onClick={() => setFunnelCategory("replied")} />
+          <BatchTile icon={Handshake} label="Negotiation" value={funnel.in_negotiation} tone="warning" onClick={() => setFunnelCategory("in_negotiation")} />
+          <BatchTile icon={ShieldOff} label="DNC" value={funnel.dnc} tone="destructive" onClick={() => setFunnelCategory("dnc")} />
+          <BatchTile icon={CheckCircle2} label="Onboarded" value={funnel.onboarded} tone="accent" onClick={() => setFunnelCategory("onboarded")} />
+        </div>
+      </section>
+
+      <OutreachFunnelLeadsDialog category={funnelCategory} range={range} onOpenChange={(open) => !open && setFunnelCategory(null)} />
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <MetricCard label="Leads Submitted" value={mine.length} delta="+" tone="positive" />
+        <MetricCard label="Duplicates Flagged" value={dupCount} delta={dupCount ? "review" : "0"} tone={dupCount ? "negative" : "positive"} />
+      </div>
+
+      {/* Language & Service Demand Requirements Section for Contractors */}
+      <ContractorRequirementsSection />
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-baseline justify-between">
+          <div>
+            <div className="text-[11px] uppercase tracking-widest text-primary">My Submission Overview</div>
+            <h2 className="mt-1 text-xl font-semibold tracking-tight">You've submitted {mine.length} leads to date.</h2>
+          </div>
+          <Link to="/contractor/leads" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">View leads <ArrowUpRight className="h-3 w-3" /></Link>
+        </div>
+        <div className="mt-5 grid grid-cols-3 gap-4 border-t border-border pt-4">
+          <Stat n={mine.length} label="Submitted" />
+          <Stat n={mine.filter((l) => l.enrichmentStatus === "COMPLETE").length} label="Enriched" />
+          <Stat n={mine.filter((l) => l.enrichmentStatus === "PENDING").length} label="Enriching" />
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <div className="text-[11px] uppercase tracking-widest text-muted-foreground">Recent Activity</div>
+          <Link to="/contractor/leads" className="text-[11px] text-primary hover:underline">View All</Link>
+        </div>
+        <div className="mt-4 space-y-3">
+          {activities.length === 0 && <div className="text-xs text-muted-foreground">No leads yet — click "Add a Lead" to get started.</div>}
+          {activities.map((a) => {
+            const Icon = a.icon;
+            return (
+              <div key={a.id} className="flex items-start gap-3 rounded-lg border border-border/60 bg-background/40 p-3">
+                <div className="rounded-lg bg-muted p-2 text-muted-foreground"><Icon className="h-3.5 w-3.5" /></div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium">{a.title}</div>
+                  <div className="text-[11px] text-muted-foreground truncate">{a.detail}</div>
+                  <div className="mt-0.5 text-[10px] uppercase tracking-widest text-muted-foreground/60">{a.ago}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ContractorRequirementsSection() {
+  const { data } = useQuery({ queryKey: ["client-demands"], queryFn: api.getClientDemands });
+  const demands = data?.clientDemands ?? [];
+
+  const summary = useMemo(() => {
+    const totalNeeded = demands.reduce((s, d) => s + d.headcountNeeded, 0);
+    const totalFilled = demands.reduce((s, d) => s + d.filled, 0);
+    const totalRemaining = Math.max(0, totalNeeded - totalFilled);
+    return { totalNeeded, totalFilled, totalRemaining };
+  }, [demands]);
+
+  const byLang = useMemo(() => {
+    const map = new Map<string, { needed: number; filled: number; services: Set<string> }>();
+    for (const d of demands) {
+      const cur = map.get(d.language) ?? { needed: 0, filled: 0, services: new Set() };
+      d.serviceBreakdown.forEach(s => cur.services.add(s.service));
+      map.set(d.language, {
+        needed: cur.needed + d.headcountNeeded,
+        filled: cur.filled + d.filled,
+        services: cur.services,
+      });
+    }
+    return Array.from(map, ([language, v]) => ({
+      language,
+      needed: v.needed,
+      filled: v.filled,
+      remaining: Math.max(0, v.needed - v.filled),
+      services: Array.from(v.services),
+    })).sort((a, b) => b.remaining - a.remaining);
+  }, [demands]);
+
+  return (
+    <section className="rounded-2xl border border-border bg-card p-5">
+      <div className="flex items-baseline justify-between">
+        <div>
+          <div className="text-[11px] uppercase tracking-widest text-accent font-semibold">Current Hiring Requirements</div>
+          <h2 className="mt-1 text-xl font-semibold tracking-tight">Language &amp; Service Headcount Needed</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Focus outreach on high-priority languages · <span className="font-semibold text-foreground">{summary.totalRemaining} headcount still left to fill</span>
+          </p>
+        </div>
+        <Link to="/contractor/requirements" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+          View All Requirements <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      </div>
+
+      <div className="mt-4 grid grid-cols-3 gap-3">
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Headcount Needed</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{summary.totalNeeded}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Headcount Filled</div>
+          <div className="mt-1 text-2xl font-semibold tabular-nums text-[oklch(0.55_0.14_155)]">{summary.totalFilled}</div>
+        </div>
+        <div className="rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">Headcount Still Left</div>
+          <div className={`mt-1 text-2xl font-semibold tabular-nums ${summary.totalRemaining > 0 ? "text-warning" : "text-accent"}`}>
+            {summary.totalRemaining}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {byLang.slice(0, 4).map(item => (
+          <div key={item.language} className="rounded-xl border border-border/80 bg-background/50 p-3">
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm">{item.language}</span>
+              <span className={`text-[10px] font-semibold rounded px-1.5 py-0.5 ${item.remaining > 0 ? "bg-warning/15 text-warning" : "bg-accent/15 text-accent"}`}>
+                {item.remaining > 0 ? `${item.remaining} left` : "Filled"}
+              </span>
+            </div>
+            <div className="mt-1 text-[11px] text-muted-foreground truncate">{item.services.join(", ")}</div>
+            <div className="mt-2 flex items-baseline justify-between text-xs tabular-nums">
+              <span className="text-muted-foreground">Filled <strong className="text-foreground">{item.filled}</strong>/{item.needed}</span>
+              <span className="font-semibold text-foreground">{item.remaining} left</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full bg-accent transition-all"
+                style={{ width: `${item.needed ? Math.min(100, (item.filled / item.needed) * 100) : 0}%` }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MetricCard({ label, value, delta, tone }: { label: string; value: number | string; delta: string; tone: "positive" | "negative" }) {
+  return (
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <div className="text-[11px] uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mt-3 flex items-baseline gap-2">
+        <div className="text-3xl font-semibold tracking-tight">{value}</div>
+        <span className={`text-xs font-medium ${tone === "positive" ? "text-success" : "text-destructive"}`}>{delta}</span>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ n, label }: { n: number; label: string }) {
+  return (
+    <div>
+      <div className="text-2xl font-semibold tracking-tight tabular-nums">{n}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function BatchTile({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  onClick,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  value: number;
+  tone: "primary" | "muted" | "accent" | "warning" | "destructive";
+  onClick: () => void;
+}) {
+  const map = {
+    primary: "text-primary",
+    muted: "text-muted-foreground",
+    accent: "text-accent",
+    warning: "text-warning",
+    destructive: "text-destructive",
+  };
+  return (
+    <button
+      onClick={onClick}
+      className="rounded-xl border border-border bg-card p-3 text-left transition-colors hover:brightness-110 cursor-pointer"
+      title={`View leads in ${label}`}
+    >
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Icon className={`h-3.5 w-3.5 ${map[tone]}`} />
+        <span>{label}</span>
+      </div>
+      <div className="mt-1 text-xl font-semibold tabular-nums">{value.toLocaleString()}</div>
+    </button>
+  );
+}
+
+function relative(isoOrTs: string | number) {
+  const time = typeof isoOrTs === "number" ? isoOrTs : new Date(isoOrTs).getTime();
+  const diff = Date.now() - time;
+  if (diff < 60000) return "just now";
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+  return `${Math.floor(diff / 86400000)}d ago`;
+}

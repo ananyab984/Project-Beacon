@@ -1,0 +1,687 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/auth";
+import { api } from "@/lib/api";
+import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
+import { EnrichmentEvaluationDialog } from "@/components/features/enrichment-evaluation-dialog";
+import {
+  Linkedin,
+  Mail,
+  Trash2,
+  Plus,
+  ShieldCheck,
+  Bell,
+  CheckCircle2,
+  ExternalLink,
+} from "lucide-react";
+import { toast } from "sonner";
+
+export const Route = createFileRoute("/owner/settings")({
+  head: () => ({
+    meta: [
+      { title: "Settings — Global3" },
+      {
+        name: "description",
+        content: "Owner settings: AI tools, roles, integrations, exports, audit trail.",
+      },
+    ],
+  }),
+  component: SettingsPage,
+});
+
+function SettingsPage() {
+  const [showAI, setShowAI] = useState(false);
+  const [enrichmentEvalOpen, setEnrichmentEvalOpen] = useState(false);
+  const queryClient = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["users", "RECRUITER"],
+    queryFn: () => api.getUsers("RECRUITER"),
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+  });
+  const recruiters = data?.users ?? [];
+
+  const disconnectRecruiterAccountMutation = useMutation({
+    mutationFn: ({ userId, accountId }: { userId: string; accountId: string }) =>
+      api.disconnectUserAccount(userId, accountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      toast.success("Account disconnected");
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to disconnect account"),
+  });
+
+  return (
+    <div className="mx-auto max-w-4xl space-y-6">
+      <Section
+        title="AI tools"
+        desc="AI metrics and pipeline tools are hidden by default so day-to-day oversight stays focused on recruiter, lead and language signals."
+      >
+        <Row
+          title="Show AI tools"
+          desc="Reveals LinkedIn match confidence, reply-to-classification accuracy, and the AI Pipeline management section below."
+        >
+          <Switch checked={showAI} onCheckedChange={setShowAI} />
+        </Row>
+      </Section>
+
+      {showAI && (
+        <Section
+          title="AI Pipeline management"
+          desc="Under review — surface with beta styling; not for day-to-day decisions."
+        >
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            <BetaCard
+              title="LinkedIn match confidence"
+              body="Identity-resolution confidence score for ambiguous records. Example: masked lead #H-7724 at 0.55 confidence."
+            />
+            <BetaCard
+              title="Reply-to-classification accuracy"
+              body="Agreement between AI's read on a reply and recruiter conclusion. Sampled on Madhu's queue — 62%."
+            />
+            <DeferredCard title="AI-draft edit rate" />
+            <DeferredCard title="Time-to-first-reply by language / channel" />
+            <DeferredCard title="Data health trend — shrinking unresolved-identity records" />
+          </div>
+        </Section>
+      )}
+
+      <ConnectedAccountsSection />
+
+      <button type="button" onClick={() => setEnrichmentEvalOpen(true)} className="w-full text-left">
+        <Section
+          title="Enrichment Evaluation"
+          desc="Live metrics on the automatic enrichment waterfall -- enrichment rate, time taken, tier attribution, quality by tier, and manual override rate. Click to open."
+        >
+          <div className="text-xs font-medium text-primary">View evaluation table →</div>
+        </Section>
+      </button>
+      <EnrichmentEvaluationDialog open={enrichmentEvalOpen} setOpen={setEnrichmentEvalOpen} />
+
+      <NotificationSystemSection />
+
+      <OwnerNotificationPreferencesSection />
+
+      <Section
+        title="Recruiters & Connected Outreach Accounts Mapping"
+        desc="Live mapping of recruiters and their connected LinkedIn & Email Unipile accounts."
+      >
+
+        <div className="divide-y divide-border">
+          {recruiters.length === 0 ? (
+            <div className="py-6 text-center text-xs text-muted-foreground">
+              No team members onboarded yet.
+            </div>
+          ) : (
+            recruiters.map((u: any) => {
+              const activeAccs = (u.connectedAccounts || []).filter(
+                (a: any) => a.status !== "DISCONNECTED",
+              );
+              const linkedInAcc = activeAccs.find((a: any) =>
+                (a.provider || "").toUpperCase().includes("LINKEDIN"),
+              );
+              const emailAcc = activeAccs.find((a: any) =>
+                ["EMAIL", "GOOGLE", "MAIL", "OUTLOOK"].some((p) =>
+                  (a.provider || "").toUpperCase().includes(p),
+                ),
+              );
+
+              return (
+                <div key={u.id} className="py-3.5 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-semibold text-sm text-foreground">{u.name}</span>
+                      <span className="ml-2 text-xs text-muted-foreground">({u.email})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px]">
+                        {u.workStatus === "CONTRACTOR"
+                          ? "Contractor Recruiter"
+                          : "Full-Access Recruiter"}
+                      </Badge>
+                      <Badge variant={u.isActive ? "default" : "secondary"} className="text-[10px]">
+                        {u.isActive ? "Active" : "Deactivated"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {/* Connected Accounts Mapping for this recruiter */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                    <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Linkedin className="h-4 w-4 text-blue-500 shrink-0" />
+                        <span className="font-medium text-foreground">LinkedIn:</span>
+                        <span className="text-muted-foreground truncate max-w-[160px]">
+                          {linkedInAcc
+                            ? linkedInAcc.accountName || linkedInAcc.unipileAccountId
+                            : "Not Connected"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] px-1.5 py-0 ${linkedInAcc ? "border-emerald-500/40 text-emerald-500" : "text-muted-foreground"}`}
+                        >
+                          {linkedInAcc ? "CONNECTED" : "UNLINKED"}
+                        </Badge>
+                        {linkedInAcc && (
+                          <button
+                            title="Disconnect this recruiter's LinkedIn account"
+                            disabled={disconnectRecruiterAccountMutation.isPending}
+                            onClick={() =>
+                              disconnectRecruiterAccountMutation.mutate({
+                                userId: u.id,
+                                accountId: linkedInAcc.unipileAccountId,
+                              })
+                            }
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Mail className="h-4 w-4 text-amber-500 shrink-0" />
+                        <span className="font-medium text-foreground">Email:</span>
+                        <span className="text-muted-foreground truncate max-w-[160px]">
+                          {emailAcc
+                            ? emailAcc.accountName || emailAcc.unipileAccountId
+                            : "Not Connected"}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Badge
+                          variant="outline"
+                          className={`text-[9px] px-1.5 py-0 ${emailAcc ? "border-emerald-500/40 text-emerald-500" : "text-muted-foreground"}`}
+                        >
+                          {emailAcc ? "CONNECTED" : "UNLINKED"}
+                        </Badge>
+                        {emailAcc && (
+                          <button
+                            title="Disconnect this recruiter's email account"
+                            disabled={disconnectRecruiterAccountMutation.isPending}
+                            onClick={() =>
+                              disconnectRecruiterAccountMutation.mutate({
+                                userId: u.id,
+                                accountId: emailAcc.unipileAccountId,
+                              })
+                            }
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Section>
+
+      <Section
+        title="Audit trail"
+        desc="Latest system events. Retained indefinitely per data retention policy."
+      >
+        <div className="rounded-lg border border-border">
+          <div className="py-6 text-center text-xs text-muted-foreground">
+            No system events logged yet.
+          </div>
+        </div>
+      </Section>
+    </div>
+  );
+}
+
+function Section({
+  title,
+  desc,
+  children,
+}: {
+  title: string;
+  desc?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-2xl border border-border bg-card p-6">
+      <h3 className="text-base font-semibold">{title}</h3>
+      {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
+      <div className="mt-4">{children}</div>
+    </section>
+  );
+}
+
+function Row({
+  title,
+  desc,
+  children,
+}: {
+  title: string;
+  desc?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <div className="text-sm font-medium">{title}</div>
+        {desc && <div className="mt-0.5 text-xs text-muted-foreground max-w-lg">{desc}</div>}
+      </div>
+      <div>{children}</div>
+    </div>
+  );
+}
+
+function BetaCard({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-xl border border-border p-4">
+      <div className="flex items-center gap-2">
+        <div className="text-sm font-medium">{title}</div>
+        <Badge variant="outline" className="border-warning/50 text-warning text-[10px]">
+          Under review
+        </Badge>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{body}</p>
+    </div>
+  );
+}
+
+function DeferredCard({ title }: { title: string }) {
+  return (
+    <div className="rounded-xl border border-dashed border-border/60 bg-muted/30 p-4 opacity-70">
+      <div className="flex items-center gap-2">
+        <div className="text-sm font-medium">{title}</div>
+        <Badge variant="outline" className="text-[10px]">
+          Coming soon
+        </Badge>
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">Widget disabled until validation.</p>
+    </div>
+  );
+}
+
+function ConnectedAccountsSection() {
+  const queryClient = useQueryClient();
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  const { data: accounts = [] } = useQuery({
+    queryKey: ["connected-accounts"],
+    queryFn: () => api.getConnectedAccounts(),
+    staleTime: 5_000,
+    refetchInterval: 8_000,
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: (unipileAccountId: string) => api.disconnectAccount(unipileAccountId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["connected-accounts"] });
+      queryClient.invalidateQueries({ queryKey: ["users", "RECRUITER"] });
+      toast.success("Account disconnected");
+    },
+    onError: (err: any) => toast.error(err?.message || "Failed to disconnect account"),
+  });
+
+  const active = accounts.filter((a: any) => a.status !== "DISCONNECTED");
+
+  return (
+    <Section
+      title="Connected Outreach Accounts"
+      desc="Manage active LinkedIn and Email accounts linked via Unipile."
+    >
+      <div className="space-y-4">
+        {active.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-border p-6 text-center text-xs text-muted-foreground">
+            No outreach accounts connected yet. Link LinkedIn or Email to enable messaging.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {active.map((acc: any) => (
+              <div
+                key={acc.id || acc.unipileAccountId}
+                className="flex items-center justify-between rounded-xl border border-border bg-card p-3 shadow-xs"
+              >
+                <div className="flex items-center gap-3">
+                  {acc.provider === "LINKEDIN" ? (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/10 text-blue-500">
+                      <Linkedin className="h-4 w-4" />
+                    </div>
+                  ) : (
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                      <Mail className="h-4 w-4" />
+                    </div>
+                  )}
+                  <div>
+                    <div className="text-xs font-semibold text-foreground">
+                      {acc.accountName || acc.unipileAccountId}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                      <Badge
+                        variant="outline"
+                        className="text-[9px] px-1 py-0 border-emerald-500/40 text-emerald-500"
+                      >
+                        {acc.status || "CONNECTED"}
+                      </Badge>
+                      <span>• {acc.provider}</span>
+                    </div>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={disconnectMutation.isPending}
+                  onClick={() => disconnectMutation.mutate(acc.unipileAccountId)}
+                  className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive gap-1"
+                >
+                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <ConnectAccountDialog
+            open={dialogOpen}
+            onOpenChange={setDialogOpen}
+            trigger={
+              <Button size="sm" variant="outline" className="text-xs gap-1.5">
+                <Plus className="h-3.5 w-3.5 text-primary" /> Connect New Account
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * Org-level notification integrations. The Slack bot token is a secret
+ * (SLACK_BOT_TOKEN, set in the deployment environment) -- not owner-editable
+ * app config, unlike the dedicated system-mail account below it, which stays
+ * in SystemConfig via /api/system-settings since it's a reference to an
+ * already-connected account, not a credential. Rotating the Slack token is
+ * an engineering/deploy action; this section only shows whether one's set.
+ */
+function NotificationSystemSection() {
+  const queryClient = useQueryClient();
+  const [connecting, setConnecting] = useState(false);
+
+  const { data } = useQuery({
+    queryKey: ["system-notification-settings"],
+    queryFn: api.getSystemNotificationSettings,
+  });
+
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ["system-notification-settings"] });
+
+  const removeEmailAccountMutation = useMutation({
+    mutationFn: () => api.removeNotificationEmailAccount(),
+    onSuccess: () => {
+      invalidate();
+      toast.success("Notification email account disconnected");
+    },
+    onError: (err: any) =>
+      toast.error(err?.message || "Failed to disconnect notification email account"),
+  });
+
+  // Same popup + poll pattern as ConnectAccountDialog's handleConnect, just
+  // scoped to this one purpose: connect an EMAIL account, then designate it
+  // as the system notification mailbox instead of leaving it as a plain
+  // outreach account.
+  async function handleConnectNotificationEmail() {
+    setConnecting(true);
+    try {
+      const res = await api.connectAccount("EMAIL");
+      if (!res?.url) {
+        setConnecting(false);
+        return;
+      }
+      const before = await api.getConnectedAccounts();
+      const beforeIds = new Set(before.map((a: any) => a.unipileAccountId));
+
+      const popup = window.open(res.url, "_blank", "width=600,height=700");
+      toast.success("Opening Unipile connection window…");
+
+      const poll = setInterval(() => {
+        if (!popup || popup.closed) {
+          clearInterval(poll);
+          // Same ~6s grace delay as ConnectAccountDialog's
+          // watchForAbandonedPopup, not an immediate check: the popup can
+          // close itself the instant OAuth completes, before Unipile's
+          // webhook necessarily lands, so checking right away would treat a
+          // just-succeeded connection as abandoned.
+          setTimeout(async () => {
+            const after = await api.getConnectedAccounts();
+            const fresh = after.find(
+              (a: any) => !beforeIds.has(a.unipileAccountId) && a.status !== "DISCONNECTED",
+            );
+            if (fresh) {
+              await api.setNotificationEmailAccount(fresh.unipileAccountId);
+              invalidate();
+              toast.success("Notification email account connected");
+            } else {
+              // Nothing new showed up -- genuinely abandoned (popup closed
+              // without finishing OAuth). Clear the pending-attempt lock so
+              // the next click doesn't hit CONNECTION_PENDING; this was the
+              // missing piece here (ConnectAccountDialog already does this).
+              await api.cancelPendingConnection("EMAIL").catch(() => {});
+            }
+            setConnecting(false);
+          }, 6_000);
+        }
+      }, 1_000);
+    } catch (err: any) {
+      if (err.code === "CONNECTION_PENDING") {
+        toast.error(err.message, {
+          action: {
+            label: "Cancel and retry",
+            onClick: async () => {
+              try {
+                await api.cancelPendingConnection("EMAIL");
+                handleConnectNotificationEmail();
+              } catch (cancelErr: any) {
+                toast.error(cancelErr.message || "Failed to cancel pending connection attempt");
+                setConnecting(false);
+              }
+            },
+          },
+        });
+      } else {
+        toast.error(err?.message || "Failed to connect notification email account");
+      }
+      setConnecting(false);
+    }
+  }
+
+  return (
+    <Section
+      title="Notification System"
+      desc="Org-wide Slack and email delivery for recruiter notifications (new lead, task assignment, due-date reminder, lead reply). Managed here so it can be changed anytime without engineering."
+    >
+      <div className="space-y-5">
+        {/* Slack */}
+        <div className="rounded-xl border border-border p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-500">
+                <Bell className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-foreground">Slack bot token</div>
+                <div className="text-[11px] text-muted-foreground">
+                  A secret -- set as SLACK_BOT_TOKEN in the deployment environment, not editable here
+                </div>
+              </div>
+            </div>
+            <Badge
+              variant="outline"
+              className={
+                data?.slackBotTokenConfigured
+                  ? "text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 gap-1"
+                  : "text-[9px] px-1.5 py-0 border-warning/40 text-warning gap-1"
+              }
+            >
+              {data?.slackBotTokenConfigured ? (
+                <>
+                  <CheckCircle2 className="h-2.5 w-2.5" /> Configured
+                </>
+              ) : (
+                "Not configured"
+              )}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Notification email account */}
+        <div className="rounded-xl border border-border p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                <Mail className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="text-sm font-semibold text-foreground">
+                  Notification email account
+                </div>
+                <div className="text-[11px] text-muted-foreground">
+                  {data?.notificationAccount
+                    ? data.notificationAccount.accountName ||
+                      data.notificationAccount.unipileAccountId
+                    : "Not connected — connect a mailbox dedicated to system notifications"}
+                </div>
+              </div>
+            </div>
+            {data?.notificationAccount ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={removeEmailAccountMutation.isPending}
+                onClick={() => removeEmailAccountMutation.mutate()}
+                className="h-8 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive gap-1"
+              >
+                <Trash2 className="h-3.5 w-3.5" /> Remove
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={connecting}
+                onClick={handleConnectNotificationEmail}
+                className="gap-1.5 text-xs font-medium"
+              >
+                {connecting ? "Connecting…" : "Connect"} <ExternalLink className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/**
+ * The owner's own Slack ID + delivery preferences -- distinct from
+ * NotificationSystemSection above (org-wide bot-token/system-email config).
+ * Copies contractor.settings.tsx's pattern exactly: one Email switch + one
+ * Slack switch covering all of OWNER_TYPES at once (not the recruiter's
+ * per-type table -- OWNER_TYPES is 7 types, same reasoning as contractor's 5).
+ */
+function OwnerNotificationPreferencesSection() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  const { data: prefsData } = useQuery({
+    queryKey: ["notification-preferences"],
+    queryFn: api.getNotificationPreferences,
+  });
+
+  const updateAllMutation = useMutation({
+    mutationFn: (patch: { emailEnabled?: boolean; slackEnabled?: boolean }) =>
+      api.updateAllNotificationPreferences(patch),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notification-preferences"] }),
+    onError: (err: any) => toast.error(err?.message || "Failed to update notification preferences"),
+  });
+
+  const [slackMemberId, setSlackMemberId] = useState(user?.slackMemberId ?? "");
+  const slackMutation = useMutation({
+    mutationFn: () => api.updateSlackMemberId(user!.id, slackMemberId.trim() || null),
+    onSuccess: () => toast.success("Slack member ID saved"),
+    onError: (err: any) => toast.error(err?.message || "Failed to save Slack member ID"),
+  });
+
+  const preferences = prefsData?.preferences ?? [];
+  // "On" only once every type actually has that channel enabled -- see
+  // contractor.settings.tsx for why a mixed state reads as off.
+  const emailOn = preferences.length > 0 && preferences.every((p) => p.emailEnabled);
+  const slackOn = preferences.length > 0 && preferences.every((p) => p.slackEnabled);
+
+  return (
+    <Section
+      title="Your Notification Preferences"
+      desc="The in-app bell is always on -- for enrichment completing, duplicate/DNC flags needing review, a lead placement, the weekly team-health digest, and client/requirement status updates. Turn on email or Slack below to get those the same way."
+    >
+      <div className="space-y-3">
+        <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div>
+            <div className="text-xs font-semibold text-foreground">Email notifications</div>
+            <div className="text-[11px] text-muted-foreground">Send all of the above to your work email too.</div>
+          </div>
+          <Switch
+            checked={emailOn}
+            disabled={updateAllMutation.isPending}
+            onCheckedChange={(checked) => updateAllMutation.mutate({ emailEnabled: checked })}
+          />
+        </div>
+        <div className="flex items-center justify-between rounded-xl border border-border bg-muted/20 px-4 py-3">
+          <div>
+            <div className="text-xs font-semibold text-foreground">Slack notifications</div>
+            <div className="text-[11px] text-muted-foreground">
+              Send all of the above as a Slack DM too (needs your Slack Member ID below).
+            </div>
+          </div>
+          <Switch
+            checked={slackOn}
+            disabled={updateAllMutation.isPending}
+            onCheckedChange={(checked) => updateAllMutation.mutate({ slackEnabled: checked })}
+          />
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-1.5 border-t border-border pt-4">
+        <Label className="text-xs">Slack Member ID</Label>
+        <p className="text-[11px] text-muted-foreground">
+          Copy your member ID from your Slack profile and paste it here to receive Slack
+          notifications.
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            value={slackMemberId}
+            onChange={(e) => setSlackMemberId(e.target.value)}
+            placeholder="U0XXXXXXX"
+            className="text-xs max-w-xs"
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={slackMutation.isPending}
+            onClick={() => slackMutation.mutate()}
+            className="text-xs"
+          >
+            Save
+          </Button>
+        </div>
+      </div>
+    </Section>
+  );
+}

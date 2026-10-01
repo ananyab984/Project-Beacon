@@ -1,0 +1,561 @@
+"""Tests for the waterfall's two shapes, conclusion states, and the 60s
+lead-level cumulative timeout.
+
+Run: cd enrichment_pipeline && source .venv/bin/activate && pytest tests/test_orchestrator_waterfall.py
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import orchestrator as orchestrator_module
+from config import Config
+from llm_fallback.client import ClaudeError
+from orchestrator import EnrichmentOrchestrator
+from providers.brightdata_client import BrightDataError
+from providers.parallel_client import ParallelError  # noqa: F401  (constructed in the re-attempt tests)
+from providers.tavily_client import TavilyError
+
+
+def make_orchestrator() -> EnrichmentOrchestrator:
+    # Empty keys -- __init__ skips constructing real clients; tests stub
+    # orch.brightdata/tavily/parallel/claude directly, same pattern as
+    # tests/test_dedup.py's StubDedupClient.
+    cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="")
+    return EnrichmentOrchestrator(cfg)
+
+
+def stub(**methods):
+    return type("Stub", (), {name: staticmethod(fn) for name, fn in methods.items()})()
+
+
+def test_linkedin_waterfall_falls_through_brightdata_parallel_to_websearch():
+    # This is the one test in this file that exercises Stage 6 itself, so it
+    # opts back in explicitly -- Stage 6 defaults off in production (see
+    # orchestrator.py's MAX_FIELDS_BEFORE_WEBSEARCH), and every other test in
+    # this file correctly gets it disabled via make_orchestrator().
+    orch = make_orchestrator()
+    orch.config = dataclasses.replace(orch.config, stage6_websearch_enabled=True)  # Config is frozen
+    calls = {"brightdata": 0, "parallel": 0, "websearch": 0}
+
+    def bd_scrape(url):
+        calls["brightdata"] += 1
+        raise BrightDataError("scrape failed")
+
+    def parallel_enrich(lead, profile_link):
+        calls["parallel"] += 1
+        raise ParallelError("call failed")
+
+    def websearch(missing_fields, full_name, profile_link, source_platform):
+        calls["websearch"] += 1
+        return {"could_not_find_anything": True, "sources_used": []}
+
+    orch.brightdata = stub(scrape_profile=bd_scrape)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
+    orch.claude = stub(search_missing_fields=websearch)
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    result = orch.process_lead(lead)
+
+    assert calls["brightdata"] == 1, "BrightData should have been tried first"
+    assert calls["parallel"] == 1, "Parallel should be tried after BrightData fails"
+    # Both Tier 1 and Tier 2 came up empty, and this lead is well under the
+    # MAX_FIELDS_BEFORE_WEBSEARCH threshold -- Stage 6 must fire as the
+    # backstop, unlike the old raw-text extraction (which needed scraped
+    # text that was never there to begin with).
+    assert calls["websearch"] == 1, "Stage 6 web search must be tried after Parallel fails, for a thin lead"
+    assert result["conclusion"] == "exhausted_no_match"
+    assert result["parallel_fallback"]["called"] is True
+    assert result["parallel_fallback"]["error"] == "call failed"
+
+
+def test_parallel_not_re_called_once_already_settled_for_this_lead():
+    """A repeat process_lead pass for the same lead (the Node poller's normal
+    re-enrichment path) must not re-pay for a Parallel call that already
+    concluded on a prior pass -- covers both 'complete' and 'failed' terminal
+    states via known_field_sources["_parallel_fallback"], exactly as the Node
+    caller round-trips a lead's persisted field_sources on every re-enrichment
+    call (see orchestrator.py's `already_ran` check)."""
+    orch = make_orchestrator()
+    calls = {"parallel": 0}
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or {})
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    result = orch.process_lead(lead, known_field_sources={"_parallel_fallback": "complete"})
+
+    assert calls["parallel"] == 0, "Parallel must not be re-called once this lead already has a concluded Stage 3.5 pass"
+    assert result["parallel_fallback"]["called"] is False
+    assert result["parallel_fallback"]["reason"] == "already_complete"
+
+
+def test_non_linkedin_waterfall_also_runs_parallel():
+    """Parallel is Tier 2 for EVERY platform, not just LinkedIn.
+
+    Clay's version of this stage was hard-gated to linkedin.com URLs because
+    Clay itself rejected any other identifier; Parallel has no such
+    limitation (its PoC covered ProZ/Bodalgo/ATA/Freelancer URLs), so
+    carrying that gate forward left non-LinkedIn leads permanently without
+    Tier 2 data and split enrichment provenance across the table. A
+    ProZ/Bodalgo lead must now get the same Tier 2 treatment as a LinkedIn
+    one, with Tavily rather than Bright Data as its Tier 1."""
+    orch = make_orchestrator()
+    calls = {"tavily": 0, "parallel": 0}
+    seen_url = {}
+
+    def tavily_extract(url):
+        calls["tavily"] += 1
+        raise TavilyError("extract failed")
+
+    def parallel_enrich(lead, profile_link):
+        calls["parallel"] += 1
+        seen_url["url"] = profile_link
+        return {"headline": "Voice-over artist", "country": "Spain"}
+
+    orch.tavily = stub(extract_url=tavily_extract)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
+
+    lead = {
+        "Source": "ADA",  # routes to tavily_extract, per core/source_router.py
+        "Profile_Link": "https://www.bodalgo.com/en/voice-over-talents/someone",
+        "Full_Name": "Jane Doe",
+    }
+    result = orch.process_lead(lead)
+
+    assert calls["tavily"] == 1, "Tier 1 for a non-LinkedIn lead is still Tavily"
+    assert calls["parallel"] == 1, "Parallel must run for a non-LinkedIn lead too"
+    assert seen_url["url"] == lead["Profile_Link"], "Parallel gets the lead's own profile URL, whatever platform it is"
+    assert result["field_sources"].get("_parallel_fallback") == "complete"
+    assert result["parallel_fallback"]["called"] is True
+    # And its resolved fields actually land on the lead, same as LinkedIn's.
+    assert result["lead"].get("Headline") == "Voice-over artist"
+
+
+def test_parallel_skipped_entirely_when_lead_has_no_profile_link():
+    """The gate is now "is there a URL to research", so a lead with no
+    Profile_Link at all must skip Tier 2 rather than call Parallel with an
+    empty string."""
+    orch = make_orchestrator()
+    calls = {"parallel": 0}
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or {})
+
+    result = orch.process_lead({"Source": "LinkedIn", "Full_Name": "Jane Doe"})
+
+    assert calls["parallel"] == 0, "no URL means nothing for Parallel to research"
+    assert result["parallel_fallback"] is None
+    assert "_parallel_fallback" not in result["field_sources"]
+
+
+def test_short_circuit_success_when_nothing_left_to_fill():
+    """A lead that's already complete bypasses the LLM fallback entirely --
+    conclusion is short_circuit_success, not exhausted_no_match (nothing was
+    exhausted, there was nothing left to try). Realistically this is a
+    REPEAT pass: OVERRIDE_ON_VERIFIED_FIELDS count as "unverified" (and so
+    still a fallback target) until a prior scrape/LLM pass confirmed them --
+    simulated here via known_field_sources, exactly as the Node caller
+    round-trips a lead's persisted field_sources on every re-enrichment call."""
+    orch = make_orchestrator()
+    llm_calls = {"n": 0}
+    orch.claude = stub(
+        search_missing_fields=lambda *a, **kw: llm_calls.__setitem__("n", llm_calls["n"] + 1) or {},
+        extract_missing_fields=lambda *a, **kw: {},
+    )
+
+    lead = {
+        "Source": "Freelancer",
+        "Email_Address": "jane@example.com",
+        "Contact_Number": "+1 555 0100",
+        "Years_of_Exp": "5",
+        "Full_Name": "Jane Doe",
+        "Services": "Subtitling",
+        "Source_Language": "English",
+        "Target_Language": "German",
+        "Secondary_Languages": "",
+        "Country_of_Residence": "Germany",
+        "Current_Title": "Translator",
+        "Tools_Software": "Trados",
+        "Certifications": "ATA",
+        "Headline": "Freelance Translator",
+        "About_Snippet": "10 years of experience in AV translation.",
+    }
+    known_field_sources = {
+        f: "llm_fallback" for f in
+        ["Full_Name", "First_Name", "Services", "Source_Language", "Target_Language", "Secondary_Languages", "Country_of_Residence"]
+    }
+    result = orch.process_lead(lead, known_field_sources=known_field_sources)
+
+    assert llm_calls["n"] == 0, "LLM fallback must be bypassed when nothing is left to fill or verify"
+    assert result["conclusion"] == "short_circuit_success"
+
+
+def test_lead_level_timeout_fires_as_timed_out_not_exhausted():
+    orch = make_orchestrator()
+    original_ceiling = orchestrator_module.LEAD_LEVEL_TIMEOUT_SECONDS
+    orchestrator_module.LEAD_LEVEL_TIMEOUT_SECONDS = 0.0  # already "elapsed" at the very first check
+    try:
+        lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone"}
+        result = orch.process_lead(lead)
+    finally:
+        orchestrator_module.LEAD_LEVEL_TIMEOUT_SECONDS = original_ceiling
+
+    assert result["conclusion"] == "timed_out"
+    assert result["enrichment_status"] == "enrichment_partial"
+
+
+def test_normal_fast_run_does_not_time_out():
+    orch = make_orchestrator()
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    result = orch.process_lead(lead)
+    assert result["conclusion"] != "timed_out"
+
+
+def test_genuine_crash_propagates_uncaught_distinct_from_exhausted_no_match():
+    """A real code-level bug (here: a parser raising something that isn't
+    one of the 3 narrow provider-error types) must NOT be swallowed into a
+    fake exhausted_no_match result -- it has to propagate all the way out,
+    since that's what lets main.py's route handler turn it into an HTTP 500
+    (system_error to the Node caller), distinct from a normal empty result."""
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"some": "payload"})
+
+    class BrokenParser:
+        def parse(self, profile_link, raw_scraped_data):
+            raise RuntimeError("a genuine bug, not a provider error")
+
+    orch.parsers["linkedin"] = BrokenParser()
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    try:
+        orch.process_lead(lead)
+        assert False, "expected RuntimeError to propagate, but process_lead returned normally"
+    except RuntimeError as exc:
+        assert "genuine bug" in str(exc)
+
+
+def test_parallel_absence_prose_never_reaches_a_data_field():
+    """Confirmed live 2026-09-07: Parallel returned the string "No
+    certifications are listed in the available profile evidence." INSIDE its
+    `certifications` list for 2 of 7 real leads, which landed in
+    Lead.certifications and would have been quoted back to the lead as a fact
+    in their outreach draft. The schema now instructs an empty list, but this
+    guard is what actually keeps prose out of the column if the model
+    regresses -- while still letting a genuine credential through."""
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "certifications": [
+                "No certifications are listed in the available profile evidence.",
+                "ATA Certified Translator",
+            ],
+            "country": "India",
+        }
+    )
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+    result = orch.process_lead(lead)
+
+    certs = result["lead"].get("Certifications") or ""
+    assert "ATA Certified Translator" in certs, "a real credential must still come through"
+    assert "profile evidence" not in certs.lower(), "absence prose must never reach a data field"
+    assert any("dropped 1 non-data" in line for line in result["logs"]), "the drop should be logged, not silent"
+
+
+def test_stale_absence_prose_is_overridden_by_a_later_real_value():
+    """A field already holding a provider's own "couldn't find this"
+    sentence from an earlier pass (not a real value, and not manually typed)
+    must not permanently block a later pass's real answer -- the
+    never-overwrite rule exists to protect real data, and this was never
+    that."""
+    orch = make_orchestrator()
+    lead = {"Headline": "No profile headline was found for Jane Doe."}
+    field_sources: dict[str, str] = {"Headline": "parallel"}
+
+    orch._apply_parsed_fields(lead, field_sources, [], "brightdata", {"Headline": "Senior Audio Engineer at VSI"})
+
+    assert lead["Headline"] == "Senior Audio Engineer at VSI"
+    assert field_sources["Headline"] == "brightdata"
+
+
+def test_parallel_absence_prose_also_kept_out_of_headline_title_about_country():
+    """Same class of bug as the certifications case above, but for the four
+    fields that previously had NO absence-prose guard at all: confirmed live
+    on the reported bug's lead, Parallel answered Headline/Current_Title/
+    About_Snippet with "No <field> was found for Sergio Testing." sentences
+    that then merged in as real data (name interpolated, so the substring
+    itself is unique per lead -- the guard has to catch the shape, not the
+    literal string)."""
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "headline": "No profile headline was found for Sergio Testing.",
+            "current_title": "No current role title was found for Sergio Testing.",
+            "about_snippet": "No About, Bio, Summary, or Profile Overview text was found for Sergio Testing.",
+            "country": "No country was found for Sergio Testing.",
+        }
+    )
+
+    lead = {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Sergio Testing"}
+    result = orch.process_lead(lead)
+
+    for field in ("Headline", "Current_Title", "About_Snippet", "Country_of_Residence"):
+        value = result["lead"].get(field)
+        assert not value, f"{field} must stay empty rather than hold absence prose, got {value!r}"
+    # The same prose must not leak into the Services keyword-scan fallback either.
+    assert not result["lead"].get("Services")
+
+
+# --- Tier 2 re-attempt policy -------------------------------------------
+#
+# Replaces a plain truthy check that treated ANY marker value -- including
+# "failed" -- as "already attempted, never call again", so one transient blip
+# denied a lead Tier 2 forever (confirmed live 2026-09-07: three leads were
+# stamped "failed" by a since-fixed timeout bug, then silently skipped by
+# every later pass until their markers were cleared by hand).
+
+def _linkedin_lead():
+    return {"Source": "LinkedIn", "Profile_Link": "https://www.linkedin.com/in/someone", "Full_Name": "Jane Doe"}
+
+
+def _orch_with_failing_parallel(exc, calls):
+    orch = make_orchestrator()
+
+    def fail(lead, profile_link):
+        calls["parallel"] += 1
+        raise exc
+
+    orch.parallel = stub(enrich_profile=fail)
+    return orch
+
+
+def test_transient_failure_is_retried_then_capped_at_two_attempts():
+    calls = {"parallel": 0}
+    orch = _orch_with_failing_parallel(ParallelError("connection reset"), calls)
+
+    # Pass 1: first attempt, fails, records attempt 1 of 2.
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+
+    # Pass 2: budget remains, so it tries again and records attempt 2.
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "a transient failure must be retried on a later pass"
+    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Pass 3: exhausted -- never called again, however many passes run.
+    r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    r4 = orch.process_lead(_linkedin_lead(), known_field_sources=r3["field_sources"])
+    assert calls["parallel"] == 2, f"capped at {orchestrator_module.MAX_PARALLEL_TRANSIENT_ATTEMPTS} attempts, got {calls['parallel']}"
+    assert r4["parallel_fallback"]["called"] is False
+    assert "exhausted" in " ".join(r4["logs"])
+
+
+def test_permanent_rejection_is_never_retried():
+    """A 4xx means Parallel understood us and refused -- the same input gets
+    the same refusal, so retrying only spends money and minutes."""
+    calls = {"parallel": 0}
+    exc = ParallelError("Parallel rejected this input (400): bad url", status_code=400, permanent=True)
+    orch = _orch_with_failing_parallel(exc, calls)
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_permanent"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 1, "a permanent rejection must never be retried"
+    assert r2["parallel_fallback"]["called"] is False
+
+
+def test_empty_but_well_formed_result_is_retried_not_stamped_complete():
+    """The actual reported bug: Martin Godart's real case. Parallel's Task Run
+    succeeds (no exception) but every field comes back null/[] -- LinkedIn
+    blocked the browsing agent the same way it blocked Bright Data. This used
+    to be stamped "complete" on the very first attempt, so the 2-attempt
+    transient-retry policy above -- already decided on, already built --
+    never got a chance to run at all."""
+    calls = {"parallel": 0}
+    empty_result = {
+        "headline": None, "current_title": None, "about_snippet": None, "country": None,
+        "experience": [], "education": [], "languages": [], "certifications": [],
+    }
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(empty_result))
+
+    # Pass 1: empty result must be treated as a transient failure, attempt 1 of 2.
+    r1 = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1", (
+        f"an empty-but-successful result must not be stamped complete, got {r1['field_sources'].get('_parallel_fallback')!r}"
+    )
+
+    # Pass 2: real second attempt -- this is the exact gap being fixed.
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "an empty result must actually be retried on the next pass"
+    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Pass 3: exhausted, same as the exception-based path.
+    r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["parallel"] == 2, "capped at 2 attempts even for repeated empty results"
+    assert r3["parallel_fallback"]["called"] is False
+
+
+def test_result_of_only_absence_prose_is_retried_not_stamped_complete():
+    """The reported bug's actual lead: Parallel's Task Run succeeds and every
+    scalar field is POPULATED, but with the model's own "couldn't find this"
+    sentence rather than null -- has_content alone says yes (non-empty
+    strings), so this used to be stamped complete on the first attempt just
+    like the null/[] case above, permanently blocking Headline/Current_Title/
+    About_Snippet with prose that no later pass could ever retry past."""
+    calls = {"parallel": 0}
+    prose_result = {
+        "headline": "No profile headline was found for Sergio Testing.",
+        "current_title": "No current role title was found for Sergio Testing.",
+        "about_snippet": "No About, Bio, Summary, or Profile Overview text was found for Sergio Testing.",
+        "country": None, "experience": [], "education": [], "languages": [], "certifications": [],
+    }
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(prose_result))
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1", (
+        f"an all-absence-prose result must not be stamped complete, got {r1['field_sources'].get('_parallel_fallback')!r}"
+    )
+    assert not r1["lead"].get("Headline"), "absence prose must never land in the canonical field either"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2, "a real second attempt must actually happen, not be skipped as 'already complete'"
+
+
+def test_empty_result_that_succeeds_on_retry_stops_retrying():
+    """If attempt 2 comes back with real content, it settles as complete --
+    an empty first try must not doom a lead to "always empty" forever."""
+    calls = {"parallel": 0}
+
+    def enrich(lead, profile_link):
+        calls["parallel"] += 1
+        if calls["parallel"] == 1:
+            return {"headline": None, "current_title": None, "about_snippet": None, "country": None,
+                    "experience": [], "education": [], "languages": [], "certifications": []}
+        return {"headline": "Voice Artist", "current_title": None, "about_snippet": None, "country": None,
+                "experience": [], "education": [], "languages": [], "certifications": []}
+
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=enrich)
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+
+    r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 2
+    assert r2["field_sources"]["_parallel_fallback"] == "complete"
+    assert r2["lead"]["Headline"] == "Voice Artist"
+
+    # Pass 3 must not call Parallel again -- it's settled now.
+    orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["parallel"] == 2
+
+
+def test_a_result_with_some_real_content_is_accepted_immediately():
+    """Not every thin result is empty -- one populated field is enough to
+    settle as complete on the first try, matching test_success_is_never_re_called."""
+    calls = {"parallel": 0}
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1)
+        or {"headline": None, "current_title": None, "about_snippet": None, "country": "Spain",
+            "experience": [], "education": [], "languages": [], "certifications": []}
+    )
+    result = orch.process_lead(_linkedin_lead())
+    assert calls["parallel"] == 1
+    assert result["field_sources"]["_parallel_fallback"] == "complete"
+
+
+def test_success_is_never_re_called():
+    calls = {"parallel": 0}
+    orch = make_orchestrator()
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1)
+        or {"headline": "Subtitler"}
+    )
+
+    r1 = orch.process_lead(_linkedin_lead())
+    assert r1["field_sources"]["_parallel_fallback"] == "complete"
+    orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
+    assert calls["parallel"] == 1, "a resolved lead must never be re-billed"
+
+
+def test_legacy_and_corrupt_markers_are_treated_as_settled():
+    """An unrecognised marker must not become a way to re-bill a lead on
+    every pass -- including the plain "failed" written before this policy."""
+    for marker in ["failed", "failed_transient:", "failed_transient:banana", "something_else"]:
+        calls = {"parallel": 0}
+        orch = _orch_with_failing_parallel(ParallelError("x"), calls)
+        orch.process_lead(_linkedin_lead(), known_field_sources={"_parallel_fallback": marker})
+        assert calls["parallel"] == 0, f"marker {marker!r} must not trigger a call"
+
+
+# --- Tier 1 and Tier 2 run concurrently, not in sequence --------------------
+#
+# Measured on production leads: Tier 1 (Bright Data/Tavily) runs 7-15s, Tier 2
+# (Parallel) 150-170s. Running them in sequence meant every lead paid Tier 1's
+# full duration on top of Tier 2's, for no reason -- the two calls share
+# nothing but the profile URL. _dispatch_parallel_stage submits Parallel's
+# call before Tier 1's own (blocking) scrape runs; _resolve_parallel_stage is
+# called only after Tier 1's merge, so override precedence is unchanged.
+
+def test_tier1_and_tier2_run_concurrently_not_sequentially():
+    import time
+
+    order: list[tuple[str, float]] = []
+    orch = make_orchestrator()
+
+    def bd_scrape(url):
+        order.append(("brightdata_start", time.monotonic()))
+        time.sleep(0.2)
+        order.append(("brightdata_end", time.monotonic()))
+        return {"name": "Jane Doe"}
+
+    def parallel_enrich(lead, profile_link):
+        order.append(("parallel_start", time.monotonic()))
+        time.sleep(0.05)
+        order.append(("parallel_end", time.monotonic()))
+        return {"headline": "Senior Translator"}
+
+    orch.brightdata = stub(scrape_profile=bd_scrape)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
+
+    t0 = time.monotonic()
+    orch.process_lead(_linkedin_lead())
+    elapsed = time.monotonic() - t0
+
+    starts = {name: t for name, t in order if name.endswith("_start")}
+    # Both must start within a few ms of each other -- a sequential call
+    # would show parallel_start only after brightdata_end (~0.2s later).
+    assert abs(starts["brightdata_start"] - starts["parallel_start"]) < 0.05, (
+        "Tier 2 did not start until Tier 1 finished -- the two calls are running sequentially again"
+    )
+    # Total time tracks the SLOWER call (~0.2s), not the sum (~0.25s).
+    assert elapsed < 0.24, f"total time {elapsed:.3f}s looks sequential, not concurrent"
+
+
+def test_merge_order_is_unchanged_by_concurrency():
+    """Tier 1 first, Tier 2 second -- OVERRIDE_ON_VERIFIED_FIELDS depends on
+    this order, so making the two calls concurrent must not silently change
+    which one's value wins when both resolve the same field."""
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Tier1 Name", "country": "Tier1Country"})
+    orch.parallel = stub(
+        enrich_profile=lambda lead, profile_link: {
+            "headline": None, "current_title": None, "about_snippet": None,
+            "country": "Tier2Country", "experience": [], "education": [], "languages": [], "certifications": [],
+        }
+    )
+
+    result = orch.process_lead(_linkedin_lead())
+    # Country_of_Residence is in OVERRIDE_ON_VERIFIED_FIELDS -- Tier 2's value
+    # must win because it merges SECOND, exactly as before this was made
+    # concurrent (Tier 1 sets it first, Tier 2 then overrides).
+    assert result["lead"]["Country_of_Residence"] == "Tier2Country"
+    assert result["field_sources"]["Country_of_Residence"] == "parallel"

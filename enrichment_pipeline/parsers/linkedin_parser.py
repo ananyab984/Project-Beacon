@@ -1,0 +1,634 @@
+"""LinkedIn Bright Data response parser with deep contact info & experience extraction."""
+
+from __future__ import annotations
+
+import html
+import json
+import re
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+from parsers.base import BaseParser
+from parsers.service_aliases import extract_services_from_text
+from parsers.tool_aliases import TOOL_ALIASES, extract_tools_from_text
+from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
+from parsers.language_filter import looks_non_english_token
+
+
+def _clean_text(val: Any) -> Optional[str]:
+    """Decode HTML entities and collapse whitespace on scraped text.
+
+    Bright Data returns LinkedIn's raw HTML text, entities included: a real
+    stored About read "Classical Greek &amp; Latin graduate with hands-on
+    experience..." and another had "-&gt;" for every bullet. Those columns are
+    not just displayed -- drafting quotes them back to the candidate inside an
+    outreach email, so an undecoded entity is a visible defect in a message to
+    a real person, not merely an ugly cell in the dialog.
+
+    html.unescape rather than a hand-rolled replace table: the stdlib already
+    knows the full entity set (see AGENTS.md rung 3), including numeric forms
+    like &#39; that a three-entry table would miss.
+    """
+    if val is None:
+        return None
+    text = html.unescape(str(val)).strip()
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text or None
+
+
+def _safe_get(data: Any, *keys: str) -> Any:
+    curr = data
+    for k in keys:
+        if isinstance(curr, dict) and k in curr:
+            curr = curr[k]
+        elif isinstance(curr, list) and k.isdigit():
+            idx = int(k)
+            if 0 <= idx < len(curr):
+                curr = curr[idx]
+            else:
+                return None
+        else:
+            return None
+    return curr
+
+
+def _stringify(val: Any) -> Optional[str]:
+    if val is None or val == "":
+        return None
+    if isinstance(val, dict):
+        return val.get("email") or val.get("phone") or val.get("name") or str(val)
+    if isinstance(val, list) and len(val) > 0:
+        first = val[0]
+        if isinstance(first, dict):
+            return first.get("email") or first.get("phone") or first.get("name") or str(first)
+        return str(first)
+    return str(val)
+
+
+# BrightData's LinkedIn "Contact Info" popup is only reliably present in the
+# scrape when the profile owner has made it public; its shape has varied
+# across BrightData dataset versions ("contact_info" object, flat top-level
+# fields, or a generic "contacts"/"contact" list of {type, value} entries).
+# All of these are checked so the deterministic parser -- not the LLM
+# fallback -- is what resolves contact info whenever BrightData actually has it.
+_CONTACT_INFO_KEYS = ("contact_info", "contactInfo", "contacts", "contact")
+
+
+def _contact_info_values(profile: dict, *field_names: str) -> List[str]:
+    """Collect every plausible value for one or more field names out of every
+    known shape of the LinkedIn contact-info section."""
+    values: List[str] = []
+    for key in _CONTACT_INFO_KEYS:
+        section = profile.get(key)
+        if section is None:
+            continue
+        if isinstance(section, dict):
+            for name in field_names:
+                v = section.get(name)
+                if v:
+                    values.append(_stringify(v) or "")
+                # plural/list variant, e.g. contact_info.emails[0]
+                v_list = section.get(name + "s")
+                if isinstance(v_list, list):
+                    values.extend(_stringify(x) or "" for x in v_list)
+        elif isinstance(section, list):
+            # generic [{type: "email", value: "..."}] / [{label, text}] shape
+            for entry in section:
+                if not isinstance(entry, dict):
+                    continue
+                kind = str(entry.get("type") or entry.get("label") or "").lower()
+                if any(name in kind for name in field_names):
+                    v = entry.get("value") or entry.get("text") or entry.get("data")
+                    if v:
+                        values.append(_stringify(v) or "")
+    return [v for v in values if v]
+
+
+def _extract_email(profile: dict) -> Optional[str]:
+    """Deep search for email address in Bright Data LinkedIn payload."""
+    candidates = [
+        profile.get("public_email"),
+        profile.get("email"),
+        profile.get("work_email"),
+        profile.get("personal_email"),
+        profile.get("linkedin_email"),
+        _safe_get(profile, "contact_info", "email"),
+        _safe_get(profile, "contact_info", "emails", "0"),
+        _safe_get(profile, "emails", "0"),
+        *_contact_info_values(profile, "email"),
+    ]
+    for c in candidates:
+        if c:
+            s = _stringify(c)
+            if s and "@" in s:
+                match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', s)
+                if match:
+                    return match.group(0)
+
+    # Fallback: Regex scan across every text field the About/Contact sections
+    # could plausibly live under (BrightData has used all of these at times).
+    text_blob = " ".join([
+        str(profile.get("about") or ""),
+        str(profile.get("summary") or ""),
+        str(profile.get("summary_text") or ""),
+        str(profile.get("bio") or ""),
+        str(profile.get("description") or ""),
+        str(profile.get("contact_info") or ""),
+        str(profile.get("websites") or ""),
+    ])
+    match = re.search(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', text_blob)
+    return match.group(0) if match else None
+
+
+def _extract_phone(profile: dict) -> Optional[str]:
+    """Deep search for phone number in Bright Data LinkedIn payload."""
+    candidates = [
+        profile.get("phone_number"),
+        profile.get("phone"),
+        profile.get("mobile_phone"),
+        profile.get("telephone"),
+        _safe_get(profile, "contact_info", "phone"),
+        _safe_get(profile, "contact_info", "phones", "0"),
+        _safe_get(profile, "phones", "0"),
+        *_contact_info_values(profile, "phone", "mobile", "tel"),
+    ]
+    for c in candidates:
+        if c:
+            s = _stringify(c)
+            if s:
+                return s
+    return None
+
+
+# Every text field an "About"-equivalent section has appeared under across
+# BrightData's LinkedIn dataset revisions -- kept as one list so every
+# deterministic (non-LLM) text-mining step below stays in sync.
+_ABOUT_FIELD_NAMES = ("about", "summary", "summary_text", "bio", "description", "headline")
+
+
+def _about_text_blob(profile: dict) -> str:
+    return " ".join(str(profile.get(f) or "") for f in _ABOUT_FIELD_NAMES)
+
+
+# Different profiles use different key names for conceptually the same
+# credentials section -- checked as separate sections that can all coexist
+# on one profile, not a first-match fallback the way _extract_certifications
+# reads them (that function only needs ONE structured value to display;
+# this one is mining every real word available for a tool/vendor mention).
+_CREDENTIAL_LIST_KEYS = ("certifications", "licenses_and_certifications", "licenses", "courses")
+
+
+def _narrative_text_blob(profile: dict) -> str:
+    """Every real narrative/title string BrightData returns beyond the thin
+    Headline/About fields -- structured credential list titles (a
+    certification or course name can itself name a tool, e.g. "Ooona
+    Certified Subtitler") and every experience entry's own free-text
+    description plus each of its per-position title/description. This is
+    what lets a tool or vendor named only in "I used Pro Tools daily on this
+    role" (a real per-role description, not prose the person wrote about
+    themselves) get picked up deterministically instead of needing an LLM to
+    read it.
+
+    HTML tags are stripped (not just entity-decoded, which _clean_text
+    already does) before matching -- these fields are raw scraped HTML, and
+    an unstripped tag sitting between two words of a multi-word alias
+    ("pro" <b> "tools") would otherwise break the substring match."""
+    parts: List[str] = []
+
+    for key in _CREDENTIAL_LIST_KEYS:
+        items = profile.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                for field in ("title", "subtitle", "name"):
+                    v = item.get(field)
+                    if v:
+                        parts.append(str(v))
+            elif item:
+                parts.append(str(item))
+
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if isinstance(exp_list, list):
+        for item in exp_list:
+            if not isinstance(item, dict):
+                continue
+            for field in ("description", "description_html"):
+                v = item.get(field)
+                if v:
+                    parts.append(str(v))
+            for pos in item.get("positions") or []:
+                if not isinstance(pos, dict):
+                    continue
+                for field in ("title", "description", "description_html"):
+                    v = pos.get(field)
+                    if v:
+                        parts.append(str(v))
+
+    raw = " ".join(parts)
+    stripped = re.sub(r"<[^>]+>", " ", raw)
+    return _clean_text(stripped) or ""
+
+
+def _extract_years_of_experience(profile: dict) -> Optional[int]:
+    """Extract years of experience from explicit fields, About section, or Experience list."""
+    if profile.get("years_of_experience"):
+        try:
+            return int(profile["years_of_experience"])
+        except (ValueError, TypeError):
+            pass
+
+    # Regex search in the About/Summary/Bio text (e.g. "10+ years of
+    # experience", "8 years exp", "over 12 years").
+    text_blob = _about_text_blob(profile)
+    match = re.search(
+        r'(?:over\s+)?(\d+)\+?\s*years?\s+(?:of\s+)?(?:experience|exp)',
+        text_blob, re.IGNORECASE,
+    )
+    if match:
+        try:
+            return int(match.group(1))
+        except (ValueError, TypeError):
+            pass
+
+    # Deliberately NO count-based fallback. This used to end with
+    #     return len(exp_list) * 2  # Estimate ~2 yrs per role
+    # which turned a ROW COUNT into an asserted number: it reaches
+    # Lead.yearsOfExperience and becomes the drafting grounding fact
+    # `years_of_experience: "N years"`, quoted back to a real candidate in an
+    # outreach email. It was the only place in the pipeline that converted
+    # structurally-empty data into a positive factual claim -- and during the
+    # empty-shell period `[{}, {}, {}]` confidently produced "6 years" from
+    # literally no data. A profile with 5 genuine roles produced "10 years"
+    # regardless of its actual dates.
+    #
+    # The two paths above are kept because both read a number the profile
+    # ACTUALLY STATES (an explicit field, or "10+ years of experience" in the
+    # About text). If a span estimate is wanted later, derive it from real
+    # start/end dates -- POC/linkedin_poc/async_experiment.py already has
+    # `years_from_experience()` doing latest-minus-earliest, which is a
+    # defensible derivation from stated data. `count x 2` is not.
+    return None
+
+
+# Canonical tool/software matching now lives in parsers/tool_aliases.py --
+# same reasoning as extract_services_from_text above (pulled out so
+# orchestrator.py's Parallel merge path can resolve Tools_Software with the
+# exact same heuristic instead of Parallel-sourced leads never getting a
+# value at all). The list there matches the recruiter-facing Software
+# Proficiency dropdown exactly, which the old inline `_KNOWN_TOOLS` here had
+# drifted from (missing most of the dropdown's entries, and misspelling
+# "EZTitle" as "EZTitles").
+_KNOWN_TOOLS = list(TOOL_ALIASES.keys())
+
+
+def _extract_tools_software(text_blob: str) -> Optional[str]:
+    """Matches the canonical tool list against any text blob -- the profile's
+    skills list joined into text, or its headline/About text, or both.
+    BrightData's LinkedIn dataset (confirmed in production) frequently omits
+    a structured `skills` section entirely, so a tool mentioned only in
+    prose ("hands-on with Ooona and WinCaps") still gets picked up."""
+    matched = extract_tools_from_text(text_blob)
+    return ", ".join(matched) if matched else None
+
+
+# Common language names a linguist bio states a working pair in (e.g.
+# "English to Spanish subtitler", "EN<>ES", "German-English translator").
+# Sorted longest-first when compiled so e.g. "Chinese" is tried before a
+# shorter substring could partially match first.
+_KNOWN_LANGUAGES = [
+    "English", "Spanish", "French", "German", "Italian", "Portuguese", "Dutch",
+    "Russian", "Mandarin", "Cantonese", "Chinese", "Japanese", "Korean", "Arabic",
+    "Hindi", "Bengali", "Tamil", "Telugu", "Malayalam", "Kannada", "Marathi",
+    "Gujarati", "Punjabi", "Urdu", "Turkish", "Polish", "Swedish", "Norwegian",
+    "Danish", "Finnish", "Greek", "Hebrew", "Thai", "Vietnamese", "Indonesian",
+    "Malay", "Tagalog", "Filipino", "Ukrainian", "Czech", "Romanian", "Hungarian",
+    "Slovak", "Bulgarian", "Croatian", "Serbian",
+]
+_LANG_ALTERNATION = "|".join(sorted((re.escape(lang) for lang in _KNOWN_LANGUAGES), key=len, reverse=True))
+_LANG_PAIR_RE = re.compile(
+    rf"\b({_LANG_ALTERNATION})\s*(?:to|<>|>|-|/)\s*({_LANG_ALTERNATION})\b",
+    re.IGNORECASE,
+)
+
+
+def _canonical_language(name: str) -> str:
+    for lang in _KNOWN_LANGUAGES:
+        if lang.lower() == name.lower():
+            return lang
+    return name.title()
+
+
+def _extract_language_pair(text_blob: str) -> Optional[Tuple[str, str]]:
+    """Best-effort "source to target" extraction from free text (e.g. a
+    headline reading "English to Spanish subtitler"). Only used when a field
+    is genuinely missing -- never overrides a value already present."""
+    match = _LANG_PAIR_RE.search(text_blob)
+    if not match:
+        return None
+    return _canonical_language(match.group(1)), _canonical_language(match.group(2))
+
+
+_CERT_TOOL_ALTERNATION = "|".join(re.escape(t) for t in _KNOWN_TOOLS)
+_CERT_RE = re.compile(
+    rf"\b({_CERT_TOOL_ALTERNATION})\s+certified\b|\bcertified\s+(?:in\s+)?({_CERT_TOOL_ALTERNATION})\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_certifications_from_text(text_blob: str) -> List[str]:
+    """Catches "OOONA Certified" / "Certified in SDL Trados" style phrases in
+    free text -- a lighter-weight deterministic net for the common case,
+    still falling through to the LLM fallback for phrasing this can't catch."""
+    found: List[str] = []
+    for match in _CERT_RE.finditer(text_blob):
+        tool = match.group(1) or match.group(2)
+        canon = next((t for t in _KNOWN_TOOLS if t.lower() == tool.lower()), tool)
+        label = f"{canon} Certified"
+        if label not in found:
+            found.append(label)
+    return found
+
+
+def _extract_country(profile: dict) -> Optional[str]:
+    """The COUNTRY, not the city.
+
+    This used to be `profile.get("country") or profile.get("location") or
+    profile.get("country_code")`, which is wrong against the dataset Bright
+    Data actually returns: there is no `country` key at all, and `location`
+    holds a CITY ("San Francisco", "Cairo"). So the first expression fell
+    straight through to the city and stored it as the country -- confirmed on
+    real rows, `country = "Cairo"` and `country = "Bengaluru"`.
+
+    That is worse than an empty field: Country is a recruiter-facing filter,
+    so a city sitting in it silently removes the lead from every correct
+    country search while looking perfectly populated.
+
+    `city` is the reliable source because Bright Data formats it as a
+    comma-separated hierarchy ending in the country -- "Cairo, Cairo, Egypt",
+    "San Francisco, California, United States" -- so the last segment is the
+    country. `country_code` ("EG", "US") is the fallback; it is returned as a
+    bare code, which is at least unambiguously a country rather than a city
+    mislabelled as one.
+    """
+    city = _clean_text(profile.get("city"))
+    if city and "," in city:
+        tail = city.rsplit(",", 1)[-1].strip()
+        if tail:
+            return tail
+    explicit = _clean_text(profile.get("country"))
+    if explicit:
+        return explicit
+    code = _clean_text(profile.get("country_code"))
+    if code:
+        return code.upper()
+    # Deliberately NOT falling back to `location`: see the docstring. A city
+    # in the country column is a silent filtering bug, and no value at all is
+    # the honest, correctable outcome -- Parallel supplies a real country name
+    # for most leads anyway.
+    return None
+
+
+def _extract_headline(profile: dict) -> Optional[str]:
+    # Note for anyone debugging "why is Headline always empty from Bright
+    # Data": this dataset revision has no `headline` key at all, and
+    # `position` comes back as "" on real profiles. So this legitimately
+    # returns None for most leads and Parallel is what actually fills
+    # Headline -- which it does reliably, since a headline is part of the
+    # public preview LinkedIn serves without a login. Kept as-is because the
+    # keys cost nothing when a revision does return them.
+    headline = profile.get("headline") or profile.get("position") or profile.get("title")
+    return _clean_text(headline)
+
+
+def _extract_about_snippet(profile: dict, max_chars: int = 280) -> Optional[str]:
+    """A short, personalization-usable excerpt of the profile's About/summary
+    text -- distinct from `_about_text_blob`, which mixes in headline/bio and
+    is used only for internal regex mining, not surfaced as a fact itself."""
+    # _clean_text first: Bright Data returns this field HTML-escaped, and it
+    # is the single field drafting quotes most often.
+    text = _clean_text(profile.get("about") or profile.get("summary") or profile.get("summary_text")) or ""
+    if not text:
+        return None
+    text = " ".join(text.split())
+    if len(text) <= max_chars:
+        return text
+    truncated = text[:max_chars].rsplit(" ", 1)[0]
+    return truncated + "..."
+
+
+def _extract_current_title(profile: dict) -> Optional[str]:
+    curr = profile.get("current_company")
+    if isinstance(curr, dict):
+        title = curr.get("title") or curr.get("position")
+        if title:
+            return str(title).strip()
+
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if isinstance(exp_list, list) and len(exp_list) > 0 and isinstance(exp_list[0], dict):
+        title = exp_list[0].get("title") or exp_list[0].get("position")
+        if title:
+            return str(title).strip()
+    return None
+
+
+def _extract_certifications(profile: dict, max_items: int = 5) -> Optional[str]:
+    certs = (
+        profile.get("certifications")
+        or profile.get("licenses_and_certifications")
+        or profile.get("licenses")
+        or profile.get("courses")
+    )
+    if not isinstance(certs, list):
+        return None
+    names = []
+    for item in certs:
+        name = item.get("title") or item.get("name") if isinstance(item, dict) else str(item)
+        if name and str(name) not in names:
+            names.append(str(name))
+    return ", ".join(names[:max_items]) if names else None
+
+
+def _extract_certifications_deep(profile: dict) -> Optional[str]:
+    """Structured section first (rare, but authoritative when present); falls
+    through to a free-text pattern match against headline/About text -- most
+    BrightData LinkedIn scrapes return no structured certifications section
+    at all (confirmed in production)."""
+    structured = _extract_certifications(profile)
+    if structured:
+        return structured
+    from_text = _extract_certifications_from_text(_about_text_blob(profile))
+    return ", ".join(from_text) if from_text else None
+
+
+def _extract_vendor_experience(profile: dict, narrative_text: str = "") -> Optional[str]:
+    """Collects every distinct real company/employer from the profile's
+    structured experience history (current_company + the full experience
+    list) -- a person's actual vendor/client portfolio, not just whichever
+    of the 9 largest known post-production vendors happens to be one of
+    them. Restricting this field to only alias-matched known vendors was
+    confirmed live to throw away exactly the rich data a profile's own
+    Experience section already has: a lead with 9 distinct named employers
+    there (Netflix, Kinotitles Srls, Baburka Production, Words in Progress
+    S.r.l., ...) still had Vendor_Experience holding only "Freelancer" --
+    which isn't even a real company, just what BrightData put in
+    `current_company` for someone describing how they work rather than who
+    they work for (see vendor_aliases.NON_COMPANY_EMPLOYMENT_LABELS).
+
+    A company matching (or an obvious variant of) one of the 9 known
+    vendors is normalized to its canonical spelling via
+    vendor_aliases.canonicalize_or_keep; every other real, named employer is
+    kept exactly as stated -- any company someone has actually worked with
+    is real vendor-experience information a recruiter wants to see.
+
+    `narrative_text` is additionally scanned against the closed 9-vendor
+    alias list (vendor_aliases.extract_vendors_from_text) -- unlike the
+    structured company list above, this is NOT open extraction (it can only
+    ever add one of the 9 known names), so it stays safe to run
+    deterministically. This is what catches a known vendor named only in
+    prose ("delivered QC to Zoo Digital") that never appears as a structured
+    `company` value on its own."""
+    companies = []
+    curr = profile.get("current_company")
+    if isinstance(curr, dict):
+        name = curr.get("name")
+        if name:
+            companies.append(str(name))
+    elif curr:
+        companies.append(str(curr))
+
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if isinstance(exp_list, list):
+        for item in exp_list:
+            if isinstance(item, dict):
+                cname = item.get("company") or item.get("company_name")
+                if cname:
+                    companies.append(str(cname))
+
+    company_name = profile.get("company")
+    if company_name:
+        companies.append(str(company_name))
+
+    companies.extend(extract_vendors_from_text(narrative_text))
+
+    seen: set = set()
+    result: List[str] = []
+    for raw in companies:
+        canonical = canonicalize_or_keep(raw)
+        if canonical is None:
+            continue
+        key = canonical.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(canonical)
+
+    return ", ".join(result) if result else None
+
+
+class LinkedInParser(BaseParser):
+    """Parser for Bright Data LinkedIn JSON responses with deep contact & experience extraction."""
+
+    def parse(self, profile_link: str, raw_data: Any) -> Dict[str, Any]:
+        profile = self._unwrap(raw_data)
+        if not profile or not isinstance(profile, dict):
+            return {"Source": "LinkedIn", "Profile_Link": profile_link}
+
+        result: Dict[str, Any] = {
+            "Source": "LinkedIn",
+            "Profile_Link": profile_link,
+        }
+
+        # Name & Location
+        full_name = profile.get("name") or profile.get("full_name")
+        if full_name:
+            result["Full_Name"] = str(full_name)
+            result["First_Name"] = str(full_name).split(" ")[0]
+
+        country = _extract_country(profile)
+        if country:
+            result["Country_of_Residence"] = country
+
+        # Contact Info (Email & Phone)
+        email = _extract_email(profile)
+        if email:
+            result["Email_Address"] = email
+
+        phone = _extract_phone(profile)
+        if phone:
+            result["Contact_Number"] = phone
+
+        # Experience & Companies
+        yoe = _extract_years_of_experience(profile)
+        if yoe is not None:
+            result["Years_of_Exp"] = yoe
+
+        # Skills & Languages -- structured `skills` first when BrightData
+        # actually returns it (rare in production for this dataset), then a
+        # deterministic free-text scan of headline/About against known
+        # service categories / language names / tool names. This is what
+        # lets Stage 3 resolve these fields itself in the common case,
+        # instead of needing the LLM fallback for every single lead.
+        skills = profile.get("skills")
+        skill_names: List[str] = []
+        if isinstance(skills, list):
+            raw_skill_names = [str(s.get("name")) if isinstance(s, dict) and s.get("name") else str(s) for s in skills if s]
+            # Unlike Parallel's Services path (translated via orchestrator.py's
+            # _normalize_parallel_language before it's ever read), BrightData's
+            # structured `skills` list has no language normalization at all --
+            # confirmed live: a real profile's skills list held both an
+            # English tag and its own-language duplicate side by side
+            # ("Teamwork" and "Trabalho em equipe"), both joined straight into
+            # Services. Dropped here rather than translated (cheaper, no LLM
+            # call, and the English counterpart is already present in the
+            # same list in every confirmed case).
+            skill_names = [n for n in raw_skill_names if n and not looks_non_english_token(n)]
+            result["Services"] = ", ".join(skill_names)
+        elif skills and not looks_non_english_token(str(skills)):
+            result["Services"] = str(skills)
+
+        headline = _extract_headline(profile)
+        if headline:
+            result["Headline"] = headline
+
+        about_snippet = _extract_about_snippet(profile)
+        if about_snippet:
+            result["About_Snippet"] = about_snippet
+
+        current_title = _extract_current_title(profile)
+        if current_title:
+            result["Current_Title"] = current_title
+
+        free_text = _about_text_blob(profile)
+
+        if not result.get("Services"):
+            text_services = extract_services_from_text(free_text)
+            if text_services:
+                result["Services"] = ", ".join(text_services)
+
+        lang_pair = _extract_language_pair(free_text)
+        if lang_pair:
+            result["Source_Language"], result["Target_Language"] = lang_pair
+
+        narrative_text = _narrative_text_blob(profile)
+
+        tools = _extract_tools_software(" ".join(skill_names) + " " + free_text + " " + narrative_text)
+        if tools:
+            result["Tools_Software"] = tools
+
+        vendors = _extract_vendor_experience(profile, free_text + " " + narrative_text)
+        if vendors:
+            result["Vendor_Experience"] = vendors
+
+        certifications = _extract_certifications_deep(profile)
+        if certifications:
+            result["Certifications"] = certifications
+
+        return result
+
+    @staticmethod
+    def _unwrap(raw: Any) -> Dict[str, Any]:
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], dict):
+            return raw[0]
+        return {}
