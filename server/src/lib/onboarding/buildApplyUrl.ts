@@ -117,7 +117,57 @@ function encodeSegment(key: string, encodedValue: string): string {
  * (as of now) a lead only carries one such pair, so there's no
  * multi-row selection decision to make here.
  */
-export function buildApplyUrl(lead: LeadForApplyUrl): string {
+/**
+ * Priority order for the budgeted variant below: identity first (the fields
+ * a candidate most resents retyping and that we are most confident in),
+ * then the profile facts, which the form can also collect from them later.
+ */
+const PARAM_PRIORITY = [
+  "first_name",
+  "last_name",
+  "email",
+  "target_language",
+  "source_language",
+  "service",
+  "address_country",
+  "years_of_experience",
+  "vendor_experience",
+  "linkedin",
+];
+
+/**
+ * The same pre-filled link, but guaranteed to fit `maxLength` characters.
+ *
+ * A LinkedIn connection invite is hard-truncated at 200 characters, and the
+ * full URL has a median of 170 and a p90 of 419 over real leads -- 30% of
+ * them exceed 200 on the URL alone, which would truncate mid-URL and ship a
+ * DEAD link. Rather than drop to a redirect through our own domain, this
+ * keeps the real apply URL and carries as many params as will fit, in
+ * PARAM_PRIORITY order, so the candidate still lands on Global3's own form
+ * with the most valuable fields already filled.
+ *
+ * Params are added whole, never truncated: a half-written value would reach
+ * the form as corrupt data, which is worse than an empty field.
+ */
+export function buildApplyUrlWithin(lead: LeadForApplyUrl, maxLength: number): string {
+  const all = applyParamSegments(lead);
+  const byKey = new Map(all.map((seg) => [seg.slice(0, seg.indexOf("=")), seg]));
+
+  const kept: string[] = [];
+  for (const key of PARAM_PRIORITY) {
+    const seg = byKey.get(key);
+    if (!seg) continue;
+    const candidate = [...kept, seg];
+    if (`${config.g3ApplyBaseUrl}?${candidate.join("&")}`.length <= maxLength) kept.push(seg);
+  }
+  // Nothing fit at all -- send the bare form rather than a malformed URL.
+  return kept.length ? `${config.g3ApplyBaseUrl}?${kept.join("&")}` : config.g3ApplyBaseUrl;
+}
+
+/** Every param this lead has a real value for, already encoded, in a stable
+ *  order. Shared by buildApplyUrl and buildApplyUrlWithin so there is exactly
+ *  one definition of how a Lead maps onto the form's fields. */
+function applyParamSegments(lead: LeadForApplyUrl): string[] {
   const segments: string[] = [];
 
   const push = (key: string, rawValue: string | number | undefined | null) => {
@@ -162,6 +212,12 @@ export function buildApplyUrl(lead: LeadForApplyUrl): string {
   }
 
   push("linkedin", extractLinkedInUrl(lead.profileLink));
+
+  return segments;
+}
+
+export function buildApplyUrl(lead: LeadForApplyUrl): string {
+  const segments = applyParamSegments(lead);
 
   const url = `${config.g3ApplyBaseUrl}?${segments.join("&")}`;
 

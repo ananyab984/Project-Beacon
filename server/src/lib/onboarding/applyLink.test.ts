@@ -12,7 +12,8 @@
  */
 
 import assert from "node:assert";
-import { buildApplyUrl, deriveLastName, deriveNames, extractLinkedInUrl } from "./buildApplyUrl";
+import { buildApplyUrl, buildApplyUrlWithin, deriveLastName, deriveNames, extractLinkedInUrl } from "./buildApplyUrl";
+import { applyLinkFor, LINKEDIN_APPLY_URL_BUDGET } from "./applyLinkFor";
 import { encodeLeadIdToken, decodeShortLinkToken, buildShortApplyUrl, shortApplyUrlLength } from "./shortLink";
 import { vendorExperienceToPresetList } from "./vendorExperienceToPresets";
 import { config } from "../../config";
@@ -242,6 +243,56 @@ function test17_trailingSlashOnTheDomainDoesNotDoubleUp() {
   );
 }
 
+function test18_linkedInLinkAlwaysFitsItsBudget() {
+  // A LinkedIn invite is truncated at 200 chars, so a link over budget is a
+  // DEAD link, not a cosmetic problem. Checked against the awkward cases:
+  // long names, long emails, every optional field populated.
+  const nasty = lead({
+    firstName: null,
+    fullName: "Maria Alexandra Fernanda de la Santa Cruz Hernandez",
+    email: "maria.alexandra.fernanda.delasantacruz@averylongdomainname.example.com",
+    vendorExperience: ["Deluxe", "SDI", "Pixel Logic", "Zoo Digital", "VSI"],
+    profileLink: "https://www.linkedin.com/in/maria-alexandra-fernanda-de-la-santa-cruz-1234567890",
+  });
+  for (const l of [lead(), nasty, lead({ email: null }), lead({ fullName: null, firstName: null })]) {
+    const url = applyLinkFor("linkedin", l);
+    assert.ok(url.length <= LINKEDIN_APPLY_URL_BUDGET, `over budget: ${url.length} chars`);
+    assert.ok(url.startsWith(config.g3ApplyBaseUrl), "must stay on the Global3 apply domain");
+  }
+}
+
+function test19_bothChannelsUseTheSameFormAndDomain() {
+  // The whole point: no redirect through our own servers on either channel,
+  // and both land on the same form. They differ only in how many params fit.
+  const l = lead();
+  const email = applyLinkFor("email", l);
+  const linkedin = applyLinkFor("linkedin", l);
+  assert.ok(email.startsWith(`${config.g3ApplyBaseUrl}?`), "email link is the real apply URL");
+  assert.ok(linkedin.startsWith(`${config.g3ApplyBaseUrl}?`), "linkedin link is the real apply URL");
+  assert.ok(!linkedin.includes("/g/"), "LinkedIn must no longer redirect through our short link");
+}
+
+function test20_budgetDropsWholeParamsNeverHalfOfOne() {
+  // A half-written value would reach the form as corrupt data -- worse than
+  // an empty field. Every kept param must survive as a complete key=value.
+  const url = buildApplyUrlWithin(lead(), 70);
+  assert.ok(url.length <= 70);
+  const query = url.slice(url.indexOf("?") + 1);
+  for (const seg of query.split("&").filter(Boolean)) {
+    assert.ok(/^[^=]+=.+$/.test(seg), `truncated param: "${seg}"`);
+  }
+  // Identity wins the budget over the lower-priority profile fields.
+  assert.ok(url.includes("first_name="), "first_name should survive a tight budget");
+  assert.ok(!url.includes("vendor_experience="), "lowest-priority field should be dropped first");
+}
+
+function test21_anImpossibleBudgetStillYieldsAUsableUrl() {
+  // Better to send the bare form than a malformed URL.
+  const url = buildApplyUrlWithin(lead(), 5);
+  assert.strictEqual(url, config.g3ApplyBaseUrl);
+  assert.ok(!url.endsWith("?"), "must not leave a dangling question mark");
+}
+
 function main() {
   const tests = [
     test1_shortLinkRoundTripsToTheSameLead,
@@ -261,6 +312,10 @@ function main() {
     test15_namesSplitSensiblyWhenFirstNameIsMissing,
     test16_shortLinkUsesItsOwnDomainSetting,
     test17_trailingSlashOnTheDomainDoesNotDoubleUp,
+    test18_linkedInLinkAlwaysFitsItsBudget,
+    test19_bothChannelsUseTheSameFormAndDomain,
+    test20_budgetDropsWholeParamsNeverHalfOfOne,
+    test21_anImpossibleBudgetStillYieldsAUsableUrl,
   ];
   let failed = 0;
   for (const t of tests) {

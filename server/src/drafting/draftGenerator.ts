@@ -174,7 +174,7 @@ export async function generateLinkedin(
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
-  const [system, user] = buildLinkedinPrompt(lead, rateMatch);
+  const [system, user] = buildLinkedinPrompt(lead, rateMatch, applyUrl.length);
   let completion = await client.chat(system, user, {
     model: cfg.genModel,
     temperature: cfg.genTemperature,
