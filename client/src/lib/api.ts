@@ -1,5 +1,6 @@
 import type {
   ApiLead,
+  CreateLeadPayload,
   ApiBinLead,
   ReenrichmentRun,
   OutreachFunnelCategory,
@@ -171,13 +172,13 @@ export const api = {
   },
 
   async createLead(
-    lead: Partial<ApiLead> & { fullName: string; source: string },
+    lead: CreateLeadPayload,
   ): Promise<{ lead: ApiLead; duplicateWarning: any }> {
     return request("/api/leads", { method: "POST", body: JSON.stringify(lead) });
   },
 
   async bulkCreateLeads(
-    leads: Array<Partial<ApiLead> & { fullName: string; source: string }>,
+    leads: Array<CreateLeadPayload>,
     options: { skipDuplicates?: boolean } = {},
   ) {
     return request<{
@@ -420,6 +421,7 @@ export const api = {
       contactName: string;
       contactEmail: string;
       notes: string;
+      notificationsEnabled: boolean;
     }>,
   ) {
     return request<{ client: ApiClient }>(`/api/clients/${id}`, {
@@ -710,6 +712,16 @@ export const api = {
     );
   },
 
+  /** Applies emailEnabled/slackEnabled across every notification type this
+   *  user's role has, in one call -- what the contractor settings page's
+   *  single Email/Slack toggle actually flips. */
+  async updateAllNotificationPreferences(patch: { emailEnabled?: boolean; slackEnabled?: boolean }) {
+    return request<{ preferences: ApiNotificationPreference[] }>(
+      "/api/notifications/preferences",
+      { method: "PATCH", body: JSON.stringify(patch) },
+    );
+  },
+
   async getLeadNotifySubscription(leadId: string): Promise<{ active: boolean }> {
     return request(`/api/leads/${leadId}/notify-subscription`);
   },
@@ -829,13 +841,6 @@ export const api = {
     } | null;
   }> {
     return request("/api/system-settings/notifications");
-  },
-
-  async setSlackBotToken(token: string | null): Promise<{ configured: boolean }> {
-    return request("/api/system-settings/slack-bot-token", {
-      method: "PATCH",
-      body: JSON.stringify({ token }),
-    });
   },
 
   async setNotificationEmailAccount(unipileAccountId: string): Promise<{ success: boolean }> {

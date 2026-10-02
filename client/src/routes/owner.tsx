@@ -5,6 +5,7 @@ import { LayoutGrid, Building2, Users, ContactRound, HelpCircle, Settings, Spark
 import { Button } from "@/components/ui/button";
 import { AppShell, type NavItem } from "@/components/features/app-shell";
 import { EscalationsBell } from "@/components/features/escalations";
+import { RecruiterNotificationsPopover } from "@/components/features/recruiter-notifications-popover";
 import { ClientDemandDialog, openClientDemand } from "@/components/features/client-demand-dialog";
 import { GlobalSearchDialog } from "@/components/features/global-search-dialog";
 import { RoleGuard } from "@/components/features/role-guard";
@@ -81,6 +82,7 @@ function OwnerLayout() {
           >
             <Plus className="h-3.5 w-3.5" /> Client Demand
           </Button>
+          <RecruiterNotificationsPopover leadsTo="/owner/leads" />
           <EscalationsBell />
         </>
       }

@@ -16,6 +16,7 @@
 import { fleschKincaidGrade, fleschReadingEase } from "./readability";
 import { specificityTarget, type Draft } from "./draftGenerator";
 import { BRAND, LINKEDIN_NOTE_CHAR_CAP } from "./promptBuilder";
+import { config } from "../config";
 import { citedNamedSpecifics } from "./leads";
 
 // Common cold-outreach spam-trigger words (deliverability signal)
@@ -88,7 +89,7 @@ function leadAttributeTerms(draft: Draft): Record<string, string[]> {
   if (langs.length) terms.language = langs;
   if (lead.country) terms.country = [lead.country];
   if (lead.services.length) terms.services = lead.services;
-  if (lead.vendorExperience) terms.experience = [lead.vendorExperience];
+  if (lead.vendorExperience.length) terms.experience = lead.vendorExperience;
   if (lead.yearsOfExp !== null) terms.experience = (terms.experience || []).concat([String(lead.yearsOfExp)]);
   return terms;
 }
@@ -216,7 +217,15 @@ export function evaluate(draft: Draft): Evaluation {
 
   // 3. Required elements -------------------------------------------------
   const greetsName = body.toLowerCase().slice(0, 60).includes(lead.firstName.toLowerCase());
-  const hasApply = body.includes(BRAND.apply_url) || body.includes("app.global3.io/apply");
+  // draftGenerator's ensureLinks() swaps the canonical BRAND.apply_url (what
+  // the prompt describes) for this lead's short link ({appBaseUrl}/g/{token})
+  // before the draft is finalized, so the finished body normally contains our
+  // OWN base URL, not the apply form's. Check both, plus the legacy literal,
+  // so this "has a call to action" gate stays accurate post-substitution.
+  const hasApply =
+    body.includes(BRAND.apply_url) ||
+    body.includes("app.global3.io/apply") ||
+    body.includes(`${config.shortLinkBaseUrl}/g/`);
   const hasSite = body.includes(BRAND.site);
   const hasCta = CTA_VERBS.some((v) => body.toLowerCase().includes(v));
   let reqOk: boolean;

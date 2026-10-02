@@ -18,8 +18,16 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { DraftingConfig } from "./config";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
+import { CircuitBreaker } from "../lib/circuitBreaker";
 
 export class ClaudeError extends Error {}
+
+// Module-level, not a class field -- ClaudeClient is constructed fresh per
+// request (see faq.routes.ts, orchestrator.ts), so an instance-level breaker
+// would never accumulate failures across calls. One breaker shared by every
+// ClaudeClient instance in this process: opens after 5 consecutive failures,
+// stops hammering a dead Claude API for 30s, then allows one probe through.
+const claudeCircuitBreaker = new CircuitBreaker({ failureThreshold: 5, cooldownMs: 30_000 });
 
 export interface Completion {
   text: string;
@@ -109,37 +117,39 @@ export class ClaudeClient {
     }
 
     try {
-      return await retryWithBackoff(
-        async (signal) => {
-          const started = Date.now();
-          const response = await this.client.messages.create(body, { signal });
-          const latencyMs = Date.now() - started;
+      return await claudeCircuitBreaker.call(() =>
+        retryWithBackoff(
+          async (signal) => {
+            const started = Date.now();
+            const response = await this.client.messages.create(body, { signal });
+            const latencyMs = Date.now() - started;
 
-          let text = response.content
-            .filter((b): b is Anthropic.TextBlock => b.type === "text")
-            .map((b) => b.text)
-            .join("");
-          if (jsonMode) {
-            text = extractJsonText(text);
-          }
+            let text = response.content
+              .filter((b): b is Anthropic.TextBlock => b.type === "text")
+              .map((b) => b.text)
+              .join("");
+            if (jsonMode) {
+              text = extractJsonText(text);
+            }
 
-          return {
-            text,
-            model: response.model,
-            prompt_tokens: response.usage?.input_tokens ?? null,
-            completion_tokens: response.usage?.output_tokens ?? null,
-            latency_ms: latencyMs,
-          };
-        },
-        {
-          isRetryable: isRetryableByDefault,
-          deadlineMs: 15000,
-          onRetry: (err, attempt, delayMs) => {
-            console.warn(
-              `[claudeClient] Claude call failed (attempt ${attempt + 1}/5): ${(err as any)?.message || err} — retrying in ${(delayMs / 1000).toFixed(1)}s`
-            );
+            return {
+              text,
+              model: response.model,
+              prompt_tokens: response.usage?.input_tokens ?? null,
+              completion_tokens: response.usage?.output_tokens ?? null,
+              latency_ms: latencyMs,
+            };
           },
-        }
+          {
+            isRetryable: isRetryableByDefault,
+            deadlineMs: 15000,
+            onRetry: (err, attempt, delayMs) => {
+              console.warn(
+                `[claudeClient] Claude call failed (attempt ${attempt + 1}/5): ${(err as any)?.message || err} — retrying in ${(delayMs / 1000).toFixed(1)}s`
+              );
+            },
+          }
+        )
       );
     } catch (err: any) {
       throw new ClaudeError(`Claude call failed after retries: ${err?.cause?.message ?? err?.message ?? err}`);

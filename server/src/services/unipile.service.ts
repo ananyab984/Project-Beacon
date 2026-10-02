@@ -16,8 +16,9 @@ import {
   InboundChannel,
 } from "@prisma/client";
 import { processInboundMessage } from "./processInboundMessage";
-import { createNotification } from "./notification.service";
+import { createNotification, formatLeadResponseSlackCard, basePathForRole } from "./notification.service";
 import { getSystemSetting } from "./system-settings.service";
+import { redactForLog } from "../lib/logSanitizer";
 
 // Exact, known Unipile account-status strings -> our AccountStatus enum.
 // Deliberately an exact-match table, not substring matching: a status like
@@ -56,6 +57,30 @@ function escapeHtml(text: string): string {
   return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/**
+ * Renders a bare URL in the draft as a real anchor whose VISIBLE text is just
+ * the host and path, with the query string hidden in the href.
+ *
+ * This is what lets the pre-filled apply link work in email without any
+ * redirect: the body carries the full
+ * "https://app.dev.global3.co/apply?first_name=...&email=..." (median ~170
+ * chars, up to 515), while the candidate simply sees
+ * "app.dev.global3.co/apply" -- Global3's own domain, no wall of query
+ * params, and nothing pointing at our own servers.
+ *
+ * Runs AFTER escapeHtml, so "&" is already "&amp;" -- which is the correct
+ * encoding for a literal "&" inside an href attribute, so the link resolves
+ * with every param intact. The character class deliberately excludes the
+ * quote and angle brackets escapeHtml would have produced, so a match can
+ * never run past the end of the URL into surrounding markup.
+ */
+function linkifyUrls(escaped: string): string {
+  return escaped.replace(/https?:\/\/[^\s<>"']+/g, (url) => {
+    const display = url.replace(/^https?:\/\//, "").replace(/\?[\s\S]*$/, "").replace(/\/+$/, "");
+    return `<a href="${url}" style="color:#1a73e8;text-decoration:underline;">${display}</a>`;
+  });
+}
+
 // Unipile renders `body` as HTML, so a plain-text draft's "\n\n" paragraph
 // breaks are just whitespace to the recipient's mail client and collapse
 // into one run-on block (this was the actual bug behind the squashed-looking
@@ -64,9 +89,11 @@ function escapeHtml(text: string): string {
 function plainTextToEmailHtml(text: string): string {
   return text
     .split(/\n{2,}/)
-    .map((para) => `<p style="margin:0 0 1em 0;">${escapeHtml(para).replace(/\n/g, "<br>")}</p>`)
+    .map((para) => `<p style="margin:0 0 1em 0;">${linkifyUrls(escapeHtml(para)).replace(/\n/g, "<br>")}</p>`)
     .join("");
 }
+
+export const __emailHtmlTesting = { plainTextToEmailHtml, linkifyUrls };
 
 function truncateForInviteNote(text: string, max: number = INVITE_NOTE_MAX_CHARS): string {
   if (text.length <= max) return text;
@@ -177,6 +204,28 @@ export function stripQuotedReplyHistory(text: string): string {
   // header) would otherwise disappear -- fall back to the untouched
   // original rather than storing an empty reply.
   return stripped || text.trim();
+}
+
+/** Constant-time string comparison for secrets — a plain `!==` on a fixed
+ * webhook path token/secret leaks a timing signal proportional to how many
+ * leading characters match. Exported for webhookAuth.test.ts. */
+export function safeCompare(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/** The local ConnectedAccount rows that no longer appear anywhere in
+ * Unipile's live /accounts response -- i.e. removed directly from Unipile's
+ * own dashboard rather than through this app. Exported as a plain function
+ * of its inputs (no Prisma/axios) so the diff itself is directly
+ * unit-testable; getUserConnectedAccounts is the only caller. */
+export function accountsVanishedFromUnipile<T extends { unipileAccountId: string }>(
+  localAccounts: T[],
+  liveAccountIds: Set<string>
+): T[] {
+  return localAccounts.filter((account) => !liveAccountIds.has(account.unipileAccountId));
 }
 
 export class UnipileService {
@@ -335,16 +384,32 @@ export class UnipileService {
     // Minting a link session isn't safe to auto-retry (a second mint on top
     // of a first that actually succeeded server-side just orphans a session)
     // -- bound with a deadline only, no retry.
-    const response = await retryWithBackoff(
-      (signal) =>
-        axios.post(targetUrl, payload, {
-          headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
-          signal,
-        }),
-      { retries: 0, deadlineMs: 15000 }
-    );
+    try {
+      const response = await retryWithBackoff(
+        (signal) =>
+          axios.post(targetUrl, payload, {
+            headers: this.getUnipileHeaders({ "Content-Type": "application/json" }),
+            signal,
+          }),
+        { retries: 0, deadlineMs: 15000 }
+      );
 
-    return { url: response.data.url, nonce };
+      return { url: response.data.url, nonce };
+    } catch (err) {
+      // The UnipileAuthAttempt row above was created BEFORE this call, on
+      // the assumption it would succeed -- if Unipile itself rejects the
+      // request (bad credentials, invalid DSN/provider combo, timeout,
+      // anything), this never reaches the recruiter as a usable link, but
+      // the 10-minute pending lock was already live. Without this cleanup,
+      // every failed mint (not just an abandoned popup, which
+      // cancelPendingAuthAttempt already handles) left CONNECTION_PENDING
+      // blocking the next real attempt for the full TTL -- confirmed live:
+      // a run of 401s from an invalid API key left a stuck attempt row that
+      // outlived the key actually getting fixed, so the very next click
+      // still failed, just with a different, more confusing error.
+      await prisma.unipileAuthAttempt.delete({ where: { nonce } }).catch(() => {});
+      throw err;
+    }
   }
 
   // EMAIL groups GOOGLE/OUTLOOK/MAIL/EMAIL together since a hosted link
@@ -410,8 +475,10 @@ export class UnipileService {
         { isRetryable: isRetryableByDefault, deadlineMs: 15000 }
       );
       const items = response.data?.items || response.data || [];
+      const liveAccountIds = new Set<string>();
       if (Array.isArray(items) && items.length > 0) {
         for (const item of items) {
+          liveAccountIds.add(item.id);
           // `/accounts` is scoped to the whole Unipile API key, i.e. every
           // user's accounts, not just this one, and (unlike the webhook's
           // `body.name`) items here carry no correlator back to our
@@ -454,6 +521,33 @@ export class UnipileService {
 
           await this.upsertConnectedAccountForUser(userId, provider, item.id, accountName, mappedStatus, rawStatus);
         }
+      }
+
+      // Reverse direction: the loop above only ever touches accounts
+      // Unipile's /accounts still returns. If this user disconnected/removed
+      // an account directly from Unipile's own dashboard, it simply stops
+      // appearing in that response -- there's no "deleted" entry to map a
+      // status onto -- so a local row left at OK/RECONNECTION_NEEDED read as
+      // "Connected" here forever, Refresh included. `/accounts` is scoped to
+      // the whole Unipile API key (every user, not just this one -- see the
+      // SECURITY comment above), so it's a complete live list to diff
+      // against.
+      const localAccounts = await prisma.connectedAccount.findMany({
+        where: { userId, status: { not: AccountStatus.DISCONNECTED } },
+      });
+      for (const account of accountsVanishedFromUnipile(localAccounts, liveAccountIds)) {
+        await prisma.accountDegradation.create({
+          data: {
+            connectedAccountId: account.id,
+            fromStatus: account.status,
+            toStatus: AccountStatus.DISCONNECTED,
+            reason: "No longer present in Unipile's connected-accounts list",
+          },
+        });
+        await prisma.connectedAccount.update({
+          where: { id: account.id },
+          data: { status: AccountStatus.DISCONNECTED, statusMessage: "Disconnected directly from Unipile" },
+        });
       }
     } catch (err: any) {
       console.warn("Could not sync live Unipile accounts:", err.message);
@@ -879,7 +973,12 @@ export class UnipileService {
    * if the system mailbox isn't configured yet, matching the notification
    * feature's "email/Slack channels no-op until provisioned" design.
    */
-  static async sendSystemEmail(toEmail: string, subject: string, body: string): Promise<void> {
+  static async sendSystemEmail(
+    toEmail: string,
+    subject: string,
+    body: string,
+    button?: { text: string; url: string }
+  ): Promise<void> {
     // Owner-configurable in-app (see system-settings.routes.ts) rather than
     // env-var-only, so G3 can connect/change the notification mailbox
     // themselves without an engineering redeploy.
@@ -889,12 +988,19 @@ export class UnipileService {
       return;
     }
 
+    // Every notification's Slack card has a button that deep-links back into
+    // G3 -- the email side previously had no equivalent at all (plain text
+    // only), so a recipient without Slack enabled had no click-through path.
+    const buttonHtml = button
+      ? `<p style="margin:1.5em 0 0 0;"><a href="${button.url}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;">${escapeHtml(button.text)}</a></p>`
+      : "";
+
     const unipileBaseUrl = this.getUnipileBaseUrl();
     const payload = {
       account_id: accountId,
       to: [{ identifier: toEmail.trim(), display_name: "" }],
       subject,
-      body: plainTextToEmailHtml(body),
+      body: plainTextToEmailHtml(body) + buttonHtml,
     };
 
     await retryWithBackoff(
@@ -985,11 +1091,11 @@ export class UnipileService {
    * Unified Webhook Event Handler (Idempotent & Deduplicated)
    */
   static async handleWebhookEvent(token: string, secretHeader: string | undefined, body: any) {
-    if (token !== config.unipileWebhookPathToken) {
+    if (!safeCompare(token, config.unipileWebhookPathToken)) {
       throw { statusCode: 401, message: "Invalid webhook path token" };
     }
 
-    if (secretHeader !== config.unipileWebhookSecret) {
+    if (!safeCompare(secretHeader || "", config.unipileWebhookSecret)) {
       throw { statusCode: 401, message: "Invalid webhook secret header" };
     }
 
@@ -1397,7 +1503,7 @@ export class UnipileService {
             });
             console.log(`[unipile webhook] Matched inbound email to conversation ${conversation.id} via lead-email identity (chatId=${chatId}).`);
           } else if (candidates.length > 1) {
-            console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${fromIdentity} -- refusing to guess.`);
+            console.warn(`[unipile webhook] Ambiguous email backfill for chatId=${chatId}: ${candidates.length} conversations share lead email ${redactForLog(fromIdentity)} -- refusing to guess.`);
           }
         }
 
@@ -1515,15 +1621,51 @@ export class UnipileService {
             const subs = await prisma.leadNotificationSubscription.findMany({
               where: { leadId: conversation.leadId, active: true },
             });
-            if (subs.length > 0) {
-              const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
-              for (const sub of subs) createNotification({
-                recipientId: sub.recruiterId,
-                type: "LEAD_RESPONSE",
-                title: `${lead?.fullName ?? lead?.maskedLabel ?? "A lead"} replied`,
-                body: messageText.slice(0, 200),
-                link: `/recruiter/leads`,
-              }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+            // Also checked unconditionally (not gated behind subs.length),
+            // since a contractor never toggles a per-lead bell -- they get
+            // notified on every reply to a lead they added, same as the
+            // subscribing recruiters above but via createdByContractorId
+            // instead of an opt-in LeadNotificationSubscription row.
+            const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
+            if (subs.length > 0 || lead?.createdByContractorId) {
+              const leadName = lead?.fullName ?? lead?.maskedLabel ?? "a lead";
+              const excerpt = messageText.length > 200 ? `${messageText.slice(0, 200)}…` : messageText;
+              // Subscribers aren't only recruiters -- an owner can switch the
+              // same per-lead bell on (see the notify-subscription route's
+              // requireRole) -- and /recruiter/leads is a route RoleGuard
+              // bounces them off, so resolve each subscriber's own section.
+              const subRoles = new Map(
+                subs.length === 0
+                  ? []
+                  : (
+                      await prisma.user.findMany({
+                        where: { id: { in: subs.map((s) => s.recruiterId) } },
+                        select: { id: true, role: true },
+                      })
+                    ).map((u) => [u.id, u.role.toLowerCase() === "owner" ? ("owner" as const) : ("recruiter" as const)])
+              );
+              for (const sub of subs) {
+                const basePath = basePathForRole(subRoles.get(sub.recruiterId) ?? "recruiter");
+                createNotification({
+                  recipientId: sub.recruiterId,
+                  type: "LEAD_RESPONSE",
+                  title: `${leadName} replied`,
+                  body: `${leadName} sent you a new message: "${excerpt}"`,
+                  slackCard: formatLeadResponseSlackCard(leadName, excerpt, basePath),
+                  link: `${basePath}/leads`,
+                }).catch((err) => console.error("[notifications] lead-response notify failed:", err));
+              }
+
+              if (lead?.createdByContractorId) {
+                createNotification({
+                  recipientId: lead.createdByContractorId,
+                  type: "LEAD_RESPONSE",
+                  title: `${leadName} replied`,
+                  body: `${leadName} sent you a new message: "${excerpt}"`,
+                  slackCard: formatLeadResponseSlackCard(leadName, excerpt, "/contractor"),
+                  link: `/contractor/leads`,
+                }).catch((err) => console.error("[notifications] contractor lead-response notify failed:", err));
+              }
             }
           }
         }

@@ -11,6 +11,7 @@ import { ClaudeClient } from "../drafting/claudeClient";
 import { loadDraftingConfig } from "../drafting/config";
 import { extractQuestions, extractKeywords, deduplicateMatches } from "../lib/questionExtractor";
 import { loadActiveFaqTagCandidates, matchFaqsByMessageTags } from "../lib/faqTagMatcher";
+import { redactForLog } from "../lib/logSanitizer";
 
 export const faqRouter = Router();
 
@@ -28,7 +29,7 @@ faqRouter.post("/check", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "MISSING_LEAD_MESSAGE", message: "leadMessage is required" });
     }
 
-    console.log(`[FAQ] Incoming check request with message: "${leadMessage.substring(0, 100)}..."`);
+    console.log(`[FAQ] Incoming check request with message: "${redactForLog(leadMessage, 100)}"`);
 
     // Extract individual questions from the lead message (max 5)
     const extractedQuestions = extractQuestions(leadMessage);

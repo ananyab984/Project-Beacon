@@ -107,6 +107,15 @@ type AuthCtx = {
   verifyEmailOtp: (email: string, otp: string) => Promise<void>;
   completeProfile: (role: Role) => Promise<AuthUser>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
+  /** Merge a just-saved profile change into the signed-in user.
+   *
+   * `user` is a snapshot taken at hydration/sign-in, so a profile field edited
+   * through the API (today: slackMemberId, from the settings pages) stays
+   * stale here until the next full page load. A component that only kept its
+   * own local input state looked fine until it remounted, then re-seeded from
+   * this stale snapshot and showed the OLD value -- reading as if the save had
+   * silently failed. Callers pass the fields the server echoed back. */
+  patchUser: (patch: Partial<AuthUser>) => void;
 };
 
 const Ctx = createContext<AuthCtx | null>(null);
@@ -342,6 +351,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return profile;
   }, []);
 
+  const patchUser = useCallback((patch: Partial<AuthUser>) => {
+    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+  }, []);
+
   const changePassword = useCallback(async (currentPassword: string, newPassword: string) => {
     const { error } = await authClient.changePassword({ currentPassword, newPassword });
     if (error) throw toError(error.message || "Failed to change password");
@@ -361,6 +374,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyEmailOtp,
       completeProfile,
       changePassword,
+      patchUser,
     }),
     [
       user,
@@ -375,6 +389,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       verifyEmailOtp,
       completeProfile,
       changePassword,
+      patchUser,
     ],
   );
 

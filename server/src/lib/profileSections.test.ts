@@ -135,6 +135,46 @@ function test7_htmlEntitiesAreDecoded() {
   assert.strictEqual(s.certifications[0].title, "R & Big Data");
 }
 
+function test10_nestedPositionsFoldIntoSummary() {
+  // Real case (Eduard Tudela Pons): a stacked-position company block's own
+  // top-level description was null, but its nested "Spanish LQA" position
+  // read "Realization of LQA for Japanese video games" -- the only place
+  // that role's actual work (and any tool it names) is recorded at all.
+  // Not rendered as its own row (formatRole in enrichment-details-dialog.tsx
+  // only reads title/company/dates), but must reach `summary` for drafting
+  // and any downstream text scan (Tools_Software/Vendor_Experience) to see.
+  const s = mergeProfileSections({
+    rawScrapeData: [{
+      experience: [{
+        company: "Keywords Studios",
+        description_html: null,
+        positions: [
+          { title: "Localization Support Specialist", description_html: null },
+          { title: "Spanish LQA", description_html: "Realization of LQA for Japanese video games. <!---->" },
+        ],
+      }],
+    }],
+  });
+  const summary = String(s.experience[0].summary ?? "");
+  assert.ok(summary.includes("Spanish LQA"), `expected position title in summary, got ${summary}`);
+  assert.ok(summary.includes("Realization of LQA for Japanese video games"), `expected position description in summary, got ${summary}`);
+}
+
+function test9_certificationAndCourseSubtitleSurvives() {
+  // subtitle can carry real text too (an issuing platform, a course code) --
+  // used to be dropped entirely, which meant a tool/vendor named only there
+  // (e.g. "Ooona Certified Subtitler" / subtitle "Ooona") was invisible to
+  // any downstream text scan.
+  const s = mergeProfileSections({
+    rawScrapeData: [{
+      certifications: [{ title: "Ooona Certified Subtitler", subtitle: "Ooona" }],
+      courses: [{ title: "Advanced Editing", subtitle: "Pro Tools 101" }],
+    }],
+  });
+  assert.strictEqual(s.certifications[0].subtitle, "Ooona");
+  assert.strictEqual(s.courses[0].subtitle, "Pro Tools 101");
+}
+
 function test8_noDataAnywhereIsEmptyNotCrash() {
   for (const lead of [{}, { rawScrapeData: null, parallelData: null }, { rawScrapeData: [] }, { parallelData: {} }]) {
     const s = mergeProfileSections(lead as any);
@@ -154,6 +194,8 @@ const tests = [
   test6_emptyShellsAndPlaceholdersAreDropped,
   test7_htmlEntitiesAreDecoded,
   test8_noDataAnywhereIsEmptyNotCrash,
+  test9_certificationAndCourseSubtitleSurvives,
+  test10_nestedPositionsFoldIntoSummary,
 ];
 
 let failed = 0;

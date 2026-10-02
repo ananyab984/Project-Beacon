@@ -10,6 +10,7 @@ import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere, requireA
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
+import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { resolveManualFieldSources } from "../lib/manualFieldSources";
 import { withEnrichedFieldCount } from "../lib/enrichmentCount";
 import { attachReenrichmentStatus } from "../lib/reenrichmentStatus";
@@ -18,14 +19,14 @@ import { applyConflictChoices, type FieldConflict } from "../lib/reenrichmentFie
 import { runAutumnReenrichment } from "../jobs/reenrichment.job";
 import { config } from "../config";
 import { convertGoogleSheetUrlToCsv, parseCsvRows } from "./sheet-sync.routes";
-import { createNotification } from "../services/notification.service";
 import { computePurgeAt, daysUntilPurge } from "../lib/recycleBin";
+import { detectLeadSource, isUsableProfileUrl } from "../lib/detectLeadSource";
+import { patchResolvesIdentity } from "../lib/enrichmentVerdict";
 
 export const leadRouter = Router();
 
 leadRouter.use(authenticateJwt);
 
-const LEAD_SOURCES = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"] as const;
 const LEAD_STAGES = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"] as const;
 const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
 
@@ -38,9 +39,10 @@ const LEAD_FLAGS = ["DNC", "ON_HOLD", "WATCHING", "HIGH_PRIORITY"] as const;
 export function assertContractorOwnsLead(
   requesterRole: string,
   requesterId: string,
-  lead: { createdByContractorId: string | null }
+  lead: { id?: string; createdByContractorId: string | null }
 ) {
   if (requesterRole.toLowerCase() === "contractor" && lead.createdByContractorId !== requesterId) {
+    console.warn(`[ownership] DENIED user=${requesterId} role=${requesterRole} leadId=${lead.id ?? "unknown"} -- not the owning contractor`);
     throw new ApiError(403, "FORBIDDEN", "Contractors can only act on their own submitted leads");
   }
 }
@@ -94,16 +96,6 @@ async function countForeignLeadsForContractor(contractorId: string, leadIds: str
   });
 }
 
-/** Best-effort mapping of a free-text/legacy source string to the LeadSource
- * enum -- same fallback rule the client's per-dialog copies of this already
- * use (mapToLeadSource in add-lead-dialog.tsx etc.): default to LINKEDIN
- * when nothing recognizable is found. */
-function mapToLeadSource(raw: string | undefined | null): (typeof LEAD_SOURCES)[number] {
-  if (!raw) return "LINKEDIN";
-  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
-  return LEAD_SOURCES.find((s) => s === upper || upper.includes(s)) ?? "LINKEDIN";
-}
-
 /** Same header-keyword matching as the client's parseCsvLeads
  * (client/src/lib/g3-mock.ts) -- kept in sync deliberately (see
  * normalizeServices.ts's comment) since this is a second, server-side entry
@@ -136,7 +128,10 @@ export function mapSheetRowsToLeads(rows: string[][]): z.infer<typeof createLead
     const rawServices = serviceIdx >= 0 && row[serviceIdx] ? row[serviceIdx] : "";
     const parsed = createLeadSchema.safeParse({
       fullName,
-      source: mapToLeadSource(sourceIdx >= 0 ? row[sourceIdx] : undefined),
+      // Raw cell text -- createLeadSchema's transform resolves it against
+      // the profile link below. No pre-mapping here, deliberately: a second
+      // mapping step is how the client and server drifted apart before.
+      source: sourceIdx >= 0 ? row[sourceIdx] : undefined,
       services: rawServices ? normalizeServices(rawServices) : [],
       country: countryIdx >= 0 ? row[countryIdx] || undefined : undefined,
       profileLink: profileIdx >= 0 ? row[profileIdx] || undefined : undefined,
@@ -145,7 +140,7 @@ export function mapSheetRowsToLeads(rows: string[][]): z.infer<typeof createLead
       email: emailIdx >= 0 ? row[emailIdx] || undefined : undefined,
       contactNumber: phoneIdx >= 0 ? row[phoneIdx] || undefined : undefined,
       yearsOfExperience: expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined,
-      vendorExperience: vendorIdx >= 0 ? row[vendorIdx] || undefined : undefined,
+      vendorExperience: vendorIdx >= 0 && row[vendorIdx] ? normalizeVendorExperience(row[vendorIdx]) : [],
     });
     if (parsed.success) out.push(parsed.data);
   }
@@ -160,9 +155,25 @@ const createLeadSchema = z.object({
   profileLink: z.string().trim().transform((val) => {
     if (!val) return undefined;
     return /^https?:\/\//i.test(val) ? val : `https://${val}`;
-  }).optional(),
+  })
+    // Validated, not just scheme-prefixed. An unusable value here is not
+    // cosmetic: source_router.py hands this straight to Bright Data / Tavily
+    // / Parallel as a real paid request that can only fail, and `hasContact`
+    // counts the lead as contactable because the field is non-empty. Same
+    // shape as the email rule above -- a row with a bad link is reported as
+    // an error on that row (bulk reports per-row, so the rest of the import
+    // still lands) rather than being quietly imported in a broken state.
+    .refine((val) => val === undefined || isUsableProfileUrl(val), {
+      message: "Invalid profile link — must be a web address, e.g. https://www.linkedin.com/in/name",
+    })
+    .optional(),
   country: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
-  source: z.enum(LEAD_SOURCES),
+  // Deliberately a loose string, not z.enum(LEAD_SOURCES): the object-level
+  // .transform() below decides the real value from the profile link, so a
+  // caller sending "Voices123" (or nothing) gets OTHER instead of a 400.
+  // Keeping the enum here would reject exactly the unrecognized labels this
+  // is meant to classify.
+  source: z.string().optional(),
   // Applies to every path that uses this schema -- both single manual
   // create and bulk CSV/XLSX/Google Sheet import (POST /api/leads/bulk
   // parses each row through this same schema) -- so a raw value like
@@ -173,9 +184,17 @@ const createLeadSchema = z.object({
   targetLanguage: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
   secondaryLanguages: z.array(z.string()).default([]),
   yearsOfExperience: z.number().min(0).max(99).optional(),
-  vendorExperience: z.string().trim().transform((val) => (val === "" ? undefined : val)).optional(),
+  vendorExperience: z.array(z.string()).default([]).transform((arr) => normalizeVendorExperience(arr)),
   assignedRecruiterId: z.string().uuid().optional(),
-});
+}).transform((lead) => ({
+  ...lead,
+  // THE choke point for source. Every way a lead can be created -- POST /
+  // (single), POST /bulk (CSV/XLSX), POST /import-from-sheet (Google Sheet),
+  // contractor or recruiter -- parses through this schema, so correcting the
+  // value here covers all of them at the trust boundary and cannot be
+  // bypassed by a stale or buggy client still sending its own guess.
+  source: detectLeadSource(lead.source, lead.profileLink),
+}));
 
 // GET /api/leads — full pool, owner + recruiter only (contractors use /mine)
 leadRouter.get(
@@ -518,15 +537,11 @@ leadRouter.post(
       enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
     });
 
-    if (lead.assignedRecruiterId) {
-      await createNotification({
-        recipientId: lead.assignedRecruiterId,
-        type: "NEW_LEAD",
-        title: `New lead: ${lead.fullName || lead.maskedLabel}`,
-        body: `A new lead was added and assigned to you.`,
-        link: `/recruiter/leads`,
-      }).catch((err) => console.error("[notifications] new lead notify failed:", err));
-    }
+    // NEW_LEAD is reserved for a genuine external application landing via the
+    // public apply webhook (not built yet) -- a recruiter/owner manually
+    // adding or importing a lead here isn't "an application," so this must
+    // not fire NEW_LEAD. Wire the real trigger into that webhook handler
+    // when it exists instead of here.
 
     return res.status(201).json({ lead: withEnrichedFieldCount(lead), duplicateWarning: dup.isDuplicate ? dup : null });
   })
@@ -630,15 +645,8 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
           enrichLeadById(lead.id).catch((err) => console.error("Immediate bulk enrichment error:", err));
         });
 
-        if (lead.assignedRecruiterId) {
-          createNotification({
-            recipientId: lead.assignedRecruiterId,
-            type: "NEW_LEAD",
-            title: `New lead: ${lead.fullName || lead.maskedLabel}`,
-            body: `A new lead was imported and assigned to you.`,
-            link: `/recruiter/leads`,
-          }).catch((err) => console.error("[notifications] new lead notify failed:", err));
-        }
+        // See the single-create route above: NEW_LEAD is reserved for the
+        // (not yet built) public apply webhook, not a manual/bulk import.
 
         results.push({ index: i, status: dup.isDuplicate ? "duplicate" : "accepted", leadId: lead.id });
       } catch (err: any) {
@@ -801,14 +809,24 @@ leadRouter.patch(
       sourceLanguage: z.string().nullable().optional(),
       targetLanguage: z.string().nullable().optional(),
       country: z.string().nullable().optional(),
-      profileLink: z.string().nullable().optional(),
+      // Same bar as createLeadSchema's: this is the other way a profile link
+      // reaches the scrapers, so it cannot be the lax one. `null` stays legal
+      // -- that is the deliberate "clear this field" signal (see the
+      // nullable-vs-absent note above) -- and an empty string clears it too.
+      profileLink: z
+        .string()
+        .nullable()
+        .optional()
+        .refine((val) => val === null || val === undefined || val.trim() === "" || isUsableProfileUrl(val), {
+          message: "Invalid profile link — must be a web address, e.g. https://www.linkedin.com/in/name",
+        }),
       email: z.string().trim().transform((val) => (val === "" ? null : val)).nullable().refine((val) => !val || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: "Invalid email" }).optional(),
       contactNumber: z.string().nullable().optional(),
       // Same bounds as createLeadSchema below -- this PATCH path (the
       // Enrichment Details dialog's manual-entry Save) had none at all,
       // which is how a negative Years_of_Exp reached a lead undetected.
       yearsOfExperience: z.number().min(0).max(99).nullable().optional(),
-      vendorExperience: z.string().nullable().optional(),
+      vendorExperience: z.array(z.string()).optional(),
       headline: z.string().nullable().optional(),
       currentTitle: z.string().nullable().optional(),
       aboutSnippet: z.string().nullable().optional(),
@@ -881,8 +899,32 @@ leadRouter.patch(
     const shouldStayComplete =
       existing.enrichmentStatus === "COMPLETE" || patch.identityResolved === true || patch.enrichmentStatus === "COMPLETE" || hasContact;
 
+    // Same split as enrichLeadById's `concluded` vs `fullyEnriched` (see
+    // jobs/enrichment.job.ts and lib/enrichmentVerdict.ts) -- this is the
+    // other way a lead reaches those two flags, so it has to apply the same
+    // bar or it just reintroduces the bug by hand.
+    //
+    // `shouldStayComplete` is fine for enrichmentStatus: that is retry
+    // control, and a lead someone is actively editing must not be re-claimed
+    // by pollPendingEnrichment. It is much too loose for identityResolved,
+    // which gates the GLOBAL recruiter pool: `hasContact` counts a bare
+    // profileLink, and `existing.enrichmentStatus === "COMPLETE"` is now true
+    // of every lead whose waterfall merely concluded -- so any edit at all to
+    // any lead promoted it, regardless of what was actually known about the
+    // person.
+    //
+    // A recruiter filling the record in by hand should still resolve it, so
+    // the bar is the same one the pipeline uses (core/schema.py's
+    // CRITICAL_FIELDS), applied to the post-patch values. `=== null` is a
+    // deliberate clear and must not fall back to the existing value; an
+    // absent key means "don't touch", which does.
+    const hasAllCriticalFields = patchResolvesIdentity(patch, existing);
+
     if (shouldStayComplete) {
-      patch.identityResolved = true;
+      // An explicit `identityResolved: true` from the caller is a deliberate
+      // recruiter action ("I have confirmed who this is") and still wins --
+      // this only stops it being set as a silent side effect of any edit.
+      patch.identityResolved = patch.identityResolved === true || hasAllCriticalFields;
       patch.enrichmentStatus = "COMPLETE";
       // NOTE: this used to also strip ON_HOLD here -- removed. On Hold is now
       // driven only by the waterfall's own conclusion state or the
@@ -966,16 +1008,23 @@ leadRouter.patch(
           });
 
           if (matchingReq) {
-            const newFilled = matchingReq.filled + 1;
-            const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
-            await prisma.requirement.update({
+            // Atomic at the DB level (UPDATE ... SET filled = filled + 1) --
+            // fixes a lost-increment race where two leads onboarding into
+            // the same requirement at once could both read the same
+            // starting `filled` value and overwrite each other. gap/status
+            // are derived from THIS update's own returned row, not the
+            // pre-write snapshot.
+            const updatedReq = await prisma.requirement.update({
               where: { id: matchingReq.id },
-              data: {
-                filled: newFilled,
-                gap: newGap,
-                status: newGap === 0 ? "FULFILLED" : matchingReq.status,
-              },
+              data: { filled: { increment: 1 } },
             });
+            const newGap = Math.max(0, updatedReq.headcountNeeded - updatedReq.filled);
+            if (newGap !== updatedReq.gap || (newGap === 0 && updatedReq.status !== "FULFILLED")) {
+              await prisma.requirement.update({
+                where: { id: matchingReq.id },
+                data: { gap: newGap, status: newGap === 0 ? "FULFILLED" : updatedReq.status },
+              });
+            }
 
             const matchingDemand = await prisma.clientDemand.findFirst({
               where: {
@@ -985,12 +1034,14 @@ leadRouter.patch(
               },
             });
             if (matchingDemand) {
-              const dFilled = matchingDemand.filled + 1;
-              const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
-              await prisma.clientDemand.update({
+              const updatedDemand = await prisma.clientDemand.update({
                 where: { id: matchingDemand.id },
-                data: { filled: dFilled, gap: dGap },
+                data: { filled: { increment: 1 } },
               });
+              const dGap = Math.max(0, updatedDemand.headcountNeeded - updatedDemand.filled);
+              if (dGap !== updatedDemand.gap) {
+                await prisma.clientDemand.update({ where: { id: matchingDemand.id }, data: { gap: dGap } });
+              }
             }
           }
         } else if (existing.stage === "ONBOARDED") {
@@ -1003,16 +1054,25 @@ leadRouter.patch(
           });
 
           if (matchingReq) {
-            const newFilled = Math.max(0, matchingReq.filled - 1);
-            const newGap = Math.max(0, matchingReq.headcountNeeded - newFilled);
-            await prisma.requirement.update({
-              where: { id: matchingReq.id },
-              data: {
-                filled: newFilled,
-                gap: newGap,
-                status: matchingReq.status === "FULFILLED" ? "ACTIVE" : matchingReq.status,
-              },
+            // Guarded atomic decrement -- `filled` must never go below 0.
+            // The `filled: { gt: 0 }` guard on the WHERE clause makes this
+            // safe even if a concurrent decrement already brought it to 0
+            // between the findFirst above and this write: count === 0 means
+            // someone else already handled it, so there's nothing left to do.
+            const decremented = await prisma.requirement.updateMany({
+              where: { id: matchingReq.id, filled: { gt: 0 } },
+              data: { filled: { decrement: 1 } },
             });
+            if (decremented.count > 0) {
+              const updatedReq = await prisma.requirement.findUniqueOrThrow({ where: { id: matchingReq.id } });
+              const newGap = Math.max(0, updatedReq.headcountNeeded - updatedReq.filled);
+              if (newGap !== updatedReq.gap || (updatedReq.status === "FULFILLED" && newGap > 0)) {
+                await prisma.requirement.update({
+                  where: { id: matchingReq.id },
+                  data: { gap: newGap, status: updatedReq.status === "FULFILLED" ? "ACTIVE" : updatedReq.status },
+                });
+              }
+            }
 
             const matchingDemand = await prisma.clientDemand.findFirst({
               where: {
@@ -1022,12 +1082,17 @@ leadRouter.patch(
               },
             });
             if (matchingDemand) {
-              const dFilled = Math.max(0, matchingDemand.filled - 1);
-              const dGap = Math.max(0, matchingDemand.headcountNeeded - dFilled);
-              await prisma.clientDemand.update({
-                where: { id: matchingDemand.id },
-                data: { filled: dFilled, gap: dGap },
+              const decrementedDemand = await prisma.clientDemand.updateMany({
+                where: { id: matchingDemand.id, filled: { gt: 0 } },
+                data: { filled: { decrement: 1 } },
               });
+              if (decrementedDemand.count > 0) {
+                const updatedDemand = await prisma.clientDemand.findUniqueOrThrow({ where: { id: matchingDemand.id } });
+                const dGap = Math.max(0, updatedDemand.headcountNeeded - updatedDemand.filled);
+                if (dGap !== updatedDemand.gap) {
+                  await prisma.clientDemand.update({ where: { id: matchingDemand.id }, data: { gap: dGap } });
+                }
+              }
             }
           }
         }

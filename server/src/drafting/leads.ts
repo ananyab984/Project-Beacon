@@ -122,7 +122,7 @@ export interface LeadFields {
   targetLanguage?: string | null;
   secondaryLanguages?: string[];
   yearsOfExp?: number | null;
-  vendorExperience?: string | null;
+  vendorExperience?: string[];
   enrichmentStatus?: string | null;
   headline?: string | null;
   aboutSnippet?: string | null;
@@ -151,7 +151,7 @@ export class Lead {
   readonly targetLanguage: string | null;
   readonly secondaryLanguages: string[];
   readonly yearsOfExp: number | null;
-  readonly vendorExperience: string | null;
+  readonly vendorExperience: string[];
   readonly enrichmentStatus: string | null;
   readonly headline: string | null;
   readonly aboutSnippet: string | null;
@@ -202,7 +202,7 @@ export class Lead {
     this.targetLanguage = fields.targetLanguage ?? null;
     this.secondaryLanguages = fields.secondaryLanguages ?? [];
     this.yearsOfExp = fields.yearsOfExp ?? null;
-    this.vendorExperience = fields.vendorExperience ?? null;
+    this.vendorExperience = fields.vendorExperience ?? [];
     this.enrichmentStatus = fields.enrichmentStatus ?? null;
     this.headline = fields.headline ?? null;
     this.aboutSnippet = fields.aboutSnippet ?? null;
@@ -296,7 +296,7 @@ export class Lead {
     // etc.) via the existing "if absent, don't mention it" rule below.
     if (this.services.length && this.hasServiceCorroboration()) facts.services = this.services.join(", ");
     if (this.yearsOfExp !== null) facts.years_of_experience = `${this.yearsOfExp} years`;
-    if (this.vendorExperience) facts.current_role_or_company = this.vendorExperience;
+    if (this.vendorExperience.length) facts.current_role_or_company = this.vendorExperience.join(", ");
     if (this.currentTitle) facts.current_title = this.currentTitle;
     if (this.headline) facts.headline = this.headline;
     if (this.toolsSoftware.length) facts.tools_software = this.toolsSoftware.join(", ");
@@ -398,9 +398,7 @@ export class Lead {
     for (const t of this.toolsSoftware) add(t, true);
     for (const c of this.certifications) add(c, true);
     add(this.currentTitle, false);
-    if (this.vendorExperience) {
-      for (const c of this.vendorExperience.split(",")) add(c.trim(), true);
-    }
+    for (const c of this.vendorExperience) add(c, true);
     // Named employers and role titles from the full work history -- richer
     // than vendorExperience's flattened summary, and the entries Parallel
     // returns carry the named productions/clients worth citing.
@@ -660,7 +658,7 @@ export function fromRecord(rec: Record<string, any>): Lead {
     targetLanguage: clean(rec.Target_Language) ?? clean(rec.target_language),
     secondaryLanguages: splitList(rec.Secondary_Languages ?? rec.secondary_languages),
     yearsOfExp: toInt(rec.Years_of_Exp ?? rec.years_of_exp),
-    vendorExperience: clean(rec.Vendor_Experience) ?? clean(rec.vendor_experience),
+    vendorExperience: splitList(rec.Vendor_Experience ?? rec.vendor_experience),
     enrichmentStatus: clean(rec.Enrichment_Status) ?? clean(rec.enrichment_status),
     headline: clean(rec.Headline) ?? clean(rec.headline),
     aboutSnippet: clean(rec.About_Snippet) ?? clean(rec.about_snippet),

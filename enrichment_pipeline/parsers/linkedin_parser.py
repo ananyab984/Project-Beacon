@@ -9,6 +9,9 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from parsers.base import BaseParser
 from parsers.service_aliases import extract_services_from_text
+from parsers.tool_aliases import TOOL_ALIASES, extract_tools_from_text
+from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
+from parsers.language_filter import looks_non_english_token
 
 
 def _clean_text(val: Any) -> Optional[str]:
@@ -166,6 +169,66 @@ def _about_text_blob(profile: dict) -> str:
     return " ".join(str(profile.get(f) or "") for f in _ABOUT_FIELD_NAMES)
 
 
+# Different profiles use different key names for conceptually the same
+# credentials section -- checked as separate sections that can all coexist
+# on one profile, not a first-match fallback the way _extract_certifications
+# reads them (that function only needs ONE structured value to display;
+# this one is mining every real word available for a tool/vendor mention).
+_CREDENTIAL_LIST_KEYS = ("certifications", "licenses_and_certifications", "licenses", "courses")
+
+
+def _narrative_text_blob(profile: dict) -> str:
+    """Every real narrative/title string BrightData returns beyond the thin
+    Headline/About fields -- structured credential list titles (a
+    certification or course name can itself name a tool, e.g. "Ooona
+    Certified Subtitler") and every experience entry's own free-text
+    description plus each of its per-position title/description. This is
+    what lets a tool or vendor named only in "I used Pro Tools daily on this
+    role" (a real per-role description, not prose the person wrote about
+    themselves) get picked up deterministically instead of needing an LLM to
+    read it.
+
+    HTML tags are stripped (not just entity-decoded, which _clean_text
+    already does) before matching -- these fields are raw scraped HTML, and
+    an unstripped tag sitting between two words of a multi-word alias
+    ("pro" <b> "tools") would otherwise break the substring match."""
+    parts: List[str] = []
+
+    for key in _CREDENTIAL_LIST_KEYS:
+        items = profile.get(key)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict):
+                for field in ("title", "subtitle", "name"):
+                    v = item.get(field)
+                    if v:
+                        parts.append(str(v))
+            elif item:
+                parts.append(str(item))
+
+    exp_list = profile.get("experience") or profile.get("positions") or []
+    if isinstance(exp_list, list):
+        for item in exp_list:
+            if not isinstance(item, dict):
+                continue
+            for field in ("description", "description_html"):
+                v = item.get(field)
+                if v:
+                    parts.append(str(v))
+            for pos in item.get("positions") or []:
+                if not isinstance(pos, dict):
+                    continue
+                for field in ("title", "description", "description_html"):
+                    v = pos.get(field)
+                    if v:
+                        parts.append(str(v))
+
+    raw = " ".join(parts)
+    stripped = re.sub(r"<[^>]+>", " ", raw)
+    return _clean_text(stripped) or ""
+
+
 def _extract_years_of_experience(profile: dict) -> Optional[int]:
     """Extract years of experience from explicit fields, About section, or Experience list."""
     if profile.get("years_of_experience"):
@@ -207,31 +270,24 @@ def _extract_years_of_experience(profile: dict) -> Optional[int]:
     return None
 
 
-# Known linguist-industry tools/software -- matched case-insensitively
-# against the profile's `skills` list to surface a concrete, named detail
-# (e.g. "OOONA", "WinCaps") separately from the broad `Services` category
-# list, since a named tool is far stronger personalization material than a
-# generic service category. Purely additive: `Services` keeps its existing
-# full-skills-list behavior unchanged.
-_KNOWN_TOOLS = [
-    "OOONA", "WinCaps", "EZTitles", "Subtitle Edit", "Aegisub",
-    "SDL Trados", "Trados", "memoQ", "MemoQ", "Wordfast", "Phrase",
-    "Memsource", "VoiceQ", "Pro Tools", "Adobe Audition", "Reaper",
-    "Annotation Edit", "Subtitle Workshop", "CaptionHub", "Amara",
-]
+# Canonical tool/software matching now lives in parsers/tool_aliases.py --
+# same reasoning as extract_services_from_text above (pulled out so
+# orchestrator.py's Parallel merge path can resolve Tools_Software with the
+# exact same heuristic instead of Parallel-sourced leads never getting a
+# value at all). The list there matches the recruiter-facing Software
+# Proficiency dropdown exactly, which the old inline `_KNOWN_TOOLS` here had
+# drifted from (missing most of the dropdown's entries, and misspelling
+# "EZTitle" as "EZTitles").
+_KNOWN_TOOLS = list(TOOL_ALIASES.keys())
 
 
 def _extract_tools_software(text_blob: str) -> Optional[str]:
-    """Matches `_KNOWN_TOOLS` against any text blob -- the profile's skills
-    list joined into text, or its headline/About text, or both. BrightData's
-    LinkedIn dataset (confirmed in production) frequently omits a structured
-    `skills` section entirely, so a tool mentioned only in prose ("hands-on
-    with OOONA and WinCaps") still gets picked up."""
-    lowered = text_blob.lower()
-    matched: List[str] = []
-    for tool in _KNOWN_TOOLS:
-        if tool.lower() in lowered and tool not in matched:
-            matched.append(tool)
+    """Matches the canonical tool list against any text blob -- the profile's
+    skills list joined into text, or its headline/About text, or both.
+    BrightData's LinkedIn dataset (confirmed in production) frequently omits
+    a structured `skills` section entirely, so a tool mentioned only in
+    prose ("hands-on with Ooona and WinCaps") still gets picked up."""
+    matched = extract_tools_from_text(text_blob)
     return ", ".join(matched) if matched else None
 
 
@@ -404,14 +460,39 @@ def _extract_certifications_deep(profile: dict) -> Optional[str]:
     return ", ".join(from_text) if from_text else None
 
 
-def _extract_vendor_experience(profile: dict) -> Optional[str]:
-    """Extract company/vendor experience portfolio."""
+def _extract_vendor_experience(profile: dict, narrative_text: str = "") -> Optional[str]:
+    """Collects every distinct real company/employer from the profile's
+    structured experience history (current_company + the full experience
+    list) -- a person's actual vendor/client portfolio, not just whichever
+    of the 9 largest known post-production vendors happens to be one of
+    them. Restricting this field to only alias-matched known vendors was
+    confirmed live to throw away exactly the rich data a profile's own
+    Experience section already has: a lead with 9 distinct named employers
+    there (Netflix, Kinotitles Srls, Baburka Production, Words in Progress
+    S.r.l., ...) still had Vendor_Experience holding only "Freelancer" --
+    which isn't even a real company, just what BrightData put in
+    `current_company` for someone describing how they work rather than who
+    they work for (see vendor_aliases.NON_COMPANY_EMPLOYMENT_LABELS).
+
+    A company matching (or an obvious variant of) one of the 9 known
+    vendors is normalized to its canonical spelling via
+    vendor_aliases.canonicalize_or_keep; every other real, named employer is
+    kept exactly as stated -- any company someone has actually worked with
+    is real vendor-experience information a recruiter wants to see.
+
+    `narrative_text` is additionally scanned against the closed 9-vendor
+    alias list (vendor_aliases.extract_vendors_from_text) -- unlike the
+    structured company list above, this is NOT open extraction (it can only
+    ever add one of the 9 known names), so it stays safe to run
+    deterministically. This is what catches a known vendor named only in
+    prose ("delivered QC to Zoo Digital") that never appears as a structured
+    `company` value on its own."""
     companies = []
     curr = profile.get("current_company")
     if isinstance(curr, dict):
         name = curr.get("name")
         if name:
-            companies.append(name)
+            companies.append(str(name))
     elif curr:
         companies.append(str(curr))
 
@@ -420,12 +501,28 @@ def _extract_vendor_experience(profile: dict) -> Optional[str]:
         for item in exp_list:
             if isinstance(item, dict):
                 cname = item.get("company") or item.get("company_name")
-                if cname and str(cname) not in companies:
+                if cname:
                     companies.append(str(cname))
 
-    if companies:
-        return ", ".join(companies[:4])
-    return profile.get("company") or None
+    company_name = profile.get("company")
+    if company_name:
+        companies.append(str(company_name))
+
+    companies.extend(extract_vendors_from_text(narrative_text))
+
+    seen: set = set()
+    result: List[str] = []
+    for raw in companies:
+        canonical = canonicalize_or_keep(raw)
+        if canonical is None:
+            continue
+        key = canonical.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(canonical)
+
+    return ", ".join(result) if result else None
 
 
 class LinkedInParser(BaseParser):
@@ -465,10 +562,6 @@ class LinkedInParser(BaseParser):
         if yoe is not None:
             result["Years_of_Exp"] = yoe
 
-        vendors = _extract_vendor_experience(profile)
-        if vendors:
-            result["Vendor_Experience"] = vendors
-
         # Skills & Languages -- structured `skills` first when BrightData
         # actually returns it (rare in production for this dataset), then a
         # deterministic free-text scan of headline/About against known
@@ -478,9 +571,19 @@ class LinkedInParser(BaseParser):
         skills = profile.get("skills")
         skill_names: List[str] = []
         if isinstance(skills, list):
-            skill_names = [str(s.get("name")) if isinstance(s, dict) and s.get("name") else str(s) for s in skills if s]
-            result["Services"] = ", ".join([n for n in skill_names if n])
-        elif skills:
+            raw_skill_names = [str(s.get("name")) if isinstance(s, dict) and s.get("name") else str(s) for s in skills if s]
+            # Unlike Parallel's Services path (translated via orchestrator.py's
+            # _normalize_parallel_language before it's ever read), BrightData's
+            # structured `skills` list has no language normalization at all --
+            # confirmed live: a real profile's skills list held both an
+            # English tag and its own-language duplicate side by side
+            # ("Teamwork" and "Trabalho em equipe"), both joined straight into
+            # Services. Dropped here rather than translated (cheaper, no LLM
+            # call, and the English counterpart is already present in the
+            # same list in every confirmed case).
+            skill_names = [n for n in raw_skill_names if n and not looks_non_english_token(n)]
+            result["Services"] = ", ".join(skill_names)
+        elif skills and not looks_non_english_token(str(skills)):
             result["Services"] = str(skills)
 
         headline = _extract_headline(profile)
@@ -506,9 +609,15 @@ class LinkedInParser(BaseParser):
         if lang_pair:
             result["Source_Language"], result["Target_Language"] = lang_pair
 
-        tools = _extract_tools_software(" ".join(skill_names) + " " + free_text)
+        narrative_text = _narrative_text_blob(profile)
+
+        tools = _extract_tools_software(" ".join(skill_names) + " " + free_text + " " + narrative_text)
         if tools:
             result["Tools_Software"] = tools
+
+        vendors = _extract_vendor_experience(profile, free_text + " " + narrative_text)
+        if vendors:
+            result["Vendor_Experience"] = vendors
 
         certifications = _extract_certifications_deep(profile)
         if certifications:

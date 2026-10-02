@@ -148,12 +148,38 @@ class Config:
     brightdata_request_timeout: int = 30
     brightdata_deadline_seconds: float = 60.0
 
+    # Tavily, both Groq clients (services classification/fill-only extraction,
+    # dedup), and Claude's translate_to_english all still ran on the shared
+    # 10s/15s pair above -- the same bug Bright Data was pulled out of: one
+    # 10s attempt plus a 1s backoff leaves ~4s of a 15s budget, so a real
+    # attempt started and the deadline killed it mid-flight, giving effectively
+    # one attempt no matter what max_retries said. Unlike Bright Data's page
+    # scrape, these are fast synchronous JSON APIs with genuinely similar
+    # measured latency (confirmed live: Tavily ~2.1-2.8s, Groq ~0.5s, Claude
+    # ~0.9-1.4s), so one shared pair covers all four rather than four
+    # near-identical bespoke ones. 15s/45s leaves room for the full 5-attempt
+    # sequence (backoff sleeps + calls) even with several retries.
+    fast_provider_request_timeout: int = 15
+    fast_provider_deadline_seconds: float = 45.0
+
     # Duplicate/identity-resolution stage ("Danny M rule") -- pairs scoring >= this are
     # flagged for human review, never auto-merged.
     dedup_match_threshold: float = 0.8
     keepalive_enabled: bool = False
     keepalive_url: str = "http://127.0.0.1:8000"
     keepalive_interval_seconds: int = 600
+
+    # Shared secret required on every /enrich and /enrich/batch call (see
+    # main.py's verify_shared_secret) -- proves the call came from Global3's
+    # own server, not an arbitrary caller who found this service's URL. Must
+    # match server/.env's own ENRICHMENT_SERVICE_SHARED_SECRET exactly.
+    # Deliberately NOT enforced via require_keys/ConfigError like the
+    # provider keys above (this service is designed to always boot and
+    # report a degraded state via /health, never crash at startup) --
+    # instead the auth check itself fails CLOSED (rejects every request)
+    # when this is empty, so an unset secret can never accidentally leave
+    # the endpoint open.
+    enrichment_service_shared_secret: str = ""
 
     def masked_key(self, key: str) -> str:
         if not key:
@@ -214,10 +240,13 @@ def load_config(require_keys: bool = False) -> Config:
         request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
         brightdata_request_timeout=int(os.getenv("BRIGHTDATA_REQUEST_TIMEOUT", "30")),
         brightdata_deadline_seconds=float(os.getenv("BRIGHTDATA_DEADLINE_SECONDS", "60.0")),
+        fast_provider_request_timeout=int(os.getenv("FAST_PROVIDER_REQUEST_TIMEOUT", "15")),
+        fast_provider_deadline_seconds=float(os.getenv("FAST_PROVIDER_DEADLINE_SECONDS", "45.0")),
         max_retries=int(os.getenv("MAX_RETRIES", "4")),
         log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
         dedup_match_threshold=dedup_match_threshold,
         keepalive_enabled=keepalive_enabled,
         keepalive_url=keepalive_url or "http://127.0.0.1:8000",
         keepalive_interval_seconds=keepalive_interval_seconds,
+        enrichment_service_shared_secret=os.getenv("ENRICHMENT_SERVICE_SHARED_SECRET", "").strip(),
     )

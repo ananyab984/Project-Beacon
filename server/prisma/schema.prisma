@@ -147,6 +147,13 @@ enum LeadSource {
   BODALGO	
   FREELANCER	
   APOLLO	
+  // "we could not identify this platform" -- a real answer, not a fallback
+  // bucket. Assigned by server/src/lib/detectLeadSource.ts when a lead's
+  // profile link is not a host we recognize, so the pipeline stops filing
+  // such leads as LINKEDIN and sending them to Bright Data, which rejects
+  // every non-LinkedIn URL. source_router.py routes OTHER to Parallel + LLM
+  // fallback with no Tier 1 scrape.
+  OTHER
 }
 
 enum InteractionDirection {
@@ -479,7 +486,7 @@ model Lead {
   prozProfileId           String?      @map("proz_profile_id")
   linkedinUrn             String?      @map("linkedin_urn")
   yearsOfExperience       Decimal?     @map("years_of_experience") @db.Decimal(4, 1) // once per lead, per confirmed answer
-  vendorExperience        String?      @map("vendor_experience") // repo stores this as free text; LeadVendorMatch below adds structured matching on top, does not replace this field
+  vendorExperience        String[]     @default([]) @map("vendor_experience") // canonical vendor names (parsers/vendor_aliases.py / client/src/lib/vendors.ts), same multi-value shape as services/toolsSoftware; LeadVendorMatch below adds structured competitor matching on top, does not replace this field
   yoeConfidence           Decimal?     @map("yoe_confidence") @db.Decimal(4, 3) // Claude extraction confidence, 0-1
   linkedinMatchConfidence Decimal?     @map("linkedin_match_confidence") @db.Decimal(4, 3) // "Danny M" case (repo: match_confidence)
   availability            Availability @default(UNKNOWN)
@@ -877,6 +884,11 @@ model Client {
   contactEmail String?  @map("contact_email")
   notes        String?
   createdAt    DateTime @default(now()) @map("created_at")
+  // Gates whether this client's requirement-status changes fan out a
+  // CLIENT_STATUS_UPDATE notification to owners (notification.service.ts's
+  // notifyRequirementStatusChange). Added by migration
+  // 20260924120000_expand_notifications.
+  notificationsEnabled Boolean @default(false) @map("notifications_enabled")
 
   demands      ClientDemand[]
   requirements Requirement[]
@@ -1231,6 +1243,20 @@ enum NotificationType {
   DUE_DATE_REMINDER
   LEAD_RESPONSE
   ESCALATION
+  // Contractor-facing types (see notification.routes.ts's CONTRACTOR_TYPES).
+  ENRICHMENT_COMPLETE
+  DAILY_DEMAND_SUMMARY
+  WEEKLY_LEADS_SUMMARY
+  WEEKLY_PERFORMANCE_SUMMARY
+  // Added by migration 20260924120000_expand_notifications.
+  ENRICHMENT_STALLED
+  DUPLICATE_REVIEW_NEEDED
+  DNC_CONFIRMATION_NEEDED
+  FOLLOW_UP_DUE
+  LEAD_PLACED
+  WEEKLY_TEAM_HEALTH_SUMMARY
+  CLIENT_STATUS_UPDATE
+  REQUIREMENT_FULFILLED
 }
 
 model Notification {

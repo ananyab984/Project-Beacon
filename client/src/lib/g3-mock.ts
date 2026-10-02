@@ -25,7 +25,7 @@ export interface Lead {
   country?: string;
   recruiter_id: string;
   years_experience?: number;
-  vendor_experience?: string;
+  vendor_experience?: string[];
   verified_email: boolean;
   confirmed_language_pair: boolean;
   match_confidence?: number; // 0-1, for ambiguous records
@@ -863,8 +863,15 @@ function parseCsvRow(line: string): string[] {
   return res;
 }
 
+/** A parsed CSV/Excel row -- the mock Lead shape plus the real contact
+ * fields (email/phone/profile_link) callers actually need to check
+ * duplicates and create the real lead against, which Lead itself has no
+ * room for (masked_label/verified_email are display/mock concerns, not
+ * contact data). */
+export type ParsedLeadRow = Omit<Lead, "id"> & { email?: string; phone?: string; profile_link?: string };
+
 /** Helper: Parse CSV/Excel sheet text content into Lead objects. */
-export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
+export function parseCsvLeads(csvText: string): ParsedLeadRow[] {
   const lines = csvText.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length <= 1) return [];
   return mapRowsToLeads(lines.map(parseCsvRow));
@@ -881,7 +888,7 @@ export function parseCsvLeads(csvText: string): Omit<Lead, "id">[] {
  * `xlsx` package into the same string[][] shape) reuse identical field
  * mapping instead of XLSX and CSV silently drifting apart.
  */
-export function mapRowsToLeads(rows: string[][]): Omit<Lead, "id">[] {
+export function mapRowsToLeads(rows: string[][]): ParsedLeadRow[] {
   if (rows.length <= 1) return [];
   const headers = rows[0].map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ""));
   const findIdx = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
@@ -898,7 +905,7 @@ export function mapRowsToLeads(rows: string[][]): Omit<Lead, "id">[] {
   const vendorIdx = findIdx(["vendorexperience", "vendor", "clients", "history"]);
   const sourceIdx = findIdx(["source", "channel", "platform", "origin"]);
 
-  const result: Array<Omit<Lead, "id"> & { email?: string; phone?: string; profile_link?: string }> = [];
+  const result: ParsedLeadRow[] = [];
 
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i];
@@ -919,7 +926,10 @@ export function mapRowsToLeads(rows: string[][]): Omit<Lead, "id">[] {
       ? rawServices.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean)
       : [];
     const exp = expIdx >= 0 && !isNaN(Number(row[expIdx])) ? Number(row[expIdx]) : undefined;
-    const vendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx].trim() : undefined;
+    const rawVendor = vendorIdx >= 0 && row[vendorIdx] ? row[vendorIdx].trim() : "";
+    const vendor = rawVendor
+      ? rawVendor.split(/[,;/|]+/).map((s) => s.trim()).filter(Boolean)
+      : undefined;
     const rawSource = sourceIdx >= 0 && row[sourceIdx] ? row[sourceIdx].trim() : "";
     const source: Source = rawSource.toLowerCase().includes("linkedin")
       ? "LinkedIn"

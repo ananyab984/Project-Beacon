@@ -27,8 +27,28 @@ export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
 export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
 export type EnrichmentStatus =
   "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
+/** Body of POST /api/leads and POST /api/leads/bulk.
+ *
+ *  Deliberately NOT `Partial<ApiLead> & { source: LeadSource }` (which is what
+ *  the eight inline copies of this type used to resolve to). `source` here is
+ *  the RAW label as typed in the form or read from a CSV cell -- "LinkedIn",
+ *  "Voices123", "", whatever -- because the client is not the thing that
+ *  decides a lead's platform. The server derives the real LeadSource from this
+ *  label plus profileLink (server/src/lib/detectLeadSource.ts), so sending an
+ *  unrecognized or empty label is valid and resolves to OTHER rather than
+ *  being silently rewritten to LINKEDIN. ApiLead.source, the value that comes
+ *  BACK, stays a strict LeadSource.
+ */
+export type CreateLeadPayload = Omit<Partial<ApiLead>, "source"> & {
+  fullName: string;
+  source?: string;
+};
+
+/** OTHER = "we could not identify this platform from the profile link".
+ *  Assigned server-side by lib/detectLeadSource.ts; the client never derives
+ *  a source itself (it used to, in three drifting copies). */
 export type LeadSource =
-  "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO";
+  "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO" | "OTHER";
 /** Why the ON_HOLD flag is currently set -- purely descriptive, doesn't
  * drive ON_HOLD by itself. MANUAL only clears via the flags toggle;
  * TIMEOUT/SYSTEM_ERROR auto-clear the next time a re-enrichment run
@@ -127,8 +147,16 @@ export interface ApiLead {
   targetLanguage: string | null;
   secondaryLanguages: string[];
   source: LeadSource;
+  /** 0-1 agreement between the name submitted and the name the scrapers
+   *  resolved, or null when no comparison was possible. Below ~0.9 the lead
+   *  is FLAGGED_REVIEW (the "Danny M" case). */
+  linkedinMatchConfidence?: number | null;
+  /** 0-1 trust in yearsOfExperience: higher when the profile states the
+   *  number outright, lower when it was derived from experience date spans.
+   *  null when this run did not establish one. */
+  yoeConfidence?: number | null;
   yearsOfExperience: number | null;
-  vendorExperience: string | null;
+  vendorExperience: string[];
   headline: string | null;
   aboutSnippet: string | null;
   currentTitle: string | null;
@@ -233,6 +261,9 @@ export interface ApiClient {
   contactEmail: string | null;
   notes: string | null;
   createdAt: string;
+  // Mirrors server/prisma/schema.prisma's Client.notificationsEnabled --
+  // added by migration 20260924120000_expand_notifications.
+  notificationsEnabled: boolean;
 }
 
 export type RequirementStatus = "UNASSIGNED" | "ACTIVE" | "PAUSED" | "FULFILLED";
@@ -240,7 +271,10 @@ export type ClientDemandPriority = "STANDARD" | "HIGH" | "CRITICAL";
 
 export interface ApiRequirement {
   id: string;
-  clientId: string;
+  /** Absent, along with `client`, on requirements a contractor isn't assigned
+   * to -- GET /api/requirements strips both (see redactClientUnlessAssigned)
+   * so a contractor sees their clients and never the global client list. */
+  clientId?: string;
   client?: { name: string };
   recruiter?: { name: string } | null;
   title: string;
@@ -361,7 +395,25 @@ export type EscalationPriority = "P1" | "P2" | "P3";
 export type EscalationStatus = "OPEN" | "ACKNOWLEDGED" | "IN_PROGRESS";
 
 export type NotificationType =
-  "NEW_LEAD" | "TASK_ASSIGNMENT" | "DUE_DATE_REMINDER" | "LEAD_RESPONSE" | "ESCALATION";
+  | "NEW_LEAD"
+  | "TASK_ASSIGNMENT"
+  | "DUE_DATE_REMINDER"
+  | "LEAD_RESPONSE"
+  | "ESCALATION"
+  | "ENRICHMENT_COMPLETE"
+  | "DAILY_DEMAND_SUMMARY"
+  | "WEEKLY_LEADS_SUMMARY"
+  | "WEEKLY_PERFORMANCE_SUMMARY"
+  // Mirrors server/prisma/schema.prisma's NotificationType enum -- added by
+  // migration 20260924120000_expand_notifications.
+  | "ENRICHMENT_STALLED"
+  | "DUPLICATE_REVIEW_NEEDED"
+  | "DNC_CONFIRMATION_NEEDED"
+  | "FOLLOW_UP_DUE"
+  | "LEAD_PLACED"
+  | "WEEKLY_TEAM_HEALTH_SUMMARY"
+  | "CLIENT_STATUS_UPDATE"
+  | "REQUIREMENT_FULFILLED";
 
 export interface ApiNotification {
   id: string;

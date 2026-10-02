@@ -29,16 +29,75 @@ const isProduction = (process.env.NODE_ENV || "").trim().toLowerCase() === "prod
 // re-resolving (and re-validating) the same variable twice.
 const appBaseUrl = resolveEnv("APP_BASE_URL", "http://localhost:5001", isProduction);
 
+// The public linguist onboarding/apply form G3 operates. Outreach messages
+// never embed this directly -- they embed a per-lead short link
+// ({appBaseUrl}/g/{token}, see lib/onboarding/shortLink.ts), which redirects
+// here with that lead's enriched data pre-filled as query params (first_name,
+// last_name, email, address_country, source_language, target_language,
+// service, years_of_experience, vendor_experience, linkedin -- the confirmed
+// contract with G3's tech team).
+//
+// Defaults to the DEV form in EVERY environment, production included,
+// because that is the intended target today. This deliberately does NOT
+// require the variable in production: that is what it did first, and it took
+// the API down on deploy with "G3_APPLY_BASE_URL must be set in production".
+// render.yaml declaring the value doesn't help, because the live Render
+// service isn't created from that blueprint -- it's named
+// Project-Beacon-server while the blueprint declares g3-server, so nothing
+// in render.yaml reaches it. A hard boot failure only clearable from a
+// dashboard is worse than a loud line in the logs.
+//
+// Production still announces it on every boot, so once a real production
+// apply form exists, a box still pointing at the dev form shows up in the
+// logs rather than passing silently.
+// Base URL for the per-lead short links embedded in outreach
+// ({shortLinkBaseUrl}/g/{token}, see lib/onboarding/shortLink.ts). This is a
+// link a CANDIDATE sees and clicks in a cold email or LinkedIn note, so it
+// has to read as Global3's own domain -- a bare Render hostname like
+// project-beacon-server-6zmg.onrender.com looks like a redirect to someone
+// else's server and gets treated as suspicious.
+//
+// Separate from APP_BASE_URL on purpose, even though it defaults to it:
+// APP_BASE_URL also builds the Unipile webhook notify_url
+// (unipile.service.ts), so repointing that to a pretty domain would move the
+// webhook endpoint for every new account connection as a side effect. These
+// two just answer different questions -- "where do Unipile's callbacks go"
+// vs "what domain do we show a candidate" -- and only the second needs to be
+// presentable.
+//
+// Set SHORT_LINK_BASE_URL to a Global3 domain pointed at this service
+// (Render custom domain + a CNAME). Until it's set, this falls back to
+// APP_BASE_URL so nothing breaks -- the links just aren't branded yet.
+// Trailing slashes are stripped: this value gets pasted into a dashboard by
+// hand, and "https://apply.global3.co/" would otherwise build
+// "https://apply.global3.co//g/<token>" into every outreach message. Same
+// normalization keepaliveUrl and absoluteAppUrl already do.
+const shortLinkBaseUrl = resolveEnv("SHORT_LINK_BASE_URL", appBaseUrl, false).replace(/\/+$/, "");
+
+const G3_APPLY_DEV_FORM = "https://app.dev.global3.co/apply";
+const g3ApplyBaseUrl = resolveEnv("G3_APPLY_BASE_URL", G3_APPLY_DEV_FORM, false);
+if (isProduction && g3ApplyBaseUrl === G3_APPLY_DEV_FORM) {
+  console.warn(
+    `[config] G3_APPLY_BASE_URL is not set -- this production instance is sending candidates to the DEV apply form (${G3_APPLY_DEV_FORM}). Set G3_APPLY_BASE_URL once a production apply form exists.`
+  );
+}
+
 export const config = {
   port: parseInt(process.env.PORT || "5001", 10),
   nodeEnv: process.env.NODE_ENV || "development",
   clientUrl: resolveEnv("CLIENT_URL", "http://localhost:5173", isProduction),
   databaseUrl: process.env.DATABASE_URL || "",
-  jwtSecret: process.env.JWT_SECRET || "super_secret_jwt_access_key_global3_2026",
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "15m",
-  refreshTokenSecret: process.env.REFRESH_TOKEN_SECRET || "super_secret_jwt_refresh_key_global3_2026",
-  refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d",
-  unipileDsn: process.env.UNIPILE_DSN || "api25.unipile.com:15598",
+  // Unipile's DSN is account-specific (each customer gets its own dedicated
+  // subdomain/port) -- a key that's genuinely valid for one account will
+  // still get a flat 401 invalid_credentials from a DIFFERENT account's DSN,
+  // which looks identical to "the key is wrong" from the response alone.
+  // The literal string below is a real DSN from whenever this file was
+  // first written, not a placeholder -- silently falling back to it if
+  // UNIPILE_DSN is ever unset (or a rotated key's own DSN was never updated
+  // to match) means every hosted-auth mint 401s with no indication the
+  // DSN, not the key, is the actual mismatch. requireInProduction so a real
+  // deploy fails loudly at boot instead, matching unipileApiKey below.
+  unipileDsn: resolveEnv("UNIPILE_DSN", "api25.unipile.com:15598", isProduction),
   // Was `process.env.UNIPILE_API_KEY || ""` -- silently empty if unset,
   // unlike every other Unipile secret in this file. That let a missing key
   // reach production undetected: every Unipile call sent an empty API key,
@@ -51,10 +110,20 @@ export const config = {
   unipileWebhookSecret: requireEnv("UNIPILE_WEBHOOK_SECRET"),
   unipileWebhookPathToken: requireEnv("UNIPILE_WEBHOOK_PATH_TOKEN"),
   appBaseUrl,
+
+  g3ApplyBaseUrl,
+  shortLinkBaseUrl,
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
   enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction),
+  // Shared secret proving a call to the enrichment service actually came
+  // from this server, not an arbitrary caller who found the URL -- the
+  // service has no other authentication and every call triggers real,
+  // paid BrightData/Tavily/Claude usage. Must be set to the same value on
+  // enrichment_pipeline's own deployment (ENRICHMENT_SERVICE_SHARED_SECRET
+  // there too) or every enrichment call starts failing with 401.
+  enrichmentServiceSharedSecret: requireEnv("ENRICHMENT_SERVICE_SHARED_SECRET"),
 
   // Drafting is in-process (server/src/drafting/) -- no service URL to
   // misconfigure. Not requireEnv: the orchestrator throws at call time if

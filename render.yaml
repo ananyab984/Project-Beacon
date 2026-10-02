@@ -1,0 +1,160 @@
+# Render Blueprint for the new account. Deploy via Render dashboard ->
+# New -> Blueprint, pointing at this repo. Every envVar below is
+# `sync: false` -- Render prompts for the actual value during blueprint
+# creation, so no secret is ever committed here. See the migration runbook
+# for which value goes where and which two must match exactly across
+# services (ENRICHMENT_SERVICE_SHARED_SECRET).
+services:
+  - name: g3-enrichment-pipeline
+    type: web
+    runtime: python
+    plan: starter
+    rootDir: enrichment_pipeline
+    buildCommand: pip install -r requirements.txt
+    # Explicit --port $PORT is required: main.py's --port flag defaults to
+    # the literal 8000 and does NOT read $PORT itself, so without this the
+    # service binds the wrong port and Render's health check never succeeds.
+    startCommand: python main.py --serve --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: BRIGHTDATA_API_KEY
+        sync: false
+      - key: DATASET_ID
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        sync: false
+      - key: PARALLEL_API_KEY
+        sync: false
+      - key: PARALLEL_DEADLINE_SECONDS
+        sync: false
+      - key: PARALLEL_PROCESSOR
+        sync: false
+      - key: BRIGHTDATA_DEADLINE_SECONDS
+        sync: false
+      - key: BRIGHTDATA_REQUEST_TIMEOUT
+        sync: false
+      - key: FAST_PROVIDER_DEADLINE_SECONDS
+        sync: false
+      - key: FAST_PROVIDER_REQUEST_TIMEOUT
+        sync: false
+      - key: CLAUDE_WEBSEARCH_DEADLINE_SECONDS
+        sync: false
+      - key: DEDUP_MATCH_THRESHOLD
+        sync: false
+      - key: REQUEST_TIMEOUT
+        sync: false
+      - key: MAX_RETRIES
+        sync: false
+      - key: LOG_LEVEL
+        sync: false
+      # Must be set to the SAME value as g3-server's own copy of this key --
+      # every /enrich call 401s otherwise. Generate one fresh value and use
+      # it for both services' prompts during blueprint creation.
+      - key: ENRICHMENT_SERVICE_SHARED_SECRET
+        sync: false
+      - key: KEEPALIVE_ENABLED
+        sync: false
+      - key: KEEPALIVE_INTERVAL_SECONDS
+        sync: false
+      # Set to this SAME service's own public Render URL once it's known
+      # (Render assigns it on first deploy) -- self-ping to avoid free-tier
+      # sleep. Leave KEEPALIVE_ENABLED=false if not needed.
+      - key: KEEPALIVE_URL
+        sync: false
+
+  - name: g3-server
+    type: web
+    runtime: node
+    plan: starter
+    rootDir: server
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npx prisma migrate deploy && npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: NEON_AUTH_URL
+        sync: false
+      - key: UNIPILE_DSN
+        sync: false
+      - key: UNIPILE_API_KEY
+        sync: false
+      - key: UNIPILE_WEBHOOK_SECRET
+        sync: false
+      - key: UNIPILE_WEBHOOK_PATH_TOKEN
+        sync: false
+      - key: SLACK_BOT_TOKEN
+        sync: false
+      # New g3-enrichment-pipeline service's public Render URL (known once
+      # that service's first deploy completes -- deploy it first).
+      - key: ENRICHMENT_SERVICE_URL
+        sync: false
+      # Must match g3-enrichment-pipeline's ENRICHMENT_SERVICE_SHARED_SECRET
+      # exactly -- same note as above.
+      - key: ENRICHMENT_SERVICE_SHARED_SECRET
+        sync: false
+      # This service's OWN public Render URL -- used to build the Unipile
+      # webhook notify_url for every NEW account connection made after this
+      # deploy. Existing, already-connected Unipile accounts still notify
+      # the OLD url and need separate handling -- see runbook.
+      - key: APP_BASE_URL
+        sync: false
+      # The deployed client app's real origin (not localhost) -- CORS
+      # rejects every frontend request otherwise.
+      - key: CLIENT_URL
+        sync: false
+      # The apply form outreach short links redirect candidates to, with
+      # their enriched data pre-filled (lib/onboarding/buildApplyUrl.ts).
+      # An explicit value, not sync:false -- it's a public URL, not a secret.
+      # config.ts defaults to this same DEV form when unset, so this is
+      # documentation of intent rather than something the service needs to
+      # boot. NOTE: the live service was not created from this blueprint
+      # (it's named Project-Beacon-server, not g3-server), so nothing here
+      # reaches it -- set the variable in that service's own dashboard too.
+      # Change this line when a production apply form exists.
+      - key: G3_APPLY_BASE_URL
+        value: https://app.dev.global3.co/apply
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        sync: false
+      - key: GEN_TEMPERATURE
+        sync: false
+      - key: REQUEST_TIMEOUT
+        sync: false
+      - key: MAX_RETRIES
+        sync: false
+      - key: RETRY_BACKOFF_BASE
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        sync: false
+      - key: REPLY_CLASSIFICATION_ENABLED
+        sync: false
+      - key: KEEPALIVE_ENABLED
+        sync: false
+      - key: KEEPALIVE_INTERVAL_MS
+        sync: false
+      - key: KEEPALIVE_URL
+        sync: false
+      - key: AUTUMN_API_KEY
+        sync: false
+      - key: AUTUMN_REENRICH_COOLDOWN_MINUTES
+        sync: false
+      - key: AUTUMN_REENRICH_DAILY_CAP
+        sync: false
+      - key: AUTUMN_REENRICH_TIMEOUT_SECONDS
+        sync: false
+      - key: DUE_DATE_REMINDER_WINDOW_DAYS
+        sync: false

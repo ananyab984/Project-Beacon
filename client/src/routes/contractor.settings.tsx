@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { KeyRound, Mail, ShieldCheck, User as UserIcon } from "lucide-react";
+import { KeyRound, Mail, ShieldCheck, User as UserIcon, Bell } from "lucide-react";
 import { toast } from "sonner";
+import { api } from "@/lib/api";
+import { NotificationChannelPrefs } from "@/components/features/notification-channel-prefs";
 
 export const Route = createFileRoute("/contractor/settings")({
   head: () => ({
@@ -50,6 +52,10 @@ function ContractorSettingsPage() {
         <div className="mt-4">
           <Badge variant="outline" className="text-[10px]">Role: Contractor</Badge>
         </div>
+      </Section>
+
+      <Section title="Notification Preferences" icon={<Bell className="h-3.5 w-3.5" />}>
+        <NotificationChannelPrefs desc="The in-app bell is always on -- for a client requirement assigned to you and its due-date reminders, enrichment finishing on a lead you added, a lead replying, a daily summary of open demand headcount, and weekly summaries of the leads you've added and your performance. Turn on email or Slack below to get those the same way." />
       </Section>
 
       <Section title="Security" icon={<ShieldCheck className="h-3.5 w-3.5" />}>

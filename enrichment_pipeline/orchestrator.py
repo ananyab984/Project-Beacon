@@ -10,6 +10,11 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, Literal, Optional, TypedDict
 
 from config import Config
+from core.dedup import (
+    IDENTITY_AMBIGUOUS,
+    IDENTITY_DIVERGENT,
+    score_identity_match,
+)
 from core.enrichment_count import count_stage6_fillable_fields
 from core.field_audit import audit_lead_fields
 from core.schema import has_content, is_empty_value
@@ -31,6 +36,9 @@ from parsers.generic_parser import GenericParser
 from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 from parsers.service_aliases import extract_services_from_text
+from parsers.tool_aliases import extract_tools_from_text
+from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
+from parsers.language_filter import NON_ENGLISH_MARKERS, looks_non_english_token
 
 log = get_logger(__name__)
 
@@ -106,6 +114,52 @@ _ABSENCE_PROSE_MARKERS = (
 # plain prose, distinct from _years_of_experience_from_parallel_entries'
 # structured-experience-list derivation. See _infer_years_of_experience_from_text.
 _YEARS_OF_EXPERIENCE_FREE_TEXT = re.compile(r"\b(\d{1,2})\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
+
+
+# How much to trust Years_of_Exp, judged by WHERE the number came from.
+#
+# The pipeline has two genuinely different bases for this field and they do
+# not deserve the same weight:
+#
+#   STATED  -- the profile says the number out loud ("over 30 years of
+#              experience"), and parsers/linkedin_parser.py's
+#              _extract_years_of_experience reads nothing else. We are
+#              repeating a claim the person made about themselves.
+#   DERIVED -- computed from experience date spans
+#              (_years_of_experience_from_parallel_entries: earliest start to
+#              latest end). Defensible, but an inference: career gaps and
+#              roles outside the trade are both counted in full.
+#
+# Judged here at finalize rather than recorded at each write site, because the
+# number can be set from three places across two merge paths and threading a
+# provenance flag through all of them would be a far larger change than the
+# question warrants. The test for it is the lead's own text: if the number
+# appears verbatim there, it was stated.
+YOE_CONFIDENCE_STATED = 0.9
+YOE_CONFIDENCE_DERIVED = 0.6
+
+
+def _yoe_confidence(field_sources: Dict[str, str], lead: Dict[str, Any]) -> Optional[float]:
+    """Confidence in the resolved Years_of_Exp, or None when this run did not
+    resolve one. `existing` means the value arrived with the lead and nothing
+    here established it, so no claim is made about it either."""
+    raw = lead.get("Years_of_Exp")
+    if is_empty_value(raw):
+        return None
+    if field_sources.get("Years_of_Exp") in (None, "existing"):
+        return None
+    try:
+        years = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+    text_blob = " | ".join(
+        str(v) for v in (lead.get("Headline"), lead.get("Current_Title"), lead.get("About_Snippet")) if v
+    )
+    for match in _YEARS_OF_EXPERIENCE_FREE_TEXT.finditer(text_blob):
+        if int(match.group(1)) == years:
+            return YOE_CONFIDENCE_STATED
+    return YOE_CONFIDENCE_DERIVED
 
 
 # Values `field_sources["_parallel_fallback"]` can hold, and the re-attempt
@@ -329,37 +383,14 @@ def _is_empty_parallel_result(parallel_data: Dict[str, Any]) -> bool:
     )
 
 
-# Function words that are common and distinctive in the languages these
-# profiles actually turn up in (Spanish, French, German, Portuguese, Italian),
-# and rare-to-absent in English profile prose. Used only to decide whether a
-# payload is worth sending for translation -- a false positive costs one cheap
-# Claude call, a false negative leaves that lead's text in its own language,
-# so the list leans towards triggering.
-#
-# ponytail: a word-list sniff, not language identification. Ceiling: a mostly
-# English profile with a stray foreign phrase triggers a (harmless) pass, and
-# a very short non-English field can slip past. Upgrade path is a real
-# detector (langdetect/lingua) if this proves too blunt in practice; not worth
-# a dependency for the handful of languages seen so far.
-_NON_ENGLISH_MARKERS = frozenset(
-    {
-        # Spanish / Portuguese
-        "de", "la", "el", "los", "las", "con", "para", "por", "una", "como",
-        "muy", "más", "también", "años", "voz", "trabajo", "em", "não", "uma",
-        "del", "su", "sus", "está", "años",
-        # French
-        "le", "les", "des", "une", "du", "au", "aux", "est", "sur", "avec",
-        "pour", "dans", "traduction", "traductrice", "traducteur", "ans", "et",
-        "à", "chez", "en", "formation", "expérience", "étudiante", "étudiant",
-        "lieu", "ses", "son",
-        # German
-        "und", "der", "die", "das", "den", "von", "mit", "für", "ich", "auch",
-        "sprachen", "jahre", "übersetzer", "übersetzerin",
-        # Italian
-        "il", "lo", "gli", "che", "con", "per", "sono", "anni", "voce",
-        "traduzione", "esperienza",
-    }
-)
+# Moved to parsers/language_filter.py so parsers/linkedin_parser.py can
+# reuse the same wordlist to filter a non-English skill/service tag out of
+# Services (orchestrator.py already imports FROM parsers.linkedin_parser, so
+# the reverse import would be circular). Used here only to decide whether a
+# whole payload is worth sending for translation -- a false positive costs
+# one cheap Claude call, a false negative leaves that lead's text in its own
+# language, so the list leans towards triggering.
+_NON_ENGLISH_MARKERS = NON_ENGLISH_MARKERS
 
 
 def _payload_strings(value: Any) -> list[str]:
@@ -484,6 +515,14 @@ class PipelineResult(TypedDict):
     # drafting can't personalize on detail that was never handed to it.
     # None if no scrape ran or it returned nothing.
     raw_enrichment_data: Optional[Any]
+    # Whether the person the scrapers returned is the person we went looking
+    # for -- see core/dedup.py's score_identity_match. Always present; its own
+    # `verdict` is "unknown" when there was no name on one side to compare,
+    # which is not a failure.
+    identity_match: Dict[str, Any]
+    # Confidence in Years_of_Exp (see _yoe_confidence), or None when this run
+    # did not establish one.
+    yoe_confidence: Optional[float]
 
 
 class EnrichmentOrchestrator:
@@ -538,6 +577,9 @@ class EnrichmentOrchestrator:
             "parallel_fallback": None,
             "websearch_fallback": None,
             "raw_enrichment_data": None,
+            # Aborted mid-waterfall: no claim either way about who this is.
+            "identity_match": score_identity_match(None, None),
+            "yoe_confidence": None,
             "conclusion": "timed_out",
         }
 
@@ -833,7 +875,11 @@ class EnrichmentOrchestrator:
         via the same _dispatch_parallel_stage()/_resolve_parallel_stage() the
         LinkedIn path uses, so a ProZ/Bodalgo/personal-site lead gets the same
         Tier 2 treatment -- run CONCURRENTLY with this method's own Tavily
-        call rather than after it (see _dispatch_parallel_stage's docstring)."""
+        call rather than after it (see _dispatch_parallel_stage's docstring).
+
+        `provider_type == "parallel_only"` (an unrecognized source, see
+        core/source_router.py) skips the Tavily call entirely and leaves this
+        method as Parallel alone, feeding the LLM fallback downstream."""
         raw_scraped_data: Any = None
         raw_source_text = ""
 
@@ -843,7 +889,15 @@ class EnrichmentOrchestrator:
             lead, field_sources, logs, profile_link
         )
 
-        if profile_link and self.tavily:
+        if provider_type == "parallel_only":
+            # Not a failure and not a missing key -- a deliberate skip, logged
+            # as one so it is never mistaken for Tier 1 silently breaking (the
+            # exact ambiguity _tier1_skip_reason exists to kill). Parallel was
+            # already dispatched above and still resolves below.
+            msg = "Stage 3 skipped: no dedicated parser for this source -- going straight to Parallel + LLM fallback"
+            logs.append(msg)
+            log.info(msg)
+        elif profile_link and self.tavily:
             try:
                 if provider_type == "tavily_search":
                     raw_scraped_data = self.tavily.search_snippets(f"site:proz.com {lead.get('Full_Name', '')}".strip(), include_domains=["proz.com"])
@@ -1156,7 +1210,14 @@ class EnrichmentOrchestrator:
         # e.g. "Voice & Dubbing Artist Punjabi Hindi" never reached Services).
         skills = parallel_data.get("skills")
         if isinstance(skills, list):
-            kept_skills = [str(s) for s in skills if s and not _is_absence_prose(str(s))]
+            # looks_non_english_token here is a defensive backstop, not the
+            # primary fix -- _normalize_parallel_language/translate_to_english
+            # already runs on parallel_data before this method is ever called,
+            # so this only catches whatever a translation pass missed.
+            kept_skills = [
+                str(s) for s in skills
+                if s and not _is_absence_prose(str(s)) and not looks_non_english_token(str(s))
+            ]
             if kept_skills:
                 mapped["Services"] = ", ".join(kept_skills)
         if not mapped.get("Services"):
@@ -1170,6 +1231,61 @@ class EnrichmentOrchestrator:
                 text_services = extract_services_from_text(text_blob)
                 if text_services:
                     mapped["Services"] = ", ".join(text_services)
+
+        # Tools_Software / Vendor_Experience: same reasoning and same fix as
+        # Services immediately above -- both were BrightData/LinkedIn-only
+        # before this (see linkedin_parser.py's _extract_tools_software /
+        # _extract_vendor_experience), so a Parallel-sourced lead (any
+        # non-LinkedIn source, or LinkedIn itself when BrightData's Tier 1
+        # scrape came back thin) got neither field at all, regardless of what
+        # its headline/skills/about text or experience history actually said.
+        skills_text = ", ".join(str(s) for s in skills if s and not _is_absence_prose(str(s))) if isinstance(skills, list) else ""
+        free_text_blob = " | ".join(str(v) for v in (headline, current_title, about_snippet) if v)
+        # Every experience entry's own narrative (Parallel's ExperienceEntry.
+        # summary -- "the full, complete narrative description of this role
+        # exactly as written on the profile") plus the structured
+        # certifications list -- same reasoning as linkedin_parser.py's
+        # _narrative_text_blob: a tool or vendor is often named only in a
+        # per-role description, not in the thin Headline/About fields.
+        experience_summaries = " ".join(
+            str(e.get("summary")) for e in (parallel_data.get("experience") or [])
+            if isinstance(e, dict) and e.get("summary") and not _is_absence_prose(str(e.get("summary")))
+        )
+        certifications_text = " ".join(
+            str(c) for c in (parallel_data.get("certifications") or [])
+            if c and not _is_absence_prose(str(c))
+        )
+        narrative_text = f"{experience_summaries} {certifications_text}"
+        tools_scan_text = f"{skills_text} {free_text_blob} {narrative_text}"
+        matched_tools = extract_tools_from_text(tools_scan_text)
+        if matched_tools:
+            mapped["Tools_Software"] = ", ".join(matched_tools)
+
+        # Every distinct named employer from Parallel's structured experience
+        # list -- not just ones matching the 9 known vendors -- same fix as
+        # linkedin_parser.py's _extract_vendor_experience and for the same
+        # reason: a person's real work history is real vendor-experience
+        # information regardless of whether the company happens to be one of
+        # the largest known post-production vendors. Also scans free text +
+        # experience narratives against the closed 9-vendor alias list --
+        # safe to do deterministically (can only ever add one of the 9 known
+        # names, not open extraction) and catches a known vendor named only
+        # in prose that never appears as its own structured `company` value.
+        raw_companies = [
+            str(e.get("company")) for e in (parallel_data.get("experience") or [])
+            if isinstance(e, dict) and e.get("company") and not _is_absence_prose(str(e.get("company")))
+        ]
+        raw_companies.extend(extract_vendors_from_text(f"{free_text_blob} {narrative_text}"))
+        seen_vendors: set = set()
+        vendor_result: List[str] = []
+        for raw in raw_companies:
+            canonical = canonicalize_or_keep(raw)
+            if canonical is None or canonical.lower() in seen_vendors:
+                continue
+            seen_vendors.add(canonical.lower())
+            vendor_result.append(canonical)
+        if vendor_result:
+            mapped["Vendor_Experience"] = ", ".join(vendor_result)
 
         # Parallel's LeadProfile has no dedicated years-of-experience field --
         # only the structured `experience` list. Stage 6 (LLM web search) is
@@ -1312,7 +1428,19 @@ class EnrichmentOrchestrator:
     # its own dedicated fill mechanism above (_infer_services_via_llm,
     # _infer_years_of_experience_from_text), so asking about them again here
     # would be a second, redundant Claude call for the same answer.
-    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Tools_Software", "Certifications", "Vendor_Experience")
+    # Tools_Software and Vendor_Experience are also excluded -- Stage 3/3.5's
+    # deterministic extraction (parsers/tool_aliases.py, vendor_aliases.py)
+    # now scans every structured/semi-structured section a profile has
+    # (skills, certifications, courses, per-role experience narratives), not
+    # just the thin Headline/About fields, which covers what an LLM fallback
+    # for these two fields used to be needed for. A dedicated Groq stage
+    # here (Stage 3.77, removed) ran unconditionally on every lead and
+    # measurably hallucinated on thin-text profiles (certification bodies
+    # and universities reported as "vendor experience", a vague phrase
+    # reported as a company name) -- exactly the condition a fill-only gate
+    # would still trigger on, so gating it narrower wasn't a fix, only
+    # removing it was.
+    _REMAINING_FILL_ONLY_FIELDS = ("Current_Title", "Certifications")
 
     def _infer_remaining_fields_via_llm(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
@@ -1336,10 +1464,19 @@ class EnrichmentOrchestrator:
             logs.append("Stage 3.76: remaining-fields extraction skipped: GROQ_API_KEY isn't set")
             return
 
+        # Includes Services -- absent before this, even though it's often the
+        # profile's raw skills list joined into text (see linkedin_parser.py's
+        # `result["Services"] = ", ".join(skill_names)` and
+        # _merge_parallel_fields's equivalent) and a Tools_Software/
+        # Vendor_Experience name mentioned only in Skills, not in Headline/
+        # Current_Title/About/Certifications, was invisible to this last-resort
+        # pass on any lead where the deterministic alias scan above (also
+        # reading skills+about text) still didn't match a canonical name.
         text_blob = " | ".join(
             str(v) for v in (
                 lead.get("Headline"), lead.get("Current_Title"),
                 lead.get("About_Snippet"), lead.get("Certifications"),
+                lead.get("Services"),
             )
             if v
         )
@@ -1375,6 +1512,13 @@ class EnrichmentOrchestrator:
         # enrichment doesn't re-spend an LLM call re-verifying something
         # already settled -- see `_unverified()` below.
         field_sources: Dict[str, str] = dict(known_field_sources or {})
+
+        # Captured BEFORE any stage can overwrite Full_Name, because the whole
+        # point of the identity check at Stage 7 is to compare what we went
+        # looking for against what came back. `lead` is mutated in place all
+        # the way down, so reading this at the end would compare the resolved
+        # name against itself and always agree.
+        submitted_name = lead.get("Full_Name") or lead.get("First_Name")
 
         # Mark any populated field not already carrying a known source as "existing"
         initial_audit = audit_lead_fields(lead)
@@ -1499,6 +1643,21 @@ class EnrichmentOrchestrator:
         status = "enrichment_complete" if final_audit["is_complete"] else "enrichment_partial"
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
+        # Did we get back the person we went looking for? Compared only when
+        # a stage actually resolved a name -- `submitted_name` unchanged means
+        # nothing was identified, which `status` already reports, and
+        # score_identity_match returns `unknown` rather than a failure.
+        identity_match = score_identity_match(submitted_name, lead.get("Full_Name"))
+        if identity_match["verdict"] in (IDENTITY_AMBIGUOUS, IDENTITY_DIVERGENT):
+            msg = (
+                f"Stage 7 Identity: {identity_match['verdict']} "
+                f"(confidence {identity_match['confidence']}) -- "
+                f"submitted {identity_match['input_name']!r} vs resolved "
+                f"{identity_match['resolved_name']!r}: {identity_match['reason']}"
+            )
+            logs.append(msg)
+            log.warning(msg)
+
         logs.append(f"Stage 7 Finalize: Status={status}, Final Enrichment Score={final_audit['enrichment_percentage']}% (Elapsed: {elapsed_ms}ms)")
 
         return {
@@ -1513,4 +1672,6 @@ class EnrichmentOrchestrator:
             "websearch_fallback": websearch_fallback,
             "raw_enrichment_data": raw_scraped_data,
             "conclusion": conclusion,
+            "identity_match": identity_match,
+            "yoe_confidence": _yoe_confidence(field_sources, lead),
         }

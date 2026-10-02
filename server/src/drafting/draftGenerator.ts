@@ -64,12 +64,29 @@ export function specificityTarget(strongFacts: string[]): number {
  * LinkedIn connection notes are hard-capped at 200 characters -- only the
  * apply link is enforced there, since it's the one actual call to action;
  * the separate "Visit: site" line email gets would otherwise burn chars that
- * should go to the lead's actual enriched facts (e.g. years of experience). */
-function ensureLinks(body: string, channel: string): string {
+ * should go to the lead's actual enriched facts (e.g. years of experience).
+ *
+ * `applyUrl` is THIS lead's personalized short link
+ * ({appBaseUrl}/g/{token}, see lib/onboarding/shortLink.ts), which redirects
+ * to the apply form with their enriched data pre-filled. The prompt still
+ * describes the canonical BRAND.apply_url -- that carefully-tuned text is
+ * left alone, and this is the single place the static URL the model wrote
+ * gets swapped for the real per-lead one before the text reaches anybody. */
+function ensureLinks(body: string, channel: string, applyUrl: string): string {
   let text = body;
-  if (!text.includes(BRAND.apply_url) && !text.includes("app.global3.io/apply")) {
+  // Check for the finished link FIRST. BRAND.apply_url is now a prefix of the
+  // email channel's applyUrl (the same form URL, plus the query string), so
+  // testing the prefix first would match an already-correct link and splice
+  // the params in twice -- ".../apply?first_name=Ana?first_name=Ana".
+  if (text.includes(applyUrl)) {
+    // Already carries this lead's link; nothing to substitute or append.
+  } else if (text.includes(BRAND.apply_url)) {
+    text = text.split(BRAND.apply_url).join(applyUrl);
+  } else if (text.includes("app.global3.io/apply")) {
+    text = text.split("app.global3.io/apply").join(applyUrl);
+  } else {
     const sep = channel === "linkedin" ? " " : "\n\n";
-    text += `${sep}Apply here: ${BRAND.apply_url}`;
+    text += `${sep}Apply here: ${applyUrl}`;
   }
   if (channel !== "linkedin" && !text.includes(BRAND.site)) {
     text += `\n\nVisit: ${BRAND.site}`;
@@ -100,6 +117,7 @@ export async function generateEmail(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
+  applyUrl: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
@@ -132,7 +150,7 @@ export async function generateEmail(
   }
 
   const subject = (data.subject || `Freelance partnership with ${BRAND.company}`).trim();
-  const body = ensureLinks((data.body || "").trim(), "email");
+  const body = ensureLinks((data.body || "").trim(), "email", applyUrl);
   return {
     channel: "email",
     lead,
@@ -152,10 +170,11 @@ export async function generateLinkedin(
   client: ClaudeClient,
   cfg: DraftingConfig,
   lead: Lead,
+  applyUrl: string,
   rateMatch: RateMatch | null = null,
   rateFlag: string | null = null
 ): Promise<Draft> {
-  const [system, user] = buildLinkedinPrompt(lead, rateMatch);
+  const [system, user] = buildLinkedinPrompt(lead, rateMatch, applyUrl.length);
   let completion = await client.chat(system, user, {
     model: cfg.genModel,
     temperature: cfg.genTemperature,
@@ -185,7 +204,7 @@ export async function generateLinkedin(
     // Measured on the body AFTER ensureLinks, since that's what actually
     // gets sent -- a note that fits only until the apply URL is appended is
     // still over the limit.
-    const sendable = ensureLinks(draftBody.trim(), "linkedin");
+    const sendable = ensureLinks(draftBody.trim(), "linkedin", applyUrl);
     if (sendable.length > LINKEDIN_NOTE_MAX_CHARS) {
       out.push(
         `Your previous note was ${sendable.length} characters once the apply link was included -- ` +
@@ -214,7 +233,7 @@ export async function generateLinkedin(
     }
   }
 
-  const body = ensureLinks((data.body || "").trim(), "linkedin");
+  const body = ensureLinks((data.body || "").trim(), "linkedin", applyUrl);
   return {
     channel: "linkedin",
     lead,

@@ -53,7 +53,12 @@ class GroqMappingClient:
                 "Content-Type": "application/json",
             }
         )
-        self._policy = RetryPolicy(retries=config.max_retries)
+        # See config.py's fast_provider_deadline_seconds: the shared default
+        # 15s deadline left this client's retries structurally unreachable
+        # (one 10s attempt + 1s backoff leaves ~4s of a 15s budget), same bug
+        # Bright Data was pulled out of.
+        self._policy = RetryPolicy(retries=config.max_retries, deadline_seconds=config.fast_provider_deadline_seconds)
+        self._request_timeout = config.fast_provider_request_timeout
 
     def classify_services(self, profile_text: str) -> List[str]:
         """Identify the real professional service(s)/specialty a person
@@ -117,15 +122,13 @@ class GroqMappingClient:
     # "list" -> comma-joined string on return; "text" -> returned as-is.
     _MISSING_FIELD_SPECS: Dict[str, tuple] = {
         "Current_Title": ("current_title", "text"),
-        "Tools_Software": ("tools_software", "list"),
         "Certifications": ("certifications", "list"),
-        "Vendor_Experience": ("vendor_experience", "text"),
     }
 
     def extract_missing_fields(self, text: str, missing_fields: List[str]) -> Dict[str, str]:
-        """Waterfall's last tier for whichever of Current_Title/Tools_Software/
-        Certifications/Vendor_Experience are STILL empty after Bright Data,
-        Tavily, and Parallel have all had their turn -- reads whatever free
+        """Waterfall's last tier for whichever of Current_Title/Certifications
+        are STILL empty after Bright Data, Tavily, and Parallel have all had
+        their turn -- reads whatever free
         text the pipeline already has and fills in only what that text
         directly supports, exactly as classify_services already does for
         Services. Deliberately fill-only: only asked about fields the caller
@@ -147,9 +150,7 @@ class GroqMappingClient:
 
         field_descriptions = {
             "current_title": "their current job title/role (a short string, e.g. 'Freelance Subtitler'), if the text names one",
-            "tools_software": "specific tools or software they use (e.g. 'Trados', 'Adobe Audition', 'Subtitle Edit') -- not generic skills",
             "certifications": "named certifications, diplomas, or professional credentials -- not degrees from a university unless explicitly framed as a certification",
-            "vendor_experience": "named companies/vendors/clients they've worked with or for (a short comma-separated list as one string)",
         }
         requested_keys = [spec[0] for spec in specs.values()]
         schema_lines = "\n".join(f'  "{k}": {"[<string>, ...]" if kind == "list" else "<string|null>"}' for k, (_, kind) in zip(requested_keys, specs.values()))
@@ -212,10 +213,10 @@ class GroqMappingClient:
             resp = self.session.post(
                 self.config.groq_base_url,
                 json=body,
-                timeout=self.config.request_timeout,
+                timeout=self._request_timeout,
             )
         except requests.exceptions.Timeout as exc:
-            raise TransientError(f"Request timed out after {self.config.request_timeout}s") from exc
+            raise TransientError(f"Request timed out after {self._request_timeout}s") from exc
         except requests.exceptions.RequestException as exc:
             raise TransientError(f"Network error: {exc}") from exc
 

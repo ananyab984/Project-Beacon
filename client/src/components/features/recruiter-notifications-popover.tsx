@@ -9,6 +9,18 @@ import {
   AlertTriangle,
   Check,
   ArrowRight,
+  Sparkles,
+  BarChart3,
+  TrendingUp,
+  LineChart,
+  PauseCircle,
+  Copy,
+  ShieldAlert,
+  BellRing,
+  PartyPopper,
+  HeartPulse,
+  ClipboardList,
+  CheckCircle2,
 } from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
@@ -34,10 +46,40 @@ function typeIcon(type: NotificationType) {
       return <MessageSquare className="h-3.5 w-3.5 text-accent" />;
     case "ESCALATION":
       return <AlertTriangle className="h-3.5 w-3.5 text-destructive" />;
+    case "ENRICHMENT_COMPLETE":
+      return <Sparkles className="h-3.5 w-3.5 text-accent" />;
+    case "DAILY_DEMAND_SUMMARY":
+      return <BarChart3 className="h-3.5 w-3.5 text-primary" />;
+    case "WEEKLY_LEADS_SUMMARY":
+      return <TrendingUp className="h-3.5 w-3.5 text-primary" />;
+    case "WEEKLY_PERFORMANCE_SUMMARY":
+      return <LineChart className="h-3.5 w-3.5 text-primary" />;
+    case "ENRICHMENT_STALLED":
+      return <PauseCircle className="h-3.5 w-3.5 text-warning" />;
+    case "DUPLICATE_REVIEW_NEEDED":
+      return <Copy className="h-3.5 w-3.5 text-warning" />;
+    case "DNC_CONFIRMATION_NEEDED":
+      return <ShieldAlert className="h-3.5 w-3.5 text-destructive" />;
+    case "FOLLOW_UP_DUE":
+      return <BellRing className="h-3.5 w-3.5 text-warning" />;
+    case "LEAD_PLACED":
+      return <PartyPopper className="h-3.5 w-3.5 text-accent" />;
+    case "WEEKLY_TEAM_HEALTH_SUMMARY":
+      return <HeartPulse className="h-3.5 w-3.5 text-primary" />;
+    case "CLIENT_STATUS_UPDATE":
+      return <ClipboardList className="h-3.5 w-3.5 text-accent" />;
+    case "REQUIREMENT_FULFILLED":
+      return <CheckCircle2 className="h-3.5 w-3.5 text-accent" />;
   }
 }
 
-export function RecruiterNotificationsPopover() {
+export function RecruiterNotificationsPopover({
+  // Contractor's leads route has no scope tab/param (see contractor.leads.tsx),
+  // so the two callers of this shared popover pass their own leads path/search
+  // instead of this component assuming the recruiter-only "mine" scope.
+  leadsTo = "/recruiter/leads",
+  leadsSearch = { scope: "mine" },
+}: { leadsTo?: string; leadsSearch?: Record<string, string> } = {}) {
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -151,8 +193,8 @@ export function RecruiterNotificationsPopover() {
 
         <div className="border-t border-border p-2.5 bg-muted/10 text-center">
           <Link
-            to="/recruiter/leads"
-            search={{ scope: "mine" }}
+            to={leadsTo as any}
+            search={leadsSearch as any}
             className="text-xs font-semibold text-primary hover:underline"
           >
             View all pending leads

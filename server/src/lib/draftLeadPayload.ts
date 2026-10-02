@@ -77,7 +77,7 @@ export function buildDraftLeadPayload(lead: Lead, emailOverride?: string | null)
     Target_Language: lead.targetLanguage,
     Secondary_Languages: lead.secondaryLanguages.join(", "),
     Years_of_Exp: lead.yearsOfExperience ? lead.yearsOfExperience.toNumber() : null,
-    Vendor_Experience: lead.vendorExperience,
+    Vendor_Experience: lead.vendorExperience.join(", "),
     Enrichment_Status: lead.enrichmentStatus,
     Headline: lead.headline,
     About_Snippet: lead.aboutSnippet,

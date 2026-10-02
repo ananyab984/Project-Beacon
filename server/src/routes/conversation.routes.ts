@@ -8,6 +8,7 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
 import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
+import { applyLinkFor } from "../lib/onboarding/applyLinkFor";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
 import { isThinProfileDraft } from "../drafting/evaluator";
@@ -201,7 +202,7 @@ conversationRouter.post(
       // shares the exact same payload builder (and gets Parallel's richer
       // data) as the email route. Drafting runs in-process (server/src/drafting/)
       // -- no network hop, no DRAFTING_SERVICE_URL to misconfigure.
-      const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin");
+      const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin", false, applyLinkFor("linkedin", conversation.lead));
       draft = { subject: result.subject, body: result.body };
       if (result.verdict === "INELIGIBLE" || !draft.body.trim()) {
         const reason = result.flags[0] || "missing required lead data";

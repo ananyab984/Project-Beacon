@@ -20,11 +20,20 @@ import { LINKEDIN_NOTE_MAX_CHARS } from "../lib/linkedinNoteCap";
 // value specifics regardless, so truncation here only loses secondary detail.
 const MAX_PARALLEL_BLOCK_CHARS = 6000;
 
+import { config } from "../config";
+
 // --- Brand constants (single source of truth for every draft) --------------
 export const BRAND = {
   company: "Global3",
   site: "global3.io",
-  apply_url: "https://app.global3.io/apply",
+  // The canonical apply form, as the PROMPT describes it to the model. The
+  // text that actually ships never contains this: ensureLinks() in
+  // draftGenerator.ts swaps it for the lead's own short link, which
+  // redirects here with their data pre-filled. Sourced from config rather
+  // than hardcoded so there is exactly one place the apply destination is
+  // defined -- a stale literal here would become the fallback URL on any
+  // path where substitution didn't fire.
+  apply_url: config.g3ApplyBaseUrl,
   contact_email: "resources@global3.io",
   email_sign_off: "Best regards,\nResources Team",
   team: "Resource Management team at Global3",
@@ -34,6 +43,13 @@ export const BRAND = {
  * unipile.service's send-time truncation all read the SAME number -- they
  * previously held 200/300/200 and drafts shipped over the send limit. */
 export const LINKEDIN_NOTE_CHAR_CAP = LINKEDIN_NOTE_MAX_CHARS;
+
+// What ensureLinks() actually prepends to the URL in a note: " Apply here: ".
+// This was a flat ~50 when the link was a 28-char static URL and the closing
+// was a whole sentence. The link is now the real pre-filled apply URL (~120
+// chars), so over-reserving here told the model it had ~30 characters of
+// content when it really had ~65, and it wrote needlessly thin notes.
+const LINKEDIN_APPLY_CLOSING_CHARS = 13;
 export const LINKEDIN_CHAR_TARGET = `STRICTLY under ${LINKEDIN_NOTE_CHAR_CAP} characters total (the note is truncated at exactly this length before sending, and the apply URL sits at the end -- going over silently drops the call to action), and every character should be earning its place`;
 export const EMAIL_WORD_TARGET = "roughly 120-180 words";
 
@@ -258,7 +274,14 @@ Over Partnership – Global3\\". Not a generic \\"Partnership Opportunity\\">",
 }
 
 /** Return [system, user] prompts for a short LinkedIn draft. */
-export function buildLinkedinPrompt(lead: Lead, rateMatch?: RateMatch | null): [string, string] {
+export function buildLinkedinPrompt(
+  lead: Lead,
+  rateMatch?: RateMatch | null,
+  // Length of the apply link THIS lead's note will actually carry. It varies
+  // per lead now (applyLinkFor packs as many params as fit a budget), so the
+  // arithmetic below has to be told the real number rather than assume one.
+  applyUrlLength = 120
+): [string, string] {
   const system = VOICE_RULES;
   const user = `Write a personalized outreach LINKEDIN connection note to this freelance linguist.
 
@@ -281,9 +304,9 @@ including the apply link. No subject line.
 
 DO THE ARITHMETIC BEFORE YOU WRITE -- "be brief" is not enough, and drafts keep
 landing 5-15 characters over:
-  - the apply URL alone is ${BRAND.apply_url.length} characters
-  - the closing that introduces it costs ~50 more (see the PATTERN below)
-  - that leaves you roughly ${LINKEDIN_NOTE_CHAR_CAP - BRAND.apply_url.length - 50} characters
+  - the apply URL alone is ${applyUrlLength} characters
+  - the words introducing it cost ~${LINKEDIN_APPLY_CLOSING_CHARS} more ("Apply here: ")
+  - that leaves you roughly ${LINKEDIN_NOTE_CHAR_CAP - applyUrlLength - LINKEDIN_APPLY_CLOSING_CHARS} characters
     -- about 18-20 words -- for the greeting and the specific detail COMBINED. If the
     lead's named detail is itself long (a full certification title, say), the greeting
     has to shrink to almost nothing: "Hi [Name], your [detail] stood out —" is enough.

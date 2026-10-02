@@ -8,6 +8,7 @@ import { ApiError, toApiError } from "../lib/apiError";
 import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
+import { applyLinkFor } from "../lib/onboarding/applyLinkFor";
 import { getDraftingOrchestrator } from "../drafting/instance";
 import { isThinProfileDraft } from "../drafting/evaluator";
 import { assertContractorOwnsLead } from "./lead.routes";
@@ -231,7 +232,9 @@ emailQueueRouter.post(
       // no DRAFTING_SERVICE_URL to misconfigure.
       const result = await getDraftingOrchestrator().processDraft(
         buildDraftLeadPayload(item.lead, effectiveEmail),
-        "email"
+        "email",
+        false,
+        applyLinkFor("email", item.lead)
       );
       draft = { subject: result.subject, body: result.body };
       // INELIGIBLE means the pipeline correctly refused to draft anything

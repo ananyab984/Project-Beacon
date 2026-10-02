@@ -10,6 +10,7 @@ export function requireRole(...allowedRoles: Role[]) {
 
     const normalizedRole = req.user.role.toLowerCase() as Role;
     if (!allowedRoles.includes(normalizedRole)) {
+      console.warn(`[rbac] DENIED user=${req.user.id} role=${req.user.role} path=${req.method} ${req.originalUrl} requiredRoles=[${allowedRoles.join(",")}]`);
       return res.status(403).json({
         error: "FORBIDDEN_INSUFFICIENT_ROLE",
         message: `Role '${req.user.role}' is not authorized to access this resource`,

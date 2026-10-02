@@ -4,6 +4,9 @@ import { runMonthlyScoring } from "./scoring.job";
 import { scanForEscalations } from "./escalation.job";
 import { runDueDateReminders } from "./due-date-reminder.job";
 import { purgeExpiredRecycleBinLeads } from "./recycleBinPurge.job";
+import { sendDailyDemandSummary, sendWeeklyContractorDigest } from "./contractorDigest.job";
+import { sendFollowUpNudges } from "./followup-nudge.job";
+import { sendWeeklyTeamHealthDigest } from "./ownerDigest.job";
 
 /** Starts all recurring background work in-process (node-cron). No queue/Redis
  *  needed at current scale -- see the backend plan for why. */
@@ -22,6 +25,11 @@ export function startBackgroundJobs() {
     scanForEscalations().catch((err) => console.error("[jobs] escalation scan failed:", err));
   });
 
+  // Hourly: nudge recruiters about outreach sent 3+/7+ days ago with no reply.
+  cron.schedule("0 * * * *", () => {
+    sendFollowUpNudges().catch((err) => console.error("[jobs] follow-up nudge scan failed:", err));
+  });
+
   // Monthly, 3am on the 1st: recompute every recruiter's score snapshot.
   cron.schedule("0 3 1 * *", () => {
     runMonthlyScoring().catch((err) => console.error("[jobs] monthly scoring failed:", err));
@@ -38,5 +46,23 @@ export function startBackgroundJobs() {
     purgeExpiredRecycleBinLeads().catch((err) => console.error("[jobs] recycle bin purge failed:", err));
   });
 
-  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, due-date reminders: daily, recycle bin purge: daily, scoring: monthly)");
+  // Daily, 9am: every contractor gets the org-wide open-demand headcount.
+  cron.schedule("0 9 * * *", () => {
+    sendDailyDemandSummary().catch((err) => console.error("[jobs] daily demand summary failed:", err));
+  });
+
+  // Weekly, Monday 8am: every contractor gets their own leads-added and
+  // performance-snapshot digest for the past 7 days.
+  cron.schedule("0 8 * * 1", () => {
+    sendWeeklyContractorDigest().catch((err) => console.error("[jobs] weekly contractor digest failed:", err));
+  });
+
+  // Weekly, Monday 8am: every owner gets a team-health digest (avg score,
+  // fill rate, escalation count) for the past 7 days. Independent digest to
+  // a different role -- same day/time as the contractor digest is fine.
+  cron.schedule("0 8 * * 1", () => {
+    sendWeeklyTeamHealthDigest().catch((err) => console.error("[jobs] weekly owner team-health digest failed:", err));
+  });
+
+  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, follow-up nudges: hourly, due-date reminders: daily, recycle bin purge: daily, contractor demand summary: daily, contractor digest: weekly, owner team-health digest: weekly, scoring: monthly)");
 }

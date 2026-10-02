@@ -121,26 +121,54 @@ function fromBrightData(raw: unknown): ProfileSections {
     });
   }
 
-  const experience = asArray(p.experience).map((e) => ({
-    source: "brightdata" as const,
-    // No `title` key in this revision; `subtitle` is where a role title turns
-    // up when it turns up at all, so it is read as one but never invented.
-    title: clean(e.title ?? e.subtitle),
-    company: clean(e.company ?? e.company_name),
-    start_date: clean(e.start_date ?? e.duration),
-    end_date: clean(e.end_date),
-    summary: clean(e.description ?? e.description_html),
-  }));
+  const experience = asArray(p.experience).map((e) => {
+    // A stacked-position company block (several roles at the same employer)
+    // carries its real per-role detail in `positions[].title`/
+    // `description_html`, not the parent block's own (often null)
+    // description -- confirmed live: a real profile's Keywords Studios
+    // block had a null top-level description, but its "Spanish LQA" nested
+    // position read "Realization of LQA for Japanese video games", the
+    // only place that role's actual work (and any tool it names) is
+    // recorded at all. Folded into `summary` (not shown as its own UI row
+    // -- see enrichment-details-dialog.tsx's formatRole, which only reads
+    // title/company/dates) so it still reaches drafting's grounding facts
+    // and any downstream text scan (Tools_Software/Vendor_Experience).
+    const positionsText = asArray(e.positions)
+      .map((pos) => [clean(pos.title), clean(pos.description ?? pos.description_html)].filter(Boolean).join(" "))
+      .filter(Boolean)
+      .join(" ");
+    const summary = [clean(e.description ?? e.description_html), positionsText].filter(Boolean).join(" ");
+    return {
+      source: "brightdata" as const,
+      // No `title` key in this revision; `subtitle` is where a role title turns
+      // up when it turns up at all, so it is read as one but never invented.
+      title: clean(e.title ?? e.subtitle),
+      company: clean(e.company ?? e.company_name),
+      start_date: clean(e.start_date ?? e.duration),
+      end_date: clean(e.end_date),
+      summary: summary || undefined,
+    };
+  });
 
+  // `subtitle` carries real text too (e.g. a certification's issuing
+  // platform, "Ooona") that a title-only extract used to drop -- kept here
+  // so a tool/vendor named only there is still visible to a text scan
+  // downstream, not just the (deduped, display-oriented) `title`.
   const certifications = asArray(p.certifications)
-    .map((e) => clean(typeof e === "string" ? e : e.title ?? e.name))
-    .filter(Boolean)
-    .map((title) => ({ source: "brightdata" as const, title: title as string }));
+    .filter((e) => (typeof e === "string" ? e.trim() : e.title ?? e.name))
+    .map((e) => ({
+      source: "brightdata" as const,
+      title: clean(typeof e === "string" ? e : e.title ?? e.name),
+      subtitle: typeof e === "string" ? undefined : clean(e.subtitle),
+    }));
 
   const courses = asArray(p.courses)
-    .map((e) => clean(typeof e === "string" ? e : e.title ?? e.name))
-    .filter(Boolean)
-    .map((title) => ({ source: "brightdata" as const, title: title as string }));
+    .filter((e) => (typeof e === "string" ? e.trim() : e.title ?? e.name))
+    .map((e) => ({
+      source: "brightdata" as const,
+      title: clean(typeof e === "string" ? e : e.title ?? e.name),
+      subtitle: typeof e === "string" ? undefined : clean(e.subtitle),
+    }));
 
   return { experience, education, languages, certifications, courses };
 }

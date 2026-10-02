@@ -6,7 +6,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
-import { createNotification } from "../services/notification.service";
+import { createNotification, formatTaskAssignmentBody, formatTaskAssignmentSlackCard, notifyRequirementStatusChange, requirementLinkForRole } from "../services/notification.service";
 
 export const requirementRouter = Router();
 
@@ -55,6 +55,26 @@ export function redactClientIfContractor<T extends { client?: unknown }>(request
   return rest as T;
 }
 
+/** Requirement-scoped variant of the rule above, for the contractor Clients
+ * page: a requirement ASSIGNED TO THIS CONTRACTOR is their own work and they
+ * need to know who it's for, so it keeps `client`. Everything else -- another
+ * person's requirement, unassigned demand -- still loses it, so a contractor
+ * sees their clients and never the global client list.
+ *
+ * `clientId` goes with `client`, and that is not belt-and-braces: a
+ * contractor who legitimately learns clientId -> name from their own row
+ * could otherwise re-identify every other requirement for that client in the
+ * same response. Default-deny -- anything not provably theirs is redacted,
+ * including a requirement with no assignee at all. */
+export function redactClientUnlessAssigned<
+  T extends { client?: unknown; clientId?: unknown; recruiterId?: string | null },
+>(requester: { role: string; id: string }, requirement: T): T {
+  if (requester.role.toLowerCase() !== "contractor") return requirement;
+  if (requirement.recruiterId && requirement.recruiterId === requester.id) return requirement;
+  const { client, clientId, ...rest } = requirement;
+  return rest as T;
+}
+
 // GET /api/requirements?clientId=&status=&priority=&q= — filterable list
 requirementRouter.get(
   "/",
@@ -82,7 +102,7 @@ requirementRouter.get(
       },
       orderBy: { createdAt: "desc" },
     });
-    return res.json({ requirements: requirements.map((r) => redactClientIfContractor(req.user!.role, r)) });
+    return res.json({ requirements: requirements.map((r) => redactClientUnlessAssigned(req.user!, r)) });
   })
 );
 
@@ -134,14 +154,26 @@ requirementRouter.post(
       return rows;
     });
 
+    // Assignees can be contractors as well as recruiters, and the two land on
+    // different Clients pages -- one lookup for the whole batch rather than
+    // one per requirement, since a batch usually shares a handful of people.
+    const assigneeIds = [...new Set(created.map((r) => r.recruiterId).filter((id): id is string => !!id))];
+    const assigneeRoles = new Map(
+      (await prisma.user.findMany({ where: { id: { in: assigneeIds } }, select: { id: true, role: true } })).map(
+        (u) => [u.id, u.role as string]
+      )
+    );
+
     for (const requirement of created) {
       if (!requirement.recruiterId) continue;
+      const link = requirementLinkForRole(assigneeRoles.get(requirement.recruiterId));
       await createNotification({
         recipientId: requirement.recruiterId,
         type: "TASK_ASSIGNMENT",
         title: `Assigned: ${requirement.title}`,
-        body: `You've been assigned to "${requirement.title}" (${requirement.language}, ${requirement.service}).`,
-        link: `/recruiter/clients`,
+        body: formatTaskAssignmentBody(requirement, client.name),
+        slackCard: formatTaskAssignmentSlackCard(requirement, link),
+        link,
       }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
     }
 
@@ -169,7 +201,7 @@ requirementRouter.get(
       },
     });
     if (!requirement) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
-    return res.json({ requirement: redactClientIfContractor(req.user!.role, requirement) });
+    return res.json({ requirement: redactClientUnlessAssigned(req.user!, requirement) });
   })
 );
 
@@ -234,6 +266,13 @@ requirementRouter.patch(
         recruiter: { select: { name: true } },
       },
     });
+
+    // Manual status edit -- notifyRequirementStatusChange no-ops internally
+    // when status didn't actually change, so this is safe to fire unconditionally.
+    notifyRequirementStatusChange(updated, existing.status).catch((err) =>
+      console.error("[notifications] requirement status change notify failed:", err)
+    );
+
     return res.json({ requirement: updated });
   })
 );
@@ -258,7 +297,10 @@ requirementRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const { recruiterId, note } = assignSchema.parse(req.body);
 
-    const existing = await prisma.requirement.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.requirement.findUnique({
+      where: { id: req.params.id },
+      include: { client: { select: { name: true } } },
+    });
     if (!existing) throw new ApiError(404, "REQUIREMENT_NOT_FOUND", "Requirement not found");
 
     const newStatus = recruiterId
@@ -285,12 +327,17 @@ requirementRouter.post(
     // Unassign (recruiterId: null) fires nothing -- only a real assignment
     // is a "task assignment" someone needs to be told about.
     if (recruiterId) {
+      // Only recruiterId/status change here -- title/language/service/etc.
+      // (and the client relation) are `existing`'s, unchanged by this route.
+      const assignee = await prisma.user.findUnique({ where: { id: recruiterId }, select: { role: true } });
+      const link = requirementLinkForRole(assignee?.role);
       await createNotification({
         recipientId: recruiterId,
         type: "TASK_ASSIGNMENT",
         title: `Assigned: ${updated.title}`,
-        body: `You've been assigned to "${updated.title}" (${updated.language}, ${updated.service}).`,
-        link: `/recruiter/clients`,
+        body: formatTaskAssignmentBody(existing, existing.client.name),
+        slackCard: formatTaskAssignmentSlackCard(existing, link),
+        link,
       }).catch((err) => console.error("[notifications] task assignment notify failed:", err));
     }
 

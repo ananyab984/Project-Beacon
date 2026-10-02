@@ -154,7 +154,7 @@ function ContractorRequirementsSection() {
             Focus outreach on high-priority languages · <span className="font-semibold text-foreground">{summary.totalRemaining} headcount still left to fill</span>
           </p>
         </div>
-        <Link to="/contractor/requirements" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
+        <Link to="/contractor/clients" className="text-xs text-primary hover:underline inline-flex items-center gap-1">
           View All Requirements <ArrowUpRight className="h-3 w-3" />
         </Link>
       </div>

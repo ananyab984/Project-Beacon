@@ -79,7 +79,14 @@ class ClaudeClient:
                 "Content-Type": "application/json",
             }
         )
-        self._policy = RetryPolicy(retries=config.max_retries)
+        # Used by translate_to_english only -- search_missing_fields (Stage 6)
+        # builds its own local `policy`/`request_timeout` below, deliberately
+        # separate since it legitimately runs minutes long. See config.py's
+        # fast_provider_deadline_seconds: the shared default 15s deadline left
+        # translate_to_english's retries structurally unreachable (one 10s
+        # attempt + 1s backoff leaves ~4s of a 15s budget), same bug Bright
+        # Data was pulled out of.
+        self._policy = RetryPolicy(retries=config.max_retries, deadline_seconds=config.fast_provider_deadline_seconds)
 
     def search_missing_fields(
         self, missing_fields: List[str], full_name: str, profile_link: str, source_platform: str
@@ -232,7 +239,11 @@ class ClaudeClient:
             )
 
         try:
-            return retry_with_backoff(lambda: self._request_once(body), policy=self._policy, on_retry=on_retry)
+            return retry_with_backoff(
+                lambda: self._request_once(body, timeout=self.config.fast_provider_request_timeout),
+                policy=self._policy,
+                on_retry=on_retry,
+            )
         except RetryExhaustedError as exc:
             cause = exc.cause
             if isinstance(cause, ClaudeError):

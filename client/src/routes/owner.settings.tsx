@@ -4,9 +4,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
+import { NotificationChannelPrefs } from "@/components/features/notification-channel-prefs";
 import { ConnectAccountDialog } from "@/components/features/connect-account-dialog";
 import { EnrichmentEvaluationDialog } from "@/components/features/enrichment-evaluation-dialog";
 import {
@@ -104,6 +106,8 @@ function SettingsPage() {
       <EnrichmentEvaluationDialog open={enrichmentEvalOpen} setOpen={setEnrichmentEvalOpen} />
 
       <NotificationSystemSection />
+
+      <OwnerNotificationPreferencesSection />
 
       <Section
         title="Recruiters & Connected Outreach Accounts Mapping"
@@ -244,15 +248,22 @@ function SettingsPage() {
 function Section({
   title,
   desc,
+  icon,
   children,
 }: {
   title: string;
   desc?: string;
+  /** Optional -- only the sections that have a counterpart on another role's
+   * settings page pass one, to keep the heading identical across the three. */
+  icon?: React.ReactNode;
   children: React.ReactNode;
 }) {
   return (
     <section className="rounded-2xl border border-border bg-card p-6">
-      <h3 className="text-base font-semibold">{title}</h3>
+      <h3 className="text-base font-semibold flex items-center gap-2">
+        {icon}
+        {title}
+      </h3>
       {desc && <p className="mt-1 text-xs text-muted-foreground">{desc}</p>}
       <div className="mt-4">{children}</div>
     </section>
@@ -403,14 +414,15 @@ function ConnectedAccountsSection() {
 }
 
 /**
- * Org-level notification integrations -- the Slack bot token and the
- * dedicated system-mail account -- managed by the owner in-app (SystemConfig,
- * via /api/system-settings) instead of only as env vars only engineering can
- * change. Lets G3 rotate the token or reconnect the mailbox themselves.
+ * Org-level notification integrations. The Slack bot token is a secret
+ * (SLACK_BOT_TOKEN, set in the deployment environment) -- not owner-editable
+ * app config, unlike the dedicated system-mail account below it, which stays
+ * in SystemConfig via /api/system-settings since it's a reference to an
+ * already-connected account, not a credential. Rotating the Slack token is
+ * an engineering/deploy action; this section only shows whether one's set.
  */
 function NotificationSystemSection() {
   const queryClient = useQueryClient();
-  const [tokenInput, setTokenInput] = useState("");
   const [connecting, setConnecting] = useState(false);
 
   const { data } = useQuery({
@@ -420,25 +432,6 @@ function NotificationSystemSection() {
 
   const invalidate = () =>
     queryClient.invalidateQueries({ queryKey: ["system-notification-settings"] });
-
-  const saveTokenMutation = useMutation({
-    mutationFn: (token: string) => api.setSlackBotToken(token),
-    onSuccess: () => {
-      setTokenInput("");
-      invalidate();
-      toast.success("Slack bot token saved");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to save Slack bot token"),
-  });
-
-  const clearTokenMutation = useMutation({
-    mutationFn: () => api.setSlackBotToken(null),
-    onSuccess: () => {
-      invalidate();
-      toast.success("Slack bot token cleared");
-    },
-    onError: (err: any) => toast.error(err?.message || "Failed to clear Slack bot token"),
-  });
 
   const removeEmailAccountMutation = useMutation({
     mutationFn: () => api.removeNotificationEmailAccount(),
@@ -458,30 +451,63 @@ function NotificationSystemSection() {
     setConnecting(true);
     try {
       const res = await api.connectAccount("EMAIL");
-      if (!res?.url) return;
+      if (!res?.url) {
+        setConnecting(false);
+        return;
+      }
       const before = await api.getConnectedAccounts();
       const beforeIds = new Set(before.map((a: any) => a.unipileAccountId));
 
       const popup = window.open(res.url, "_blank", "width=600,height=700");
       toast.success("Opening Unipile connection window…");
 
-      const poll = setInterval(async () => {
+      const poll = setInterval(() => {
         if (!popup || popup.closed) {
           clearInterval(poll);
-          const after = await api.getConnectedAccounts();
-          const fresh = after.find(
-            (a: any) => !beforeIds.has(a.unipileAccountId) && a.status !== "DISCONNECTED",
-          );
-          if (fresh) {
-            await api.setNotificationEmailAccount(fresh.unipileAccountId);
-            invalidate();
-            toast.success("Notification email account connected");
-          }
-          setConnecting(false);
+          // Same ~6s grace delay as ConnectAccountDialog's
+          // watchForAbandonedPopup, not an immediate check: the popup can
+          // close itself the instant OAuth completes, before Unipile's
+          // webhook necessarily lands, so checking right away would treat a
+          // just-succeeded connection as abandoned.
+          setTimeout(async () => {
+            const after = await api.getConnectedAccounts();
+            const fresh = after.find(
+              (a: any) => !beforeIds.has(a.unipileAccountId) && a.status !== "DISCONNECTED",
+            );
+            if (fresh) {
+              await api.setNotificationEmailAccount(fresh.unipileAccountId);
+              invalidate();
+              toast.success("Notification email account connected");
+            } else {
+              // Nothing new showed up -- genuinely abandoned (popup closed
+              // without finishing OAuth). Clear the pending-attempt lock so
+              // the next click doesn't hit CONNECTION_PENDING; this was the
+              // missing piece here (ConnectAccountDialog already does this).
+              await api.cancelPendingConnection("EMAIL").catch(() => {});
+            }
+            setConnecting(false);
+          }, 6_000);
         }
       }, 1_000);
     } catch (err: any) {
-      toast.error(err?.message || "Failed to connect notification email account");
+      if (err.code === "CONNECTION_PENDING") {
+        toast.error(err.message, {
+          action: {
+            label: "Cancel and retry",
+            onClick: async () => {
+              try {
+                await api.cancelPendingConnection("EMAIL");
+                handleConnectNotificationEmail();
+              } catch (cancelErr: any) {
+                toast.error(cancelErr.message || "Failed to cancel pending connection attempt");
+                setConnecting(false);
+              }
+            },
+          },
+        });
+      } else {
+        toast.error(err?.message || "Failed to connect notification email account");
+      }
       setConnecting(false);
     }
   }
@@ -502,50 +528,26 @@ function NotificationSystemSection() {
               <div>
                 <div className="text-sm font-semibold text-foreground">Slack bot token</div>
                 <div className="text-[11px] text-muted-foreground">
-                  From the Slack app installed to the G3 workspace
+                  A secret -- set as SLACK_BOT_TOKEN in the deployment environment, not editable here
                 </div>
               </div>
             </div>
-            {data?.slackBotTokenConfigured && (
-              <Badge
-                variant="outline"
-                className="text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 gap-1"
-              >
-                <CheckCircle2 className="h-2.5 w-2.5" /> Configured
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Input
-              type="password"
-              placeholder={
+            <Badge
+              variant="outline"
+              className={
                 data?.slackBotTokenConfigured
-                  ? "•••••••••••••••• (already set — paste a new token to replace)"
-                  : "xoxb-..."
+                  ? "text-[9px] px-1.5 py-0 border-emerald-500/40 text-emerald-500 gap-1"
+                  : "text-[9px] px-1.5 py-0 border-warning/40 text-warning gap-1"
               }
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className="text-xs"
-            />
-            <Button
-              size="sm"
-              disabled={!tokenInput.trim() || saveTokenMutation.isPending}
-              onClick={() => saveTokenMutation.mutate(tokenInput.trim())}
-              className="text-xs shrink-0"
             >
-              Save
-            </Button>
-            {data?.slackBotTokenConfigured && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={clearTokenMutation.isPending}
-                onClick={() => clearTokenMutation.mutate()}
-                className="text-xs text-destructive hover:bg-destructive/10 hover:text-destructive shrink-0"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
+              {data?.slackBotTokenConfigured ? (
+                <>
+                  <CheckCircle2 className="h-2.5 w-2.5" /> Configured
+                </>
+              ) : (
+                "Not configured"
+              )}
+            </Badge>
           </div>
         </div>
 
@@ -592,6 +594,23 @@ function NotificationSystemSection() {
           </div>
         </div>
       </div>
+    </Section>
+  );
+}
+
+/**
+ * The owner's own Slack ID + delivery preferences -- distinct from
+ * NotificationSystemSection above (org-wide bot-token/system-email config).
+ * Copies contractor.settings.tsx's pattern exactly: one Email switch + one
+ * Slack switch covering all of OWNER_TYPES at once -- the same single-pair
+ * control contractor and recruiter settings use, so the three pages stay
+ * consistent and there's no per-type label map to keep in sync as the role's
+ * type list grows.
+ */
+function OwnerNotificationPreferencesSection() {
+  return (
+    <Section title="Your Notification Preferences" icon={<Bell className="h-5 w-5 text-primary" />}>
+      <NotificationChannelPrefs desc="The in-app bell is always on -- for a reply on any lead you've switched 'notify me' on for, enrichment completing, duplicate/DNC flags needing review, a lead placement, the weekly team-health digest, and client/requirement status updates. Turn on email or Slack below to get those the same way." />
     </Section>
   );
 }
