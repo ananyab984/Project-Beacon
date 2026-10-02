@@ -53,15 +53,34 @@ onboardingShortLinkRouter.get("/:token", async (req: Request, res: Response) => 
     return res.status(429).type("text/plain").send("Too many requests. Please try again in a minute.");
   }
 
-  const leadId = decodeShortLinkToken(req.params.token);
-  if (!leadId) {
+  const idPrefix = decodeShortLinkToken(req.params.token);
+  if (!idPrefix) {
     console.warn(`[onboarding short-link] rejected: malformed token "${req.params.token}"`);
     return res.status(404).type("text/plain").send("This link is invalid or has expired.");
   }
 
-  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  // The token is a PREFIX of Lead.id, not the whole id (see shortLink.ts), so
+  // this takes 2 rows to tell "found it" from "ambiguous". Resolving an
+  // ambiguous prefix by picking one would hand a candidate a FORM PRE-FILLED
+  // WITH SOMEONE ELSE'S NAME AND EMAIL, so a collision is a hard 404 and a
+  // logged error instead -- rare enough to investigate by hand, never silently
+  // wrong.
+  //
+  // ponytail: a prefix match can't use the primary-key index, so this is a
+  // scan. Fine at this project's lead volume; if it ever isn't, add a short-
+  // code column with its own unique index rather than lengthening the token.
+  const matches = await prisma.lead.findMany({ where: { id: { startsWith: idPrefix } }, take: 2 });
+
+  if (matches.length > 1) {
+    console.error(
+      `[onboarding short-link] COLLISION: token "${req.params.token}" (prefix ${idPrefix}) matches ${matches.length} leads -- refusing to guess`
+    );
+    return res.status(404).type("text/plain").send("This link is invalid or has expired.");
+  }
+
+  const lead = matches[0];
   if (!lead) {
-    console.warn(`[onboarding short-link] rejected: no lead for decoded token (lead_id=${leadId})`);
+    console.warn(`[onboarding short-link] rejected: no lead for decoded token (prefix=${idPrefix})`);
     return res.status(404).type("text/plain").send("This link is invalid or has expired.");
   }
 

@@ -55,14 +55,32 @@ function paramsOf(url: string): URLSearchParams {
 
 function test1_shortLinkRoundTripsToTheSameLead() {
   const token = encodeLeadIdToken(LEAD_ID);
-  assert.strictEqual(token.length, 22, "token should be 22 base64url chars");
-  assert.strictEqual(decodeShortLinkToken(token), LEAD_ID, "must decode back to the same lead id");
+  assert.strictEqual(token.length, 8, "token should be 8 base64url chars");
+  const prefix = decodeShortLinkToken(token);
+  assert.ok(prefix, "must decode");
+  assert.ok(LEAD_ID.startsWith(prefix!), `decoded prefix "${prefix}" must match the lead id it came from`);
+}
+
+function test1b_legacyFullLengthTokensStillResolve() {
+  // Links already sitting in candidates' inboxes carry the old 22-char token
+  // and cannot be reissued -- they must keep working.
+  const legacy = Buffer.from(LEAD_ID.replace(/-/g, ""), "hex").toString("base64url");
+  assert.strictEqual(legacy.length, 22);
+  assert.strictEqual(decodeShortLinkToken(legacy), LEAD_ID, "legacy token must resolve to the exact lead");
+}
+
+function test1c_tokenIsActuallyShorterThanBefore() {
+  // The whole point of the change: give characters back to the 200-char note.
+  const url = buildShortApplyUrl(LEAD_ID);
+  const legacyLength = `${config.shortLinkBaseUrl}/g/`.length + 22;
+  assert.ok(url.length < legacyLength, `expected shorter than ${legacyLength}, got ${url.length}`);
+  assert.strictEqual(legacyLength - url.length, 14, "should save exactly 14 characters");
 }
 
 function test2_decodeRejectsGarbageInsteadOfThrowing() {
   // A candidate pasting a truncated or mangled link must get a clean 404,
   // never a 500 -- and must never decode to SOME OTHER valid lead.
-  for (const bad of ["", "short", "!!!!!!!!!!!!!!!!!!!!!!", "a".repeat(23), null, undefined]) {
+  for (const bad of ["", "short", "!!!!!!!!", "a".repeat(23), "a".repeat(9), null, undefined]) {
     assert.strictEqual(decodeShortLinkToken(bad as any), null, `should reject ${JSON.stringify(bad)}`);
   }
 }
@@ -297,6 +315,8 @@ function test21_anImpossibleBudgetStillYieldsAUsableUrl() {
 function main() {
   const tests = [
     test1_shortLinkRoundTripsToTheSameLead,
+    test1b_legacyFullLengthTokensStillResolve,
+    test1c_tokenIsActuallyShorterThanBefore,
     test2_decodeRejectsGarbageInsteadOfThrowing,
     test3_everyShortLinkIsTheAdvertisedLength,
     test4_linkedInNoteStillFitsWithTheLinkAppended,
