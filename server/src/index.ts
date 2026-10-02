@@ -135,7 +135,14 @@ if (process.env.VERCEL !== "1") {
     console.log(`Global3 Auth Server running on http://localhost:${config.port}`);
     console.log(`Client URL: ${config.clientUrl}`);
     console.log(`====================================================`);
-    startBackgroundJobs();
+    if (config.backgroundJobsEnabled) {
+      startBackgroundJobs();
+    } else {
+      // Loud on purpose: a container that silently is not running
+      // reminders, digests or the enrichment poll looks identical to a
+      // healthy one from /health alone.
+      console.warn("[jobs] background jobs DISABLED via BACKGROUND_JOBS_ENABLED=false");
+    }
     startKeepalivePing();
   });
 }

@@ -1,0 +1,53 @@
+# LOCAL TESTING ONLY. Not a deployment artifact -- the real hosts (AWS /
+# Render) run the image directly. See docs/DOCKER_DEPLOY.md.
+#
+#   cp .env.docker.example .env.docker   # then fill it in
+#   docker compose up --build
+#
+# One service, because the image runs both processes. The Python enrichment
+# service is deliberately NOT published: it binds 127.0.0.1 inside the
+# container and is reachable only by Node and by `docker exec`.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: g3-backend:local
+    container_name: g3-backend
+
+    # Every secret and connection string comes from here. This file is
+    # gitignored and must NOT be server/.env -- that one carries a real
+    # SLACK_BOT_TOKEN, real APP_BASE_URL/CLIENT_URL, and an
+    # ENRICHMENT_SERVICE_URL that would override the image's own
+    # http://127.0.0.1:8001 and send Node to the old public service.
+    env_file:
+      - .env.docker
+
+    ports:
+      # Node API only. Deliberately no "8001:8001" -- publishing the
+      # enrichment port would not even work (it binds loopback inside the
+      # container), and the absence documents that it is private.
+      - "5001:5001"
+
+    # start-period has to cover `prisma migrate deploy` walking 27
+    # migrations before Node ever listens; without it compose would mark the
+    # container unhealthy during a normal boot.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:5001/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 120s
+      retries: 3
+
+    # Proves the supervisor contract locally: when Node dies, start.sh exits
+    # non-zero and this brings the container back, exactly as the platform
+    # would. A Python crash should NOT reach this path -- start.sh restarts
+    # Python in place.
+    restart: unless-stopped
+
+    # ~2GB is the floor. The bulk-upload route fires enrichment per CSV row
+    # with no concurrency cap (unlike the cron poller's 8), so a large import
+    # can drive Python's 40-thread pool hard. Too low a limit shows up as the
+    # OOM killer taking Python out, which then trips the restart budget.
+    mem_limit: 2g

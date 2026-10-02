@@ -245,7 +245,16 @@ def run_server(host: str, port: int, config) -> None:
     # class of "deployed fine, never went live".
     @app.get("/")
     @app.get("/health")
-    def health_check():
+    # async, not sync, and that distinction is load-bearing: FastAPI runs a
+    # plain `def` endpoint in AnyIO's worker threadpool (40 threads by
+    # default) -- the same pool /enrich uses, where a single lead can hold a
+    # thread for up to LEAD_LEVEL_TIMEOUT_SECONDS. Enough concurrent
+    # enrichments and this handler, which does no I/O at all, can no longer
+    # be scheduled, and the platform health check times out against a
+    # perfectly healthy process. Since Node and this service now share one
+    # container, that false negative would restart the API and all its cron
+    # jobs too. Reading booleans off `config` is safe on the event loop.
+    async def health_check():
         # Reports WHICH TIERS ARE ACTUALLY WIRED UP, because "healthy" on its
         # own is a misleading thing to say. Every provider here is optional by
         # design (`load_config(require_keys=False)`, and each client is None
