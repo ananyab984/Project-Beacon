@@ -255,21 +255,22 @@ function test18_linkedInLinkAlwaysFitsItsBudget() {
     profileLink: "https://www.linkedin.com/in/maria-alexandra-fernanda-de-la-santa-cruz-1234567890",
   });
   for (const l of [lead(), nasty, lead({ email: null }), lead({ fullName: null, firstName: null })]) {
-    const url = applyLinkFor("linkedin", l);
+    // The budgeted builder is the alternative strategy in applyLinkFor; it
+    // stays tested so flipping USE_SHORT_LINK_ON_LINKEDIN is a safe one-liner.
+    const url = buildApplyUrlWithin(l, LINKEDIN_APPLY_URL_BUDGET);
     assert.ok(url.length <= LINKEDIN_APPLY_URL_BUDGET, `over budget: ${url.length} chars`);
     assert.ok(url.startsWith(config.g3ApplyBaseUrl), "must stay on the Global3 apply domain");
   }
 }
 
-function test19_bothChannelsUseTheSameFormAndDomain() {
-  // The whole point: no redirect through our own servers on either channel,
-  // and both land on the same form. They differ only in how many params fit.
+function test19_eachChannelGetsItsOwnLinkForm() {
+  // Email embeds the full pre-filled URL directly (HTML, no length limit).
+  // LinkedIn embeds the short link, which redirects to that same full URL --
+  // a 200-char note cannot carry the real thing.
   const l = lead();
-  const email = applyLinkFor("email", l);
-  const linkedin = applyLinkFor("linkedin", l);
-  assert.ok(email.startsWith(`${config.g3ApplyBaseUrl}?`), "email link is the real apply URL");
-  assert.ok(linkedin.startsWith(`${config.g3ApplyBaseUrl}?`), "linkedin link is the real apply URL");
-  assert.ok(!linkedin.includes("/g/"), "LinkedIn must no longer redirect through our short link");
+  assert.ok(applyLinkFor("email", l).startsWith(`${config.g3ApplyBaseUrl}?`), "email gets the real apply URL");
+  assert.strictEqual(applyLinkFor("linkedin", l), buildShortApplyUrl(l.id), "linkedin gets the short link");
+  assert.ok(applyLinkFor("linkedin", l).length <= 100, "short link must leave room for the note");
 }
 
 function test20_budgetDropsWholeParamsNeverHalfOfOne() {
@@ -313,7 +314,7 @@ function main() {
     test16_shortLinkUsesItsOwnDomainSetting,
     test17_trailingSlashOnTheDomainDoesNotDoubleUp,
     test18_linkedInLinkAlwaysFitsItsBudget,
-    test19_bothChannelsUseTheSameFormAndDomain,
+    test19_eachChannelGetsItsOwnLinkForm,
     test20_budgetDropsWholeParamsNeverHalfOfOne,
     test21_anImpossibleBudgetStillYieldsAUsableUrl,
   ];
