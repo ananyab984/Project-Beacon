@@ -276,3 +276,121 @@ def find_duplicate_candidates(
             })
 
     return candidates
+
+
+# --- Identity-match scoring (the "Danny M" case, per-lead rather than pairwise) ---
+#
+# The dedup stage above answers "are these two LEADS the same person?". This
+# answers a different question on ONE lead: "is the person the scrapers came
+# back with the person we went looking for?". Nothing checked that before --
+# Lead.linkedinMatchConfidence existed in the schema, labelled "Danny M case",
+# and was never written by anything.
+#
+# It lives here because this module already owns name normalization and
+# similarity, and already is the Danny M stage; a second module would mean a
+# second, drifting copy of _strip_accents/_normalize_text.
+
+IDENTITY_CONFIRMED = "confirmed"
+IDENTITY_AMBIGUOUS = "ambiguous"
+IDENTITY_DIVERGENT = "divergent"
+IDENTITY_UNKNOWN = "unknown"
+
+# Nicknames in parentheses are common in this dataset ("Avik (Teddy)
+# Chakraborty", "Enrica (Kiki) Di Landro") and are NOT part of the legal name
+# the scrapers return, so comparing them verbatim would flag correct matches.
+_PARENTHETICAL = re.compile(r"\([^)]*\)")
+_NON_NAME_CHARS = re.compile(r"[^a-z0-9\s]")
+
+
+def _identity_tokens(name: Any) -> List[str]:
+    cleaned = _PARENTHETICAL.sub(" ", _clean_text_field(name))
+    cleaned = _NON_NAME_CHARS.sub(" ", cleaned)
+    return [t for t in cleaned.split() if t]
+
+
+def score_identity_match(input_name: Any, resolved_name: Any) -> Dict[str, Any]:
+    """Compare the name a lead ARRIVED with against the name the scrapers
+    RESOLVED, and say how much the two agree.
+
+    Returns `confidence` in 0..1 (None when there is nothing to compare) and a
+    `verdict`:
+
+      confirmed  -- every token of the shorter name matched a distinct token
+                    of the longer one EXACTLY, and there were at least two of
+                    them. "Marie-Anne Haasser" vs "Marie Anne Haasser".
+      ambiguous  -- consistent, but not confirming. Either an initial or
+                    abbreviation expanded ("Danny M" -> "Danny Miller", the
+                    case this is named for), or there was only a single token
+                    to go on ("Divya" -> "Divya Shyam"). Both are compatible
+                    with the right person AND with a different one, which is
+                    exactly what a human needs to adjudicate.
+      divergent  -- tokens do not line up. Most likely a different person.
+      unknown    -- one side has no usable name, so no claim is made either
+                    way. Never treated as a failure: a lead with no resolved
+                    name simply was not identified, which the enrichment
+                    status already says.
+
+    Deliberately NOT a character-ratio alone: difflib scores "Avik (Teddy)
+    Chakraborty" against "Avik Chakraborty" at ~0.79 and would flag a correct
+    match, while scoring unrelated same-length names deceptively high.
+    """
+    a = _identity_tokens(input_name)
+    b = _identity_tokens(resolved_name)
+    if not a or not b:
+        return {
+            "confidence": None,
+            "verdict": IDENTITY_UNKNOWN,
+            "input_name": _clean_text_field(input_name) or None,
+            "resolved_name": _clean_text_field(resolved_name) or None,
+            "reason": "no name on one side to compare",
+        }
+
+    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
+    remaining = list(longer)
+    exact_hits = 0
+    prefix_hits = 0
+    for token in shorter:
+        if token in remaining:
+            remaining.remove(token)
+            exact_hits += 1
+            continue
+        # An initial or truncation: "m" against "miller". Only counts in that
+        # direction -- a SHORTER token standing in for a longer one.
+        match = next((c for c in remaining if c.startswith(token) or token.startswith(c)), None)
+        if match is not None:
+            remaining.remove(match)
+            prefix_hits += 1
+
+    matched = exact_hits + prefix_hits
+    coverage = matched / len(shorter)
+
+    if matched == len(shorter) and prefix_hits == 0 and len(shorter) >= 2:
+        verdict, confidence, reason = IDENTITY_CONFIRMED, 1.0, "every name token matched exactly"
+    elif matched == len(shorter):
+        # Both ambiguous shapes carry the SAME confidence on purpose: nothing
+        # branches on the number (the server reads `verdict`), so two
+        # near-identical values would only have implied a precision this does
+        # not have. The distinction that matters is in `reason`.
+        verdict, confidence = IDENTITY_AMBIGUOUS, 0.75
+        reason = (
+            "only one name token to compare -- consistent, but far too common to confirm"
+            if len(shorter) == 1
+            else "an initial or abbreviation was expanded -- consistent with this person, and with others"
+        )
+    else:
+        # Plain token coverage -- the real measured quantity, not a scaled
+        # one. A name has two or three tokens in practice, so anything short
+        # of a full match lands at 0.67 or below and stays well clear of
+        # `confirmed`.
+        verdict, confidence, reason = (
+            IDENTITY_DIVERGENT, round(coverage, 3),
+            f"only {matched} of {len(shorter)} name token(s) line up",
+        )
+
+    return {
+        "confidence": confidence,
+        "verdict": verdict,
+        "input_name": " ".join(a),
+        "resolved_name": " ".join(b),
+        "reason": reason,
+    }

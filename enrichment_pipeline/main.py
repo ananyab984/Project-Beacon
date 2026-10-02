@@ -191,6 +191,13 @@ class EnrichmentResponse(BaseModel):
     parallel_fallback: Optional[Dict[str, Any]] = None
     websearch_fallback: Optional[Dict[str, Any]] = None
     raw_enrichment_data: Optional[Any] = None
+    # Identity + confidence signals. Declared here deliberately: response_model
+    # silently DROPS any key it does not declare, which is exactly how
+    # `conclusion` was reaching Node as undefined (see that field's note
+    # above). Node persists these to Lead.linkedinMatchConfidence /
+    # Lead.yoeConfidence, which until now nothing wrote at all.
+    identity_match: Optional[Dict[str, Any]] = None
+    yoe_confidence: Optional[float] = None
 
 
 class BatchEnrichmentResponse(BaseModel):

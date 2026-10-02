@@ -26,9 +26,14 @@ enrichmentEvaluationRouter.use(authenticateJwt);
 const RANGE_KEYS = ["7d", "30d", "90d", "all"] as const;
 type RangeKey = (typeof RANGE_KEYS)[number];
 
-// Kept in sync with prisma/schema.prisma's LeadSource enum -- no shared
-// export of this list already exists to reuse (checked lead.routes.ts).
-const LEAD_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
+// Re-exported from the one place that defines this list (which also owns the
+// URL-based detection that assigns it). This used to be a hand-maintained
+// copy "kept in sync with prisma/schema.prisma" -- it was already stale,
+// missing OTHER, which would have made the dashboard reject `platform=OTHER`
+// as invalid while leads were being filed under it.
+import { LEAD_SOURCES as LEAD_SOURCE_VALUES } from "../lib/detectLeadSource";
+
+const LEAD_SOURCES: readonly LeadSource[] = LEAD_SOURCE_VALUES;
 
 function sinceFor(range: RangeKey): Date | undefined {
   const now = Date.now();
