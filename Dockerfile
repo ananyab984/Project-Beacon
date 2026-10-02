@@ -3,9 +3,14 @@
 # Build from the REPO ROOT, not from server/ or enrichment_pipeline/:
 #   docker build -t g3-backend .
 #
-# Deploying to Render/AWS from an arm64 Mac needs an explicit platform, or
-# the image gets arm64 Prisma engines and dies on its first query:
-#   docker buildx build --platform linux/amd64 -t g3-backend .
+# For deployment, build ONE image that contains both CPU types (Intel/AMD
+# and ARM/Graviton) and push it to a registry -- the server then pulls the
+# version that matches its own CPU automatically:
+#   docker/build-multiarch.sh <registry>/g3-backend:<tag>
+#
+# Single-arch build for one specific server type only:
+#   docker buildx build --platform linux/amd64 -t g3-backend .   # Intel/AMD
+#   docker buildx build --platform linux/arm64 -t g3-backend .   # ARM/Graviton
 #
 # See docs/DOCKER_DEPLOY.md.
 
@@ -75,7 +80,16 @@ RUN rm -f .npmrc \
 
 # Fail the build here rather than at runtime if the engine for the target
 # platform is missing (the classic arm64-built-for-amd64 mistake).
-RUN ls node_modules/.prisma/client/libquery_engine-*.so.node
+# TARGETARCH is set automatically by `docker buildx` for each platform being
+# built (amd64 / arm64), so a multi-arch build checks each half separately.
+ARG TARGETARCH
+RUN case "${TARGETARCH:-$(dpkg --print-architecture)}" in \
+      amd64) engine=debian-openssl-3.0.x ;; \
+      arm64) engine=linux-arm64-openssl-3.0.x ;; \
+      *) echo "unsupported architecture: ${TARGETARCH}" >&2; exit 1 ;; \
+    esac \
+ && test -f "node_modules/.prisma/client/libquery_engine-${engine}.so.node" \
+ && echo "verified: Prisma engine ${engine} present for ${TARGETARCH:-native}"
 
 # ---------------------------------------------------------------------------
 # Stage 2: runtime -- Node 20 + Python 3.11, both processes, non-root

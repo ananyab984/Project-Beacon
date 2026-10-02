@@ -1,0 +1,72 @@
+# Builds the G3 backend image for BOTH CPU types (Intel/AMD and ARM/Graviton)
+# and pushes it to Amazon ECR as one multi-architecture image.
+#
+# Runs ONLY when started by hand (Actions tab -> "Build backend image" ->
+# Run workflow), so it never deploys or pushes anything by surprise.
+#
+# One-time setup in GitHub (Settings -> Secrets and variables -> Actions):
+#   Secret    AWS_ROLE_ARN     IAM role GitHub may assume (OIDC), with
+#                              permission to push to the ECR repository
+#   Variable  AWS_REGION       e.g. us-west-2
+#   Variable  ECR_REPOSITORY   e.g. g3-backend
+#
+# Building or pushing an image does NOT change what is running. Deploying
+# the new tag (ECS / EC2 / etc.) is a separate, deliberate step.
+
+name: Build backend image
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Image tag, e.g. 1.0.0 (avoid 'latest')"
+        required: true
+      platforms:
+        description: "CPU types to build"
+        required: true
+        default: "linux/amd64,linux/arm64"
+
+permissions:
+  contents: read
+  id-token: write   # lets the job get short-lived AWS credentials via OIDC
+
+concurrency:
+  group: backend-image-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # QEMU lets this Intel/AMD runner build the ARM half under emulation.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push (${{ inputs.platforms }})
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ inputs.platforms }}
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ inputs.tag }}
+          # Reuse layers from earlier runs so rebuilds after small code
+          # changes take minutes, not the full emulated build again.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Show CPU types in the pushed image
+        run: |
+          docker buildx imagetools inspect \
+            "${{ steps.ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}:${{ inputs.tag }}"

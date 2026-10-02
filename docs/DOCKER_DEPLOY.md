@@ -35,23 +35,38 @@ Splitting the containers would buy no scaling headroom either — see
 
 ## Build
 
-```bash
-# Local testing on an arm64 Mac
-docker build -t g3-backend:local .
+### For deployment: one image, both CPU types
 
-# For deployment -- REQUIRED from an arm64 machine
-docker buildx build --platform linux/amd64 -t g3-backend:latest .
+```bash
+docker/build-multiarch.sh <account>.dkr.ecr.<region>.amazonaws.com/g3-backend:1.0.0
+# or, in GitHub: Actions -> "Build backend image" -> Run workflow
 ```
 
-**The `--platform` flag is not optional when deploying from a Mac.** Prisma picks its
-query-engine binary at `prisma generate` time based on the build platform. An arm64
-build produces an image that starts cleanly and then dies on its first database query.
-`schema.prisma` pins `binaryTargets = ["native", "debian-openssl-3.0.x"]` so the Linux
-engine is always generated, and the Dockerfile asserts the engine file exists, but the
-image architecture itself still has to match the host.
+This builds the image for **both** `linux/amd64` (Intel/AMD) and `linux/arm64`
+(ARM / AWS Graviton) and pushes them under one tag. Whoever deploys can choose either
+kind of server; Docker/AWS pulls the matching half automatically. Add `SMOKE_TEST=1`
+to start each half once after pushing and confirm Node, Python and the Prisma engine
+load on that CPU.
 
-Expect an emulated amd64 build to be slow (10–25 min). A native amd64 builder or CI is
-faster.
+Multi-arch images must be **pushed to a registry** (ECR, GHCR, ...): a single
+machine's local image store can't hold both halves under one tag.
+
+Why the CPU type matters at all: the image contains compiled programs (Node, Python,
+numpy/pandas, and Prisma's query engine). Those only run on the CPU type they were
+built for. A wrong-arch image starts cleanly and then dies on its first database query,
+because Prisma loads its engine lazily. `schema.prisma` now generates both Linux
+engines (`debian-openssl-3.0.x` and `linux-arm64-openssl-3.0.x`), and the Dockerfile
+fails the build if the engine for the platform being built is missing.
+
+Expect a laptop build to be slow: the half that doesn't match your own CPU is
+emulated (10-25 min for amd64 on an Apple Silicon Mac). The GitHub workflow caches
+layers, so rebuilds after small changes are much faster.
+
+### For local testing
+
+```bash
+docker build -t g3-backend:local .     # your own machine's CPU type only
+```
 
 ---
 
@@ -188,7 +203,7 @@ and the frontend's `VITE_API_BASE_URL` must point at this container's URL.
 Viable **only** because the 70-minute call is loopback. Its 120s request cap applies to
 inbound API traffic, which is all fast.
 
-1. Push to ECR (`--platform linux/amd64`).
+1. Push to ECR with `docker/build-multiarch.sh` (both CPU types).
 2. Create an App Runner service from the image.
 3. Port `5001`, health check **HTTP** on `/health`.
 4. **Auto-scaling: min 1, max 1.**
