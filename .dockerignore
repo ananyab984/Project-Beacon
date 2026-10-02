@@ -1,0 +1,67 @@
+# Deny-by-default. The repo root is ~1.8GB (client/ 593MB, POC/ 310MB,
+# per-service node_modules and .venv), and almost none of it belongs in a
+# backend image. An allow-list is also the only safe shape here: a new
+# secrets file or data dump added anywhere in the tree is excluded by
+# default rather than silently shipped.
+#
+# This file is load-bearing for CORRECTNESS, not just build speed. Without
+# it, `COPY server/ .` would drop 630MB of macOS/arm64 node_modules --
+# including a darwin Prisma query engine -- on top of the Linux tree the
+# builder just installed, and the image would die at runtime. Same for
+# enrichment_pipeline/.venv (166MB, python3.14, macOS binaries).
+*
+
+# --- allow: the Node server's build inputs -------------------------------
+# .npmrc is required: it sets production=false, without which npm skips
+# devDependencies under NODE_ENV=production and the tsc build fails on
+# missing @types. It is deleted inside the builder before `npm prune`.
+!server/package.json
+!server/package-lock.json
+!server/.npmrc
+!server/tsconfig.json
+!server/src
+!server/prisma
+
+# --- allow: the Python enrichment service --------------------------------
+!enrichment_pipeline
+
+# --- allow: the container entrypoint -------------------------------------
+!docker
+
+# --- re-deny: things that live inside the allowed paths ------------------
+# Order matters (last match wins), so every one of these must come after
+# the ! lines above.
+**/node_modules
+**/.venv
+**/venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.coverage
+**/.DS_Store
+
+# Secrets. .env.example is intentionally NOT re-allowed -- the image needs
+# no example file, and keeping the deny blanket means a stray .env.local,
+# .env.production or .dev.vars can never slip in.
+**/.env
+**/.env.*
+**/.dev.vars
+
+# Python service: test suite, scraped-profile artifacts (real PII), one-off
+# scripts and run logs. enrichment_pipeline/output/ holds raw scrape dumps
+# that main.py has an explicit retention policy for -- baking them into an
+# immutable image layer would defeat it entirely.
+enrichment_pipeline/tests
+enrichment_pipeline/output
+enrichment_pipeline/scratch_*
+enrichment_pipeline/*.log
+enrichment_pipeline/enriched_output.json
+
+# Node server: build output is produced in the builder, never copied in
+# (a stale local dist/ would silently win). seed.ts and the committed
+# ERD.pdf are not runtime inputs; `prisma migrate deploy` needs only
+# schema.prisma and migrations/.
+server/dist
+server/coverage
+server/prisma/seed.ts
+server/prisma/ERD.pdf
