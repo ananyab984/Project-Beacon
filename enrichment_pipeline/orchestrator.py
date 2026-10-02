@@ -10,6 +10,11 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, Literal, Optional, TypedDict
 
 from config import Config
+from core.dedup import (
+    IDENTITY_AMBIGUOUS,
+    IDENTITY_DIVERGENT,
+    score_identity_match,
+)
 from core.enrichment_count import count_stage6_fillable_fields
 from core.field_audit import audit_lead_fields
 from core.schema import has_content, is_empty_value
@@ -109,6 +114,52 @@ _ABSENCE_PROSE_MARKERS = (
 # plain prose, distinct from _years_of_experience_from_parallel_entries'
 # structured-experience-list derivation. See _infer_years_of_experience_from_text.
 _YEARS_OF_EXPERIENCE_FREE_TEXT = re.compile(r"\b(\d{1,2})\+?\s*(?:years?|yrs?)\b", re.IGNORECASE)
+
+
+# How much to trust Years_of_Exp, judged by WHERE the number came from.
+#
+# The pipeline has two genuinely different bases for this field and they do
+# not deserve the same weight:
+#
+#   STATED  -- the profile says the number out loud ("over 30 years of
+#              experience"), and parsers/linkedin_parser.py's
+#              _extract_years_of_experience reads nothing else. We are
+#              repeating a claim the person made about themselves.
+#   DERIVED -- computed from experience date spans
+#              (_years_of_experience_from_parallel_entries: earliest start to
+#              latest end). Defensible, but an inference: career gaps and
+#              roles outside the trade are both counted in full.
+#
+# Judged here at finalize rather than recorded at each write site, because the
+# number can be set from three places across two merge paths and threading a
+# provenance flag through all of them would be a far larger change than the
+# question warrants. The test for it is the lead's own text: if the number
+# appears verbatim there, it was stated.
+YOE_CONFIDENCE_STATED = 0.9
+YOE_CONFIDENCE_DERIVED = 0.6
+
+
+def _yoe_confidence(field_sources: Dict[str, str], lead: Dict[str, Any]) -> Optional[float]:
+    """Confidence in the resolved Years_of_Exp, or None when this run did not
+    resolve one. `existing` means the value arrived with the lead and nothing
+    here established it, so no claim is made about it either."""
+    raw = lead.get("Years_of_Exp")
+    if is_empty_value(raw):
+        return None
+    if field_sources.get("Years_of_Exp") in (None, "existing"):
+        return None
+    try:
+        years = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+
+    text_blob = " | ".join(
+        str(v) for v in (lead.get("Headline"), lead.get("Current_Title"), lead.get("About_Snippet")) if v
+    )
+    for match in _YEARS_OF_EXPERIENCE_FREE_TEXT.finditer(text_blob):
+        if int(match.group(1)) == years:
+            return YOE_CONFIDENCE_STATED
+    return YOE_CONFIDENCE_DERIVED
 
 
 # Values `field_sources["_parallel_fallback"]` can hold, and the re-attempt
@@ -464,6 +515,14 @@ class PipelineResult(TypedDict):
     # drafting can't personalize on detail that was never handed to it.
     # None if no scrape ran or it returned nothing.
     raw_enrichment_data: Optional[Any]
+    # Whether the person the scrapers returned is the person we went looking
+    # for -- see core/dedup.py's score_identity_match. Always present; its own
+    # `verdict` is "unknown" when there was no name on one side to compare,
+    # which is not a failure.
+    identity_match: Dict[str, Any]
+    # Confidence in Years_of_Exp (see _yoe_confidence), or None when this run
+    # did not establish one.
+    yoe_confidence: Optional[float]
 
 
 class EnrichmentOrchestrator:
@@ -518,6 +577,9 @@ class EnrichmentOrchestrator:
             "parallel_fallback": None,
             "websearch_fallback": None,
             "raw_enrichment_data": None,
+            # Aborted mid-waterfall: no claim either way about who this is.
+            "identity_match": score_identity_match(None, None),
+            "yoe_confidence": None,
             "conclusion": "timed_out",
         }
 
@@ -813,7 +875,11 @@ class EnrichmentOrchestrator:
         via the same _dispatch_parallel_stage()/_resolve_parallel_stage() the
         LinkedIn path uses, so a ProZ/Bodalgo/personal-site lead gets the same
         Tier 2 treatment -- run CONCURRENTLY with this method's own Tavily
-        call rather than after it (see _dispatch_parallel_stage's docstring)."""
+        call rather than after it (see _dispatch_parallel_stage's docstring).
+
+        `provider_type == "parallel_only"` (an unrecognized source, see
+        core/source_router.py) skips the Tavily call entirely and leaves this
+        method as Parallel alone, feeding the LLM fallback downstream."""
         raw_scraped_data: Any = None
         raw_source_text = ""
 
@@ -823,7 +889,15 @@ class EnrichmentOrchestrator:
             lead, field_sources, logs, profile_link
         )
 
-        if profile_link and self.tavily:
+        if provider_type == "parallel_only":
+            # Not a failure and not a missing key -- a deliberate skip, logged
+            # as one so it is never mistaken for Tier 1 silently breaking (the
+            # exact ambiguity _tier1_skip_reason exists to kill). Parallel was
+            # already dispatched above and still resolves below.
+            msg = "Stage 3 skipped: no dedicated parser for this source -- going straight to Parallel + LLM fallback"
+            logs.append(msg)
+            log.info(msg)
+        elif profile_link and self.tavily:
             try:
                 if provider_type == "tavily_search":
                     raw_scraped_data = self.tavily.search_snippets(f"site:proz.com {lead.get('Full_Name', '')}".strip(), include_domains=["proz.com"])
@@ -1439,6 +1513,13 @@ class EnrichmentOrchestrator:
         # already settled -- see `_unverified()` below.
         field_sources: Dict[str, str] = dict(known_field_sources or {})
 
+        # Captured BEFORE any stage can overwrite Full_Name, because the whole
+        # point of the identity check at Stage 7 is to compare what we went
+        # looking for against what came back. `lead` is mutated in place all
+        # the way down, so reading this at the end would compare the resolved
+        # name against itself and always agree.
+        submitted_name = lead.get("Full_Name") or lead.get("First_Name")
+
         # Mark any populated field not already carrying a known source as "existing"
         initial_audit = audit_lead_fields(lead)
         for k, v in lead.items():
@@ -1562,6 +1643,21 @@ class EnrichmentOrchestrator:
         status = "enrichment_complete" if final_audit["is_complete"] else "enrichment_partial"
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
+        # Did we get back the person we went looking for? Compared only when
+        # a stage actually resolved a name -- `submitted_name` unchanged means
+        # nothing was identified, which `status` already reports, and
+        # score_identity_match returns `unknown` rather than a failure.
+        identity_match = score_identity_match(submitted_name, lead.get("Full_Name"))
+        if identity_match["verdict"] in (IDENTITY_AMBIGUOUS, IDENTITY_DIVERGENT):
+            msg = (
+                f"Stage 7 Identity: {identity_match['verdict']} "
+                f"(confidence {identity_match['confidence']}) -- "
+                f"submitted {identity_match['input_name']!r} vs resolved "
+                f"{identity_match['resolved_name']!r}: {identity_match['reason']}"
+            )
+            logs.append(msg)
+            log.warning(msg)
+
         logs.append(f"Stage 7 Finalize: Status={status}, Final Enrichment Score={final_audit['enrichment_percentage']}% (Elapsed: {elapsed_ms}ms)")
 
         return {
@@ -1576,4 +1672,6 @@ class EnrichmentOrchestrator:
             "websearch_fallback": websearch_fallback,
             "raw_enrichment_data": raw_scraped_data,
             "conclusion": conclusion,
+            "identity_match": identity_match,
+            "yoe_confidence": _yoe_confidence(field_sources, lead),
         }

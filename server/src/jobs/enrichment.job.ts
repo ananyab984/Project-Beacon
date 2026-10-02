@@ -7,6 +7,7 @@ import { normalizeToolsSoftware } from "../lib/normalizeToolsSoftware";
 import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
+import { computeEnrichmentVerdict } from "../lib/enrichmentVerdict";
 import { mapWithConcurrency } from "../lib/mapWithConcurrency";
 import { countPopulatedFields } from "../lib/enrichmentCount";
 import { tierFromFieldSources } from "../lib/enrichmentTier";
@@ -58,16 +59,34 @@ const POLL_CONCURRENCY = 8;
 let pollInFlight = false;
 
 /** Enriches a single lead by calling the real Python enrichment_pipeline and
- *  trusting ITS verdict on completeness (`enrichment_status`) instead of
- *  assuming success. A lead is only ever marked COMPLETE when the pipeline
- *  itself reports every critical field (email, contact number, years of
- *  experience) was actually resolved -- never on a bare "the HTTP call
- *  returned 200" or "the call failed" basis. That was a real bug: leads with
- *  a real About section and Contact section that the parser failed to pick
- *  up were still being force-marked enriched. */
+ *  trusting ITS verdict (`enrichment_status`) on whether the lead actually
+ *  came back enriched -- never a bare "the HTTP call returned 200".
+ *
+ *  Two separate verdicts come out of one response, and conflating them was a
+ *  real bug (see `concluded` / `fullyEnriched` below):
+ *   - whether the waterfall CONCLUDED, which decides only whether the poll
+ *     job keeps retrying this lead; and
+ *   - whether every critical field (email, contact number, years of
+ *     experience) was resolved, which decides whether the lead is treated as
+ *     finished: promoted to the global recruiter pool, and announced to the
+ *     contractor who submitted it.
+ */
 export async function enrichLeadById(leadId: string) {
   const lead = await prisma.lead.findUnique({ where: { id: leadId } });
   if (!lead) return;
+
+  // A lead can be soft-deleted WHILE this is in flight -- a run legitimately
+  // lasts up to ~68 minutes (orchestrator.py's LEAD_LEVEL_TIMEOUT_SECONDS),
+  // which is a wide window for a recruiter to bin it. pollPendingEnrichment
+  // and stallOverdueEnrichments both filter `deletedAt: null` when they pick
+  // leads up, but nothing re-checked it here, so a lead deleted mid-run still
+  // had results (and promotedToGlobalAt/justEnrichedUntil) written back on
+  // top of it. Checking here also stops the obvious waste: every provider
+  // call below is paid, and spending it on a binned lead buys nothing.
+  if (lead.deletedAt) {
+    console.log(`[enrichment.job] lead ${lead.id} is in the recycle bin -- skipping enrichment`);
+    return;
+  }
 
   // Shared by both the success and catch paths below to write one
   // EnrichmentRun row per attempt (see server/prisma/schema.prisma) -- the
@@ -75,8 +94,13 @@ export async function enrichLeadById(leadId: string) {
   const startedAt = new Date();
 
   try {
-    await prisma.lead.update({
-      where: { id: lead.id },
+    // updateMany, not update: `where` can then carry `deletedAt: null`, so a
+    // lead binned between the read above and this write is simply not
+    // touched (update() would throw on a composite where, and matching on id
+    // alone would resurrect the row's status). Same pattern on every lead
+    // write in this function.
+    await prisma.lead.updateMany({
+      where: { id: lead.id, deletedAt: null },
       data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: startedAt },
     });
 
@@ -254,19 +278,68 @@ export async function enrichLeadById(leadId: string) {
     // response is now authoritative as-is.
     const mergedFieldSources: Record<string, string> = { ...(returnedFieldSources || (lead.fieldSources as any) || {}) };
 
-    // "Enriched" means the pipeline has reached a TERMINAL state for this
-    // lead, not "we have a way to contact them" -- those are two different
-    // questions now. Unlike Clay's old async dispatch (`_clay_dispatch:
-    // "pending"`, resolved later via its own webhook), Parallel's Stage 3.5
-    // call is synchronous -- it either ran to completion or was skipped/
-    // failed before this response was built, so there is no "still awaiting"
-    // state left to check here. Every stage in this pass (Bright Data/
-    // Tavily scrape, Parallel, AI extraction) has already concluded
-    // synchronously by the time this response arrives, so not timed out ==
-    // nothing further left for automation to do == Enriched, whatever that
-    // pass actually turned up.
+    // Nothing in this response is still pending: unlike Clay's old async
+    // dispatch (`_clay_dispatch: "pending"`, resolved later via its own
+    // webhook), Parallel's Stage 3.5 call is synchronous, so every stage in
+    // this pass (Bright Data/Tavily scrape, Parallel, AI extraction) has
+    // already run or been skipped by the time this arrives. There is no
+    // "still awaiting" state to check for.
+    //
+    // What there IS, is two different questions -- and they used to be
+    // collapsed into one `isComplete = conclusion !== "timed_out"` flag that
+    // drove every consequence at once:
+    //
+    //   `leadStatus`    -- did the waterfall reach a terminal state, and may
+    //                      a human need to look? Pure RETRY CONTROL: only
+    //                      PENDING is re-claimed by pollPendingEnrichment, so
+    //                      a lead that ran every stage and found nothing must
+    //                      still come to rest (COMPLETE) or the full paid
+    //                      waterfall re-runs on it every few minutes forever.
+    //                      FLAGGED_REVIEW is terminal in the same way.
+    //   `fullyEnriched` -- did it actually come back enriched? The pipeline's
+    //                      OWN verdict (orchestrator.py: `enrichment_complete`
+    //                      iff every one of core/schema.py's CRITICAL_FIELDS
+    //                      -- Email_Address, Contact_Number, Years_of_Exp --
+    //                      is populated). Gates the recruiter-facing
+    //                      consequences only.
+    //
+    // This function's contract always claimed it trusted `enrichment_status`
+    // ("never on a bare 'the HTTP call returned 200' basis"), but the field
+    // was never actually read, so ANY lead that did not time out was stamped
+    // identityResolved + promotedToGlobalAt and pushed into the global
+    // recruiter pool. Measured 2026-10-01: a real 20-lead batch concluded
+    // `exhausted_no_match` on all 20 while the pipeline reported 17 of them
+    // `enrichment_partial` (67-94% of fields, no contact details), and the
+    // live table read 139/139 COMPLETE -- "COMPLETE" meant "did not time
+    // out", never "is enriched". See lib/enrichmentVerdict.ts.
     const conclusion = data?.conclusion as "short_circuit_success" | "exhausted_no_match" | "timed_out" | null | undefined;
-    const isComplete = conclusion !== "timed_out";
+    // `identity_match` answers a question nothing else in this response does:
+    // is this the person we went looking for? A lead whose profileLink points
+    // at someone else comes back looking beautifully complete -- every field
+    // populated, just about the wrong human. See core/dedup.py's
+    // score_identity_match ("Danny M" case).
+    const identityMatch = data?.identity_match as
+      | { verdict?: string; confidence?: number | null; input_name?: string; resolved_name?: string; reason?: string }
+      | undefined;
+
+    const { fullyEnriched, unrecognizedStatus, identityFlagged, leadStatus } = computeEnrichmentVerdict({
+      conclusion,
+      enrichmentStatus: data?.enrichment_status,
+      identityVerdict: identityMatch?.verdict,
+    });
+
+    if (identityFlagged) {
+      console.warn(
+        `[enrichment.job] lead ${lead.id} flagged for identity review (${identityMatch?.verdict}, ` +
+          `confidence ${identityMatch?.confidence}): submitted ${JSON.stringify(identityMatch?.input_name)} vs ` +
+          `resolved ${JSON.stringify(identityMatch?.resolved_name)} -- ${identityMatch?.reason}`
+      );
+    }
+    if (unrecognizedStatus) {
+      console.error(
+        `[enrichment.job] lead ${lead.id}: unrecognized enrichment_status ${JSON.stringify(data?.enrichment_status)} -- treating as not fully enriched`
+      );
+    }
 
     // On Hold is now driven entirely by the waterfall's own conclusion state
     // or the recruiter's own manual toggle -- never by field count/contact
@@ -288,8 +361,12 @@ export async function enrichLeadById(leadId: string) {
     // with a genuine result, never clobbers a prior one with nothing.
     const parallelResult = data?.parallel_fallback?.data as Record<string, any> | undefined;
 
-    await prisma.lead.update({
-      where: { id: lead.id },
+    // Deletion is re-checked HERE rather than only at entry because the call
+    // above legitimately takes minutes: the recycle-bin click almost always
+    // lands during the provider round-trip, not before it. `count` is 0 when
+    // that happened, which is what gates the notification below.
+    const { count: leadWriteCount } = await prisma.lead.updateMany({
+      where: { id: lead.id, deletedAt: null },
       data: {
         email: enrichedEmail,
         contactNumber: enrichedContactNumber,
@@ -317,21 +394,38 @@ export async function enrichLeadById(leadId: string) {
         // Parallel's raw output, verbatim -- only replaces the prior value
         // when this pass actually produced one (see parallelResult above).
         parallelData: (parallelResult ?? lead.parallelData) as any,
-        identityResolved: isComplete,
-        enrichmentStatus: isComplete ? "COMPLETE" : "PENDING",
+        // Gates the global recruiter pool together with enrichmentStatus
+        // (lead.routes.ts's recruiter scope: `{ identityResolved: true,
+        // enrichmentStatus: "COMPLETE" }`), so a lead missing email/phone/YoE
+        // no longer reaches every recruiter as a finished record.
+        identityResolved: fullyEnriched,
+        // Deliberately `concluded`, NOT `fullyEnriched`: this is the retry
+        // switch, and a concluded-but-thin lead must stop being re-claimed by
+        // pollPendingEnrichment rather than re-running the paid waterfall
+        // forever. It now means "automation is done with this lead", while
+        // identityResolved above carries "and it actually came back full".
+        enrichmentStatus: leadStatus,
+        // Both columns existed in the schema from the start and nothing ever
+        // wrote to them -- linkedinMatchConfidence is even labelled "Danny M
+        // case" there. null means this run made no claim (no name to compare
+        // / no years resolved), which is distinct from a low score.
+        linkedinMatchConfidence: identityMatch?.confidence ?? null,
+        yoeConfidence: (data?.yoe_confidence as number | null | undefined) ?? null,
         flags: flags as any,
         onHoldReason,
-        promotedToGlobalAt: isComplete ? new Date() : undefined,
-        justEnrichedUntil: isComplete ? new Date(Date.now() + 24 * 3600_000) : undefined,
+        promotedToGlobalAt: fullyEnriched ? new Date() : undefined,
+        justEnrichedUntil: fullyEnriched ? new Date(Date.now() + 24 * 3600_000) : undefined,
       },
     });
 
     // Ping the contractor who added this lead once it's actually done, not on
-    // a bare "the call returned" basis -- same isComplete this function
-    // already uses to decide COMPLETE vs PENDING above. Fires regardless of
-    // entry path (poll job or immediate Add-Lead/bulk-upload call) since both
-    // funnel through this same function.
-    if (isComplete && lead.createdByContractorId) {
+    // a bare "the call returned" basis. Keyed to `fullyEnriched`, not
+    // `concluded`: the message says the profile "is now fully filled in", so
+    // sending it for a lead that came back 67% complete with no contact
+    // details would simply be untrue. Fires regardless of entry path (poll
+    // job or immediate Add-Lead/bulk-upload call) since both funnel through
+    // this same function.
+    if (fullyEnriched && leadWriteCount > 0 && lead.createdByContractorId) {
       const leadName = enrichedDisplayName || lead.maskedLabel || "your lead";
       createNotification({
         recipientId: lead.createdByContractorId,
@@ -405,8 +499,8 @@ export async function enrichLeadById(leadId: string) {
       currentOnHoldReason: lead.onHoldReason,
       outcome: "system_error",
     });
-    await prisma.lead.update({
-      where: { id: lead.id },
+    await prisma.lead.updateMany({
+      where: { id: lead.id, deletedAt: null },
       data: { enrichmentStatus: "PENDING", flags: flags as any, onHoldReason },
     }).catch(() => {});
 

@@ -41,6 +41,21 @@ function test4_stalledIsNotShownAsStillRunning() {
   assert.strictEqual(enrichmentStatusKindOf(lead({ enrichmentStatus: "STALLED" })), "pending");
 }
 
+{
+  // A run that concluded but resolved a DIFFERENT person. Before this had its
+  // own kind it fell through to "enriching", so the one outcome that most
+  // needs a human looked like it needed nothing and never stopped spinning.
+  assert.strictEqual(
+    enrichmentStatusKindOf(lead({ enrichmentStatus: "FLAGGED_REVIEW" })),
+    "needs_review"
+  );
+  // A recruiter's own hold still wins -- it is an overlay on any status.
+  assert.strictEqual(
+    enrichmentStatusKindOf(lead({ enrichmentStatus: "FLAGGED_REVIEW", flags: ["ON_HOLD"] })),
+    "on_hold"
+  );
+}
+
 function test5_onHoldWithoutCompletionStillReadsAsHeld() {
   assert.strictEqual(
     enrichmentStatusKindOf(lead({ enrichmentStatus: "PENDING", flags: ["ON_HOLD"] })),

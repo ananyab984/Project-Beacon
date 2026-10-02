@@ -559,3 +559,196 @@ def test_merge_order_is_unchanged_by_concurrency():
     # concurrent (Tier 1 sets it first, Tier 2 then overrides).
     assert result["lead"]["Country_of_Residence"] == "Tier2Country"
     assert result["field_sources"]["Country_of_Residence"] == "parallel"
+
+
+def test_unknown_source_skips_tier1_and_goes_straight_to_parallel():
+    """An unrecognized source spends nothing on Tier 1.
+
+    Tier 1 only pays for itself when a dedicated parser exists to turn its raw
+    page text into canonical fields. For a personal site or an unlisted
+    directory there is none, so a Tavily Extract just hands the generic LLM
+    parser a wall of marketing copy -- work Parallel's browsing agent already
+    does better, and does on this same lead anyway.
+
+    Before this, such leads were labelled LINKEDIN by the server's old
+    `mapToLeadSource` default and routed to Bright Data, which rejects every
+    non-LinkedIn URL outright (`validation_error`). Now they arrive as OTHER
+    and route here. See core/source_router.py's PARALLEL_ONLY."""
+    orch = make_orchestrator()
+    calls = {"tavily": 0, "brightdata": 0, "parallel": 0}
+
+    def tavily_extract(url):
+        calls["tavily"] += 1
+        return {"raw_content": "should never be fetched"}
+
+    def bd_scrape(url):
+        calls["brightdata"] += 1
+        raise AssertionError("Bright Data must never be called for an unknown source")
+
+    def parallel_enrich(lead, profile_link):
+        calls["parallel"] += 1
+        return {"headline": "Freelance subtitler", "country": "United Kingdom"}
+
+    orch.tavily = stub(extract_url=tavily_extract, search_snippets=tavily_extract)
+    orch.brightdata = stub(scrape_profile=bd_scrape)
+    orch.parallel = stub(enrich_profile=parallel_enrich)
+
+    lead = {
+        "Source": "OTHER",
+        "Profile_Link": "https://subtle-subtitlers.org.uk/professional-profile/AmberHughes/",
+        "Full_Name": "Amber Rose Hughes",
+    }
+    result = orch.process_lead(lead)
+
+    assert calls["tavily"] == 0, "Tier 1 must be skipped entirely for an unknown source"
+    assert calls["brightdata"] == 0, "Bright Data must never see a non-LinkedIn URL"
+    assert calls["parallel"] == 1, "Parallel is the only enrichment call for an unknown source"
+    assert result["parallel_fallback"]["called"] is True
+    assert result["lead"].get("Headline") == "Freelance subtitler"
+    assert any("Stage 3 skipped" in line for line in result["logs"]), (
+        "the skip must be logged, never silent -- otherwise it is "
+        "indistinguishable from Tier 1 breaking"
+    )
+
+
+def test_unmapped_source_string_routes_like_other():
+    """Defensive: the server now normalizes every source to the LeadSource
+    enum, but a legacy row or a direct API caller can still send something
+    unmapped. It must behave exactly like OTHER, not fall back to a scrape."""
+    from core.source_router import route_lead
+
+    assert route_lead("OTHER") == ("parallel_only", "generic_llm")
+    assert route_lead("Voices123") == ("parallel_only", "generic_llm")
+    assert route_lead("apollo") == ("parallel_only", "generic_llm")
+    assert route_lead("") == ("parallel_only", "generic_llm")
+    assert route_lead(None) == ("parallel_only", "generic_llm")
+    # The mapped ones are unchanged.
+    assert route_lead("linkedin") == ("brightdata", "linkedin")
+    assert route_lead("proz") == ("tavily_search", "proz")
+    assert route_lead("bodalgo") == ("tavily_extract", "bodalgo")
+
+
+def test_every_server_lead_source_is_routable():
+    """Cross-boundary contract: the LeadSource enum the server can emit
+    (server/src/lib/detectLeadSource.ts, mirrored in prisma/schema.prisma)
+    must be fully handled here. A value the server starts writing but this
+    router has never heard of does not fail loudly -- it silently takes the
+    default branch -- so the mismatch is only ever visible as "that platform's
+    leads enrich badly", which is exactly how a stale list hides."""
+    from core.source_router import route_lead
+
+    # Keep in step with LEAD_SOURCES in server/src/lib/detectLeadSource.ts.
+    server_enum = [
+        "LINKEDIN", "PROZ", "ADA", "ATA", "ATAA",
+        "BODALGO", "FREELANCER", "APOLLO", "OTHER",
+    ]
+    scraped = {
+        "LINKEDIN": ("brightdata", "linkedin"),
+        "PROZ": ("tavily_search", "proz"),
+        "ADA": ("tavily_extract", "ada"),
+        "ATA": ("tavily_extract", "ata"),
+        "ATAA": ("tavily_extract", "ataa"),
+        "BODALGO": ("tavily_extract", "bodalgo"),
+        "FREELANCER": ("tavily_extract", "freelancer"),
+    }
+    for value in server_enum:
+        got = route_lead(value)
+        expected = scraped.get(value, ("parallel_only", "generic_llm"))
+        assert got == expected, f"{value} routed to {got}, expected {expected}"
+
+    # ATAA must not collapse into ATA -- the server-side label matcher had
+    # exactly this bug (substring match in declaration order); assert the
+    # router keeps them distinct too.
+    assert route_lead("ATAA") != route_lead("ATA")
+
+
+def test_identity_match_catches_a_profile_link_pointing_at_someone_else():
+    """The realistic failure: the URL on the lead belongs to a different
+    person, so Bright Data faithfully scrapes the WRONG profile. Nothing else
+    in the response reveals it -- such a lead comes back looking beautifully
+    complete, just about the wrong human.
+
+    Full_Name is in OVERRIDE_ON_VERIFIED_FIELDS, so the scraped name really
+    does replace the submitted one; comparing against the name captured at
+    Stage 1 is what makes the swap visible."""
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Sarah Chen", "city": "Singapore"})
+    orch.parallel = stub(enrich_profile=lambda lead, link: {})
+
+    result = orch.process_lead({
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/danny-m/",
+        "Full_Name": "Danny Miller",
+    })
+
+    identity = result["identity_match"]
+    assert identity["verdict"] == "divergent", identity
+    assert identity["confidence"] < 0.9
+    assert identity["input_name"] == "danny miller"
+    assert identity["resolved_name"] == "sarah chen"
+    assert any("Stage 7 Identity" in line for line in result["logs"]), "a mismatch must be logged, not silent"
+    # The lead itself still looks fine -- which is the whole point.
+    assert result["lead"]["Full_Name"] == "Sarah Chen"
+
+
+def test_identity_match_flags_the_danny_m_expansion_through_the_waterfall():
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Danny Miller"})
+    orch.parallel = stub(enrich_profile=lambda lead, link: {})
+
+    result = orch.process_lead({
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/danny-m/",
+        "Full_Name": "Danny M",
+    })
+    assert result["identity_match"]["verdict"] == "ambiguous"
+    assert any("Stage 7 Identity" in line for line in result["logs"])
+
+
+def test_identity_match_confirms_when_the_resolved_name_agrees():
+    orch = make_orchestrator()
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Danny Miller"})
+    orch.parallel = stub(enrich_profile=lambda lead, link: {})
+
+    result = orch.process_lead({
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/danny-miller/",
+        "Full_Name": "Danny Miller",
+    })
+    assert result["identity_match"]["verdict"] == "confirmed"
+    assert not any("Stage 7 Identity" in line for line in result["logs"]), "a clean match must not warn"
+
+
+def test_a_lead_nothing_identified_makes_no_identity_claim():
+    """Every provider coming up empty is already reported by
+    enrichment_status. It must not ALSO look like a mismatch."""
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, link: {})
+    orch.brightdata = stub(scrape_profile=lambda url: (_ for _ in ()).throw(BrightDataError("blocked")))
+
+    result = orch.process_lead({
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/someone/",
+    })
+    assert result["identity_match"]["verdict"] == "unknown"
+    assert result["identity_match"]["confidence"] is None
+
+
+def test_result_always_carries_both_confidence_keys():
+    """response_model in main.py drops undeclared keys silently (that is how
+    `conclusion` reached Node as undefined for weeks) -- so the keys have to
+    be present on every shape of result, including a timeout."""
+    orch = make_orchestrator()
+    orch.parallel = stub(enrich_profile=lambda lead, link: {"full_name": "Alex Anthraper"})
+    orch.brightdata = stub(scrape_profile=lambda url: {"name": "Alex Anthraper"})
+
+    result = orch.process_lead({
+        "Source": "LINKEDIN",
+        "Profile_Link": "https://www.linkedin.com/in/alex-anthraper/",
+        "Full_Name": "Alex Anthraper",
+    })
+    assert "identity_match" in result and "yoe_confidence" in result
+
+    timed_out = orch._timed_out_result({}, {}, [], 0.0, "Stage 3 (scrape)")
+    assert "identity_match" in timed_out and "yoe_confidence" in timed_out
+    assert timed_out["identity_match"]["verdict"] == "unknown"
