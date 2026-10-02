@@ -3,7 +3,7 @@ import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import * as XLSX from "xlsx";
 import { api } from "@/lib/api";
 import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
-import type { ApiLead, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
+import type { ApiLead, CreateLeadPayload, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,15 +36,6 @@ export const Route = createFileRoute("/contractor/leads")({
   }),
   component: MyLeadsPage,
 });
-
-const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
-
-function mapToLeadSource(raw: string | undefined | null): LeadSource {
-  if (!raw) return "LINKEDIN";
-  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
-  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
-  return hit ?? "LINKEDIN";
-}
 
 function formatStageLabel(stage: string): string {
   return stage.charAt(0) + stage.slice(1).toLowerCase().replace(/_/g, " ");
@@ -192,7 +183,7 @@ function MyLeadsPage() {
   });
 
   const bulkCreateMutation = useMutation({
-    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    mutationFn: (rows: Array<CreateLeadPayload>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
       const duplicates = res.results.filter((r) => r.status === "duplicate").length;
@@ -654,7 +645,7 @@ function FilterSelect({
   );
 }
 
-function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => void }) {
+function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<CreateLeadPayload>) => void }) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
@@ -664,7 +655,7 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
     duplicateNames: string[];
     totalCount: number;
     newCount: number;
-    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+    rows: Array<CreateLeadPayload>;
   } | null>(null);
 
   function downloadTemplate() {
@@ -695,7 +686,7 @@ function BulkUploadDialog({ onSubmitRows }: { onSubmitRows: (rows: Array<Partial
 
       const rows = parsed.map((l: any) => ({
         fullName: l.display_name ?? l.masked_label,
-        source: mapToLeadSource(l.source),
+        source: l.source || undefined,
         services: l.services,
         country: l.country || undefined,
         profileLink: l.profile_link || undefined,
