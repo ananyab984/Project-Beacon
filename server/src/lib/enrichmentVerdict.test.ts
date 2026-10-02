@@ -1,0 +1,149 @@
+/**
+ * Unit tests for the two enrichment verdicts.
+ *
+ * The case that matters most is `exhausted_no_match` + `enrichment_partial`:
+ * that is the shape 17 of 20 leads came back as in the 2026-10-01 batch, and
+ * the shape that used to be stamped identityResolved + promotedToGlobalAt.
+ *
+ * Run: cd server && npx ts-node src/lib/enrichmentVerdict.test.ts
+ */
+
+import assert from "node:assert";
+import { computeEnrichmentVerdict, patchResolvesIdentity } from "./enrichmentVerdict";
+
+// --- the regression: concluded, but thin --------------------------------
+const partial = computeEnrichmentVerdict({
+  conclusion: "exhausted_no_match",
+  enrichmentStatus: "enrichment_partial",
+});
+assert.equal(partial.leadStatus, "COMPLETE", "a thin result must still come to rest, or the poll job re-runs it forever");
+assert.equal(partial.fullyEnriched, false, "missing critical fields must NOT reach the global recruiter pool");
+assert.equal(partial.unrecognizedStatus, false);
+
+// --- a genuinely complete lead ------------------------------------------
+for (const conclusion of ["exhausted_no_match", "short_circuit_success"]) {
+  const v = computeEnrichmentVerdict({ conclusion, enrichmentStatus: "enrichment_complete" });
+  assert.equal(v.leadStatus, "COMPLETE", `${conclusion} concludes`);
+  assert.equal(v.fullyEnriched, true, `${conclusion} with all critical fields is fully enriched`);
+  assert.equal(v.unrecognizedStatus, false);
+}
+
+// --- timeout -------------------------------------------------------------
+const timedOut = computeEnrichmentVerdict({ conclusion: "timed_out", enrichmentStatus: "enrichment_partial" });
+assert.equal(timedOut.leadStatus, "PENDING", "a timeout must go back to PENDING so it is retried");
+assert.equal(timedOut.fullyEnriched, false);
+
+// A timeout can never be "fully enriched", even if a complete status somehow
+// rode along with it -- the two fields are produced independently.
+const timedOutButComplete = computeEnrichmentVerdict({
+  conclusion: "timed_out",
+  enrichmentStatus: "enrichment_complete",
+});
+assert.equal(timedOutButComplete.leadStatus, "PENDING");
+assert.equal(timedOutButComplete.fullyEnriched, false, "a timed-out run is never treated as finished");
+
+// --- unreadable / missing status: fail safe, and say so ------------------
+for (const bad of [undefined, null, "", "COMPLETE", "enriched", "something_new"]) {
+  const v = computeEnrichmentVerdict({ conclusion: "exhausted_no_match", enrichmentStatus: bad });
+  assert.equal(v.fullyEnriched, false, `unreadable status ${JSON.stringify(bad)} must not promote the lead`);
+  assert.equal(v.unrecognizedStatus, true, `unreadable status ${JSON.stringify(bad)} must be reported, not swallowed`);
+  assert.equal(v.leadStatus, "COMPLETE", "an unreadable status does not by itself mean the run should be retried");
+}
+
+// A missing conclusion (older service, truncated body) still concludes --
+// only an explicit "timed_out" sends a lead back to PENDING.
+const noConclusion = computeEnrichmentVerdict({ conclusion: undefined, enrichmentStatus: "enrichment_complete" });
+assert.equal(noConclusion.leadStatus, "COMPLETE");
+assert.equal(noConclusion.fullyEnriched, true);
+
+// --- the invariant that stops the cost blow-up ---------------------------
+// Whatever else changes, a non-timeout response must always conclude: that is
+// the only thing keeping pollPendingEnrichment from re-claiming the lead.
+for (const status of ["enrichment_complete", "enrichment_partial", "garbage", undefined]) {
+  assert.notEqual(
+    computeEnrichmentVerdict({ conclusion: "exhausted_no_match", enrichmentStatus: status }).leadStatus,
+    "PENDING",
+    `non-timeout must conclude regardless of status (${String(status)})`
+  );
+}
+
+// --- identity flagging --------------------------------------------------
+const OK = { conclusion: "exhausted_no_match", enrichmentStatus: "enrichment_complete" };
+
+// No verdict, or "unknown", is NOT a flag: no comparison was made, so there
+// is nothing for a human to adjudicate.
+for (const v of [undefined, null, "unknown", "confirmed"]) {
+  const r = computeEnrichmentVerdict({ ...OK, identityVerdict: v });
+  assert.equal(r.identityFlagged, false, `verdict ${String(v)} must not flag`);
+  assert.equal(r.leadStatus, "COMPLETE");
+  assert.equal(r.fullyEnriched, true);
+}
+
+// Both failure shapes flag, and neither can be "fully enriched" -- the fields
+// that came back may describe somebody else entirely.
+for (const v of ["ambiguous", "divergent"]) {
+  const r = computeEnrichmentVerdict({ ...OK, identityVerdict: v });
+  assert.equal(r.identityFlagged, true, `verdict ${v} must flag`);
+  assert.equal(r.leadStatus, "FLAGGED_REVIEW");
+  assert.equal(r.fullyEnriched, false, "a flagged identity is never fully enriched");
+  // FLAGGED_REVIEW is terminal, so the poll job (which claims only PENDING)
+  // does not re-run the paid waterfall on it.
+  assert.notEqual(r.leadStatus, "PENDING");
+}
+
+// A timeout outranks an identity flag -- it must go back to PENDING to be
+// retried, not sit in FLAGGED_REVIEW waiting for a human.
+const timedOutFlagged = computeEnrichmentVerdict({
+  conclusion: "timed_out",
+  enrichmentStatus: "enrichment_partial",
+  identityVerdict: "divergent",
+});
+assert.equal(timedOutFlagged.leadStatus, "PENDING");
+assert.equal(timedOutFlagged.fullyEnriched, false);
+
+// leadStatus is only ever one of the three the schema allows.
+for (const conclusion of ["exhausted_no_match", "short_circuit_success", "timed_out", undefined]) {
+  for (const identityVerdict of [undefined, "unknown", "confirmed", "ambiguous", "divergent"]) {
+    for (const enrichmentStatus of ["enrichment_complete", "enrichment_partial", "weird"]) {
+      const r = computeEnrichmentVerdict({ conclusion, enrichmentStatus, identityVerdict });
+      assert.ok(
+        ["COMPLETE", "PENDING", "FLAGGED_REVIEW"].includes(r.leadStatus),
+        `bad leadStatus ${r.leadStatus}`
+      );
+      // The invariant that keeps costs bounded, restated across every combo.
+      if (conclusion !== "timed_out") assert.notEqual(r.leadStatus, "PENDING");
+    }
+  }
+}
+
+// --- patchResolvesIdentity: the manual-edit bar -------------------------
+const FULL = { email: "a@b.com", contactNumber: "+1234", yearsOfExperience: 7 };
+const BARE = { email: null, contactNumber: null, yearsOfExperience: null };
+
+// The regression: merely having a profile link, or already being COMPLETE,
+// must not resolve identity. Nothing about a profileLink appears here at all.
+assert.equal(patchResolvesIdentity({}, BARE), false);
+assert.equal(patchResolvesIdentity({}, { ...BARE, email: "a@b.com" }), false, "email alone is not enough");
+assert.equal(patchResolvesIdentity({}, { ...BARE, email: "a@b.com", contactNumber: "+1" }), false, "still no YoE");
+
+// A recruiter filling the record in by hand does resolve it.
+assert.equal(patchResolvesIdentity({}, FULL), true);
+assert.equal(patchResolvesIdentity({ yearsOfExperience: 7 }, { ...FULL, yearsOfExperience: null }), true);
+assert.equal(patchResolvesIdentity({ email: "a@b.com" }, { ...FULL, email: null }), true);
+
+// YoE of 0 is a real, known value -- not "missing". A truthiness check here
+// would wrongly treat a genuine zero as unresolved.
+assert.equal(patchResolvesIdentity({}, { ...FULL, yearsOfExperience: 0 }), true, "0 years is a known value");
+assert.equal(patchResolvesIdentity({ yearsOfExperience: 0 }, FULL), true);
+
+// Explicit null is a deliberate clear and must NOT fall back to the stored
+// value; an absent key means "leave alone" and must.
+assert.equal(patchResolvesIdentity({ email: null }, FULL), false, "clearing email un-resolves");
+assert.equal(patchResolvesIdentity({ contactNumber: null }, FULL), false, "clearing phone un-resolves");
+assert.equal(patchResolvesIdentity({ yearsOfExperience: null }, FULL), false, "clearing YoE un-resolves");
+assert.equal(patchResolvesIdentity({ email: undefined }, FULL), true, "absent key leaves the stored value alone");
+
+// Empty string is not a value (matches is_empty_value in core/schema.py).
+assert.equal(patchResolvesIdentity({ email: "" }, FULL), false);
+
+console.log("enrichmentVerdict: all assertions passed");

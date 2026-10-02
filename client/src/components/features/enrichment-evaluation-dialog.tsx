@@ -15,6 +15,9 @@ const PLATFORM_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "BODALGO", label: "Bodalgo" },
   { value: "FREELANCER", label: "Freelancer" },
   { value: "APOLLO", label: "Apollo" },
+  // Leads whose profile link is not a host we recognize (lib/detectLeadSource.ts).
+  // Without this they are enriched but unreachable from this dashboard.
+  { value: "OTHER", label: "Other / unknown" },
 ];
 
 const RANGE_OPTIONS: Array<{ value: string; label: string }> = [

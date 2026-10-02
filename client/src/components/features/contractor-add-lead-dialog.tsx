@@ -8,7 +8,7 @@ import { Upload, Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
-import type { ApiLead, LeadSource } from "@/lib/api-types";
+import type { ApiLead, CreateLeadPayload, LeadSource } from "@/lib/api-types";
 import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import { STANDARD_LANGUAGES as LANGUAGES } from "@/lib/languages";
 import { CountrySelect, ServicePicker, resolveServiceValue, SERVICE_OTHERS_VALUE } from "@/components/features/lead-form-fields";
@@ -27,8 +27,6 @@ const SOURCES = [
   "Import",
 ];
 
-const VALID_SOURCES: LeadSource[] = ["LINKEDIN", "PROZ", "ADA", "ATA", "ATAA", "BODALGO", "FREELANCER", "APOLLO"];
-
 const INITIAL_VALUES = {
   first_name: "",
   last_name: "",
@@ -43,14 +41,6 @@ const INITIAL_VALUES = {
   secondary_languages: "",
   services: "",
 };
-
-/** Best-effort mapping of a free-text / legacy source string to the LeadSource enum. */
-function mapToLeadSource(raw: string | undefined | null): LeadSource {
-  if (!raw) return "LINKEDIN";
-  const upper = raw.trim().toUpperCase().replace(/\s+/g, "");
-  const hit = VALID_SOURCES.find((s) => s === upper || upper.includes(s));
-  return hit ?? "LINKEDIN";
-}
 
 export function ContractorAddLeadDialog({
   open: controlledOpen,
@@ -87,7 +77,7 @@ export function ContractorAddLeadDialog({
   }
 
   const createMutation = useMutation({
-    mutationFn: (lead: Partial<ApiLead> & { fullName: string; source: string }) => api.createLead(lead),
+    mutationFn: (lead: CreateLeadPayload) => api.createLead(lead),
     onSuccess: (_res, lead) => {
       toast.success(`Lead ${lead.fullName} submitted to pipeline!`);
       invalidateLeads();
@@ -98,7 +88,7 @@ export function ContractorAddLeadDialog({
   });
 
   const bulkCreateMutation = useMutation({
-    mutationFn: (rows: Array<Partial<ApiLead> & { fullName: string; source: string }>) => api.bulkCreateLeads(rows),
+    mutationFn: (rows: Array<CreateLeadPayload>) => api.bulkCreateLeads(rows),
     onSuccess: (res) => {
       const succeeded = res.results.filter((r) => !!r.leadId).length;
       const duplicates = res.results.filter((r) => r.status === "duplicate").length;
@@ -180,7 +170,11 @@ export function ContractorAddLeadDialog({
     createMutation.mutate({
       fullName: trimmed,
       firstName: values.first_name || undefined,
-      source: mapToLeadSource(values.source),
+      // Raw label, intentionally unmapped: the server derives the real
+      // source from the profile link (lib/detectLeadSource.ts), which is
+      // the only place that can see both and the only one that is
+      // authoritative. Guessing here just drifted from it.
+      source: values.source || undefined,
       profileLink: values.profile_link || undefined,
       email: values.email_address || undefined,
       contactNumber: values.contact_number || undefined,
@@ -201,7 +195,7 @@ export function ContractorAddLeadDialog({
     duplicateNames: string[];
     totalCount: number;
     newCount: number;
-    rows: Array<Partial<ApiLead> & { fullName: string; source: string }>;
+    rows: Array<CreateLeadPayload>;
   } | null>(null);
   const [checkingDuplicates, setCheckingDuplicates] = useState(false);
 
@@ -231,7 +225,7 @@ export function ContractorAddLeadDialog({
 
       const rows = parsed.map((l) => ({
         fullName: l.display_name ?? l.masked_label,
-        source: mapToLeadSource(l.source),
+        source: l.source || undefined,
         services: l.services,
         targetLanguage: l.language,
         email: l.email || undefined,

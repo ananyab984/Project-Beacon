@@ -1,5 +1,6 @@
 import type {
   ApiLead,
+  CreateLeadPayload,
   ApiBinLead,
   ReenrichmentRun,
   OutreachFunnelCategory,
@@ -171,13 +172,13 @@ export const api = {
   },
 
   async createLead(
-    lead: Partial<ApiLead> & { fullName: string; source: string },
+    lead: CreateLeadPayload,
   ): Promise<{ lead: ApiLead; duplicateWarning: any }> {
     return request("/api/leads", { method: "POST", body: JSON.stringify(lead) });
   },
 
   async bulkCreateLeads(
-    leads: Array<Partial<ApiLead> & { fullName: string; source: string }>,
+    leads: Array<CreateLeadPayload>,
     options: { skipDuplicates?: boolean } = {},
   ) {
     return request<{

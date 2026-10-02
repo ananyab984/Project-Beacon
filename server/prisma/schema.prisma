@@ -147,6 +147,13 @@ enum LeadSource {
   BODALGO	
   FREELANCER	
   APOLLO	
+  // "we could not identify this platform" -- a real answer, not a fallback
+  // bucket. Assigned by server/src/lib/detectLeadSource.ts when a lead's
+  // profile link is not a host we recognize, so the pipeline stops filing
+  // such leads as LINKEDIN and sending them to Bright Data, which rejects
+  // every non-LinkedIn URL. source_router.py routes OTHER to Parallel + LLM
+  // fallback with no Tier 1 scrape.
+  OTHER
 }
 
 enum InteractionDirection {
