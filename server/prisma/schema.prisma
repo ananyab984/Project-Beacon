@@ -20,8 +20,16 @@
 //   output   = "./ERD.pdf"
 // }
 
+// binaryTargets pins the query-engine builds shipped with the generated
+// client. "native" keeps local dev working on whatever the developer is on
+// (currently arm64 macOS); "debian-openssl-3.0.x" is the Linux/amd64 engine
+// the Docker image needs. Without the explicit Linux target a `prisma
+// generate` run on arm64 bakes in an arm64-only engine, and the container
+// then starts cleanly and dies on its first query with "Query engine binary
+// for current platform not found". See docs/DOCKER_DEPLOY.md.
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {

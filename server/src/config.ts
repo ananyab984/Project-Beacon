@@ -183,6 +183,19 @@ export const config = {
   keepaliveUrl: resolveEnv("KEEPALIVE_URL", appBaseUrl, false),
   keepaliveIntervalMs: parseInt(process.env.KEEPALIVE_INTERVAL_MS || "600000", 10),
 
+  // Kill switch for the 9 in-process cron jobs (jobs/index.ts). Defaults ON --
+  // every real deployment wants them, and exactly one instance must run them
+  // (pollInFlight in jobs/enrichment.job.ts is in-memory, so a second instance
+  // running jobs would double every digest and blow past the 8-wide enrichment
+  // concurrency cap).
+  // The reason this exists: booting the API with jobs on has side effects that
+  // reach real third parties -- Slack posts, due-date reminders, weekly
+  // digests, and a poll that spends real money on enrichment every 3 minutes.
+  // A throwaway container (a Docker smoke test, a one-off shell against a copy
+  // of the data) needs the HTTP server without any of that, and before this
+  // flag there was no way to get one.
+  backgroundJobsEnabled: (process.env.BACKGROUND_JOBS_ENABLED || "true").trim().toLowerCase() !== "false",
+
   // Credentials, sessions, and email verification all live in Neon Auth now
   // (see middleware/auth.ts) -- this server only verifies the JWTs it issues.
   // Same value as the client's VITE_NEON_AUTH_URL; kept as a separate env var
