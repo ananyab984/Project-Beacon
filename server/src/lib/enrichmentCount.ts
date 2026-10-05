@@ -56,20 +56,23 @@ type CountableLead = Pick<Lead,
  *    non-emptiness, is what makes a field count.
  */
 export function countPopulatedFields(lead: CountableLead): number {
-  const sources = (lead.fieldSources as Record<string, string> | null) ?? {};
+  return ENRICHMENT_COUNT_FIELDS.filter(([field, sourceKey]) => fieldWasEnriched(lead, field, sourceKey)).length;
+}
 
-  const isNonEmpty = (v: unknown): boolean => {
-    if (v == null) return false;
-    if (typeof v === "string") return v.trim().length > 0;
-    if (Array.isArray(v)) return v.length > 0;
-    return true; // numbers (Decimal), etc.
-  };
+/** Did enrichment (or a recruiter's manual stand-in) find an email or a phone
+ *  for this lead? Same provenance rule as countPopulatedFields: a contact the
+ *  lead was imported with doesn't count. */
+export function hasEnrichedContact(lead: Pick<Lead, "email" | "contactNumber" | "fieldSources">): boolean {
+  return fieldWasEnriched(lead, "email", "Email_Address") || fieldWasEnriched(lead, "contactNumber", "Contact_Number");
+}
 
-  return ENRICHMENT_COUNT_FIELDS.filter(([field, sourceKey]) => {
-    if (!isNonEmpty((lead as any)[field])) return false;
-    const source = sources[sourceKey];
-    return !!source && !NOT_ENRICHED_SOURCES.has(source);
-  }).length;
+function fieldWasEnriched(lead: Partial<CountableLead> & Pick<Lead, "fieldSources">, field: keyof CountableLead, sourceKey: string): boolean {
+  const v = (lead as any)[field];
+  const nonEmpty =
+    v != null && (typeof v === "string" ? v.trim().length > 0 : Array.isArray(v) ? v.length > 0 : true);
+  if (!nonEmpty) return false;
+  const source = ((lead.fieldSources as Record<string, string> | null) ?? {})[sourceKey];
+  return !!source && !NOT_ENRICHED_SOURCES.has(source);
 }
 
 /** Convenience wrapper for a single API response site: spreads the lead and

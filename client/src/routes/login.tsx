@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useAuth, roleHome, type Role } from "@/lib/auth";
+import { useAuth, type Role, safeRedirect } from "@/lib/auth";
 
 const schema = z.object({
   email: z.string().trim().email("Enter a valid email"),
@@ -62,7 +62,7 @@ function LoginPage() {
     try {
       const u = await signIn(parsed.data.email, parsed.data.password);
       toast.success(`Welcome back, ${u.name.split(" ")[0]}`);
-      navigate({ to: redirect ?? roleHome(u.role) });
+      navigate({ to: safeRedirect(redirect, u.role) });
     } catch (err: any) {
       if (err?.code === "NO_PROFILE") {
         setNeedsSetupEmail(err.email ?? parsed.data.email);
@@ -100,7 +100,7 @@ function LoginPage() {
     try {
       const u = await completeProfile(setupRole);
       toast.success(`You're all set, ${u.name.split(" ")[0]}`);
-      navigate({ to: redirect ?? roleHome(u.role) });
+      navigate({ to: safeRedirect(redirect, u.role) });
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not finish setting up your account");
     } finally {

@@ -1,4 +1,5 @@
 import type { EnrichmentRunConclusion, EnrichmentTier } from "@prisma/client";
+import { ENRICHMENT_COUNT_TOTAL } from "./enrichmentCount";
 
 /** Reference lines for Metric 2 -- see this feature's plan doc for the
  *  confirmed git history behind these numbers (NOT 15s/60s as originally
@@ -12,16 +13,46 @@ export interface RunRow {
   tier: EnrichmentTier | null;
   enrichedFieldCount: number;
   executionTimeMs: number;
+  /** Enrichment found an email or a phone (lib/enrichmentCount.ts
+   *  hasEnrichedContact). Optional so callers that only need the timing or
+   *  tier math can leave it out; missing reads as false. */
+  contactFound?: boolean;
 }
 
 /** One row per lead: that lead's most recent EnrichmentRun.concludedAt
- *  within the filtered set, plus whether it's currently COMPLETE and (if so)
- *  its lastManualOverrideAt. */
+ *  within the filtered set, plus its lastManualOverrideAt. */
 export interface LatestRunPerLead {
   leadId: string;
   latestConcludedAt: Date;
-  isComplete: boolean;
   lastManualOverrideAt: Date | null;
+}
+
+/** Out of how many fields enrichedFieldCount is counted (lib/enrichmentCount.ts). */
+export const FIELD_TOTAL = ENRICHMENT_COUNT_TOTAL;
+
+/** A run counts as Enriched at this many of the 10 fields (or any contact). */
+export const ENRICHED_MIN_FIELDS = 5;
+
+/**
+ * What a run actually achieved -- G3's rule (Ananya, 2026-10-05): a lead is
+ * **Enriched** when enrichment filled 5 or more of the 10 fields, OR found
+ * an email or a phone. That is deliberately not the waterfall's own
+ * `conclusion`: SHORT_CIRCUIT_SUCCESS needs every critical field including
+ * a phone almost no public profile shows, so on real data it read "exhausted,
+ * no match" for runs that filled most of a lead.
+ *
+ * Checked in this order: a system error is always an error; then data
+ * found decides it (even a timed-out run that got 6 fields enriched the
+ * lead); only a run that found too little is labelled by how it ended.
+ */
+export type RunOutcome = "ENRICHED" | "PARTIALLY_ENRICHED" | "NOTHING_FOUND" | "TIMED_OUT" | "SYSTEM_ERROR";
+export const RUN_OUTCOMES: RunOutcome[] = ["ENRICHED", "PARTIALLY_ENRICHED", "NOTHING_FOUND", "TIMED_OUT", "SYSTEM_ERROR"];
+
+export function runOutcome(r: Pick<RunRow, "conclusion" | "enrichedFieldCount" | "contactFound">): RunOutcome {
+  if (r.conclusion === "SYSTEM_ERROR") return "SYSTEM_ERROR";
+  if (r.enrichedFieldCount >= ENRICHED_MIN_FIELDS || r.contactFound) return "ENRICHED";
+  if (r.conclusion === "TIMED_OUT") return "TIMED_OUT";
+  return r.enrichedFieldCount > 0 ? "PARTIALLY_ENRICHED" : "NOTHING_FOUND";
 }
 
 function pct(part: number, total: number): number {
@@ -73,11 +104,37 @@ export function computeEnrichmentEvaluationMetrics(runs: RunRow[], latestRunPerL
     referenceLines: TIME_REFERENCE_LINES,
   };
 
-  // Metrics 3 & 4 -- only over SHORT_CIRCUIT_SUCCESS runs (tier is
-  // meaningless/null for anything else).
+  // What each run actually achieved (see runOutcome).
+  const outcomeCounts = Object.fromEntries(RUN_OUTCOMES.map((o) => [o, 0])) as Record<RunOutcome, number>;
+  for (const r of runs) outcomeCounts[runOutcome(r)]++;
+  const outcomes = Object.fromEntries(
+    RUN_OUTCOMES.map((o) => [o, { count: outcomeCounts[o], pct: pct(outcomeCounts[o], totalRuns) }])
+  ) as Record<RunOutcome, { count: number; pct: number }>;
+  const enrichedPct = pct(outcomeCounts.ENRICHED, totalRuns);
+  const foundDataPct = pct(outcomeCounts.ENRICHED + outcomeCounts.PARTIALLY_ENRICHED, totalRuns);
+
+  // How much of a lead a run fills, out of the 10 dialog fields.
+  const fieldCoverage = {
+    total: FIELD_TOTAL,
+    avgFields: totalRuns ? Math.round((runs.reduce((a, r) => a + r.enrichedFieldCount, 0) / totalRuns) * 10) / 10 : 0,
+    buckets: [
+      { label: "None", min: 0, max: 0 },
+      { label: "1-3 fields", min: 1, max: 3 },
+      { label: "4-6 fields", min: 4, max: 6 },
+      { label: "7-10 fields", min: 7, max: FIELD_TOTAL },
+    ].map((b) => {
+      const count = runs.filter((r) => r.enrichedFieldCount >= b.min && r.enrichedFieldCount <= b.max).length;
+      return { label: b.label, count, pct: pct(count, totalRuns) };
+    }),
+  };
+
+  // Metrics 3 & 4 -- over every run where a provider tier resolved
+  // something. This used to be SHORT_CIRCUIT_SUCCESS runs only, which on
+  // real data is ~none (see runOutcome), so both read 0% forever even
+  // though tier is recorded on every run that found anything.
   const tierCounts: Record<EnrichmentTier, number> = { TIER_1: 0, TIER_2: 0, TIER_3: 0 };
   const tierFieldSums: Record<EnrichmentTier, number> = { TIER_1: 0, TIER_2: 0, TIER_3: 0 };
-  for (const r of enrichedRuns) {
+  for (const r of runs) {
     if (!r.tier) continue;
     tierCounts[r.tier]++;
     tierFieldSums[r.tier] += r.enrichedFieldCount;
@@ -94,19 +151,29 @@ export function computeEnrichmentEvaluationMetrics(runs: RunRow[], latestRunPerL
     TIER_3: tierCounts.TIER_3 ? Math.round((tierFieldSums.TIER_3 / tierCounts.TIER_3) * 10) / 10 : 0,
   };
 
-  // Metric 5 -- denominator is leads currently COMPLETE whose most recent
-  // run falls in the filtered set; numerator is those overridden strictly
-  // after that specific run concluded.
-  let completeCount = 0;
-  let overriddenCount = 0;
-  for (const row of latestRunPerLead) {
-    if (!row.isComplete) continue;
-    completeCount++;
-    if (row.lastManualOverrideAt && row.lastManualOverrideAt > row.latestConcludedAt) {
-      overriddenCount++;
-    }
-  }
-  const manualOverrideRate = pct(overriddenCount, completeCount);
+  // Metric 5 -- of the leads enrichment ran on (most recent run in the
+  // filtered set), the share a recruiter edited strictly after that run.
+  // The denominator used to be "leads currently COMPLETE", but COMPLETE
+  // only ever meant "didn't time out" (see lib/enrichmentVerdict.ts), so it
+  // was every lead regardless of what enrichment found.
+  const overriddenCount = latestRunPerLead.filter(
+    (row) => row.lastManualOverrideAt && row.lastManualOverrideAt > row.latestConcludedAt
+  ).length;
+  const manualOverrideRate = pct(overriddenCount, latestRunPerLead.length);
 
-  return { totalRuns, enrichmentPct, timeTaken, tierAttribution, qualityByTier, manualOverrideRate };
+  return {
+    totalRuns,
+    outcomes,
+    enrichedPct,
+    enrichedRule: { minFields: ENRICHED_MIN_FIELDS, orContact: true },
+    foundDataPct,
+    fieldCoverage,
+    enrichmentPct,
+    timeTaken,
+    tierAttribution,
+    qualityByTier,
+    manualOverrideRate,
+    leadsEvaluated: latestRunPerLead.length,
+    leadsOverridden: overriddenCount,
+  };
 }

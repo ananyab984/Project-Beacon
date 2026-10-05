@@ -24,12 +24,14 @@ import type {
   ApiSheetSyncConfig,
   ApiReportsAnalytics,
   ApiEnrichmentEvaluation,
+  ApiAiPipelineMetrics,
   ApiRecentReport,
   ApiRequestError,
   UserRole,
   WorkStatus,
 } from "@/lib/api-types";
 import { getNeonToken } from "@/lib/neon-auth";
+import { shouldReauthenticate } from "@/lib/authRedirect";
 
 // Strip any trailing slash(es) -- every call site appends a path starting
 // with "/", so a trailing slash on VITE_API_BASE_URL (e.g. set with one in
@@ -61,9 +63,21 @@ async function request<T = any>(path: string, options: RequestInit = {}): Promis
     ) as ApiRequestError;
     err.code = isJson ? data.error : undefined;
     err.status = res.status;
+    if (token && shouldReauthenticate(res.status, err.code)) redirectToLogin();
     throw err;
   }
   return data as T;
+}
+
+let redirectingToLogin = false;
+function redirectToLogin() {
+  // Several queries usually 401 at once; navigate exactly once.
+  if (redirectingToLogin || typeof window === "undefined") return;
+  redirectingToLogin = true;
+  const here = window.location.pathname + window.location.search;
+  // A full navigation (not router.navigate): it also drops every cached
+  // query, so the next person on this tab can't see the last one's data.
+  window.location.assign(`/login?redirect=${encodeURIComponent(here)}`);
 }
 
 function qs(params: Record<string, string | number | undefined | null>): string {
@@ -909,6 +923,10 @@ export const api = {
 
   /** Real lead-data completeness -- replaces the hardcoded-zero g3-mock
    *  profileCompleteness object the owner dashboard used to read. */
+  async getAiPipelineMetrics() {
+    return request<ApiAiPipelineMetrics>("/api/reports/ai-pipeline");
+  },
+
   async getDataHealth(): Promise<{
     total: number;
     enrichedPct: number;

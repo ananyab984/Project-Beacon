@@ -558,7 +558,8 @@ export interface ApiRecentReport {
  *  (Claude web search) is likewise platform-agnostic. Never render a
  *  collapsed 2-tier shape for non-LinkedIn platforms. */
 export type EnrichmentTier = "TIER_1" | "TIER_2" | "TIER_3";
-export type EnrichmentRunConclusion = "SHORT_CIRCUIT_SUCCESS" | "EXHAUSTED_NO_MATCH" | "TIMED_OUT" | "SYSTEM_ERROR";
+export type EnrichmentRunConclusion =
+  "SHORT_CIRCUIT_SUCCESS" | "EXHAUSTED_NO_MATCH" | "TIMED_OUT" | "SYSTEM_ERROR";
 
 export interface ApiEnrichmentEvaluation {
   totalRuns: number;
@@ -572,7 +573,26 @@ export interface ApiEnrichmentEvaluation {
   tierAttribution: Record<EnrichmentTier, number>;
   qualityByTier: Record<EnrichmentTier, number>;
   manualOverrideRate: number;
+  /** What each run actually achieved -- see runOutcome() in
+   *  server/src/lib/enrichmentEvaluationMetrics.ts. */
+  outcomes: Record<EnrichmentRunOutcome, { count: number; pct: number }>;
+  /** Share of runs that met the Enriched rule (5+ fields or an email/phone). */
+  enrichedPct: number;
+  enrichedRule: { minFields: number; orContact: boolean };
+  foundDataPct: number;
+  fieldCoverage: {
+    total: number;
+    avgFields: number;
+    buckets: Array<{ label: string; count: number; pct: number }>;
+  };
+  leadsEvaluated: number;
+  leadsOverridden: number;
+  coverage: { leadsInPool: number; leadsWithRunInPeriod: number };
+  lastRunAt: string | null;
+  computedAt: string;
 }
+export type EnrichmentRunOutcome =
+  "ENRICHED" | "PARTIALLY_ENRICHED" | "NOTHING_FOUND" | "TIMED_OUT" | "SYSTEM_ERROR";
 
 /** Shape of every thrown error from the `request()` helper in api.ts. */
 export interface ApiRequestError extends Error {
@@ -584,3 +604,40 @@ export interface ApiRequestError extends Error {
  *  dialog shows. Mirrors ENRICHMENT_COUNT_TOTAL in
  *  server/src/lib/enrichmentCount.ts. */
 export const ENRICHMENT_FIELD_TOTAL = 10;
+
+/** GET /api/reports/ai-pipeline -- see server/src/lib/aiPipelineMetrics.ts.
+ *  Any `...Pct`/average is null when there is nothing to measure yet. */
+export interface ApiReplyBucket {
+  key: string;
+  contacted: number;
+  replied: number;
+  replyRatePct: number | null;
+  medianHoursToReply: number | null;
+}
+export interface ApiAiPipelineMetrics {
+  classification: {
+    aiClassifiedLeads: number;
+    reviews: number;
+    agreed: number;
+    overridden: number;
+    agreementPct: number | null;
+  };
+  draftEdits: {
+    aiDraftsSent: number;
+    edited: number;
+    sentAsDrafted: number;
+    editRatePct: number | null;
+  };
+  firstReply: { byChannel: ApiReplyBucket[]; byLanguage: ApiReplyBucket[] };
+  identity: {
+    totalLeads: number;
+    unresolvedNow: number;
+    unresolvedPct: number | null;
+    cohorts: Array<{
+      weekStart: string;
+      created: number;
+      unresolved: number;
+      unresolvedPct: number | null;
+    }>;
+  };
+}

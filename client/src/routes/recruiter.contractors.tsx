@@ -31,6 +31,9 @@ function RecruiterContractorsPage() {
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ["users", "CONTRACTOR"],
     queryFn: () => api.getUsers("CONTRACTOR"),
+    // Same cadence as the owner's roster (owner.settings.tsx), so a
+    // contractor added or deactivated there shows up here too.
+    refetchInterval: 8_000,
   });
   const contractors = data?.users ?? [];
   const [openId, setOpenId] = useState<string | null>(null);

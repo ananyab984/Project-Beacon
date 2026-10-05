@@ -5,6 +5,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
+import { normalizeEmail, validateEmailFormat } from "../lib/normalize";
 import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
@@ -13,6 +14,18 @@ import { getDraftingOrchestrator } from "../drafting/instance";
 import { assertContractorOwnsLead } from "./lead.routes";
 
 export const emailQueueRouter = Router();
+
+/** A recruiter-typed recipient, normalized, or a 400 if it isn't an email.
+ *  The TO field reached three paths with no check at all (autosave stored
+ *  "test", send handed it straight to Unipile, generate-draft silently
+ *  ignored it), so every one of them now goes through this. */
+function requireValidEmail(raw: string): string {
+  const email = normalizeEmail(raw);
+  if (!validateEmailFormat(email)) {
+    throw new ApiError(400, "INVALID_EMAIL", `"${raw.trim()}" is not a valid email address`);
+  }
+  return email;
+}
 
 emailQueueRouter.use(authenticateJwt);
 emailQueueRouter.use(requireRole("owner", "recruiter", "contractor"));
@@ -162,6 +175,11 @@ emailQueueRouter.patch(
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({ subject: z.string().optional(), body: z.string().optional(), to: z.string().optional() });
     const patch = schema.parse(req.body);
+    // Empty clears the field. A LinkedIn profile URL is the one non-email
+    // value this field legitimately carries (see /send's LINKEDIN branch).
+    if (patch.to && patch.to.trim() && !/^https?:\/\//i.test(patch.to.trim())) {
+      patch.to = requireValidEmail(patch.to);
+    }
 
     // Ownership check folded into the lookup itself: a not-found row and a
     // not-owned row both 404 identically, so we never leak whether some other
@@ -210,7 +228,7 @@ emailQueueRouter.post(
     // never reached generate-draft at all (only /send read it), so it could
     // never unblock a NO_EMAIL-ineligible lead no matter what was typed.
     const manualToRaw = typeof req.body?.to === "string" ? req.body.to.trim() : "";
-    const manualTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualToRaw) ? manualToRaw : null;
+    const manualTo = manualToRaw ? requireValidEmail(manualToRaw) : null;
     const effectiveEmail = item.lead.email || manualTo;
 
     // Fill-only, never overwrite: if the lead had no email on file yet, a
@@ -259,6 +277,9 @@ emailQueueRouter.post(
         subject: draft.subject ?? item.subject,
         body: draft.body,
         aiGenerated: true,
+        // Kept untouched from here on (autosave only writes body), so the
+        // AI-draft edit rate can tell what the recruiter changed.
+        aiDraftText: draft.body,
       },
     });
     return res.json({ item: updated });
@@ -302,6 +323,7 @@ emailQueueRouter.post(
       } else {
         target = to || item.lead.email || "";
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
+        target = requireValidEmail(target);
         const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(item.leadId, req.user!.id));
         // When the recruiter explicitly picked which message this reply
         // answers, the subject must match THAT thread, not whatever's
@@ -378,7 +400,8 @@ emailQueueRouter.post(
           await UnipileService.sendLinkedInMessage(req.user!.id, item.leadId, target, item.body);
           sentChannel = "LINKEDIN";
         } else if (item.lead.email) {
-          target = item.lead.email;
+          // Throws INVALID_EMAIL, reported per item by the catch below.
+          target = requireValidEmail(item.lead.email);
           const replyToMessageId = await findReplyAnchor(item.leadId, req.user!.id);
           await UnipileService.sendEmail(req.user!.id, item.leadId, target, item.subject, item.body, undefined, replyToMessageId);
           sentChannel = "EMAIL";

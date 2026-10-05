@@ -41,7 +41,7 @@ async function fetchAndCompute(platform: "LINKEDIN" | "PROZ" | undefined, since:
   const latestRunGroups = await prisma.enrichmentRun.groupBy({ by: ["leadId"], where: runWhere, _max: { concludedAt: true } });
   const leadIds = latestRunGroups.map((r) => r.leadId);
   const leads = leadIds.length
-    ? await prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, enrichmentStatus: true, lastManualOverrideAt: true } })
+    ? await prisma.lead.findMany({ where: { id: { in: leadIds } }, select: { id: true, lastManualOverrideAt: true } })
     : [];
   const leadById = new Map(leads.map((l) => [l.id, l]));
   const latestRunPerLead: LatestRunPerLead[] = latestRunGroups
@@ -51,7 +51,6 @@ async function fetchAndCompute(platform: "LINKEDIN" | "PROZ" | undefined, since:
       return {
         leadId: row.leadId,
         latestConcludedAt: row._max.concludedAt as Date,
-        isComplete: lead?.enrichmentStatus === "COMPLETE",
         lastManualOverrideAt: lead?.lastManualOverrideAt ?? null,
       };
     });

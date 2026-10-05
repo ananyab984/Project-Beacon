@@ -4,6 +4,7 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { computeRecruiterScoreSnapshot } from "../jobs/scoring.job";
+import { classificationAgreement, draftEditRate, identityHealth, timeToFirstReply } from "../lib/aiPipelineMetrics";
 
 export const reportsRouter = Router();
 
@@ -374,6 +375,38 @@ reportsRouter.get(
       verifiedEmailPct: verifiedEmail / total,
       confirmedLanguagePairPct: confirmedLanguagePair / total,
       experienceDataPct: experienceData / total,
+    });
+  })
+);
+
+// GET /api/reports/ai-pipeline — the owner Settings page's AI Pipeline cards,
+// which used to be hardcoded copy. The math is in lib/aiPipelineMetrics.ts.
+//
+// ponytail: whole-table reads of interaction/classification events, fine at
+// today's hundreds of rows; past ~100k, push the per-thread "first outbound,
+// first inbound after it" step into SQL (window functions) instead.
+reportsRouter.get(
+  "/ai-pipeline",
+  requireRole("owner"),
+  asyncHandler(async (_req: Request, res: Response) => {
+    const [leads, classificationEvents, sentDrafts, interactions] = await Promise.all([
+      prisma.lead.findMany({
+        where: { deletedAt: null },
+        select: { id: true, identityResolved: true, createdAt: true, targetLanguage: true },
+      }),
+      prisma.replyClassificationEvent.findMany({ select: { leadId: true, source: true, categoryId: true, createdAt: true } }),
+      prisma.emailQueueItem.findMany({
+        where: { status: "SENT", aiGenerated: true, aiDraftText: { not: null } },
+        select: { aiDraftText: true, body: true },
+      }),
+      prisma.interactionEvent.findMany({ select: { leadId: true, direction: true, channel: true, occurredAt: true } }),
+    ]);
+
+    return res.json({
+      classification: classificationAgreement(classificationEvents),
+      draftEdits: draftEditRate(sentDrafts.map((d) => ({ aiDraftText: d.aiDraftText as string, body: d.body }))),
+      firstReply: timeToFirstReply(interactions, new Map(leads.map((l) => [l.id, l.targetLanguage]))),
+      identity: identityHealth(leads, new Date()),
     });
   })
 );

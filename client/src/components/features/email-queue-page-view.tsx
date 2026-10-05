@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { isAcceptableRecipient } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEmailQueueStore } from "@/stores/useEmailQueueStore";
 import { Button } from "@/components/ui/button";
@@ -168,8 +169,14 @@ export function EmailQueuePageView() {
   const [targetChannelAccounts, setTargetChannelAccounts] = useState<any[]>([]);
   const [targetChannel, setTargetChannel] = useState<"EMAIL" | "LINKEDIN">("EMAIL");
 
+  const toInvalid = !isAcceptableRecipient(to);
+
   async function initiateSend() {
     if (!selected) return;
+    if (!isAcceptableRecipient(to)) {
+      toast.error(`"${to.trim()}" is not a valid email address`);
+      return;
+    }
     const channel = selected.candidateRole?.toLowerCase().includes("linkedin") ? "LINKEDIN" : "EMAIL";
 
     try {
@@ -323,7 +330,11 @@ export function EmailQueuePageView() {
     if (!selected) return;
     setSaveState("saving");
     try {
-      await api.updateEmailQueueItem(selected.id, { subject: subjectRef.current, body: bodyRef.current, to: toRef.current });
+      await api.updateEmailQueueItem(selected.id, {
+        subject: subjectRef.current,
+        body: bodyRef.current,
+        ...(isAcceptableRecipient(toRef.current) ? { to: toRef.current } : {}),
+      });
       setSaveState("saved");
       setSavedAt(new Date());
       queryClient.invalidateQueries({ queryKey: ["email-queue"] });
@@ -490,7 +501,7 @@ export function EmailQueuePageView() {
                   ) : (
                     <Button
                       size="sm"
-                      disabled={sending}
+                      disabled={sending || toInvalid}
                       className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={initiateSend}
                     >
@@ -519,7 +530,20 @@ export function EmailQueuePageView() {
                 <div className="space-y-3">
                   <div>
                     <label className="text-[10px] uppercase tracking-widest text-muted-foreground font-semibold">To</label>
-                    <Input value={to} onChange={(e) => { setTo(e.target.value); markDirty(); }} placeholder="recipient@example.com" className="mt-1" />
+                    <Input
+                      value={to}
+                      onChange={(e) => { setTo(e.target.value); markDirty(); }}
+                      placeholder="recipient@example.com"
+                      inputMode="email"
+                      aria-invalid={toInvalid}
+                      aria-describedby={toInvalid ? "to-error" : undefined}
+                      className={`mt-1 ${toInvalid ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                    />
+                    {toInvalid && (
+                      <p id="to-error" role="alert" className="mt-1 text-xs text-destructive">
+                        Enter a valid email address, e.g. name@example.com.
+                      </p>
+                    )}
                   </div>
                   {candidateReplyTargets.length > 1 && (
                     <div>
@@ -555,7 +579,7 @@ export function EmailQueuePageView() {
                         <div className="absolute inset-x-0 top-3 z-10 flex justify-center">
                           <Button
                             onClick={handleGenerateDraft}
-                            disabled={isGeneratingDraft}
+                            disabled={isGeneratingDraft || toInvalid}
                             className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
                           >
                             {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}

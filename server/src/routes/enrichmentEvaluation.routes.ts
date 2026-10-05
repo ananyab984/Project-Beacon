@@ -18,6 +18,7 @@ import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { computeEnrichmentEvaluationMetrics, type LatestRunPerLead } from "../lib/enrichmentEvaluationMetrics";
+import { hasEnrichedContact } from "../lib/enrichmentCount";
 import type { LeadSource } from "@prisma/client";
 
 export const enrichmentEvaluationRouter = Router();
@@ -76,13 +77,12 @@ enrichmentEvaluationRouter.get(
 
     const runs = await prisma.enrichmentRun.findMany({
       where: runWhere,
-      select: { conclusion: true, tier: true, enrichedFieldCount: true, executionTimeMs: true },
+      select: { leadId: true, conclusion: true, tier: true, enrichedFieldCount: true, executionTimeMs: true },
     });
 
     // Metric 5's inputs: each lead's most recent run in the filtered set,
-    // joined to whether that lead is currently COMPLETE and its override
-    // timestamp -- see enrichmentEvaluationMetrics.ts for the exact
-    // denominator/numerator this feeds.
+    // joined to its override timestamp -- see enrichmentEvaluationMetrics.ts
+    // for the exact denominator/numerator this feeds.
     const latestRunGroups = await prisma.enrichmentRun.groupBy({
       by: ["leadId"],
       where: runWhere,
@@ -92,7 +92,9 @@ enrichmentEvaluationRouter.get(
     const leads = leadIds.length
       ? await prisma.lead.findMany({
           where: { id: { in: leadIds } },
-          select: { id: true, enrichmentStatus: true, lastManualOverrideAt: true },
+          // email/contactNumber/fieldSources feed the "found an email or
+          // phone" half of the Enriched rule (see runOutcome).
+          select: { id: true, lastManualOverrideAt: true, email: true, contactNumber: true, fieldSources: true },
         })
       : [];
     const leadById = new Map(leads.map((l) => [l.id, l]));
@@ -104,11 +106,34 @@ enrichmentEvaluationRouter.get(
         return {
           leadId: row.leadId,
           latestConcludedAt: row._max.concludedAt as Date,
-          isComplete: lead?.enrichmentStatus === "COMPLETE",
           lastManualOverrideAt: lead?.lastManualOverrideAt ?? null,
         };
       });
 
-    return res.json(computeEnrichmentEvaluationMetrics(runs, latestRunPerLead));
+    // Coverage: how much of the CURRENT lead pool this period's runs speak
+    // for. Leads enriched before run history was recorded (or by a path that
+    // doesn't record one) have no run at all -- surfaced, not hidden.
+    const [leadsInPool, lastRun] = await Promise.all([
+      prisma.lead.count({ where: { deletedAt: null, ...(platform ? { source: platform } : {}) } }),
+      prisma.enrichmentRun.findFirst({ where: platform ? { platform } : {}, orderBy: { concludedAt: "desc" }, select: { concludedAt: true } }),
+    ]);
+
+    return res.json({
+      // ponytail: contactFound reads the lead's CURRENT email/phone
+      // provenance, not a snapshot taken when each run ended -- exact for a
+      // lead's latest run, approximate for older runs of a re-enriched lead.
+      // Upgrade path: record it on EnrichmentRun at the write site in
+      // jobs/enrichment.job.ts if per-run history ever needs to be exact.
+      ...computeEnrichmentEvaluationMetrics(
+        runs.map((r) => {
+          const lead = leadById.get(r.leadId);
+          return { ...r, contactFound: lead ? hasEnrichedContact(lead) : false };
+        }),
+        latestRunPerLead
+      ),
+      coverage: { leadsInPool, leadsWithRunInPeriod: latestRunPerLead.length },
+      lastRunAt: lastRun?.concludedAt ?? null,
+      computedAt: new Date(),
+    });
   })
 );

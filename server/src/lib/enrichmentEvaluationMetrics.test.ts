@@ -8,7 +8,7 @@
  * Run: cd server && npx ts-node src/lib/enrichmentEvaluationMetrics.test.ts
  */
 import assert from "node:assert";
-import { computeEnrichmentEvaluationMetrics, TIME_REFERENCE_LINES, type RunRow, type LatestRunPerLead } from "./enrichmentEvaluationMetrics";
+import { computeEnrichmentEvaluationMetrics, runOutcome, RUN_OUTCOMES, TIME_REFERENCE_LINES, type RunRow, type LatestRunPerLead } from "./enrichmentEvaluationMetrics";
 
 function run(over: Partial<RunRow>): RunRow {
   return { conclusion: "SHORT_CIRCUIT_SUCCESS", tier: null, enrichedFieldCount: 0, executionTimeMs: 0, ...over };
@@ -64,17 +64,49 @@ function pctOf(part: number, total: number): number {
   return Math.round((part / total) * 1000) / 10;
 }
 
-function test5_tierMetricsIgnoreNonSuccessRunsEvenWithATierValue() {
-  // A defensive case: tier should never be non-null on a non-success run in
-  // practice, but if it somehow were, Metrics 3/4 must still only look at
-  // SHORT_CIRCUIT_SUCCESS rows.
+function test5_tierMetricsCountPartialRunsToo() {
+  // Reversed on 2026-10-05. Tier metrics used to look at SHORT_CIRCUIT_SUCCESS
+  // runs only, but success requires every critical field incl. a phone number
+  // almost no profile has: on the live table 100/100 runs were
+  // EXHAUSTED_NO_MATCH, so tier attribution and quality read 0% forever even
+  // though tier is recorded on every run that resolved anything.
   const runs = [
     run({ conclusion: "SHORT_CIRCUIT_SUCCESS", tier: "TIER_1", enrichedFieldCount: 10 }),
-    run({ conclusion: "EXHAUSTED_NO_MATCH", tier: "TIER_1", enrichedFieldCount: 999 }),
+    run({ conclusion: "EXHAUSTED_NO_MATCH", tier: "TIER_2", enrichedFieldCount: 6 }),
+    run({ conclusion: "EXHAUSTED_NO_MATCH", tier: null, enrichedFieldCount: 0 }), // found nothing: no tier
   ];
   const result = computeEnrichmentEvaluationMetrics(runs, []);
-  assert.strictEqual(result.tierAttribution.TIER_1, 100);
-  assert.strictEqual(result.qualityByTier.TIER_1, 10, "the exhausted run's tier/count must not pollute quality-by-tier");
+  assert.deepStrictEqual(result.tierAttribution, { TIER_1: 50, TIER_2: 50, TIER_3: 0 });
+  assert.deepStrictEqual(result.qualityByTier, { TIER_1: 10, TIER_2: 6, TIER_3: 0 });
+}
+
+function test10_enrichedMeansFivePlusFieldsOrAContact() {
+  // G3's rule (2026-10-05): Enriched = 5+ of 10 fields OR an email/phone found.
+  // The waterfall's own "success" is not the bar -- it needs a phone too.
+  const runs = [
+    run({ conclusion: "EXHAUSTED_NO_MATCH", enrichedFieldCount: 5 }), // exactly 5: enriched
+    run({ conclusion: "EXHAUSTED_NO_MATCH", enrichedFieldCount: 2, contactFound: true }), // few fields, but an email: enriched
+    run({ conclusion: "TIMED_OUT", enrichedFieldCount: 6 }), // timed out but got 6: still enriched
+    run({ conclusion: "EXHAUSTED_NO_MATCH", enrichedFieldCount: 4 }), // 4, no contact: partial
+    run({ conclusion: "EXHAUSTED_NO_MATCH", enrichedFieldCount: 0 }), // nothing found
+    run({ conclusion: "TIMED_OUT", enrichedFieldCount: 0 }), // timed out with too little
+    run({ conclusion: "SYSTEM_ERROR", enrichedFieldCount: 0, contactFound: true }), // an error is always an error
+  ];
+  const r = computeEnrichmentEvaluationMetrics(runs, []);
+  assert.deepStrictEqual(
+    RUN_OUTCOMES.map((o) => r.outcomes[o].count),
+    [3, 1, 1, 1, 1],
+    "ENRICHED, PARTIALLY_ENRICHED, NOTHING_FOUND, TIMED_OUT, SYSTEM_ERROR"
+  );
+  assert.strictEqual(r.enrichedPct, 42.9, "3 of 7");
+  assert.strictEqual(r.foundDataPct, 57.1, "enriched + partial = 4 of 7");
+  assert.deepStrictEqual(r.enrichedRule, { minFields: 5, orContact: true });
+}
+
+function test11_fourFieldsWithoutAContactIsNotEnriched() {
+  assert.strictEqual(runOutcome({ conclusion: "EXHAUSTED_NO_MATCH", enrichedFieldCount: 4 }), "PARTIALLY_ENRICHED");
+  assert.strictEqual(runOutcome({ conclusion: "EXHAUSTED_NO_MATCH", enrichedFieldCount: 4, contactFound: true }), "ENRICHED");
+  assert.strictEqual(runOutcome({ conclusion: "SHORT_CIRCUIT_SUCCESS", enrichedFieldCount: 10 }), "ENRICHED");
 }
 
 function test6_zeroDataReturnsWellFormedZerosNotCrashOrNaN() {
@@ -86,11 +118,13 @@ function test6_zeroDataReturnsWellFormedZerosNotCrashOrNaN() {
   assert.deepStrictEqual(result.tierAttribution, { TIER_1: 0, TIER_2: 0, TIER_3: 0 });
   assert.deepStrictEqual(result.qualityByTier, { TIER_1: 0, TIER_2: 0, TIER_3: 0 });
   assert.strictEqual(result.manualOverrideRate, 0);
+  assert.strictEqual(result.foundDataPct, 0);
+  assert.strictEqual(result.fieldCoverage.avgFields, 0);
   for (const v of Object.values(result.enrichmentPct)) assert.ok(!Number.isNaN(v));
 }
 
 function latestRun(over: Partial<LatestRunPerLead>): LatestRunPerLead {
-  return { leadId: "lead-1", latestConcludedAt: new Date("2026-01-01"), isComplete: true, lastManualOverrideAt: null, ...over };
+  return { leadId: "lead-1", latestConcludedAt: new Date("2026-01-01"), lastManualOverrideAt: null, ...over };
 }
 
 function test7_manualOverrideRateOnlyCountsOverridesAfterTheLatestRun() {
@@ -103,13 +137,18 @@ function test7_manualOverrideRateOnlyCountsOverridesAfterTheLatestRun() {
   assert.strictEqual(result.manualOverrideRate, pctOf(1, 3));
 }
 
-function test8_manualOverrideDenominatorExcludesLeadsNotCurrentlyComplete() {
+function test8_manualOverrideDenominatorIsEveryLeadEnrichmentRanOn() {
+  // Was "leads currently COMPLETE" -- but COMPLETE only ever meant "didn't
+  // time out", so that filter excluded nothing real. A recruiter filling in
+  // a lead the waterfall found nothing for is an override too.
   const leads = [
-    latestRun({ leadId: "a", isComplete: true, lastManualOverrideAt: new Date("2099-01-01") }),
-    latestRun({ leadId: "b", isComplete: false, lastManualOverrideAt: new Date("2099-01-01") }), // e.g. went back On Hold after a re-enrichment -- excluded entirely, not counted as either overridden or not
+    latestRun({ leadId: "a", lastManualOverrideAt: new Date("2099-01-01") }),
+    latestRun({ leadId: "b", lastManualOverrideAt: null }),
   ];
   const result = computeEnrichmentEvaluationMetrics([], leads);
-  assert.strictEqual(result.manualOverrideRate, 100, "only the 1 currently-COMPLETE lead is in the denominator");
+  assert.strictEqual(result.manualOverrideRate, 50);
+  assert.strictEqual(result.leadsEvaluated, 2);
+  assert.strictEqual(result.leadsOverridden, 1);
 }
 
 function test9_reenrichmentUsesTheMostRecentRunNotAnEarlierOne() {
@@ -129,11 +168,13 @@ function main() {
     test2_onHoldBucketsBothTimedOutAndSystemError,
     test3_timeTakenAvgMedianAndReferenceLinesAreCorrect,
     test4_tierShapeHandlesAllThreeTiersUniformly,
-    test5_tierMetricsIgnoreNonSuccessRunsEvenWithATierValue,
+    test5_tierMetricsCountPartialRunsToo,
     test6_zeroDataReturnsWellFormedZerosNotCrashOrNaN,
     test7_manualOverrideRateOnlyCountsOverridesAfterTheLatestRun,
-    test8_manualOverrideDenominatorExcludesLeadsNotCurrentlyComplete,
+    test8_manualOverrideDenominatorIsEveryLeadEnrichmentRanOn,
     test9_reenrichmentUsesTheMostRecentRunNotAnEarlierOne,
+    test10_enrichedMeansFivePlusFieldsOrAContact,
+    test11_fourFieldsWithoutAContactIsNotEnriched,
   ];
   let failed = 0;
   for (const t of tests) {

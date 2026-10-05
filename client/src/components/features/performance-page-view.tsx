@@ -20,9 +20,13 @@ export function PerformancePageView({
   // which are cron-computed for `subjectId`. Sourced from the real leads/conversations/email-queue
   // endpoints (the mock's weekly emails-sent/replied aggregate has no backend equivalent, so the
   // response-rate tile is dropped rather than fabricated).
-  const { data: leadsData } = useQuery({ queryKey: ["my-leads"], queryFn: () => api.getMyLeads() });
-  const { data: conversationsData } = useQuery({ queryKey: ["conversations"], queryFn: () => api.getConversations() });
-  const { data: emailQueueData } = useQuery({ queryKey: ["email-queue"], queryFn: () => api.getEmailQueue() });
+  // Polled on the same 10s cadence as the score below. These were fetched
+  // once and never again, so this page drifted from the owner's live view
+  // of the same person until a reload.
+  const live = { refetchInterval: 10_000 } as const;
+  const { data: leadsData } = useQuery({ queryKey: ["my-leads"], queryFn: () => api.getMyLeads(), ...live });
+  const { data: conversationsData } = useQuery({ queryKey: ["conversations"], queryFn: () => api.getConversations(), ...live });
+  const { data: emailQueueData } = useQuery({ queryKey: ["email-queue"], queryFn: () => api.getEmailQueue(), ...live });
 
   const leads = leadsData?.leads ?? [];
   const conversations = conversationsData?.conversations ?? [];

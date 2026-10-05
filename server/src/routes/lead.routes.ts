@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import { ownedLeadsWhere } from "../lib/ownedLeads";
 import { z } from "zod";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
@@ -260,17 +261,12 @@ leadRouter.get(
     const userId = req.user!.id;
 
     // Soft-deleted leads (Global Leads recycle bin) never show up here either.
+    // Contractors keep their narrower own-submissions scope (an isolation
+    // boundary -- see assertContractorOwnsLead). Everyone else gets the one
+    // shared definition the scoring also uses, so these numbers and the
+    // owner's view of them can't drift apart.
     const where =
-      role === "contractor"
-        ? { createdByContractorId: userId, deletedAt: null }
-        : {
-            deletedAt: null,
-            OR: [
-              { assignedRecruiterId: userId },
-              { claimedByRecruiterId: userId },
-              { createdByRecruiterId: userId },
-            ],
-          };
+      role === "contractor" ? { createdByContractorId: userId, deletedAt: null } : ownedLeadsWhere(userId);
 
     const leads = await prisma.lead.findMany({ where, orderBy: { createdAt: "desc" } });
     return res.json({ leads: await attachReenrichmentStatus(leads.map(withEnrichedFieldCount)) });

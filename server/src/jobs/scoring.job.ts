@@ -1,4 +1,5 @@
 import { prisma } from "../prisma";
+import { ownedLeadsWhere } from "../lib/ownedLeads";
 
 /**
  * Recruiter Rubric Definition per 'final rubrics.pdf' and 'final rubrics calculation.pdf'.
@@ -244,12 +245,15 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
   });
 
   // 2. Category A, Metric 2: Proactive Sourcing
-  // Candidates self-sourced by recruiter (excl. contractor submissions / bulk imports).
+  // Candidates this user sourced themselves: a recruiter's self-sourced leads
+  // (excl. bulk imports and other people's submissions), or a contractor's
+  // own submissions -- for a contractor that IS their sourcing. Recycle-bin
+  // leads don't count, matching what the user sees in their own lead list.
   const proactiveSourcing = await prisma.lead.count({
     where: {
-      createdByRecruiterId: recruiterId,
-      isSelfSourced: true,
+      deletedAt: null,
       createdAt: { gte: periodStart, lt: periodEnd },
+      OR: [{ createdByRecruiterId: recruiterId, isSelfSourced: true }, { createdByContractorId: recruiterId }],
     },
   });
 
@@ -272,13 +276,11 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
     }
   }
 
+  // The same lead set the user sees on their own pages (lib/ownedLeads.ts),
+  // plus any lead they reached out to this period.
   const assignedLeads = await prisma.lead.findMany({
     where: {
-      OR: [
-        { assignedRecruiterId: recruiterId },
-        { claimedByRecruiterId: recruiterId },
-        { id: { in: Array.from(firstTouchByLead.keys()) } },
-      ],
+      OR: [ownedLeadsWhere(recruiterId), { deletedAt: null, id: { in: Array.from(firstTouchByLead.keys()) } }],
     },
     select: { id: true, assignedAt: true, claimedAt: true, createdAt: true, stage: true, targetLanguage: true, services: true },
   });
@@ -481,8 +483,11 @@ export async function computeRecruiterScoreSnapshot(recruiterId: string, period:
     : 0;
 
   // Calculate composite Overall Score (0-100) using dynamic rubric targets
-  // Only score when actual candidate outreach or sourcing activity has been executed
-  const hasOutreachActivity = outreachVolume > 0 || touchDelaysDays.length > 0;
+  // Only score when actual candidate outreach or sourcing activity has been
+  // executed. Sourcing used to be missing from this check (despite the
+  // comment), pinning a contractor who submits leads but does no outreach
+  // to a permanent 0 / "New".
+  const hasOutreachActivity = outreachVolume > 0 || touchDelaysDays.length > 0 || proactiveSourcing > 0;
   const overallScoreRaw = hasOutreachActivity
     ? dynamicRubric.reduce(
         (sum, def) =>

@@ -66,36 +66,21 @@ function SettingsPage() {
       >
         <Row
           title="Show AI tools"
-          desc="Reveals LinkedIn match confidence, reply-to-classification accuracy, and the AI Pipeline management section below."
+          desc="Reveals the AI Pipeline management section below: reply-classification accuracy, AI-draft edit rate, time to first reply and unresolved identities."
         >
           <Switch checked={showAI} onCheckedChange={setShowAI} />
         </Row>
       </Section>
 
-      {showAI && (
-        <Section
-          title="AI Pipeline management"
-          desc="Under review — surface with beta styling; not for day-to-day decisions."
-        >
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <BetaCard
-              title="LinkedIn match confidence"
-              body="Identity-resolution confidence score for ambiguous records. Example: masked lead #H-7724 at 0.55 confidence."
-            />
-            <BetaCard
-              title="Reply-to-classification accuracy"
-              body="Agreement between AI's read on a reply and recruiter conclusion. Sampled on Madhu's queue — 62%."
-            />
-            <DeferredCard title="AI-draft edit rate" />
-            <DeferredCard title="Time-to-first-reply by language / channel" />
-            <DeferredCard title="Data health trend — shrinking unresolved-identity records" />
-          </div>
-        </Section>
-      )}
+      {showAI && <AiPipelineSection />}
 
       <ConnectedAccountsSection />
 
-      <button type="button" onClick={() => setEnrichmentEvalOpen(true)} className="w-full text-left">
+      <button
+        type="button"
+        onClick={() => setEnrichmentEvalOpen(true)}
+        className="w-full text-left"
+      >
         <Section
           title="Enrichment Evaluation"
           desc="Live metrics on the automatic enrichment waterfall -- enrichment rate, time taken, tier attribution, quality by tier, and manual override rate. Click to open."
@@ -113,7 +98,6 @@ function SettingsPage() {
         title="Recruiters & Connected Outreach Accounts Mapping"
         desc="Live mapping of recruiters and their connected LinkedIn & Email Unipile accounts."
       >
-
         <div className="divide-y divide-border">
           {recruiters.length === 0 ? (
             <div className="py-6 text-center text-xs text-muted-foreground">
@@ -290,31 +274,185 @@ function Row({
   );
 }
 
-function BetaCard({ title, body }: { title: string; body: string }) {
+const fmtHours = (h: number | null) =>
+  h == null ? "—" : h < 24 ? `${h}h` : `${Math.round((h / 24) * 10) / 10}d`;
+const CHANNEL_LABEL: Record<string, string> = { EMAIL: "Email", LINKEDIN_DM: "LinkedIn" };
+
+/** The five AI Pipeline cards, computed live by GET /api/reports/ai-pipeline.
+ *  These were hardcoded copy ("masked lead #H-7724", "Madhu's queue — 62%"). */
+function AiPipelineSection() {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["ai-pipeline-metrics"],
+    queryFn: api.getAiPipelineMetrics,
+    refetchInterval: 30_000,
+  });
+
   return (
-    <div className="rounded-xl border border-border p-4">
-      <div className="flex items-center gap-2">
+    <Section
+      title="AI Pipeline management"
+      desc="Live from your lead, reply and outreach data. Beta: each card shows its sample size; read small samples with care."
+    >
+      {isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+      {isError && <p className="text-xs text-destructive">Couldn't load AI pipeline metrics.</p>}
+      {data && (
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <MetricCard
+            title="Reply-to-classification accuracy"
+            headline={
+              data.classification.agreementPct == null
+                ? "No reviews yet"
+                : `${data.classification.agreementPct}% agreement`
+            }
+            body={
+              data.classification.reviews === 0
+                ? `AI has classified replies for ${data.classification.aiClassifiedLeads} leads; no recruiter has reviewed one yet.`
+                : `Recruiters agreed with the AI on ${data.classification.agreed} of ${data.classification.reviews} reviewed replies (${data.classification.overridden} overridden). ${data.classification.aiClassifiedLeads} leads classified by AI.`
+            }
+          />
+
+          <MetricCard
+            title="AI-draft edit rate"
+            headline={
+              data.draftEdits.editRatePct == null
+                ? "Measuring from now"
+                : `${data.draftEdits.editRatePct}% edited`
+            }
+            body={
+              data.draftEdits.aiDraftsSent === 0
+                ? "Counts from the next AI email draft that gets sent. Drafts made before this was tracked are left out."
+                : `${data.draftEdits.edited} of ${data.draftEdits.aiDraftsSent} AI email drafts were edited before sending; ${data.draftEdits.sentAsDrafted} went out as drafted.`
+            }
+          />
+
+          <MetricCard
+            title="Time to first reply"
+            headline={(() => {
+              const all = data.firstReply.byChannel;
+              const replied = all.reduce((a, b) => a + b.replied, 0);
+              const contacted = all.reduce((a, b) => a + b.contacted, 0);
+              return contacted ? `${replied} of ${contacted} replied` : "No outreach yet";
+            })()}
+            body="Hours from our first message to the lead's first reply on the same channel. Median per group."
+          >
+            {data.firstReply.byChannel.length > 0 && (
+              <ReplyTable
+                rows={[
+                  ...data.firstReply.byChannel.map((r) => ({
+                    ...r,
+                    key: CHANNEL_LABEL[r.key] ?? r.key,
+                  })),
+                  ...data.firstReply.byLanguage.slice(0, 5),
+                ]}
+                split={data.firstReply.byChannel.length}
+              />
+            )}
+          </MetricCard>
+
+          <MetricCard
+            title="Unresolved identities"
+            headline={`${data.identity.unresolvedNow} of ${data.identity.totalLeads} unresolved`}
+            body="Of the leads added each week, how many still have no confirmed identity. Bars shrinking to the right means newer leads are getting resolved."
+          >
+            <div
+              className="mt-3 flex h-16 items-end gap-1.5"
+              role="img"
+              aria-label="Unresolved leads per weekly cohort"
+            >
+              {data.identity.cohorts.map((c) => {
+                const max = Math.max(1, ...data.identity.cohorts.map((x) => x.created));
+                return (
+                  <div
+                    key={c.weekStart}
+                    className="flex flex-1 flex-col items-center gap-1"
+                    title={`Week of ${c.weekStart}: ${c.unresolved} of ${c.created} unresolved`}
+                  >
+                    <div
+                      className="relative w-full rounded-sm bg-muted"
+                      style={{ height: `${(c.created / max) * 48 + 2}px` }}
+                    >
+                      <div
+                        className="absolute inset-x-0 bottom-0 rounded-sm bg-warning"
+                        style={{ height: `${c.created ? (c.unresolved / c.created) * 100 : 0}%` }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-muted-foreground tabular-nums">
+                      {c.weekStart.slice(5)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[10px] text-muted-foreground">
+              Grey: leads added that week. Amber: still unresolved.
+            </p>
+          </MetricCard>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function MetricCard({
+  title,
+  headline,
+  body,
+  children,
+  className = "",
+}: {
+  title: string;
+  headline: string;
+  body: string;
+  children?: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`rounded-xl border border-border p-4 ${className}`}>
+      <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-medium">{title}</div>
         <Badge variant="outline" className="border-warning/50 text-warning text-[10px]">
-          Under review
+          Beta
         </Badge>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">{body}</p>
+      <div className="mt-2 text-lg font-semibold tracking-tight">{headline}</div>
+      <p className="mt-1 text-xs text-muted-foreground">{body}</p>
+      {children}
     </div>
   );
 }
 
-function DeferredCard({ title }: { title: string }) {
+function ReplyTable({
+  rows,
+  split,
+}: {
+  rows: Array<{
+    key: string;
+    contacted: number;
+    replied: number;
+    medianHoursToReply: number | null;
+  }>;
+  split: number;
+}) {
   return (
-    <div className="rounded-xl border border-dashed border-border/60 bg-muted/30 p-4 opacity-70">
-      <div className="flex items-center gap-2">
-        <div className="text-sm font-medium">{title}</div>
-        <Badge variant="outline" className="text-[10px]">
-          Coming soon
-        </Badge>
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">Widget disabled until validation.</p>
-    </div>
+    <table className="mt-2 w-full text-xs">
+      <thead>
+        <tr className="text-left text-muted-foreground">
+          <th className="font-medium">Group</th>
+          <th className="text-right font-medium">Replied</th>
+          <th className="text-right font-medium">Median</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((r, i) => (
+          <tr key={`${i}-${r.key}`} className={i === split ? "border-t border-border" : ""}>
+            <td className="py-0.5">{r.key}</td>
+            <td className="py-0.5 text-right tabular-nums">
+              {r.replied}/{r.contacted}
+            </td>
+            <td className="py-0.5 text-right tabular-nums">{fmtHours(r.medianHoursToReply)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -528,7 +666,8 @@ function NotificationSystemSection() {
               <div>
                 <div className="text-sm font-semibold text-foreground">Slack bot token</div>
                 <div className="text-[11px] text-muted-foreground">
-                  A secret -- set as SLACK_BOT_TOKEN in the deployment environment, not editable here
+                  A secret -- set as SLACK_BOT_TOKEN in the deployment environment, not editable
+                  here
                 </div>
               </div>
             </div>

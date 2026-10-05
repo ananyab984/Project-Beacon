@@ -1044,6 +1044,7 @@ model EmailQueueItem {
   subject       String
   body          String
   aiGenerated   Boolean          @default(false) @map("ai_generated")
+  aiDraftText   String?          @map("ai_draft_text") // draft as generated, before recruiter edits -- for the AI-draft edit rate
   receivedAt    DateTime         @default(now()) @map("received_at")
   sentAt        DateTime?        @map("sent_at")
   sentChannel   String?          @map("sent_channel")

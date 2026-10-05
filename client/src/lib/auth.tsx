@@ -402,7 +402,4 @@ export function useAuth() {
   return c;
 }
 
-export function roleHome(role: Role | string): string {
-  const r = String(role || "").toLowerCase();
-  return r === "owner" ? "/owner" : r === "recruiter" ? "/recruiter" : "/contractor";
-}
+export { roleHome, safeRedirect } from "./authRedirect";
