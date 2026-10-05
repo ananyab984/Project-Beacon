@@ -23,6 +23,12 @@ async function cleanup() {
     where: { lead: { fullName: { in: [LEAD_FRESH, LEAD_EXPIRED, LEAD_NOT_DELETED] } } },
   });
   await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_FRESH, LEAD_EXPIRED, LEAD_NOT_DELETED] } } });
+  // Anything that loads the Reports dashboard or team-health digest scores
+  // EVERY recruiter in the shared dev DB, this test's included -- and these
+  // rows are ON DELETE RESTRICT onto User (metric snapshots cascade).
+  await prisma.recruiterScoreSnapshot.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterKpiSummary.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterMonthlyMetric.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
   await prisma.user.deleteMany({ where: { email: RECRUITER_EMAIL } });
 }
 

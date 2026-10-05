@@ -45,6 +45,15 @@ async function cleanup() {
   await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_AUTO_ADDED, LEAD_EXPLICIT, LEAD_PROMOTED, LEAD_CONCURRENT] } } });
   const recruiter = await prisma.user.findUnique({ where: { email: RECRUITER_EMAIL } });
   if (recruiter) await prisma.conversation.deleteMany({ where: { recruiterId: recruiter.id } });
+  // Notification.recipient is ON DELETE RESTRICT -- clear the test users'
+  // notifications first or the user delete below fails.
+  await prisma.notification.deleteMany({ where: { recipient: { email: { in: [RECRUITER_EMAIL] } } } });
+  // Anything that loads the Reports dashboard or team-health digest scores
+  // EVERY recruiter in the shared dev DB, this test's included -- and these
+  // rows are ON DELETE RESTRICT onto User (metric snapshots cascade).
+  await prisma.recruiterScoreSnapshot.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterKpiSummary.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterMonthlyMetric.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
   await prisma.user.deleteMany({ where: { email: RECRUITER_EMAIL } });
 }
 

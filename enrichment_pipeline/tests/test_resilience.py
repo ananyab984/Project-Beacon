@@ -110,7 +110,15 @@ def test_retry_after_is_folded_into_bounded_delay_not_added_on_top():
     # A huge Retry-After (100s) must be capped by the remaining deadline
     # budget, not slept in full -- fixes the old BrightData/Clay bug where
     # Retry-After slept uncapped, entirely outside the backoff schedule.
-    policy = RetryPolicy(deadline_seconds=0.05, base_delay_seconds=0.01, sleep=lambda s: delays.append(s))
+    # Fake clock that only moves when the fake sleep does, so the 50 ms budget
+    # isn't eaten by real wall-clock time on a loaded machine (was flaky).
+    clock = [0.0]
+
+    def fake_sleep(s: float) -> None:
+        delays.append(s)
+        clock[0] += s
+
+    policy = RetryPolicy(deadline_seconds=0.05, base_delay_seconds=0.01, sleep=fake_sleep, now=lambda: clock[0])
 
     with pytest.raises(RetryExhaustedError):
         retry_with_backoff(fn, policy=policy)

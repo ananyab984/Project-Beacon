@@ -65,6 +65,16 @@ const LEAD_FOREIGN = "Test Reassignment Audit Foreign Lead";
 
 async function cleanup() {
   await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_OWN, LEAD_FOREIGN] } } });
+  // Notification.recipient is ON DELETE RESTRICT -- clear the test users'
+  // notifications first or the user delete below fails.
+  await prisma.notification.deleteMany({ where: { recipient: { email: { in: [CONTRACTOR_EMAIL, RECRUITER_EMAIL] } } } });
+  // The reassignment routes recompute the recruiter's score, which writes
+  // these (also RESTRICT onto User; metric snapshots cascade off score
+  // snapshots) -- same set recruiterScoreSync.test.ts clears.
+  const testRecruiter = { recruiter: { email: RECRUITER_EMAIL } };
+  await prisma.recruiterScoreSnapshot.deleteMany({ where: testRecruiter });
+  await prisma.recruiterKpiSummary.deleteMany({ where: testRecruiter });
+  await prisma.recruiterMonthlyMetric.deleteMany({ where: testRecruiter });
   await prisma.user.deleteMany({ where: { email: { in: [CONTRACTOR_EMAIL, RECRUITER_EMAIL] } } });
 }
 

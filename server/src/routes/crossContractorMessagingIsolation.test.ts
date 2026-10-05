@@ -77,6 +77,12 @@ async function test3_recruiterAndOwnerKeepFullPoolAccessUnaffected() {
     assert.strictEqual(item.leadId, bLead.id, "a recruiter must retain full-pool access -- this fix must only restrict contractor");
   } finally {
     await prisma.emailQueueItem.deleteMany({ where: { recruiterId: recruiter.id } });
+    // Anything that loads the Reports dashboard or team-health digest scores
+    // EVERY recruiter in the shared dev DB, this test's included -- and these
+    // rows are ON DELETE RESTRICT onto User (metric snapshots cascade).
+    await prisma.recruiterScoreSnapshot.deleteMany({ where: { recruiterId: recruiter.id } });
+    await prisma.recruiterKpiSummary.deleteMany({ where: { recruiterId: recruiter.id } });
+    await prisma.recruiterMonthlyMetric.deleteMany({ where: { recruiterId: recruiter.id } });
     await prisma.user.delete({ where: { id: recruiter.id } });
   }
 }

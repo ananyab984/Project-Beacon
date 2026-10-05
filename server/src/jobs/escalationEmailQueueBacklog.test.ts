@@ -39,6 +39,12 @@ async function cleanup() {
   // direct recruiter FK for this creation path (findFirst-per-recruiter
   // above only catches EmailQueueItem/Escalation rows).
   await prisma.lead.deleteMany({ where: { fullName: { startsWith: "Test Escalation Backlog Lead" } } });
+  // Anything that loads the Reports dashboard or team-health digest scores
+  // EVERY recruiter in the shared dev DB, this test's included -- and these
+  // rows are ON DELETE RESTRICT onto User (metric snapshots cascade).
+  await prisma.recruiterScoreSnapshot.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterKpiSummary.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterMonthlyMetric.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
   if (recruiter) await prisma.user.delete({ where: { id: recruiter.id } });
 }
 

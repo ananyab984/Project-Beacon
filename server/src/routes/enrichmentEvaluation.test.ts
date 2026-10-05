@@ -28,9 +28,16 @@ async function cleanup() {
 }
 
 /** Mirrors exactly what the route does for a given (platform, since) filter --
- *  see enrichmentEvaluation.routes.ts. */
+ *  see enrichmentEvaluation.routes.ts -- plus one extra filter the route
+ *  doesn't have: only this file's own fixture leads. The dev DB is shared and
+ *  holds hundreds of real runs, so unscoped counts would assert on those. */
 async function fetchAndCompute(platform: "LINKEDIN" | "PROZ" | undefined, since: Date | undefined) {
+  const fixtureLeads = await prisma.lead.findMany({
+    where: { fullName: { in: [LEAD_NAME_LINKEDIN, LEAD_NAME_PROZ, LEAD_NAME_REENRICHED] } },
+    select: { id: true },
+  });
   const runWhere = {
+    leadId: { in: fixtureLeads.map((l) => l.id) },
     ...(since ? { concludedAt: { gte: since } } : {}),
     ...(platform ? { platform } : {}),
   };

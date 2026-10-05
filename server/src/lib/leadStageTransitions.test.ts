@@ -27,6 +27,12 @@ async function cleanup() {
   if (userIds.length > 0) {
     await prisma.stageHistory.deleteMany({ where: { changedByRecruiterId: { in: userIds } } });
     await prisma.lead.deleteMany({ where: { createdByRecruiterId: { in: userIds } } });
+    // Anything that loads the Reports dashboard or team-health digest scores
+    // EVERY recruiter in the shared dev DB, this test's included -- and these
+    // rows are ON DELETE RESTRICT onto User (metric snapshots cascade).
+    await prisma.recruiterScoreSnapshot.deleteMany({ where: { recruiterId: { in: userIds } } });
+    await prisma.recruiterKpiSummary.deleteMany({ where: { recruiterId: { in: userIds } } });
+    await prisma.recruiterMonthlyMetric.deleteMany({ where: { recruiterId: { in: userIds } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
   }
 }

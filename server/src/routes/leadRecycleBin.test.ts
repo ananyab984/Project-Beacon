@@ -19,6 +19,12 @@ const RECRUITER_EMAIL = "test_recyclebin_route_recruiter@example.com";
 
 async function cleanup() {
   await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_ACTIVE, LEAD_DELETED] } } });
+  // Anything that loads the Reports dashboard or team-health digest scores
+  // EVERY recruiter in the shared dev DB, this test's included -- and these
+  // rows are ON DELETE RESTRICT onto User (metric snapshots cascade).
+  await prisma.recruiterScoreSnapshot.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterKpiSummary.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
+  await prisma.recruiterMonthlyMetric.deleteMany({ where: { recruiter: { email: RECRUITER_EMAIL } } });
   await prisma.user.deleteMany({ where: { email: RECRUITER_EMAIL } });
 }
 

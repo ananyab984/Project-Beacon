@@ -23,6 +23,9 @@ const CONTRACTOR_B_EMAIL = "test_parity_contractor_b@example.com";
 
 async function cleanup() {
   await prisma.lead.deleteMany({ where: { fullName: { in: [LEAD_A, LEAD_B] } } });
+  // Notification.recipient is ON DELETE RESTRICT -- clear the test users'
+  // notifications first or the user delete below fails.
+  await prisma.notification.deleteMany({ where: { recipient: { email: { in: [CONTRACTOR_A_EMAIL, CONTRACTOR_B_EMAIL] } } } });
   await prisma.user.deleteMany({ where: { email: { in: [CONTRACTOR_A_EMAIL, CONTRACTOR_B_EMAIL] } } });
 }
 
