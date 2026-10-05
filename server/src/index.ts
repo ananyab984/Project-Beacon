@@ -20,6 +20,7 @@ import { onboardingShortLinkRouter } from "./routes/onboardingShortLink.routes";
 import { reportsRouter } from "./routes/reports.routes";
 import { enrichmentEvaluationRouter } from "./routes/enrichmentEvaluation.routes";
 import { faqRouter } from "./routes/faq.routes";
+import { healthHandler } from "./lib/health";
 import { replyCategoriesRouter } from "./routes/replyCategories.routes";
 import { notificationRouter } from "./routes/notification.routes";
 import { systemSettingsRouter } from "./routes/system-settings.routes";
@@ -72,9 +73,7 @@ app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 
 // Health Check
-app.get("/health", (req, res) => {
-  res.json({ status: "healthy" });
-});
+app.get("/health", healthHandler);
 
 // API Routes
 app.use("/api/auth", authRouter);
