@@ -282,11 +282,13 @@ function test18_linkedInLinkAlwaysFitsItsBudget() {
 }
 
 function test19_eachChannelGetsItsOwnLinkForm() {
-  // Email embeds the full pre-filled URL directly (HTML, no length limit).
-  // LinkedIn embeds the short link, which redirects to that same full URL --
-  // a 200-char note cannot carry the real thing.
+  // Both channels embed the short link, which redirects to the full
+  // pre-filled URL. Email used to embed the full URL directly, and the
+  // recruiter saw a wall of query params (with the candidate's own name and
+  // email) in the plain-text draft they review.
   const l = lead();
-  assert.ok(applyLinkFor("email", l).startsWith(`${config.g3ApplyBaseUrl}?`), "email gets the real apply URL");
+  assert.strictEqual(applyLinkFor("email", l), buildShortApplyUrl(l.id), "email gets the short link");
+  assert.ok(!applyLinkFor("email", l).includes("?"), "email link must not carry the query string");
   assert.strictEqual(applyLinkFor("linkedin", l), buildShortApplyUrl(l.id), "linkedin gets the short link");
   assert.ok(applyLinkFor("linkedin", l).length <= 100, "short link must leave room for the note");
 }

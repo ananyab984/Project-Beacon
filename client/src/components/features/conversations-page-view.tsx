@@ -51,10 +51,6 @@ function formatMessageTime(iso: string | null): string {
   return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function getDefaultDraft(name: string, role?: string | null): string {
-  return `Hi ${name}, noticed your work in ${role || "Dubbing & Subtitling"} -- we'd love to have you at Global3. Apply here: https://app.global3.io/apply`;
-}
-
 export function ConversationsPageView() {
   const queryClient = useQueryClient();
   const { data, isLoading, isError, error } = useQuery({
@@ -138,8 +134,12 @@ export function ConversationsPageView() {
       setDraft(generated.body);
       toast.success(`Generated official LinkedIn draft for ${candidateName(conv)}!`);
     } catch (err: any) {
-      setDraft(getDefaultDraft(candidateName(conv), conv.candidateRole));
-      toast.info("Loaded official LinkedIn template draft.");
+      // Deliberately no local template fallback: the only draft that carries
+      // this lead's pre-filled apply short link is the one the server builds
+      // (lib/onboarding/applyLinkFor.ts). Substituting a hardcoded note here
+      // is how LinkedIn outreach ended up shipping the static, unpersonalized
+      // apply URL, so a failure now says so and leaves the composer alone.
+      toast.error(err?.message || "Could not generate a LinkedIn draft. Please try again.");
     } finally {
       setIsGeneratingDraft(false);
     }
@@ -157,7 +157,6 @@ export function ConversationsPageView() {
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       setId(conversation.id);
       const name = lead.fullName || lead.displayName || "Candidate";
-      setDraft(getDefaultDraft(name, lead.services.join(", ") || lead.targetLanguage));
       setTo(lead.profileLink || "");
       toast.success(`Added ${name} to LinkedIn Conversations!`);
     } catch (err: any) {

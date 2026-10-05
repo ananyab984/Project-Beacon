@@ -30,21 +30,25 @@ export const LINKEDIN_APPLY_URL_BUDGET = 120;
 const USE_SHORT_LINK_ON_LINKEDIN = true;
 
 /**
- * Which form of the apply link a channel gets. Both ultimately land the
- * candidate on the same app.dev.global3.co/apply form with their enriched
- * data pre-filled -- they differ only in how the link reaches them.
+ * Which form of the apply link a channel gets. Both channels embed the SHORT
+ * link ({shortLinkBaseUrl}/g/{token}); GET /g/:token redirects the candidate
+ * to the full app.dev.global3.co/apply form with their enriched data
+ * pre-filled.
  *
- * Email is HTML with no length limit, so it embeds the full pre-filled URL
- * directly and shows a clean "app.dev.global3.co/apply" as the visible text.
- * No shortener needed, and no redirect.
+ * Email used to embed the full pre-filled URL directly, relying on
+ * plainTextToEmailHtml to hide the query string in the sent HTML. But the
+ * recruiter reviews and edits the draft as PLAIN TEXT, where that URL showed
+ * up as a 170-500 character wall of params -- including the candidate's own
+ * name and email. The short link is what a recruiter should be approving, so
+ * email now gets the same one LinkedIn does.
  *
  * A LinkedIn connection invite is plain text, cannot carry a hyperlink, and
- * is hard-truncated at 200 characters, so the full URL cannot go in whole.
- * It uses the short link, which redirects to that same full URL.
+ * is hard-truncated at 200 characters, so the full URL cannot go in whole
+ * either way.
  */
 export function applyLinkFor(channel: string, lead: Parameters<typeof buildApplyUrl>[0]): string {
-  if (channel !== "linkedin") return buildApplyUrl(lead);
-  return USE_SHORT_LINK_ON_LINKEDIN
-    ? buildShortApplyUrl(lead.id)
-    : buildApplyUrlWithin(lead, Math.min(LINKEDIN_APPLY_URL_BUDGET, LINKEDIN_NOTE_MAX_CHARS));
+  if (channel === "linkedin" && !USE_SHORT_LINK_ON_LINKEDIN) {
+    return buildApplyUrlWithin(lead, Math.min(LINKEDIN_APPLY_URL_BUDGET, LINKEDIN_NOTE_MAX_CHARS));
+  }
+  return buildShortApplyUrl(lead.id);
 }

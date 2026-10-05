@@ -48,8 +48,8 @@ export class DraftingOrchestrator {
     channel: string = "email",
     manualOverride = false,
     // The apply link to embed, already resolved for this channel by the
-    // caller (lib/onboarding/applyLinkFor.ts): the full pre-filled URL for
-    // email, the short link for LinkedIn. Passed in rather than derived here
+    // caller (lib/onboarding/applyLinkFor.ts): the per-lead short link, on
+    // both channels. Passed in rather than derived here
     // because building the full URL needs the Prisma lead row, which the
     // routes have and this ported Python-shaped Lead type never carried.
     // Required, not optional, so a caller cannot silently fall back to an

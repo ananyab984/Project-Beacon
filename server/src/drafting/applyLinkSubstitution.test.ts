@@ -25,8 +25,10 @@ import type { ClaudeClient } from "./claudeClient";
 
 const LEAD_ID = "11111111-1111-1111-1111-111111111111";
 const SHORT = buildShortApplyUrl(LEAD_ID);
-// Email now embeds the full pre-filled URL (rendered with clean visible text
-// by plainTextToEmailHtml); LinkedIn still gets the short link.
+// Both channels now get the short link (see applyLinkFor.ts). The full URL
+// is still exercised here because ensureLinks() must splice ANY link in
+// cleanly -- a long URL that has BRAND.apply_url as its prefix is the hard
+// case for the substitution, not a policy statement about email.
 const FULL = "https://app.dev.global3.co/apply?first_name=Ana&email=ana%40example.com";
 
 function fakeConfig(): DraftingConfig {

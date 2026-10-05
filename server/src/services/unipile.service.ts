@@ -61,12 +61,11 @@ function escapeHtml(text: string): string {
  * Renders a bare URL in the draft as a real anchor whose VISIBLE text is just
  * the host and path, with the query string hidden in the href.
  *
- * This is what lets the pre-filled apply link work in email without any
- * redirect: the body carries the full
- * "https://app.dev.global3.co/apply?first_name=...&email=..." (median ~170
- * chars, up to 515), while the candidate simply sees
- * "app.dev.global3.co/apply" -- Global3's own domain, no wall of query
- * params, and nothing pointing at our own servers.
+ * Outreach drafts now carry the short apply link (see
+ * lib/onboarding/applyLinkFor.ts), which has no query string, so for it this
+ * is just a clickable link. It still matters for any long URL a recruiter
+ * pastes in by hand: the candidate sees a clean host/path, not a wall of
+ * query params.
  *
  * Runs AFTER escapeHtml, so "&" is already "&amp;" -- which is the correct
  * encoding for a literal "&" inside an href attribute, so the link resolves
