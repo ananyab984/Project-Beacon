@@ -62,9 +62,10 @@ const POLL_CONCURRENCY = 8;
 let pollInFlight = false;
 
 // Leads THIS process is running right now (enrichLeadById adds on entry,
-// removes in its finally). Only consulted by requeueInFlightEnrichments on
-// shutdown -- see there.
+// removes in its finally) -- what a graceful shutdown drains and then hands
+// back to the queue (index.ts) -- and whether it has stopped taking new ones.
 const inFlightLeadIds = new Set<string>();
+let stopClaiming = false;
 
 /** On SIGTERM (a Render redeploy, `docker stop`), hand the leads this process
  *  was mid-way through back to the queue. Without it they stayed IN_PROGRESS
@@ -73,9 +74,12 @@ const inFlightLeadIds = new Set<string>();
  *  STALLED + On Hold 80 minutes later, which is what recoverStuckEnrichments
  *  .ts had to clean up by hand. Scoped to this process's own set, so the
  *  overlap during a zero-downtime deploy (old and new instance both alive)
- *  can never requeue the OTHER instance's live work. A hard crash skips this
- *  and still falls back to the stall sweep. The cut-off run is re-run from
- *  scratch: its result died with the call, so there is nothing to keep. */
+ *  can never requeue the OTHER instance's live work. A hard crash skips this;
+ *  the next boot's requeueOrphanedEnrichments picks those leads up. The
+ *  cut-off run is re-run, but if the enrichment service outlived this process
+ *  (separate services on Render) the re-claimed lead collects that run's
+ *  stored result instead of paying again (waitWhileBusy + main.py's
+ *  LeadRunRegistry). */
 export async function requeueInFlightEnrichments(): Promise<number> {
   if (inFlightLeadIds.size === 0) return 0;
   const ids = [...inFlightLeadIds];
@@ -713,6 +717,7 @@ export async function pollPendingEnrichment() {
  *  lead.routes.ts) took the row between the read and the write, the update
  *  matches nothing and we just try the next one. */
 async function claimNextPendingLead(): Promise<string | null> {
+  if (stopClaiming) return null; // shutting down: let the drain wind down
   for (;;) {
     const next = await prisma.lead.findFirst({
       where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
@@ -726,4 +731,45 @@ async function claimNextPendingLead(): Promise<string | null> {
     });
     if (count === 1) return next.id;
   }
+}
+
+/** Graceful shutdown, step 1: claim nothing new (running drains finish their
+ *  current lead and stop). */
+export function stopClaimingEnrichments() {
+  stopClaiming = true;
+}
+
+/** Graceful shutdown, step 2: resolves once every enrichment this process
+ *  started has finished, or after `timeoutMs`. */
+export async function waitForActiveEnrichments(timeoutMs: number, pollMs = 1000): Promise<void> {
+  const until = Date.now() + timeoutMs;
+  while (inFlightLeadIds.size > 0 && Date.now() < until) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+  }
+}
+
+/** Leads left IN_PROGRESS by an earlier process (one that crashed, or was
+ *  killed before its graceful shutdown could requeue them). A lead this
+ *  process claims gets enrichmentStartedAt >= bootTime (enrichLeadById
+ *  re-stamps it when it starts), so anything older can't be ours.
+ *
+ *  ponytail: only correct with ONE backend running jobs per database --
+ *  another live backend's in-flight leads look orphaned too. That's already
+ *  the deployment rule (cronLock.ts, docs/DOCKER_DEPLOY.md); the upgrade path
+ *  is tagging each claim with its process. */
+export function orphanedEnrichmentsWhere(bootTime: Date) {
+  return {
+    enrichmentStatus: "IN_PROGRESS" as const,
+    deletedAt: null,
+    OR: [{ enrichmentStartedAt: { lt: bootTime } }, { enrichmentStartedAt: null }],
+  };
+}
+
+export async function requeueOrphanedEnrichments(bootTime: Date): Promise<number> {
+  const { count } = await prisma.lead.updateMany({
+    where: orphanedEnrichmentsWhere(bootTime),
+    data: { enrichmentStatus: "PENDING", enrichmentStartedAt: null },
+  });
+  if (count > 0) console.warn(`[enrichment.job] requeued ${count} lead(s) left IN_PROGRESS by an earlier process`);
+  return count;
 }

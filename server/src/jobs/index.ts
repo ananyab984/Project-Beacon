@@ -69,3 +69,8 @@ export function startBackgroundJobs() {
 
   console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, follow-up nudges: hourly, due-date reminders: daily, recycle bin purge: daily, contractor demand summary: daily, contractor digest: weekly, owner team-health digest: weekly, scoring: monthly)");
 }
+
+/** Stops every scheduled job in this process (graceful shutdown). */
+export function stopBackgroundJobs() {
+  for (const task of cron.getTasks().values()) void task.stop();
+}

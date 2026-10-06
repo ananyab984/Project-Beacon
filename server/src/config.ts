@@ -197,6 +197,17 @@ export const config = {
   // of the data) needs the HTTP server without any of that, and before this
   // flag there was no way to get one.
   backgroundJobsEnabled: (process.env.BACKGROUND_JOBS_ENABLED || "true").trim().toLowerCase() !== "false",
+  // On SIGTERM, how long to let in-flight enrichments finish before handing
+  // the rest back to the queue (index.ts). MUST stay below the platform's own
+  // kill window or the requeue never runs: 20s fits Render's/ECS's 30s
+  // default; raise it only together with that window (Render
+  // maxShutdownDelaySeconds, ECS stopTimeout).
+  shutdownDrainMs: parseInt(process.env.SHUTDOWN_DRAIN_MS || "20000", 10),
+  // After boot, wait this long before requeueing leads an earlier process
+  // left IN_PROGRESS (a crash). Render's zero-downtime deploy keeps the old
+  // instance running briefly, so 5 min there; 0 on AWS (stop-before-start,
+  // one container).
+  requeueDelayMs: parseInt(process.env.REQUEUE_DELAY_MS || "300000", 10),
 
   // Credentials, sessions, and email verification all live in Neon Auth now
   // (see middleware/auth.ts) -- this server only verifies the JWTs it issues.

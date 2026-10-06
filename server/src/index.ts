@@ -25,8 +25,15 @@ import { replyCategoriesRouter } from "./routes/replyCategories.routes";
 import { notificationRouter } from "./routes/notification.routes";
 import { systemSettingsRouter } from "./routes/system-settings.routes";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
-import { startBackgroundJobs } from "./jobs";
-import { requeueInFlightEnrichments } from "./jobs/enrichment.job";
+import { startBackgroundJobs, stopBackgroundJobs } from "./jobs";
+import {
+  requeueInFlightEnrichments,
+  requeueOrphanedEnrichments,
+  stopClaimingEnrichments,
+  waitForActiveEnrichments,
+} from "./jobs/enrichment.job";
+import { prisma } from "./prisma";
+import { runShutdown } from "./lib/gracefulShutdown";
 
 const app = express();
 let keepaliveTimer: NodeJS.Timeout | null = null;
@@ -130,13 +137,17 @@ function startKeepalivePing() {
 // Keep the local dev experience the same, but avoid starting a long-lived
 // listener or in-process cron jobs inside Vercel's serverless runtime.
 if (process.env.VERCEL !== "1") {
-  app.listen(config.port, () => {
+  const bootTime = new Date();
+  const server = app.listen(config.port, () => {
     console.log(`====================================================`);
     console.log(`Global3 Auth Server running on http://localhost:${config.port}`);
     console.log(`Client URL: ${config.clientUrl}`);
     console.log(`====================================================`);
     if (config.backgroundJobsEnabled) {
       startBackgroundJobs();
+      setTimeout(() => {
+        requeueOrphanedEnrichments(bootTime).catch((err) => console.error("[jobs] orphaned-enrichment requeue failed:", err));
+      }, config.requeueDelayMs);
     } else {
       // Loud on purpose: a container that silently is not running reminders,
       // digests or the enrichment poll looks identical to a healthy one from
@@ -146,17 +157,29 @@ if (process.env.VERCEL !== "1") {
     startKeepalivePing();
   });
 
-  // Render redeploys and `docker stop` send SIGTERM. Hand this process's
-  // in-flight enrichments back to the queue first, so they are re-run instead
-  // of sitting at "Enriching (96%)" until the 80-minute stall sweep (see
-  // requeueInFlightEnrichments). Capped at 5s so a slow or unreachable
-  // database can never hold up shutdown.
+  // Render redeploys and `docker stop` send SIGTERM. Stop taking work, give
+  // in-flight enrichments SHUTDOWN_DRAIN_MS to finish, then hand the rest of
+  // this process's leads back to the queue -- otherwise they sat at
+  // "Enriching (96%)" until the 80-minute stall sweep. The requeue is capped
+  // at 5s so a slow or unreachable database can never hold up shutdown.
+  let shuttingDown = false;
   const shutdown = (signal: string) => {
-    console.log(`[shutdown] ${signal} received`);
-    const cap = new Promise((resolve) => setTimeout(resolve, 5000));
-    Promise.race([requeueInFlightEnrichments(), cap])
-      .catch((err) => console.error("[shutdown] requeueing in-flight enrichments failed:", err))
-      .finally(() => process.exit(0));
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[shutdown] ${signal}: draining enrichments for up to ${config.shutdownDrainMs}ms`);
+    void runShutdown({
+      stopJobs: () => {
+        stopBackgroundJobs();
+        stopClaimingEnrichments();
+        if (keepaliveTimer) clearInterval(keepaliveTimer);
+      },
+      drain: () => waitForActiveEnrichments(config.shutdownDrainMs),
+      requeue: () => Promise.race([requeueInFlightEnrichments(), new Promise<number>((resolve) => setTimeout(() => resolve(0), 5000))]),
+      close: async () => {
+        server.close();
+        await prisma.$disconnect();
+      },
+    }).finally(() => process.exit(0));
   };
   process.once("SIGTERM", () => shutdown("SIGTERM"));
   process.once("SIGINT", () => shutdown("SIGINT"));

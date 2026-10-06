@@ -475,7 +475,11 @@ def run_server(host: str, port: int, config) -> None:
     # enrichLeadById catch path reverts it to PENDING and flags
     # ON_HOLD/SYSTEM_ERROR, so it shows up with a Retry rather than sitting
     # in IN_PROGRESS until the 20-minute stall sweep notices.
-    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=25)
+    #
+    # PY_GRACEFUL_SHUTDOWN_SECONDS (default 25) lets a platform with a longer
+    # stop window (Render maxShutdownDelaySeconds, ECS stopTimeout) give
+    # running leads time to finish -- keep it below that window.
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=int(os.getenv("PY_GRACEFUL_SHUTDOWN_SECONDS", "25")))
 
 
 def main(argv: Optional[List[str]] = None) -> int:
