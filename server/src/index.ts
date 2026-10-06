@@ -26,6 +26,7 @@ import { notificationRouter } from "./routes/notification.routes";
 import { systemSettingsRouter } from "./routes/system-settings.routes";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { startBackgroundJobs } from "./jobs";
+import { requeueInFlightEnrichments } from "./jobs/enrichment.job";
 
 const app = express();
 let keepaliveTimer: NodeJS.Timeout | null = null;
@@ -144,4 +145,19 @@ if (process.env.VERCEL !== "1") {
     }
     startKeepalivePing();
   });
+
+  // Render redeploys and `docker stop` send SIGTERM. Hand this process's
+  // in-flight enrichments back to the queue first, so they are re-run instead
+  // of sitting at "Enriching (96%)" until the 80-minute stall sweep (see
+  // requeueInFlightEnrichments). Capped at 5s so a slow or unreachable
+  // database can never hold up shutdown.
+  const shutdown = (signal: string) => {
+    console.log(`[shutdown] ${signal} received`);
+    const cap = new Promise((resolve) => setTimeout(resolve, 5000));
+    Promise.race([requeueInFlightEnrichments(), cap])
+      .catch((err) => console.error("[shutdown] requeueing in-flight enrichments failed:", err))
+      .finally(() => process.exit(0));
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
 }

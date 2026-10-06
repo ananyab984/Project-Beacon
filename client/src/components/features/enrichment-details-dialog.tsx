@@ -317,7 +317,7 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
             </p>
             {onHold && lead.onHoldReason === "INCOMPLETE_PROFILE" && (
               <p className="mt-1 text-[10px] text-warning">
-                Parallel didn't return the complete LinkedIn profile, even after a retry. Re-enrich or fill it in manually.
+                Parallel didn't return the complete LinkedIn profile, even after retrying (including once on its "pro" tier where core made no progress). Re-enrich or fill it in manually.
               </p>
             )}
           </div>

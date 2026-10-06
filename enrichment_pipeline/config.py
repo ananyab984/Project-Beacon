@@ -53,12 +53,8 @@ class Config:
     # no-op rather than a hard failure, so Parallel is never a required
     # dependency -- same posture Clay had.
     parallel_api_key: str = ""
-    # Processor tier per platform. LinkedIn gets "pro": for LinkedIn, Parallel
-    # IS the profile source, and a LinkedIn lead is not Enriched until Parallel
-    # returns the complete profile (see orchestrator.py's
-    # _parallel_completeness). Every other platform stays on "core".
+    # Parallel processor tier, the same for every platform (LinkedIn included).
     parallel_processor: str = "core"
-    parallel_linkedin_processor: str = "pro"
     # Whole retry+backoff sequence deadline for ONE Parallel call (see
     # core/resilience.py's RetryPolicy -- this bounds retry_with_backoff's
     # OUTER wait via Future.result(timeout=...), on top of whatever
@@ -191,18 +187,29 @@ class Config:
         return f"{key[:4]}...{key[-4:]}"
 
 
+def _env(name: str, default: str = "") -> str:
+    """os.getenv, except a BLANK value counts as unset. A Docker/compose
+    env_file line like `GROQ_MODEL=` (how .env.docker.example ships most of
+    these) sets the variable to "", and os.getenv only falls back to its
+    default when the variable is absent -- so a blank line silently became
+    an empty Groq model / Bright Data dataset (every call rejected), and a
+    blank MAX_RETRIES or REQUEST_TIMEOUT crashed the service at boot on
+    int(""). Node's config.ts already reads these with `||`, which treats
+    blank as unset; this makes the Python side agree."""
+    return (os.getenv(name) or "").strip() or default
+
+
 def load_config(require_keys: bool = False) -> Config:
     """Build and validate Config from environment variables."""
-    bd_key = os.getenv("BRIGHTDATA_API_KEY", "").strip()
-    dataset_id = os.getenv("DATASET_ID", "gd_l1viktl72bvl7bjuj0").strip()
-    tavily_key = os.getenv("TAVILY_API_KEY", "").strip()
-    claude_key = os.getenv("CLAUDE_API_KEY", "").strip()
-    groq_key = os.getenv("GROQ_API_KEY", "").strip()
-    parallel_api_key = os.getenv("PARALLEL_API_KEY", "").strip()
-    parallel_processor = os.getenv("PARALLEL_PROCESSOR", "core").strip()
-    parallel_linkedin_processor = os.getenv("PARALLEL_LINKEDIN_PROCESSOR", "pro").strip()
-    parallel_deadline_seconds = float(os.getenv("PARALLEL_DEADLINE_SECONDS", "3700.0"))
-    claude_websearch_deadline_seconds = float(os.getenv("CLAUDE_WEBSEARCH_DEADLINE_SECONDS", "300.0"))
+    bd_key = _env("BRIGHTDATA_API_KEY", "").strip()
+    dataset_id = _env("DATASET_ID", "gd_l1viktl72bvl7bjuj0").strip()
+    tavily_key = _env("TAVILY_API_KEY", "").strip()
+    claude_key = _env("CLAUDE_API_KEY", "").strip()
+    groq_key = _env("GROQ_API_KEY", "").strip()
+    parallel_api_key = _env("PARALLEL_API_KEY", "").strip()
+    parallel_processor = _env("PARALLEL_PROCESSOR", "core").strip()
+    parallel_deadline_seconds = float(_env("PARALLEL_DEADLINE_SECONDS", "3700.0"))
+    claude_websearch_deadline_seconds = float(_env("CLAUDE_WEBSEARCH_DEADLINE_SECONDS", "300.0"))
 
     if require_keys:
         missing = []
@@ -215,7 +222,7 @@ def load_config(require_keys: bool = False) -> Config:
         if missing:
             raise ConfigError(f"Missing required env vars: {', '.join(missing)}")
 
-    raw_threshold = float(os.getenv("DEDUP_MATCH_THRESHOLD", "0.8"))
+    raw_threshold = float(_env("DEDUP_MATCH_THRESHOLD", "0.8"))
     dedup_match_threshold = max(0.0, min(1.0, raw_threshold))
     if dedup_match_threshold != raw_threshold:
         log.warning(
@@ -223,34 +230,33 @@ def load_config(require_keys: bool = False) -> Config:
             raw_threshold, dedup_match_threshold,
         )
 
-    keepalive_url = os.getenv("KEEPALIVE_URL", "").strip()
-    keepalive_enabled = (os.getenv("KEEPALIVE_ENABLED", "true" if keepalive_url else "false").strip().lower() != "false")
-    keepalive_interval_seconds = int(os.getenv("KEEPALIVE_INTERVAL_SECONDS", "600"))
+    keepalive_url = _env("KEEPALIVE_URL", "").strip()
+    keepalive_enabled = (_env("KEEPALIVE_ENABLED", "true" if keepalive_url else "false").strip().lower() != "false")
+    keepalive_interval_seconds = int(_env("KEEPALIVE_INTERVAL_SECONDS", "600"))
 
     return Config(
         brightdata_api_key=bd_key,
         dataset_id=dataset_id,
         tavily_api_key=tavily_key,
         claude_api_key=claude_key,
-        claude_model=_resolve_claude_model(os.getenv("CLAUDE_MODEL", "")),
+        claude_model=_resolve_claude_model(_env("CLAUDE_MODEL", "")),
         groq_api_key=groq_key,
         parallel_api_key=parallel_api_key,
         parallel_processor=parallel_processor,
-        parallel_linkedin_processor=parallel_linkedin_processor,
         parallel_deadline_seconds=parallel_deadline_seconds,
         claude_websearch_deadline_seconds=claude_websearch_deadline_seconds,
-        stage6_websearch_enabled=(os.getenv("STAGE6_WEBSEARCH_ENABLED", "false").strip().lower() == "true"),
-        groq_model=os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip(),
-        request_timeout=int(os.getenv("REQUEST_TIMEOUT", "10")),
-        brightdata_request_timeout=int(os.getenv("BRIGHTDATA_REQUEST_TIMEOUT", "30")),
-        brightdata_deadline_seconds=float(os.getenv("BRIGHTDATA_DEADLINE_SECONDS", "60.0")),
-        fast_provider_request_timeout=int(os.getenv("FAST_PROVIDER_REQUEST_TIMEOUT", "15")),
-        fast_provider_deadline_seconds=float(os.getenv("FAST_PROVIDER_DEADLINE_SECONDS", "45.0")),
-        max_retries=int(os.getenv("MAX_RETRIES", "4")),
-        log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper(),
+        stage6_websearch_enabled=(_env("STAGE6_WEBSEARCH_ENABLED", "false").strip().lower() == "true"),
+        groq_model=_env("GROQ_MODEL", "openai/gpt-oss-120b").strip(),
+        request_timeout=int(_env("REQUEST_TIMEOUT", "10")),
+        brightdata_request_timeout=int(_env("BRIGHTDATA_REQUEST_TIMEOUT", "30")),
+        brightdata_deadline_seconds=float(_env("BRIGHTDATA_DEADLINE_SECONDS", "60.0")),
+        fast_provider_request_timeout=int(_env("FAST_PROVIDER_REQUEST_TIMEOUT", "15")),
+        fast_provider_deadline_seconds=float(_env("FAST_PROVIDER_DEADLINE_SECONDS", "45.0")),
+        max_retries=int(_env("MAX_RETRIES", "4")),
+        log_level=_env("LOG_LEVEL", "INFO").strip().upper(),
         dedup_match_threshold=dedup_match_threshold,
         keepalive_enabled=keepalive_enabled,
         keepalive_url=keepalive_url or "http://127.0.0.1:8000",
         keepalive_interval_seconds=keepalive_interval_seconds,
-        enrichment_service_shared_secret=os.getenv("ENRICHMENT_SERVICE_SHARED_SECRET", "").strip(),
+        enrichment_service_shared_secret=_env("ENRICHMENT_SERVICE_SHARED_SECRET", "").strip(),
     )

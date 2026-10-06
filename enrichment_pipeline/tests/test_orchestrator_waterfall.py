@@ -322,8 +322,9 @@ def _linkedin_lead():
 def _orch_with_failing_parallel(exc, calls):
     orch = make_orchestrator()
 
-    def fail(lead, profile_link):
+    def fail(lead, profile_link, processor=None):
         calls["parallel"] += 1
+        calls.setdefault("processors", []).append(processor)
         raise exc
 
     orch.parallel = stub(enrich_profile=fail)
@@ -342,14 +343,18 @@ def test_transient_failure_is_retried_then_capped_at_two_attempts():
     # Pass 2: budget remains, so it tries again and records attempt 2.
     r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
     assert calls["parallel"] == 2, "a transient failure must be retried on a later pass"
-    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
 
-    # Pass 3: exhausted -- never called again, however many passes run.
+    # Pass 3: two core attempts ended at the same count (0, < 5) on a LinkedIn
+    # lead, so exactly ONE pro attempt follows -- then it is settled for good.
+    assert r2["field_sources"]["_parallel_fallback"] == "escalate_pro"
     r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
+    assert calls["processors"] == [None, None, "pro"]
+    assert r3["field_sources"]["_parallel_fallback"] == "failed_pro"
     r4 = orch.process_lead(_linkedin_lead(), known_field_sources=r3["field_sources"])
-    assert calls["parallel"] == 2, f"capped at {orchestrator_module.MAX_PARALLEL_TRANSIENT_ATTEMPTS} attempts, got {calls['parallel']}"
+    orch.process_lead(_linkedin_lead(), known_field_sources=r4["field_sources"])
+    assert calls["parallel"] == 3, f"two core attempts + one pro attempt, never more; got {calls['parallel']}"
     assert r4["parallel_fallback"]["called"] is False
-    assert "exhausted" in " ".join(r4["logs"])
+    assert "pro escalation also came back incomplete" in " ".join(r4["logs"])
 
 
 def test_permanent_rejection_is_never_retried():
@@ -381,7 +386,7 @@ def test_empty_but_well_formed_result_is_retried_not_stamped_complete():
         "experience": [], "education": [], "languages": [], "certifications": [],
     }
     orch = make_orchestrator()
-    orch.parallel = stub(enrich_profile=lambda lead, profile_link: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(empty_result))
+    orch.parallel = stub(enrich_profile=lambda lead, profile_link, processor=None: calls.__setitem__("parallel", calls["parallel"] + 1) or dict(empty_result))
 
     # Pass 1: empty result must be treated as a transient failure, attempt 1 of 2.
     r1 = orch.process_lead(_linkedin_lead())
@@ -393,12 +398,18 @@ def test_empty_but_well_formed_result_is_retried_not_stamped_complete():
     # Pass 2: real second attempt -- this is the exact gap being fixed.
     r2 = orch.process_lead(_linkedin_lead(), known_field_sources=r1["field_sources"])
     assert calls["parallel"] == 2, "an empty result must actually be retried on the next pass"
-    assert r2["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+    # Both core attempts ended at the same count (< 5): one pro attempt is owed.
+    assert r2["field_sources"]["_parallel_fallback"] == "escalate_pro"
 
-    # Pass 3: exhausted, same as the exception-based path.
+    # Pass 3: the pro attempt, also empty -> settled as failed_pro.
     r3 = orch.process_lead(_linkedin_lead(), known_field_sources=r2["field_sources"])
-    assert calls["parallel"] == 2, "capped at 2 attempts even for repeated empty results"
-    assert r3["parallel_fallback"]["called"] is False
+    assert calls["parallel"] == 3
+    assert r3["field_sources"]["_parallel_fallback"] == "failed_pro"
+
+    # Pass 4: exhausted, same as the exception-based path.
+    r4 = orch.process_lead(_linkedin_lead(), known_field_sources=r3["field_sources"])
+    assert calls["parallel"] == 3, "capped at 2 core + 1 pro attempts even for repeated empty results"
+    assert r4["parallel_fallback"]["called"] is False
 
 
 def test_result_of_only_absence_prose_is_retried_not_stamped_complete():
@@ -756,3 +767,31 @@ def test_result_always_carries_both_confidence_keys():
     timed_out = orch._timed_out_result({}, {}, [], 0.0, "Stage 3 (scrape)")
     assert "identity_match" in timed_out and "yoe_confidence" in timed_out
     assert timed_out["identity_match"]["verdict"] == "unknown"
+
+
+def test_pro_escalation_needs_the_same_count_below_five_and_linkedin():
+    """Escalation rule: LinkedIn only, and only when the two core attempts
+    ended at the SAME enrichment count, below 5."""
+    def run_two_core_passes(lead, first_result, second_result):
+        results = iter([first_result, second_result])
+        orch = make_orchestrator()
+        orch.parallel = stub(enrich_profile=lambda l, p, processor=None: next(results))
+        r1 = orch.process_lead(dict(lead))
+        return orch.process_lead(dict(lead), known_field_sources=r1["field_sources"])
+
+    country_only = {"country": "Spain"}
+    # Count moved between the two core attempts (headline found on attempt 2,
+    # still incomplete because Experience came back empty) -> no escalation.
+    progressed = {"country": "Spain", "headline": "Narrator", "profile_sections_detected": ["Experience"], "experience": []}
+    r = run_two_core_passes(_linkedin_lead(), country_only, progressed)
+    assert r["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Same count, but a non-LinkedIn lead -> no escalation.
+    proz = {"Source": "ProZ", "Profile_Link": "https://www.proz.com/profile/1", "Full_Name": "Jane Doe"}
+    r = run_two_core_passes(proz, country_only, country_only)
+    assert r["field_sources"]["_parallel_fallback"] == "failed_transient:2"
+
+    # Same count on LinkedIn, below 5 -> escalate.
+    r = run_two_core_passes(_linkedin_lead(), country_only, country_only)
+    assert r["field_sources"]["_parallel_fallback"] == "escalate_pro"
+    assert r["field_sources"]["_parallel_core_count"] == "1"

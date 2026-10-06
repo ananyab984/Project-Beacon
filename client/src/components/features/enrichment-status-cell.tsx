@@ -22,7 +22,7 @@ import { RefreshCw } from "lucide-react";
  *    wrapping it was never the right answer at this width.
  */
 
-export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "pending" | "needs_review";
+export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "queued" | "pending" | "needs_review";
 
 /** Real, measured Parallel `core` durations this session, against the live
  *  API, no mocks: 233s / 247s / 256s / 263s / 486s (one outlier). There is no
@@ -45,9 +45,10 @@ const TYPICAL_CAP = 85;
 const OUTLIER_MS = 8 * 60_000;
 const OUTLIER_CAP = 96;
 
-/** Elapsed-time estimate of enrichment progress, 0-96, or `null` if the lead
- *  hasn't actually started yet (still queued -- `startedAt` is stamped only
- *  once enrichLeadById's call begins, never for a merely-PENDING lead). Pure
+/** Elapsed-time estimate of enrichment progress, 0-96, or `null` with no
+ *  `startedAt`. Only meaningful for an IN_PROGRESS lead: a re-queued PENDING
+ *  lead still carries its PREVIOUS run's startedAt, so callers must gate on
+ *  status, not on startedAt being present (see `genuinelyRunning` below). Pure
  *  and pass `now` in explicitly so a re-render is the only thing that makes
  *  the number move -- no internal clock to fake out in a test. */
 export function estimateEnrichmentProgress(startedAt: string | null | undefined, now: number): number | null {
@@ -75,6 +76,11 @@ export function enrichmentStatusKindOf(lead: ApiLead): EnrichmentStatusKind {
   // progress forever -- the one outcome that most needs a human was the one
   // that looked like it needed nothing.
   if (lead.enrichmentStatus === "FLAGGED_REVIEW") return "needs_review";
+  // Waiting for one of pollPendingEnrichment's slots, not running. Folding
+  // this into "enriching" is what made a retried lead read "Enriching (96%)"
+  // the instant it was re-queued: the estimate ran off the timestamp of its
+  // PREVIOUS run, which every re-queue path leaves in place.
+  if (lead.enrichmentStatus === "PENDING") return "queued";
   return "enriching";
 }
 
@@ -105,9 +111,13 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
   // Ticks this row every few seconds while it's genuinely in flight, purely
   // to move `now` forward so estimateEnrichmentProgress recomputes -- the
   // underlying data (enrichmentStartedAt) never changes, only the clock does.
-  // Scoped tightly (only runs for a lead with a real startedAt) so a table of
-  // 200 mostly-idle rows isn't running 200 live timers.
-  const genuinelyRunning = kind === "enriching" && !!lead.enrichmentStartedAt;
+  // Gated on IN_PROGRESS, not merely on a startedAt being present: a queued
+  // lead keeps its previous run's startedAt (see enrichmentStatusKindOf).
+  // claimNextPendingLead stamps a fresh one at claim time, so the estimate
+  // starts from 0 the moment work actually begins. Scoped tightly so a table
+  // of 200 mostly-idle rows isn't running 200 live timers.
+  const genuinelyRunning =
+    kind === "enriching" && lead.enrichmentStatus === "IN_PROGRESS" && !!lead.enrichmentStartedAt;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!genuinelyRunning) return;
@@ -121,17 +131,17 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
     on_hold: "text-warning",
     enriched: "text-emerald-400",
     enriching: "text-amber-400",
+    queued: "text-muted-foreground",
     pending: "text-muted-foreground",
     needs_review: "text-warning",
   };
   const label: Record<EnrichmentStatusKind, string> = {
     on_hold: `On Hold (${fieldCount})`,
     enriched: `Enriched (${fieldCount})`,
-    // A lead still PENDING (queued, not yet started -- no enrichmentStartedAt
-    // yet) has no elapsed time to estimate from, so it keeps the plain
-    // ellipsis rather than a fabricated "0%" that would just be another way
-    // of looking halted. Once it genuinely starts, the percentage takes over.
+    // IN_PROGRESS with no startedAt (a row predating the column) keeps the
+    // plain ellipsis rather than a fabricated "0%".
     enriching: progressPct != null ? `Enriching (${progressPct}%)` : "Enriching…",
+    queued: "Queued",
     pending: "Stalled",
     needs_review: `Check identity (${fieldCount})`,
   };
@@ -167,11 +177,13 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
         <span
           className={`font-semibold text-xs ${tone[kind]}`}
           title={
-            kind !== "enriching"
-              ? "Enrichment didn't conclude"
-              : progressPct != null
-                ? "Estimated from elapsed time -- a typical run takes about 4 minutes"
-                : "Queued, not yet started"
+            kind === "queued"
+              ? "Waiting for a free enrichment slot"
+              : kind !== "enriching"
+                ? "Enrichment didn't conclude"
+                : progressPct != null
+                  ? "Estimated from elapsed time -- a typical run takes about 4 minutes"
+                  : "Running"
           }
         >
           {label[kind]}

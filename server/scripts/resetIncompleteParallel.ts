@@ -58,7 +58,7 @@ async function main() {
   }
 
   for (const l of matches) {
-    const { _parallel_fallback, ...rest } = (l.fieldSources ?? {}) as Record<string, string>;
+    const { _parallel_fallback, _parallel_core_count, ...rest } = (l.fieldSources ?? {}) as Record<string, string>;
     await prisma.lead.update({ where: { id: l.id }, data: { fieldSources: rest, enrichmentStatus: "PENDING" } });
   }
   console.log(`\nDone. ${matches.length} lead(s) re-opened; the poll job will re-enrich them.`);

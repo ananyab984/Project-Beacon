@@ -30,9 +30,13 @@ function test2_onHoldWinsOverComplete() {
   assert.strictEqual(enrichmentStatusKindOf(held), "on_hold");
 }
 
-function test3_inProgressReadsAsEnriching() {
+function test3_inProgressReadsAsEnrichingAndPendingAsQueued() {
   assert.strictEqual(enrichmentStatusKindOf(lead({ enrichmentStatus: "IN_PROGRESS" })), "enriching");
-  assert.strictEqual(enrichmentStatusKindOf(lead({ enrichmentStatus: "PENDING" })), "enriching");
+  // The reported bug: a retried lead is PENDING but still carries its
+  // previous run's enrichmentStartedAt, and used to read "Enriching (96%)"
+  // the moment it was re-queued. It is waiting, not running.
+  const requeued = lead({ enrichmentStatus: "PENDING", enrichmentStartedAt: "2026-01-01T00:00:00.000Z" });
+  assert.strictEqual(enrichmentStatusKindOf(requeued), "queued");
 }
 
 function test4_stalledIsNotShownAsStillRunning() {
@@ -138,7 +142,7 @@ function main() {
   const tests = [
     test1_completeReadsAsEnriched,
     test2_onHoldWinsOverComplete,
-    test3_inProgressReadsAsEnriching,
+    test3_inProgressReadsAsEnrichingAndPendingAsQueued,
     test4_stalledIsNotShownAsStillRunning,
     test5_onHoldWithoutCompletionStillReadsAsHeld,
     test6_missingFlagsArrayDoesNotThrow,

@@ -1283,10 +1283,15 @@ leadRouter.post(
     // from its query regardless of enrichmentStatus (Part 4), so setting
     // PENDING alone would silently leave this lead un-retried forever.
     const flags = lead.flags.filter((f) => f !== "ON_HOLD");
+    // enrichmentStartedAt cleared too: it still held the PREVIOUS run's start,
+    // and nothing about this lead is running yet.
     const updated = await prisma.lead.update({
       where: { id: lead.id },
-      data: { enrichmentStatus: "PENDING", flags, onHoldReason: null },
+      data: { enrichmentStatus: "PENDING", flags, onHoldReason: null, enrichmentStartedAt: null },
     });
+    // Start now if a slot is free, rather than on the next 3-minute tick. A
+    // no-op while a drain is already running -- its workers pick this up.
+    setImmediate(() => pollPendingEnrichment().catch((err) => console.error("Retry enrichment kick failed:", err)));
     return res.json({ lead: withEnrichedFieldCount(updated) });
   })
 );

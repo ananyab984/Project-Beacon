@@ -37,8 +37,6 @@ services:
         sync: false
       - key: PARALLEL_PROCESSOR
         sync: false
-      - key: PARALLEL_LINKEDIN_PROCESSOR
-        sync: false
       - key: BRIGHTDATA_DEADLINE_SECONDS
         sync: false
       - key: BRIGHTDATA_REQUEST_TIMEOUT

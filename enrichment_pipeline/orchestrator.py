@@ -15,7 +15,7 @@ from core.dedup import (
     IDENTITY_DIVERGENT,
     score_identity_match,
 )
-from core.enrichment_count import count_stage6_fillable_fields
+from core.enrichment_count import count_enriched_fields, count_stage6_fillable_fields
 from core.field_audit import audit_lead_fields
 from core.schema import has_content, is_empty_value
 from core.source_router import route_lead
@@ -24,7 +24,7 @@ from llm_fallback.groq_client import GroqMappingClient, GroqMappingError
 from llm_fallback.verifier import filter_web_search_result
 from logger import get_logger
 from providers.brightdata_client import BrightDataClient, BrightDataError
-from providers.parallel_client import ParallelClient, ParallelError, processor_for
+from providers.parallel_client import ParallelClient, ParallelError
 from providers.tavily_client import TavilyClient, TavilyError
 
 # Parsers
@@ -182,6 +182,16 @@ PARALLEL_STATE_FAILED_TRANSIENT_PREFIX = "failed_transient:"
 # taking ~150-170s, and the poller revisits pending leads on a schedule, so an
 # uncapped retry would bill for the same dead URL indefinitely.
 MAX_PARALLEL_TRANSIENT_ATTEMPTS = 2
+# LinkedIn only: one extra attempt on the "pro" processor when the two "core"
+# attempts made no progress -- the lead's enrichment count ("Enriched (n)",
+# core/enrichment_count.py) came out the SAME after both, and below
+# ESCALATE_BELOW_COUNT. Core stays the default for every lead; pro (4x the
+# price) is spent only where core demonstrably got stuck. The count after
+# attempt 1 is kept in PARALLEL_CORE_COUNT_KEY so attempt 2 can compare.
+PARALLEL_STATE_ESCALATE_PRO = "escalate_pro"
+PARALLEL_STATE_FAILED_PRO = "failed_pro"
+PARALLEL_CORE_COUNT_KEY = "_parallel_core_count"
+ESCALATE_BELOW_COUNT = 5
 
 
 def _parallel_attempts(state: Optional[str]) -> int:
@@ -204,6 +214,10 @@ def _parallel_state_is_settled(state: Optional[str]) -> Optional[str]:
         return "Parallel already resolved this lead"
     if state == PARALLEL_STATE_FAILED_PERMANENT:
         return "Parallel permanently rejected this lead's input"
+    if state == PARALLEL_STATE_FAILED_PRO:
+        return "Parallel's pro escalation also came back incomplete"
+    if state == PARALLEL_STATE_ESCALATE_PRO:
+        return None  # the one pro attempt is still owed
     if state and state.startswith(PARALLEL_STATE_FAILED_TRANSIENT_PREFIX):
         attempts = _parallel_attempts(state)
         if attempts >= MAX_PARALLEL_TRANSIENT_ATTEMPTS:
@@ -762,7 +776,11 @@ class EnrichmentOrchestrator:
             return None, None, 0
 
         attempts_so_far = _parallel_attempts(state)
-        future = _tier_overlap_executor.submit(self.parallel.enrich_profile, dict(lead), profile_link)
+        if state == PARALLEL_STATE_ESCALATE_PRO:
+            logs.append("Stage 3.5: escalating to Parallel's \"pro\" processor (two core attempts made no progress)")
+            future = _tier_overlap_executor.submit(self.parallel.enrich_profile, dict(lead), profile_link, processor="pro")
+        else:
+            future = _tier_overlap_executor.submit(self.parallel.enrich_profile, dict(lead), profile_link)
         return None, future, attempts_so_far
 
     def _resolve_parallel_stage(
@@ -815,8 +833,9 @@ class EnrichmentOrchestrator:
                     result["data"] = parallel_data
                 return result
 
+            processor = "pro" if field_sources.get("_parallel_fallback") == PARALLEL_STATE_ESCALATE_PRO else self.config.parallel_processor
             field_sources["_parallel_fallback"] = PARALLEL_STATE_COMPLETE
-            msg = f"Stage 3.5: Parallel call complete, processor={processor_for(self.config, lead)!r} ({tier1_label} scrape already ran)"
+            msg = f"Stage 3.5: Parallel call complete, processor={processor!r} ({tier1_label} scrape already ran)"
             logs.append(msg)
             log.info("Lead %s: %s", lead.get("Full_Name") or profile_link, msg)
             return {"called": True, "reason": tier1_label, "data": parallel_data}
@@ -833,10 +852,47 @@ class EnrichmentOrchestrator:
             return {"called": True, "reason": tier1_label, "error": str(exc)}
 
     @staticmethod
+    def _maybe_escalate_parallel_to_pro(
+        lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
+        source: Any, parallel_fallback: Optional[Dict[str, Any]],
+    ) -> None:
+        """LinkedIn only, and only on a pass where Parallel actually ran:
+        after core attempt 1 came back incomplete, remember the lead's
+        enrichment count; after core attempt 2 also came back incomplete, ask
+        for one "pro" attempt if that count did not move and is below
+        ESCALATE_BELOW_COUNT. Measured at the END of the pass, so it is the
+        same "Enriched (n)" number the recruiter sees, Groq formatting
+        included."""
+        if str(source or "").strip().lower() != "linkedin" or not (parallel_fallback or {}).get("called"):
+            return
+        state = field_sources.get("_parallel_fallback")
+        count = count_enriched_fields(lead, field_sources)
+        if state == f"{PARALLEL_STATE_FAILED_TRANSIENT_PREFIX}1":
+            field_sources[PARALLEL_CORE_COUNT_KEY] = str(count)
+        elif state == f"{PARALLEL_STATE_FAILED_TRANSIENT_PREFIX}2":
+            previous = field_sources.get(PARALLEL_CORE_COUNT_KEY)
+            if previous == str(count) and count < ESCALATE_BELOW_COUNT:
+                field_sources["_parallel_fallback"] = PARALLEL_STATE_ESCALATE_PRO
+                logs.append(
+                    f"Stage 3.5: two core attempts both ended at {count} enriched fields "
+                    f"(< {ESCALATE_BELOW_COUNT}) -- next pass retries Parallel once on \"pro\""
+                )
+            else:
+                logs.append(
+                    f"Stage 3.5: no pro escalation (core attempts ended at {previous} then {count} "
+                    f"enriched fields; escalation needs the same count, below {ESCALATE_BELOW_COUNT})"
+                )
+
+    @staticmethod
     def _record_parallel_transient(field_sources: Dict[str, str], attempts_so_far: int, reason: str) -> str:
         """Stamps the next transient-attempt marker and returns the log line
         -- shared by a genuine exception and an empty-but-successful result,
-        since both consume the same 2-attempt budget the same way."""
+        since both consume the same 2-attempt budget the same way. Called
+        before the marker is updated, so a state of ESCALATE_PRO here means
+        THIS was the one pro attempt: it settles as FAILED_PRO, never loops."""
+        if field_sources.get("_parallel_fallback") == PARALLEL_STATE_ESCALATE_PRO:
+            field_sources["_parallel_fallback"] = PARALLEL_STATE_FAILED_PRO
+            return f"Stage 3.5: Parallel pro escalation also failed, no further attempts: {reason}"
         attempts = attempts_so_far + 1
         field_sources["_parallel_fallback"] = f"{PARALLEL_STATE_FAILED_TRANSIENT_PREFIX}{attempts}"
         remaining = MAX_PARALLEL_TRANSIENT_ATTEMPTS - attempts
@@ -1624,6 +1680,8 @@ class EnrichmentOrchestrator:
                 websearch_fallback = self._run_websearch_stage(
                     lead, field_sources, logs, web_search_targets, profile_link, provider_type
                 )
+
+        self._maybe_escalate_parallel_to_pro(lead, field_sources, logs, source_val, parallel_fallback)
 
         # Stage 7: Finalize & Score Calculation
         final_audit = audit_lead_fields(lead)

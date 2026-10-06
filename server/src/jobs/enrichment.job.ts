@@ -60,6 +60,32 @@ const POLL_CONCURRENCY = 8;
 // a crash could.
 let pollInFlight = false;
 
+// Leads THIS process is running right now (enrichLeadById adds on entry,
+// removes in its finally). Only consulted by requeueInFlightEnrichments on
+// shutdown -- see there.
+const inFlightLeadIds = new Set<string>();
+
+/** On SIGTERM (a Render redeploy, `docker stop`), hand the leads this process
+ *  was mid-way through back to the queue. Without it they stayed IN_PROGRESS
+ *  with nothing working on them -- pollPendingEnrichment only claims PENDING
+ *  -- reading "Enriching (96%)" until stallOverdueEnrichments marked them
+ *  STALLED + On Hold 80 minutes later, which is what recoverStuckEnrichments
+ *  .ts had to clean up by hand. Scoped to this process's own set, so the
+ *  overlap during a zero-downtime deploy (old and new instance both alive)
+ *  can never requeue the OTHER instance's live work. A hard crash skips this
+ *  and still falls back to the stall sweep. The cut-off run is re-run from
+ *  scratch: its result died with the call, so there is nothing to keep. */
+export async function requeueInFlightEnrichments(): Promise<number> {
+  if (inFlightLeadIds.size === 0) return 0;
+  const ids = [...inFlightLeadIds];
+  const { count } = await prisma.lead.updateMany({
+    where: { id: { in: ids }, enrichmentStatus: "IN_PROGRESS" },
+    data: { enrichmentStatus: "PENDING", enrichmentStartedAt: null },
+  });
+  console.warn(`[enrichment.job] shutdown: requeued ${count} in-flight lead(s): ${ids.join(", ")}`);
+  return count;
+}
+
 /** Enriches a single lead by calling the real Python enrichment_pipeline and
  *  trusting ITS verdict (`enrichment_status`) on whether the lead actually
  *  came back enriched -- never a bare "the HTTP call returned 200".
@@ -94,6 +120,7 @@ export async function enrichLeadById(leadId: string) {
   // EnrichmentRun row per attempt (see server/prisma/schema.prisma) -- the
   // Enrichment Evaluation dashboard's whole data source.
   const startedAt = new Date();
+  inFlightLeadIds.add(lead.id);
 
   try {
     // updateMany, not update: `where` can then carry `deletedAt: null`, so a
@@ -527,6 +554,8 @@ export async function enrichLeadById(leadId: string) {
         concludedAt,
       },
     }).catch((err) => console.error(`[enrichment.job] failed to record EnrichmentRun for lead ${lead.id}:`, err));
+  } finally {
+    inFlightLeadIds.delete(lead.id);
   }
 }
 

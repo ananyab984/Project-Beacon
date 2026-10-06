@@ -550,14 +550,3 @@ def test_the_page_audit_is_not_counted_as_profile_prose():
         ],
     }
     assert _looks_non_english(french), "an English heading list must not mask a French profile"
-
-
-# --- processor tier per platform ----------------------------------------------
-
-def test_linkedin_gets_pro_and_every_other_platform_gets_core():
-    from providers.parallel_client import processor_for
-    cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="")
-    assert processor_for(cfg, {"Source": "LINKEDIN"}) == "pro"
-    assert processor_for(cfg, {"Source": " linkedin "}) == "pro"
-    for source in ["PROZ", "BODALGO", "OTHER", "", None]:
-        assert processor_for(cfg, {"Source": source}) == "core", source

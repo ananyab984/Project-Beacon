@@ -161,7 +161,11 @@ assert.equal(liFirstMiss.leadStatus, "PENDING", "an attempt is left, so the poll
 assert.equal(liFirstMiss.incompleteProfile, false, "not On Hold yet while the retry is pending");
 assert.equal(liFirstMiss.fullyEnriched, false);
 
-for (const exhausted of ["failed_transient:2", "failed_permanent", undefined, "failed_transient:garbage"]) {
+const liEscalate = li("escalate_pro");
+assert.equal(liEscalate.leadStatus, "PENDING", "the one pro attempt needs the poll job too");
+assert.equal(liEscalate.incompleteProfile, false);
+
+for (const exhausted of ["failed_transient:2", "failed_pro", "failed_permanent", undefined, "failed_transient:garbage"]) {
   const v = li(exhausted);
   assert.equal(v.leadStatus, "COMPLETE", `${exhausted}: no attempt left, must come to rest`);
   assert.equal(v.incompleteProfile, true, `${exhausted}: must go On Hold, never show Enriched`);

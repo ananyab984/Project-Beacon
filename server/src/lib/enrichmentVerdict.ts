@@ -33,8 +33,9 @@ export interface EnrichmentVerdictInput {
   source?: string | null | undefined;
   /**
    * `field_sources._parallel_fallback` as the pipeline returned it:
-   * "complete", "failed_transient:<n>", "failed_permanent", or absent (Parallel
-   * never ran -- no profile link, or PARALLEL_API_KEY unset).
+   * "complete", "failed_transient:<n>", "escalate_pro" (two core attempts made
+   * no progress, one "pro" attempt owed), "failed_pro", "failed_permanent", or
+   * absent (Parallel never ran -- no profile link, or PARALLEL_API_KEY unset).
    */
   parallelState?: string | null | undefined;
 }
@@ -82,6 +83,8 @@ const PARTIAL = "enrichment_partial";
 /** Mirrors orchestrator.py's MAX_PARALLEL_TRANSIENT_ATTEMPTS. */
 const MAX_PARALLEL_ATTEMPTS = 2;
 const TRANSIENT_PREFIX = "failed_transient:";
+/** orchestrator.py's PARALLEL_STATE_ESCALATE_PRO: one "pro" attempt is owed. */
+const ESCALATE_PRO = "escalate_pro";
 
 export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): EnrichmentVerdict {
   const { conclusion, enrichmentStatus, identityVerdict, source, parallelState } = input;
@@ -113,11 +116,15 @@ export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): Enrichm
   // so that retry never happened. An unparseable counter reads as exhausted
   // (NaN < 2 is false), matching orchestrator.py's _parallel_attempts.
   const parallelIncomplete = source === "LINKEDIN" && parallelState !== "complete";
+  // "escalate_pro" is the one further attempt the orchestrator grants when two
+  // core attempts ended at the same low enrichment count -- it needs the poll
+  // job just like a transient retry does. "failed_pro" is settled.
   const retryParallel =
     concluded &&
     parallelIncomplete &&
-    !!parallelState?.startsWith(TRANSIENT_PREFIX) &&
-    Number(parallelState.slice(TRANSIENT_PREFIX.length)) < MAX_PARALLEL_ATTEMPTS;
+    (parallelState === ESCALATE_PRO ||
+      (!!parallelState?.startsWith(TRANSIENT_PREFIX) &&
+        Number(parallelState.slice(TRANSIENT_PREFIX.length)) < MAX_PARALLEL_ATTEMPTS));
 
   const leadStatus: EnrichmentVerdict["leadStatus"] = !concluded || retryParallel
     ? "PENDING"

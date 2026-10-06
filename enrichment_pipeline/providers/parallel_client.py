@@ -451,15 +451,6 @@ class LeadProfile(BaseModel):
     )
 
 
-def processor_for(config: Config, lead: Dict[str, Any]) -> str:
-    """"pro" for LinkedIn, "core" for every other platform (both configurable,
-    see config.py). Keyed on the same Source value core/source_router.py
-    routes on."""
-    if str(lead.get("Source") or "").strip().lower() == "linkedin":
-        return config.parallel_linkedin_processor
-    return config.parallel_processor
-
-
 class ParallelClient:
     """Client for Parallel's Task Run API -- synchronous, blocking call."""
 
@@ -477,7 +468,7 @@ class ParallelClient:
             deadline_seconds=config.parallel_deadline_seconds,
         )
 
-    def enrich_profile(self, lead: Dict[str, Any], profile_link: str) -> Dict[str, Any]:
+    def enrich_profile(self, lead: Dict[str, Any], profile_link: str, processor: Optional[str] = None) -> Dict[str, Any]:
         """Run Parallel's Task Run API for one profile URL -- any platform,
         not just LinkedIn -- and return its resolved fields as a plain dict.
         Raises ParallelError on failure; the caller (orchestrator) logs and
@@ -492,7 +483,10 @@ class ParallelClient:
             "entity_name": lead.get("Full_Name") or "",
             "entity_url": profile_link,
         }
-        processor = processor_for(self.config, lead)
+        # `processor` overrides the configured tier for this one call -- used
+        # only for the LinkedIn escalation to "pro" (see orchestrator.py's
+        # PARALLEL_STATE_ESCALATE_PRO).
+        processor = processor or self.config.parallel_processor
 
         def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
             log.warning(
