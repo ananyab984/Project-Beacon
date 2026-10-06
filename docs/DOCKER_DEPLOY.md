@@ -306,7 +306,6 @@ services on Render:
 | `PY_GRACEFUL_SHUTDOWN_SECONDS` | 25 | uvicorn's grace for running requests. |
 | `SHUTDOWN_GRACE_SECONDS` | 30 | `start.sh`: how long both children get before SIGKILL. |
 | `BULK_UPLOAD_MAX_ROWS` | 2000 | Rows per bulk upload / Sheet import (the bulk routes accept 5MB bodies). |
-| `PARALLEL_LINKEDIN_PROCESSOR` | core | Back to `pro` without a code change if LinkedIn completeness drops. |
 
 The shutdown values must fit inside the platform's kill window: the defaults fit the
 usual 30s. On ECS raise them together with `stopTimeout` (Option B above); on Render a
