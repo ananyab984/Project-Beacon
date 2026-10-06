@@ -8,7 +8,7 @@ import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
 import { computeEnrichmentVerdict } from "../lib/enrichmentVerdict";
-import { mapWithConcurrency } from "../lib/mapWithConcurrency";
+import { drainWithConcurrency } from "../lib/drainWithConcurrency";
 import { countPopulatedFields } from "../lib/enrichmentCount";
 import { tierFromFieldSources } from "../lib/enrichmentTier";
 import { createNotification, formatEnrichmentCompleteSlackCard } from "../services/notification.service";
@@ -25,11 +25,13 @@ function splitToArray(val: unknown): string[] | undefined {
   return val.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-const BATCH_SIZE = 20;
-// How many leads pollPendingEnrichment works on at once. A real Parallel call
-// measured 150-170s (up to 486s for a thin lead that falls through to Stage
-// 6), so BATCH_SIZE=20 processed one at a time -- as this used to be -- took
-// ~50-60 minutes per batch. Raised from 4 to 8 now that pollInFlight below
+// How many leads pollPendingEnrichment works on at once -- and, since bulk
+// upload / Sheet import now hand their leads to this queue instead of firing
+// enrichLeadById per row (that unbounded fan-out is what stalled every bulk
+// test), the ceiling on concurrent /enrich calls from ANY ingestion path but
+// single Add Lead. A real Parallel call measured 150-170s (up to 486s for a
+// thin lead that falls through to Stage 6), so working them one at a time
+// took ~50-60 minutes per 20 leads. Raised from 4 to 8 now that pollInFlight below
 // makes total concurrency actually equal to this number instead of an
 // uncontrolled multiple of it (see that comment) -- 8 is the natural
 // ceiling, matching BOTH of the enrichment service's own bulkheads exactly
@@ -606,10 +608,9 @@ export async function stallOverdueEnrichments() {
  *  back into this query by having ON_HOLD explicitly cleared (the manual
  *  toggle, or the retry-enrichment endpoint) -- never automatically.
  *
- *  CLAIMS the whole batch atomically (one updateMany, re-checking
- *  enrichmentStatus: "PENDING" in the WHERE clause) before processing any of
- *  it, and works the claimed leads with bounded concurrency rather than one
- *  at a time.
+ *  CLAIMS each lead atomically (claimNextPendingLead's updateMany re-checks
+ *  enrichmentStatus: "PENDING" in its WHERE clause), one per free worker, and
+ *  drains the queue with bounded concurrency rather than one at a time.
  *
  *  This used to fetch a batch, then process it with
  *  `for (const lead of pending) { await enrichLeadById(lead.id); }` --
@@ -625,15 +626,16 @@ export async function stallOverdueEnrichments() {
  *  run had already done. Two concurrent runs paying for the same paid
  *  Parallel Task Run, compounding every 3 minutes.
  *
- *  The re-checked WHERE clause on the updateMany below is what actually
- *  prevents this -- it is a single atomic statement, so if a concurrent call
- *  claims a lead first, this run's updateMany simply does not match that row
- *  (Postgres's own row-level locking makes the two claims mutually
- *  exclusive, not application-level coordination). `enrichLeadById` is left
- *  unchanged: it is also called directly and unconditionally from
- *  lead.routes.ts (immediate enrichment on Add Lead, bulk upload), where
- *  "claim first" does not apply -- a human just triggered exactly this one
- *  lead. */
+ *  The re-checked WHERE clause on claimNextPendingLead's updateMany is what
+ *  actually prevents this -- it is a single atomic statement, so if a
+ *  concurrent call claims a lead first, this run's updateMany simply does not
+ *  match that row (Postgres's own row-level locking makes the two claims
+ *  mutually exclusive, not application-level coordination). `enrichLeadById`
+ *  is left unchanged: it is also called directly and unconditionally from
+ *  lead.routes.ts (immediate enrichment on single Add Lead), where "claim
+ *  first" does not apply -- a human just triggered exactly this one lead.
+ *  Bulk upload and Sheet import no longer call it directly; they queue
+ *  PENDING leads and kick this function. */
 export async function pollPendingEnrichment() {
   // See pollInFlight's own comment above -- skip this tick entirely rather
   // than let it stack a second concurrent claim-and-process cycle on top of
@@ -644,45 +646,44 @@ export async function pollPendingEnrichment() {
   }
   pollInFlight = true;
   try {
-    const candidates = await prisma.lead.findMany({
-      where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
-      take: BATCH_SIZE,
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
-    if (candidates.length === 0) return;
-
-    const candidateIds = candidates.map((l) => l.id);
-    await prisma.lead.updateMany({
-      where: { id: { in: candidateIds }, enrichmentStatus: "PENDING", deletedAt: null },
-      data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
-    });
-
-    // Re-read which of the candidates THIS run actually claimed -- fewer than
-    // `candidateIds.length` if a concurrent run claimed some of them first in
-    // the gap between the query above and this one; those are simply left to
-    // whichever run claimed them; process the rest. (In practice pollInFlight
-    // above means there shouldn't be another pollPendingEnrichment run
-    // concurrently, but enrichLeadById is also called directly from
-    // lead.routes.ts, so this re-check stays as real, load-bearing defense,
-    // not a leftover.)
-    const claimed = await prisma.lead.findMany({
-      where: { id: { in: candidateIds }, enrichmentStatus: "IN_PROGRESS" },
-      select: { id: true },
-    });
-    if (claimed.length === 0) return;
-
-    await mapWithConcurrency(claimed, POLL_CONCURRENCY, async (lead) => {
+    // Drains the whole PENDING queue, POLL_CONCURRENCY at a time, claiming
+    // one lead per free worker (see lib/drainWithConcurrency.ts for why not a
+    // fixed batch). Leads that land mid-drain (a bulk upload) are picked up by
+    // the same workers; pollInFlight makes every tick a no-op until it's empty.
+    // Terminates: every enrichLeadById outcome leaves the lead non-PENDING or
+    // ON_HOLD (computeOnHoldTransition), so nothing is claimed twice in a loop.
+    await drainWithConcurrency(POLL_CONCURRENCY, claimNextPendingLead, async (leadId) => {
       // enrichLeadById's own catch path handles a failed call (reverts to
       // PENDING, flags ON_HOLD/SYSTEM_ERROR) -- this outer catch exists only so
       // one lead throwing something outside that try/catch (a bug, not a
-      // provider failure) can't take the whole concurrent batch down, mirroring
+      // provider failure) can't take the whole drain down, mirroring
       // every other fire-and-forget call site's `.catch((err) => console.error(...))`.
-      await enrichLeadById(lead.id).catch((err) =>
-        console.error(`[enrichment.job] pollPendingEnrichment: lead ${lead.id} failed:`, err)
+      await enrichLeadById(leadId).catch((err) =>
+        console.error(`[enrichment.job] pollPendingEnrichment: lead ${leadId} failed:`, err)
       );
     });
   } finally {
     pollInFlight = false;
+  }
+}
+
+/** Atomically claims the oldest eligible PENDING lead, or null when none is
+ *  left. The re-checked `enrichmentStatus: "PENDING"` in the updateMany WHERE
+ *  is the claim: if anything else (enrichLeadById called directly from
+ *  lead.routes.ts) took the row between the read and the write, the update
+ *  matches nothing and we just try the next one. */
+async function claimNextPendingLead(): Promise<string | null> {
+  for (;;) {
+    const next = await prisma.lead.findFirst({
+      where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
+      orderBy: { createdAt: "asc" },
+      select: { id: true },
+    });
+    if (!next) return null;
+    const { count } = await prisma.lead.updateMany({
+      where: { id: next.id, enrichmentStatus: "PENDING", deletedAt: null },
+      data: { enrichmentStatus: "IN_PROGRESS", enrichmentStartedAt: new Date() },
+    });
+    if (count === 1) return next.id;
   }
 }

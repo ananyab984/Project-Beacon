@@ -9,7 +9,7 @@ import { ApiError } from "../lib/apiError";
 import { fetchCsv } from "../lib/fetchCsv";
 import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere, requireActiveLead } from "../services/lead.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
-import { enrichLeadById } from "../jobs/enrichment.job";
+import { enrichLeadById, pollPendingEnrichment } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
 import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { resolveManualFieldSources } from "../lib/manualFieldSources";
@@ -606,7 +606,10 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
             maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}${i}`,
             identityResolved: false,
             emailVerified: !!row.email,
-            enrichmentStatus: hasContact ? "IN_PROGRESS" : "PENDING",
+            // Queued, not started: pollPendingEnrichment (kicked below) claims
+            // these POLL_CONCURRENCY at a time and marks each IN_PROGRESS only
+            // when its run actually begins.
+            enrichmentStatus: "PENDING",
             flags: hasContact ? [] : ["ON_HOLD"],
             createdByContractorId: role === "contractor" ? userId : undefined,
             createdByRecruiterId: role !== "contractor" ? userId : undefined,
@@ -637,10 +640,6 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
           }
         }
 
-        setImmediate(() => {
-          enrichLeadById(lead.id).catch((err) => console.error("Immediate bulk enrichment error:", err));
-        });
-
         // See the single-create route above: NEW_LEAD is reserved for the
         // (not yet built) public apply webhook, not a manual/bulk import.
 
@@ -649,6 +648,15 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
         results.push({ index: i, status: "error", message: err.message });
       }
     }
+  // One kick instead of one enrichLeadById per row. That per-row fan-out sent
+  // every uploaded lead at the Python pipeline at once -- far past its 8-worker
+  // bulkheads -- so each run queued there for an hour+ behind the others, hit
+  // Node's 70-minute timeout, got retried (more queue), and any restart in that
+  // window left rows frozen at "Enriching (96%)". The poller is capped at
+  // POLL_CONCURRENCY and is a no-op if already draining (it'll pick these up).
+  if (results.some((r) => r.status === "accepted")) {
+    setImmediate(() => pollPendingEnrichment().catch((err) => console.error("Bulk enrichment kick failed:", err)));
+  }
   return results;
 }
 
