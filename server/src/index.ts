@@ -77,6 +77,11 @@ app.use(
 // Matches Express's own default (100kb) -- made explicit so it reads as a
 // deliberate choice, not an oversight, and so raising it later is a
 // one-line change.
+// Bulk lead uploads carry up to config.bulkUploadMaxRows rows (~1-2 KB each),
+// which the 100kb default rejected with a 413 at ~300-500 rows. Only these
+// routes get the bigger limit; the general parser below skips a body that's
+// already parsed (body-parser's req._body check).
+app.use(["/api/leads/bulk", "/api/leads/check-bulk-duplicates", "/api/leads/import-from-sheet"], express.json({ limit: "5mb" }));
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 

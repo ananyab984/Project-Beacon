@@ -207,6 +207,10 @@ export const config = {
   // enrichment service's pools (enrichment_pipeline/core/resilience.py), so
   // set it once for both (one container on AWS, an env group on Render).
   // 1-128, default 8; raise stepwise per docs/DOCKER_DEPLOY.md.
+  // Most rows one bulk upload / Sheet import may carry (POST /bulk,
+  // /check-bulk-duplicates, /import-from-sheet). Their JSON body limit is
+  // sized for 2,000 rows (index.ts) -- raise both together.
+  bulkUploadMaxRows: Math.max(1, parseInt(process.env.BULK_UPLOAD_MAX_ROWS || "2000", 10) || 2000),
   enrichmentConcurrency: Math.min(128, Math.max(1, parseInt(process.env.ENRICHMENT_CONCURRENCY || "8", 10) || 8)),
   // After boot, wait this long before requeueing leads an earlier process
   // left IN_PROGRESS (a crash). Render's zero-downtime deploy keeps the old

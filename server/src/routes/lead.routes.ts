@@ -1,13 +1,15 @@
 import { Router, Request, Response } from "express";
 import { ownedLeadsWhere } from "../lib/ownedLeads";
 import { z } from "zod";
+import { randomUUID } from "node:crypto";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { authenticateJwt } from "../middleware/auth";
 import { requireRole, Role } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError } from "../lib/apiError";
 import { fetchCsv } from "../lib/fetchCsv";
-import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere, requireActiveLead } from "../services/lead.service";
+import { findDuplicateLead, getLeadTimeline, claimLead, buildLeadWhere, requireActiveLead, loadDuplicateIndex } from "../services/lead.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
 import { enrichLeadById, pollPendingEnrichment } from "../jobs/enrichment.job";
 import { normalizeServices } from "../lib/normalizeServices";
@@ -327,12 +329,13 @@ leadRouter.post(
   "/check-bulk-duplicates",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const leads = (req.body?.leads || []) as Array<{
+    const leads = z.array(z.any()).max(config.bulkUploadMaxRows).parse(req.body?.leads || []) as Array<{
       fullName?: string;
       email?: string;
       contactNumber?: string;
       profileLink?: string;
     }>;
+    const existingLeads = await loadDuplicateIndex();
     const duplicates: Array<{
       index: number;
       fullName: string;
@@ -381,18 +384,15 @@ leadRouter.post(
         continue;
       }
 
-      const dup = await findDuplicateLead({
+      const dup = existingLeads.find({
         email: item.email,
         contactNumber: item.contactNumber,
         fullName: item.fullName,
         profileLink: item.profileLink,
       });
 
-      if (dup.isDuplicate && dup.leadId) {
-        const existing = await prisma.lead.findUnique({
-          where: { id: dup.leadId },
-          select: { fullName: true, displayName: true },
-        });
+      if (dup.isDuplicate) {
+        const existing = dup.lead;
         const leadName = item.fullName || existing?.displayName || existing?.fullName || `Row #${i + 1}`;
         duplicateNamesSet.add(leadName);
         duplicates.push({
@@ -544,6 +544,9 @@ leadRouter.post(
 );
 
 type BulkRow = z.infer<typeof createLeadSchema>;
+// Rows per createMany. Keeps each statement well under Postgres's 65,535
+// bind-parameter limit (~40 lead columns x 500 rows).
+const BULK_INSERT_CHUNK = 500;
 type BulkResult = { index: number; status: "accepted" | "duplicate" | "skipped" | "error"; leadId?: string; message?: string };
 
 // Shared by POST /api/leads/bulk (CSV/XLSX upload, already-parsed rows in the
@@ -551,9 +554,13 @@ type BulkResult = { index: number; status: "accepted" | "duplicate" | "skipped" 
 // server-side from a fetched Google Sheet) -- same duplicate-checking,
 // creation, and enrichment-trigger logic either way, so the two ingestion
 // paths can't silently diverge in behavior.
-async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role): Promise<BulkResult[]> {
+export async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role): Promise<BulkResult[]> {
   const results: BulkResult[] = [];
   const seenInBatch = new Set<string>();
+  // One read of the table for the whole upload (findDuplicateLead's rules,
+  // see buildDuplicateIndex) instead of up to four queries per row.
+  const duplicates = await loadDuplicateIndex();
+  const toCreate: { result: BulkResult; data: Prisma.LeadCreateManyInput; conversation?: Prisma.ConversationCreateManyInput }[] = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -582,7 +589,7 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
         }
 
         // 2. Database duplicate check
-        const dup = await findDuplicateLead({
+        const dup = duplicates.find({
           email: row.email,
           contactNumber: row.contactNumber,
           fullName: row.fullName,
@@ -599,10 +606,24 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
         }
 
         const hasContact = !!(row.email || row.contactNumber || row.profileLink);
+        // Id generated here so the conversation below can point at the lead
+        // before either is inserted (createMany returns no ids).
+        const leadId = randomUUID();
+        const result: BulkResult = { index: i, status: "accepted", leadId };
+        results.push(result);
 
-        const lead = await prisma.lead.create({
+        // Auto-create a conversation thread only -- NOT an EmailQueueItem, see
+        // the single-lead create above for why: the queue is opt-in via its
+        // own "Search Lead" -> add action, not something a bulk import should
+        // silently populate for the recruiter who ran it.
+        const isLinkedInLead =
+          role !== "contractor" && row.source === "LINKEDIN" && !!row.profileLink && /linkedin\.com/i.test(row.profileLink);
+
+        toCreate.push({
+          result,
           data: {
             ...row,
+            id: leadId,
             maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}${i}`,
             identityResolved: false,
             emailVerified: !!row.email,
@@ -618,36 +639,49 @@ async function createLeadsFromRows(rows: BulkRow[], userId: string, role: Role):
             dupFlagged: false,
             dupFlaggedField: undefined,
           },
-        });
-
-        // Auto-create a conversation thread only -- NOT an EmailQueueItem, see
-        // the single-lead create above for why: the queue is opt-in via its
-        // own "Search Lead" -> add action, not something a bulk import should
-        // silently populate for the recruiter who ran it.
-        if (role !== "contractor") {
-          const isLinkedInLead =
-            row.source === "LINKEDIN" && !!row.profileLink && /linkedin\.com/i.test(row.profileLink);
-          if (isLinkedInLead) {
-            await prisma.conversation.create({
-              data: {
-                leadId: lead.id,
+          conversation: isLinkedInLead
+            ? {
+                leadId,
                 recruiterId: userId,
-                candidateName: lead.fullName || "Candidate",
+                candidateName: row.fullName || "Candidate",
                 candidateRole: candidateRoleOf(row.services, row.targetLanguage),
                 channel: "LINKEDIN",
-              },
-            }).catch(() => {});
-          }
-        }
+              }
+            : undefined,
+        });
 
         // See the single-create route above: NEW_LEAD is reserved for the
         // (not yet built) public apply webhook, not a manual/bulk import.
-
-        results.push({ index: i, status: dup.isDuplicate ? "duplicate" : "accepted", leadId: lead.id });
       } catch (err: any) {
         results.push({ index: i, status: "error", message: err.message });
       }
     }
+
+  // Insert in chunks instead of one round trip per row. A chunk the database
+  // rejects as a whole falls back to row-by-row for that chunk, so one bad
+  // row still only fails itself, as it did before.
+  for (let start = 0; start < toCreate.length; start += BULK_INSERT_CHUNK) {
+    const chunk = toCreate.slice(start, start + BULK_INSERT_CHUNK);
+    let inserted = chunk;
+    try {
+      await prisma.lead.createMany({ data: chunk.map((c) => c.data) });
+    } catch {
+      inserted = [];
+      for (const c of chunk) {
+        try {
+          await prisma.lead.create({ data: c.data as Prisma.LeadUncheckedCreateInput });
+          inserted.push(c);
+        } catch (err: any) {
+          Object.assign(c.result, { status: "error", leadId: undefined, message: err.message });
+        }
+      }
+    }
+    const conversations = inserted.flatMap((c) => (c.conversation ? [c.conversation] : []));
+    if (conversations.length > 0) {
+      await prisma.conversation.createMany({ data: conversations }).catch((err) => console.error("Bulk conversation create failed:", err));
+    }
+  }
+
   // One kick instead of one enrichLeadById per row. That per-row fan-out sent
   // every uploaded lead at the Python pipeline at once -- far past its 8-worker
   // bulkheads -- so each run queued there for an hour+ behind the others, hit
@@ -665,7 +699,7 @@ leadRouter.post(
   "/bulk",
   requireRole("owner", "recruiter", "contractor"),
   asyncHandler(async (req: Request, res: Response) => {
-    const rawRows = z.array(z.unknown()).max(2000).parse(req.body?.leads ?? []);
+    const rawRows = z.array(z.unknown()).max(config.bulkUploadMaxRows).parse(req.body?.leads ?? []);
     const role = req.user!.role.toLowerCase() as Role;
 
     // Validate every row independently -- one malformed row (e.g. a garbled
@@ -720,6 +754,9 @@ leadRouter.post(
 
     const sheetRows = parseCsvRows(csvData);
     const leadRows = mapSheetRowsToLeads(sheetRows);
+    if (leadRows.length > config.bulkUploadMaxRows) {
+      throw new ApiError(400, "TOO_MANY_ROWS", `This sheet has ${leadRows.length} lead rows; the import limit is ${config.bulkUploadMaxRows}. Split it into smaller sheets.`);
+    }
     if (leadRows.length === 0) {
       return res.status(200).json({ results: [], message: "Sheet was fetched successfully, but no rows matched a Name/Email/Language/Service header." });
     }

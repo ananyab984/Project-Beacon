@@ -2,6 +2,12 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { ApiError } from "../lib/apiError";
 
+/** A profile URL without protocol, `www.` or trailing slashes, lowercased --
+ *  the form both duplicate checks below compare on. */
+export function normalizeProfileLink(link: string): string {
+  return link.replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "").toLowerCase();
+}
+
 /**
  * Robust duplicate detection: checks Email, LinkedIn/Profile Link, Normalized Contact Number, and Full Name.
  */
@@ -34,11 +40,7 @@ export async function findDuplicateLead(input: {
 
   // 2. Profile Link / LinkedIn URL check (normalized without protocols/trailing slashes)
   if (rawProfileLink) {
-    const normalizedLink = rawProfileLink
-      .replace(/^https?:\/\//i, "")
-      .replace(/^www\./i, "")
-      .replace(/\/+$/, "")
-      .toLowerCase();
+    const normalizedLink = normalizeProfileLink(rawProfileLink);
 
     if (normalizedLink.length > 5) {
       const match = await prisma.lead.findFirst({
@@ -212,4 +214,123 @@ export function buildLeadWhere(params: {
   if (params.flag) where.flags = { has: params.flag as any };
   if (params.since) where.createdAt = { gte: params.since };
   return where;
+}
+
+type DuplicateCandidate = {
+  id: string;
+  fullName: string | null;
+  displayName: string | null;
+  email: string | null;
+  profileLink: string | null;
+  contactNumber: string | null;
+};
+
+export type DuplicateMatch =
+  | {
+      isDuplicate: true;
+      matchedField: "email_address" | "profile_link" | "contact_number" | "full_name";
+      leadId: string;
+      matchedName: string;
+      lead: DuplicateCandidate;
+    }
+  | { isDuplicate: false; matchedField: null; leadId: null; matchedName: null; lead: null };
+
+/**
+ * findDuplicateLead's rules -- same checks, same order, same answers -- over
+ * leads already in memory, so a bulk upload checks every row against ONE read
+ * of the table instead of up to four queries per row (one of which loaded
+ * every lead that has a phone number, once per row). Pure, so it's testable
+ * without a database; loadDuplicateIndex() feeds it.
+ *
+ * Each rule is answered through an index, keeping its exact semantics:
+ * - email: case-insensitive equality;
+ * - profile link: equals the raw link, or CONTAINS the normalized one -- an
+ *   exact normalized-link hit implies "contains", and only a miss falls back
+ *   to scanning;
+ * - phone: either number ends with the other (7+ digits each), so both share
+ *   their last 7 digits -- indexed on those;
+ * - name: case-insensitive equality with fullName or displayName.
+ */
+export function buildDuplicateIndex(leads: DuplicateCandidate[]) {
+  const byEmail = new Map<string, DuplicateCandidate>();
+  const byLinkLower = new Map<string, DuplicateCandidate>();
+  const byNormalizedLink = new Map<string, DuplicateCandidate>();
+  const byLast7Digits = new Map<string, Array<{ lead: DuplicateCandidate; digits: string }>>();
+  const byName = new Map<string, DuplicateCandidate>();
+  const setFirst = (map: Map<string, DuplicateCandidate>, key: string, lead: DuplicateCandidate) => {
+    if (!map.has(key)) map.set(key, lead);
+  };
+
+  for (const lead of leads) {
+    if (lead.email) setFirst(byEmail, lead.email.toLowerCase(), lead);
+    if (lead.profileLink) {
+      setFirst(byLinkLower, lead.profileLink.toLowerCase(), lead);
+      setFirst(byNormalizedLink, normalizeProfileLink(lead.profileLink), lead);
+    }
+    const digits = (lead.contactNumber || "").replace(/\D/g, "");
+    if (digits.length >= 7) {
+      const bucket = byLast7Digits.get(digits.slice(-7)) ?? [];
+      bucket.push({ lead, digits });
+      byLast7Digits.set(digits.slice(-7), bucket);
+    }
+    if (lead.fullName) setFirst(byName, lead.fullName.toLowerCase(), lead);
+    if (lead.displayName) setFirst(byName, lead.displayName.toLowerCase(), lead);
+  }
+
+  const match = (matchedField: Extract<DuplicateMatch, { isDuplicate: true }>["matchedField"], lead: DuplicateCandidate): DuplicateMatch => ({
+    isDuplicate: true,
+    matchedField,
+    leadId: lead.id,
+    matchedName: lead.displayName || lead.fullName || "Existing Lead",
+    lead,
+  });
+
+  return {
+    find(input: { email?: string; contactNumber?: string; fullName?: string; profileLink?: string }): DuplicateMatch {
+      const email = input.email?.trim().toLowerCase();
+      if (email && email.includes("@")) {
+        const hit = byEmail.get(email);
+        if (hit) return match("email_address", hit);
+      }
+
+      const rawProfileLink = input.profileLink?.trim();
+      if (rawProfileLink) {
+        const normalizedLink = normalizeProfileLink(rawProfileLink);
+        if (normalizedLink.length > 5) {
+          // ponytail: the "contains" fallback scans every stored link -- fine
+          // to ~50k leads; the upgrade is an indexed normalized-link column.
+          const hit =
+            byNormalizedLink.get(normalizedLink) ??
+            byLinkLower.get(rawProfileLink.toLowerCase()) ??
+            leads.find((l) => !!l.profileLink && l.profileLink.toLowerCase().includes(normalizedLink));
+          if (hit) return match("profile_link", hit);
+        }
+      }
+
+      const digits = input.contactNumber?.trim().replace(/\D/g, "");
+      if (digits && digits.length >= 7) {
+        const hit = (byLast7Digits.get(digits.slice(-7)) ?? []).find(
+          (c) => c.digits.endsWith(digits) || digits.endsWith(c.digits)
+        );
+        if (hit) return match("contact_number", hit.lead);
+      }
+
+      const fullName = input.fullName?.trim();
+      if (fullName && fullName.length >= 3) {
+        const hit = byName.get(fullName.toLowerCase());
+        if (hit) return match("full_name", hit);
+      }
+
+      return { isDuplicate: false, matchedField: null, leadId: null, matchedName: null, lead: null };
+    },
+  };
+}
+
+/** One read of every non-deleted lead, indexed for buildDuplicateIndex. */
+export async function loadDuplicateIndex() {
+  const leads = await prisma.lead.findMany({
+    where: { deletedAt: null },
+    select: { id: true, fullName: true, displayName: true, email: true, profileLink: true, contactNumber: true },
+  });
+  return buildDuplicateIndex(leads);
 }
