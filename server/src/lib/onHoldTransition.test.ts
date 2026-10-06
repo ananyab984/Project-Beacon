@@ -77,6 +77,15 @@ function test7_stillInFlightLeavesEverythingUntouched() {
   assert.deepStrictEqual(result, { flags: ["ON_HOLD", "DNC"], onHoldReason: "TIMEOUT" }, "stillInFlight must leave flags/onHoldReason completely untouched regardless of outcome");
 }
 
+function test8_incompleteProfileHoldsAndLaterCleanRunClearsIt() {
+  const held = computeOnHoldTransition({ currentFlags: [], currentOnHoldReason: null, outcome: "incomplete_profile" });
+  assert.deepStrictEqual(held, { flags: ["ON_HOLD"], onHoldReason: "INCOMPLETE_PROFILE" });
+  const cleared = computeOnHoldTransition({ currentFlags: held.flags, currentOnHoldReason: held.onHoldReason, outcome: "concluded_normally" });
+  assert.deepStrictEqual(cleared, { flags: [], onHoldReason: null }, "a later complete run must take the lead off hold");
+  const manual = computeOnHoldTransition({ currentFlags: ["ON_HOLD"], currentOnHoldReason: "MANUAL", outcome: "incomplete_profile" });
+  assert.strictEqual(manual.onHoldReason, "MANUAL", "a manual hold is never relabelled");
+}
+
 function main() {
   const tests = [
     test1_normalConclusionNeverSetsOnHold,
@@ -86,6 +95,7 @@ function main() {
     test5_manualHoldNeverAutoClearedByNormalConclusion,
     test6_manualHoldNeverDowngradedByTimeoutOrSystemError,
     test7_stillInFlightLeavesEverythingUntouched,
+    test8_incompleteProfileHoldsAndLaterCleanRunClearsIt,
   ];
 
   let failed = 0;

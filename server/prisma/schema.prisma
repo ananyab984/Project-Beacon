@@ -112,12 +112,14 @@ enum FlagAction {
 /// toggle, cleared only by that same toggle. TIMEOUT/SYSTEM_ERROR: the
 /// enrichment waterfall didn't conclude (hit its 60s cumulative cap, or
 /// crashed) -- both auto-clear the next time a re-enrichment run concludes
-/// cleanly. Never set based on field count/data quality -- see enrichment
-/// job comments.
+/// cleanly. INCOMPLETE_PROFILE: a LinkedIn lead Parallel never returned the
+/// complete profile for, after its retry -- the one data-based reason (see
+/// lib/enrichmentVerdict.ts), auto-cleared the same way.
 enum OnHoldReason {
   MANUAL
   TIMEOUT
   SYSTEM_ERROR
+  INCOMPLETE_PROFILE
 }
 
 /// Repo (recruiter-mock.ts RecruiterLeadStatus) ships only PENDING/COMPLETE

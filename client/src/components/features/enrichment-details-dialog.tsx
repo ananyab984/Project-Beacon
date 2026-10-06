@@ -315,6 +315,11 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
             <p className="mt-1 text-[10px] text-muted-foreground">
               Mark as on hold if enrichment is incomplete or needs follow-up.
             </p>
+            {onHold && lead.onHoldReason === "INCOMPLETE_PROFILE" && (
+              <p className="mt-1 text-[10px] text-warning">
+                Parallel didn't return the complete LinkedIn profile, even after a retry. Re-enrich or fill it in manually.
+              </p>
+            )}
           </div>
         </div>
 

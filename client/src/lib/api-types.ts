@@ -51,9 +51,10 @@ export type LeadSource =
   "LINKEDIN" | "PROZ" | "ADA" | "ATA" | "ATAA" | "BODALGO" | "FREELANCER" | "APOLLO" | "OTHER";
 /** Why the ON_HOLD flag is currently set -- purely descriptive, doesn't
  * drive ON_HOLD by itself. MANUAL only clears via the flags toggle;
- * TIMEOUT/SYSTEM_ERROR auto-clear the next time a re-enrichment run
- * concludes cleanly. */
-export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
+ * TIMEOUT/SYSTEM_ERROR/INCOMPLETE_PROFILE auto-clear the next time a
+ * re-enrichment run concludes cleanly. INCOMPLETE_PROFILE: a LinkedIn lead
+ * Parallel never returned the complete profile for. */
+export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR" | "INCOMPLETE_PROFILE";
 
 export type OutreachFunnelCategory =
   "contacted" | "awaiting_reply" | "replied" | "in_negotiation" | "dnc" | "onboarded";

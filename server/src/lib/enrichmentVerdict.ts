@@ -29,6 +29,14 @@ export interface EnrichmentVerdictInput {
    * treated as "no claim made" rather than as a problem.
    */
   identityVerdict?: string | null | undefined;
+  /** Lead.source. Only LINKEDIN is held to the Parallel bar below. */
+  source?: string | null | undefined;
+  /**
+   * `field_sources._parallel_fallback` as the pipeline returned it:
+   * "complete", "failed_transient:<n>", "failed_permanent", or absent (Parallel
+   * never ran -- no profile link, or PARALLEL_API_KEY unset).
+   */
+  parallelState?: string | null | undefined;
 }
 
 export interface EnrichmentVerdict {
@@ -59,13 +67,24 @@ export interface EnrichmentVerdict {
    * this ("ambiguous identities (Danny M)").
    */
   leadStatus: "COMPLETE" | "PENDING" | "FLAGGED_REVIEW";
+  /**
+   * A LinkedIn lead whose Parallel result never came back complete, with no
+   * Parallel attempt left. The caller puts it On Hold (INCOMPLETE_PROFILE) so
+   * it never shows as Enriched: for LinkedIn, Parallel is the source of the
+   * profile, and a run that got only, say, Country from it is not enriched
+   * however cleanly it concluded (the Christopher Boyce case).
+   */
+  incompleteProfile: boolean;
 }
 
 const COMPLETE = "enrichment_complete";
 const PARTIAL = "enrichment_partial";
+/** Mirrors orchestrator.py's MAX_PARALLEL_TRANSIENT_ATTEMPTS. */
+const MAX_PARALLEL_ATTEMPTS = 2;
+const TRANSIENT_PREFIX = "failed_transient:";
 
 export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): EnrichmentVerdict {
-  const { conclusion, enrichmentStatus, identityVerdict } = input;
+  const { conclusion, enrichmentStatus, identityVerdict, source, parallelState } = input;
 
   const concluded = conclusion !== "timed_out";
 
@@ -87,7 +106,20 @@ export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): Enrichm
   // service predating this field.
   const identityFlagged = identityVerdict === "ambiguous" || identityVerdict === "divergent";
 
-  const leadStatus: EnrichmentVerdict["leadStatus"] = !concluded
+  // LinkedIn is not enriched until Parallel returned the complete profile.
+  // While an attempt is left, the lead goes back to PENDING so
+  // pollPendingEnrichment makes it -- the orchestrator has always recorded
+  // "will retry on a later pass", but nothing ever re-claimed a COMPLETE lead,
+  // so that retry never happened. An unparseable counter reads as exhausted
+  // (NaN < 2 is false), matching orchestrator.py's _parallel_attempts.
+  const parallelIncomplete = source === "LINKEDIN" && parallelState !== "complete";
+  const retryParallel =
+    concluded &&
+    parallelIncomplete &&
+    !!parallelState?.startsWith(TRANSIENT_PREFIX) &&
+    Number(parallelState.slice(TRANSIENT_PREFIX.length)) < MAX_PARALLEL_ATTEMPTS;
+
+  const leadStatus: EnrichmentVerdict["leadStatus"] = !concluded || retryParallel
     ? "PENDING"
     : identityFlagged
       ? "FLAGGED_REVIEW"
@@ -96,10 +128,11 @@ export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): Enrichm
   return {
     // A flagged identity cannot be "fully enriched" however many fields came
     // back: the fields may well describe somebody else.
-    fullyEnriched: fullyEnriched && concluded && !identityFlagged,
+    fullyEnriched: fullyEnriched && concluded && !identityFlagged && !parallelIncomplete,
     unrecognizedStatus,
     identityFlagged,
     leadStatus,
+    incompleteProfile: concluded && parallelIncomplete && !retryParallel,
   };
 }
 

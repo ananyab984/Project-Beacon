@@ -146,4 +146,37 @@ assert.equal(patchResolvesIdentity({ email: undefined }, FULL), true, "absent ke
 // Empty string is not a value (matches is_empty_value in core/schema.py).
 assert.equal(patchResolvesIdentity({ email: "" }, FULL), false);
 
+// --- LinkedIn: not enriched until Parallel returned the complete profile ---
+// The Christopher Boyce case: concluded cleanly, Parallel returned Country only.
+const li = (parallelState?: string) =>
+  computeEnrichmentVerdict({ conclusion: "exhausted_no_match", enrichmentStatus: "enrichment_complete", source: "LINKEDIN", parallelState });
+
+const liComplete = li("complete");
+assert.equal(liComplete.leadStatus, "COMPLETE");
+assert.equal(liComplete.incompleteProfile, false);
+assert.equal(liComplete.fullyEnriched, true);
+
+const liFirstMiss = li("failed_transient:1");
+assert.equal(liFirstMiss.leadStatus, "PENDING", "an attempt is left, so the poll job must re-run Parallel");
+assert.equal(liFirstMiss.incompleteProfile, false, "not On Hold yet while the retry is pending");
+assert.equal(liFirstMiss.fullyEnriched, false);
+
+for (const exhausted of ["failed_transient:2", "failed_permanent", undefined, "failed_transient:garbage"]) {
+  const v = li(exhausted);
+  assert.equal(v.leadStatus, "COMPLETE", `${exhausted}: no attempt left, must come to rest`);
+  assert.equal(v.incompleteProfile, true, `${exhausted}: must go On Hold, never show Enriched`);
+  assert.equal(v.fullyEnriched, false, `${exhausted}: never promoted to the global pool`);
+}
+
+// A timeout keeps its own retry path, and is not an incomplete-profile hold.
+const liTimeout = computeEnrichmentVerdict({ conclusion: "timed_out", enrichmentStatus: "enrichment_partial", source: "LINKEDIN" });
+assert.equal(liTimeout.leadStatus, "PENDING");
+assert.equal(liTimeout.incompleteProfile, false);
+
+// Other platforms are not held to the Parallel bar.
+const proz = computeEnrichmentVerdict({ conclusion: "exhausted_no_match", enrichmentStatus: "enrichment_complete", source: "PROZ", parallelState: "failed_transient:1" });
+assert.equal(proz.leadStatus, "COMPLETE");
+assert.equal(proz.incompleteProfile, false);
+assert.equal(proz.fullyEnriched, true);
+
 console.log("enrichmentVerdict: all assertions passed");

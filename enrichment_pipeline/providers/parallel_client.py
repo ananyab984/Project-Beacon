@@ -206,6 +206,21 @@ class LanguageEntry(BaseModel):
     )
 
 
+class ProfileSection(BaseModel):
+    """One profile section no dedicated LeadProfile field covers (Projects,
+    Honors & awards, Volunteering, Publications, Recommendations, a LinkedIn
+    "Services" block...). Exists so a MAXIMAL extraction has somewhere to put
+    everything: Parallel only ever returns fields this schema defines, so
+    without a catch-all, anything outside the fixed fields was silently
+    dropped at extraction time."""
+
+    heading: str = Field(..., description="The section's heading exactly as shown on the page.")
+    content: str = Field(
+        ...,
+        description="The section's full text, verbatim in the page's own language -- every entry, not a summary.",
+    )
+
+
 class LeadProfile(BaseModel):
     """Extract this lead's profile from the single page at the given entity_url.
 
@@ -337,7 +352,16 @@ class LeadProfile(BaseModel):
             "page and populate every field below from its own matching section; do not stop "
             "after finding the first section that looks like a match for a field. If the page "
             "has an unlabeled introductory bio paragraph with no heading, list it here as "
-            "'(unlabeled intro paragraph)' so its presence is auditable."
+            "'(unlabeled intro paragraph)' so its presence is auditable. List EVERY heading "
+            "you saw: this list is checked against the fields below, and a section listed "
+            "here whose field comes back empty marks the extraction as incomplete."
+        ),
+    )
+    location: Optional[str] = Field(
+        None,
+        description=(
+            "The location line exactly as the page shows it (e.g. 'Austin, Texas, United "
+            "States'). Null if the page shows none."
         ),
     )
     certifications: List[str] = Field(
@@ -397,6 +421,43 @@ class LeadProfile(BaseModel):
             "name, or the language the page is written in. Empty list if none listed."
         ),
     )
+    tools_software: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Every tool, software product, platform or application the page names ANYWHERE "
+            "-- the skills section, the About text, a role description, a certification "
+            "(e.g. 'Pro Tools', 'Adobe Audition', 'Trados Studio', 'memoQ', 'Final Cut Pro', "
+            "'Netflix Originator'). One string per tool, as named on the page. Only names "
+            "the page literally contains -- never infer a tool from a job title. Empty list "
+            "if none are named."
+        ),
+    )
+    courses: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Every course listed on the profile (e.g. a LinkedIn 'Courses' section), one "
+            "string per course, as named on the page. Empty list if none."
+        ),
+    )
+    other_sections: List[ProfileSection] = Field(
+        default_factory=list,
+        description=(
+            "Every OTHER section on the page that none of the fields above covers (Projects, "
+            "Honors & awards, Volunteering, Publications, Recommendations, Services, "
+            "Interests, ...), one entry per section with its full verbatim text. Nothing on "
+            "the page should be left out of this extraction. Empty list only if every "
+            "section is already covered by a field above."
+        ),
+    )
+
+
+def processor_for(config: Config, lead: Dict[str, Any]) -> str:
+    """"pro" for LinkedIn, "core" for every other platform (both configurable,
+    see config.py). Keyed on the same Source value core/source_router.py
+    routes on."""
+    if str(lead.get("Source") or "").strip().lower() == "linkedin":
+        return config.parallel_linkedin_processor
+    return config.parallel_processor
 
 
 class ParallelClient:
@@ -431,6 +492,7 @@ class ParallelClient:
             "entity_name": lead.get("Full_Name") or "",
             "entity_url": profile_link,
         }
+        processor = processor_for(self.config, lead)
 
         def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
             log.warning(
@@ -440,12 +502,12 @@ class ParallelClient:
 
         try:
             result = retry_with_backoff(
-                lambda: self._run_once(input_payload),
+                lambda: self._run_once(input_payload, processor),
                 policy=self._policy,
                 on_retry=on_retry,
                 executor=_parallel_executor,
             )
-            log.info("Parallel enrichment complete for %s", profile_link)
+            log.info("Parallel enrichment complete for %s (processor=%s)", profile_link, processor)
             return result
         except RetryExhaustedError as exc:
             cause = exc.cause
@@ -453,7 +515,7 @@ class ParallelClient:
                 raise cause from exc
             raise ParallelError(str(cause) if cause else str(exc)) from exc
 
-    def _run_once(self, input_payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _run_once(self, input_payload: Dict[str, Any], processor: str) -> Dict[str, Any]:
         try:
             # Deliberately NOT passing our own `timeout=` here. Confirmed live
             # (2026-09-07): a real "core"-processor Task Run for a LinkedIn
@@ -472,7 +534,7 @@ class ParallelClient:
             # can never truncate a still-genuinely-working call either.
             run_result = self._client.task_run.execute(
                 input=input_payload,
-                processor=self.config.parallel_processor,
+                processor=processor,
                 output=LeadProfile,
             )
         except Exception as exc:  # noqa: BLE001 -- SDK raises its own exception types we don't import here

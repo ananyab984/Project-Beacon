@@ -1,4 +1,4 @@
-export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR";
+export type OnHoldReason = "MANUAL" | "TIMEOUT" | "SYSTEM_ERROR" | "INCOMPLETE_PROFILE";
 
 export interface OnHoldTransitionInput {
   currentFlags: string[];
@@ -13,8 +13,10 @@ export interface OnHoldTransitionInput {
   /** What this pass concluded as. Required unless stillInFlight is true.
    *  "concluded_normally" covers both short_circuit_success and
    *  exhausted_no_match -- both are a normal, concluded run that must never
-   *  set On Hold based on field count/data quality. */
-  outcome?: "concluded_normally" | "timed_out" | "system_error";
+   *  set On Hold based on field count/data quality. "incomplete_profile" is
+   *  the one data-based exception: a LinkedIn lead Parallel never returned
+   *  the complete profile for (see enrichmentVerdict.ts's incompleteProfile). */
+  outcome?: "concluded_normally" | "timed_out" | "system_error" | "incomplete_profile";
 }
 
 export interface OnHoldTransitionResult {
@@ -30,7 +32,8 @@ export interface OnHoldTransitionResult {
  * A MANUAL hold is never auto-cleared or auto-downgraded by any of these --
  * only the recruiter's own explicit toggle (POST/DELETE /:id/flags) can.
  * On Hold is never set based on field count/data quality -- only a genuine
- * timeout, a system error, or the manual toggle (handled separately, in the
+ * timeout, a system error, a LinkedIn lead Parallel never returned the
+ * complete profile for, or the manual toggle (handled separately, in the
  * flags route itself) ever produce it.
  */
 export function computeOnHoldTransition(input: OnHoldTransitionInput): OnHoldTransitionResult {
@@ -54,7 +57,10 @@ export function computeOnHoldTransition(input: OnHoldTransitionInput): OnHoldTra
   if (outcome === "system_error") {
     return { flags: Array.from(new Set([...currentFlags, "ON_HOLD"])), onHoldReason: "SYSTEM_ERROR" };
   }
-  // concluded_normally: auto-clears a prior TIMEOUT/SYSTEM_ERROR hold (this
+  if (outcome === "incomplete_profile") {
+    return { flags: Array.from(new Set([...currentFlags, "ON_HOLD"])), onHoldReason: "INCOMPLETE_PROFILE" };
+  }
+  // concluded_normally: auto-clears a prior TIMEOUT/SYSTEM_ERROR/INCOMPLETE_PROFILE hold (this
   // run completing cleanly is exactly how those two reasons recover).
   return { flags: currentFlags.filter((f) => f !== "ON_HOLD"), onHoldReason: null };
 }

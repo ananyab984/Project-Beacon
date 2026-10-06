@@ -1,7 +1,6 @@
-"""Groq REST client for the waterfall's "map already-extracted text onto
-canonical fields" stages -- Services classification and the remaining-fields
-fill-only extraction. Both only ever read text the pipeline already has, no
-live web search, which is exactly the kind of fast structured-extraction call
+"""Groq REST client for the waterfall's "format the raw provider output into
+canonical fields" stage (map_profile). It only ever reads data the pipeline
+already has, no live web search, which is exactly the kind of fast structured-extraction call
 Groq is used for elsewhere in this pipeline (see core/dedup_client.py's
 duplicate-matching stage).
 
@@ -38,11 +37,7 @@ class GroqMappingError(RuntimeError):
 
 
 class GroqMappingClient:
-    """Groq chat-completions client for classify_services and
-    extract_missing_fields -- same method names, signatures, and return
-    shapes as ClaudeClient's versions had, so orchestrator.py only needed to
-    change WHICH client it calls, not how it calls it. Ported rather than
-    duplicated: these two methods no longer exist on ClaudeClient."""
+    """Groq chat-completions client for map_profile -- see its docstring."""
 
     def __init__(self, config: Config, session: Optional[requests.Session] = None):
         self.config = config
@@ -60,136 +55,75 @@ class GroqMappingClient:
         self._policy = RetryPolicy(retries=config.max_retries, deadline_seconds=config.fast_provider_deadline_seconds)
         self._request_timeout = config.fast_provider_request_timeout
 
-    def classify_services(self, profile_text: str) -> List[str]:
-        """Identify the real professional service(s)/specialty a person
-        provides, from already-extracted profile text (headline, current
-        title, about/bio, certifications) -- no live web search, just a local
-        read of text the pipeline already has.
-
-        Exists because Services can be ANY real-world specialty (audio
-        engineering, sound design, casting, voice direction... not just the
-        fixed set of localization-industry terms
-        parsers/service_aliases.py's keyword list recognizes), so a profile
-        whose service is phrased in vocabulary that list doesn't cover would
-        otherwise never get a Services value, however plainly the text states
-        it.
-
-        Raises GroqMappingError on failure -- the caller treats that
-        identically to "found nothing": Services stays empty, exactly as if
-        this step hadn't run.
-        """
-        system = (
-            "You read a linguist/media-industry recruiting profile's already-extracted text and "
-            "identify the real professional SERVICE(S) or SPECIALTY this person actually performs "
-            "or offers -- e.g. Dubbing, Subtitling, Voice-over, Translation, Audio Engineering, "
-            "Sound Design, Voice Direction, Casting, Video Editing, ADR, Localization, "
-            "Interpretation, Copywriting, Project Management, or anything else a real profile "
-            "could state. This is NOT limited to a fixed list -- report whatever the text actually "
-            "supports, as short, concise service-category names (2-4 words each).\n\n"
-            "RULES:\n"
-            "- Only report a service the text directly supports (a stated job title, a described "
-            "specialty, or explicit skills) -- never infer one from an employer's industry alone.\n"
-            "- A title that MANAGES or RECRUITS FOR a specialty is not the same as PERFORMING it: "
-            "'Localization Recruiter' or 'Dubbing Project Manager' do not mean the person dubs or "
-            "localizes content themselves -- report a service only when the text shows the person "
-            "does the work, not merely coordinates or hires for it. When genuinely ambiguous, "
-            "prefer returning nothing over guessing.\n"
-            "- Return SHORT names, not full sentences (e.g. 'Audio Engineering', not 'an audio "
-            "engineer with 10 years of experience').\n"
-            "- Return an EMPTY LIST if nothing in the text clearly supports a specific service -- "
-            "never a placeholder, and never a guess from vague context alone (e.g. 'Business "
-            "Owner' or 'Operations' do not name a real service on their own).\n\n"
-            'Respond with ONLY a JSON object of exactly this shape: {"services": [<string>, ...]}'
-        )
-        body = {
-            "model": self.config.groq_model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": "PROFILE TEXT:\n\n" + profile_text[:6000]},
-            ],
-            "temperature": 0.0,
-            "response_format": {"type": "json_object"},
-            "max_tokens": 512,
-        }
-
-        result = self._request(body, "Services classification")
-        services = result.get("services")
-        if not isinstance(services, list):
-            return []
-        return [str(s).strip() for s in services if s and str(s).strip()]
-
-    # Maps each supported canonical field name to (JSON response key, kind).
-    # "list" -> comma-joined string on return; "text" -> returned as-is.
-    _MISSING_FIELD_SPECS: Dict[str, tuple] = {
-        "Current_Title": ("current_title", "text"),
-        "Certifications": ("certifications", "list"),
+    # Canonical field -> (JSON response key, kind, what belongs in it).
+    # Email_Address/Contact_Number are deliberately absent (a wrong contact
+    # reaches a different real person -- those stay on their literal-only
+    # path), and so is Years_of_Exp (computed in code from experience dates,
+    # never asked of a model).
+    PROFILE_FIELDS: Dict[str, tuple] = {
+        "Headline": ("headline", "text", "the profile's headline/tagline"),
+        "Current_Title": ("current_title", "text", "the current role's job title"),
+        "About_Snippet": ("about", "text", "the About/Bio/Summary text, complete"),
+        "Country_of_Residence": ("country", "text", "the country the person is based in, as the data names it"),
+        "Services": ("services", "list", "services/specialties the profile lists (skills, services, specialties sections)"),
+        "Tools_Software": ("tools_software", "list", "every tool, software product or platform named anywhere in the data"),
+        "Certifications": ("certifications", "list", "certifications, licences and credentials listed"),
+        "Vendor_Experience": ("vendor_experience", "list", "every company/employer named in the work history"),
+        "Source_Language": ("source_language", "text", "the language translated FROM, only when the data states a direction (e.g. 'English > Spanish')"),
+        "Target_Language": ("target_language", "text", "the language translated INTO, only when the data states a direction"),
+        "Secondary_Languages": ("secondary_languages", "list", "every language the profile lists"),
     }
 
-    def extract_missing_fields(self, text: str, missing_fields: List[str]) -> Dict[str, str]:
-        """Waterfall's last tier for whichever of Current_Title/Certifications
-        are STILL empty after Bright Data, Tavily, and Parallel have all had
-        their turn -- reads whatever free
-        text the pipeline already has and fills in only what that text
-        directly supports, exactly as classify_services already does for
-        Services. Deliberately fill-only: only asked about fields the caller
-        has already confirmed are empty, and never asked to reconsider a
-        field that already has a value from any source (enrichment or
-        manual) -- this is purely a gap-filler for what nothing else found,
-        not a verification pass over existing data.
+    def map_profile(self, raw_json: str) -> Dict[str, Any]:
+        """Format raw provider output (Parallel + Bright Data/Tavily, as one
+        JSON document) into the canonical enrichment fields. FORMATTING ONLY:
+        the model sorts values that are already in the data into the right
+        field and cleans them up -- it is told never to infer, guess or add
+        anything, and orchestrator.py's grounding check then drops any value
+        that does not literally appear in the raw data, so a value the model
+        made up cannot land even if it ignores the instruction.
 
-        `missing_fields` must be a subset of `_MISSING_FIELD_SPECS`' keys --
-        the prompt only ever asks about exactly those, so the model has no
-        opportunity to invent a value for a field the caller didn't request.
-        Returns a dict keyed by canonical field name (not the JSON response
-        key), containing only fields it found real support for -- omits the
-        rest rather than returning nulls/empties for them.
-        """
-        specs = {f: self._MISSING_FIELD_SPECS[f] for f in missing_fields if f in self._MISSING_FIELD_SPECS}
-        if not specs:
-            return {}
-
-        field_descriptions = {
-            "current_title": "their current job title/role (a short string, e.g. 'Freelance Subtitler'), if the text names one",
-            "certifications": "named certifications, diplomas, or professional credentials -- not degrees from a university unless explicitly framed as a certification",
-        }
-        requested_keys = [spec[0] for spec in specs.values()]
-        schema_lines = "\n".join(f'  "{k}": {"[<string>, ...]" if kind == "list" else "<string|null>"}' for k, (_, kind) in zip(requested_keys, specs.values()))
-        asks = "\n".join(f"- {field_descriptions[k]}" for k in requested_keys)
-
+        Returns {canonical field: str | list[str]} with only the fields that
+        had a value. Raises GroqMappingError on failure."""
+        schema_lines = "\n".join(
+            f'  "{key}": {"[<string>, ...]" if kind == "list" else "<string|null>"},  // {desc}'
+            for key, kind, desc in self.PROFILE_FIELDS.values()
+        )
         system = (
-            "You read a linguist/media-industry recruiting profile's already-extracted text and "
-            "extract ONLY the following, when the text directly supports it:\n" + asks + "\n\n"
+            "You are a data formatter. You receive raw JSON scraped from one person's profile "
+            "(a LinkedIn or freelance-platform page) by one or more providers. Your ONLY job is "
+            "to put the values that are ALREADY IN THIS DATA into the fields below, cleaned up "
+            "(trimmed, de-duplicated, one item per list entry).\n\n"
             "RULES:\n"
-            "- Only report something the text directly states -- never infer or guess from vague "
-            "context.\n"
-            "- Omit/null anything the text doesn't clearly support -- never a placeholder.\n"
-            "- Do not report anything outside the fields listed above, even if the text mentions it.\n\n"
+            "- Copy values as they appear in the data. Never infer, guess, summarise, translate "
+            "or add anything the data does not literally contain.\n"
+            "- If the data has no value for a field, return null (or an empty list). Never a "
+            "placeholder or a sentence about it being missing.\n"
+            "- When two providers disagree, prefer the more complete value.\n\n"
             f"Respond with ONLY a JSON object of exactly this shape:\n{{\n{schema_lines}\n}}"
         )
         body = {
             "model": self.config.groq_model,
             "messages": [
                 {"role": "system", "content": system},
-                {"role": "user", "content": "PROFILE TEXT:\n\n" + text[:6000]},
+                {"role": "user", "content": "RAW PROFILE DATA:\n\n" + raw_json},
             ],
             "temperature": 0.0,
             "response_format": {"type": "json_object"},
-            "max_tokens": 512,
+            "max_tokens": 8192,  # gpt-oss reasoning tokens count against this too
         }
 
-        result = self._request(body, "missing-fields extraction")
-        found: Dict[str, str] = {}
-        for canonical_field, (json_key, kind) in specs.items():
-            value = result.get(json_key)
+        result = self._request(body, "profile mapping")
+        mapped: Dict[str, Any] = {}
+        for field, (key, kind, _) in self.PROFILE_FIELDS.items():
+            value = result.get(key)
             if kind == "list":
-                if isinstance(value, list):
-                    items = [str(v).strip() for v in value if v and str(v).strip()]
-                    if items:
-                        found[canonical_field] = ", ".join(items)
-            else:
-                if value and str(value).strip():
-                    found[canonical_field] = str(value).strip()
-        return found
+                items = [str(v).strip() for v in value if v and str(v).strip()] if isinstance(value, list) else []
+                if items:
+                    mapped[field] = items
+            elif value and str(value).strip():
+                mapped[field] = str(value).strip()
+        return mapped
 
     def _request(self, body: Dict[str, Any], label: str) -> Dict[str, Any]:
         log.info("Groq %s request START model=%s", label, self.config.groq_model)

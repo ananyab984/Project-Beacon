@@ -392,13 +392,17 @@ def test_role_summary_is_asked_for_verbatim():
     )
 
 
-# --- content-free results are never banked as a success ----------------------
+# --- only a COMPLETE result is banked as a success -------------------------
+
+def _complete(data):
+    return orchestrator_module._parallel_completeness(data)[0]
+
 
 def test_rows_with_no_data_inside_do_not_count_as_a_find():
     """The exact stored shape from the live bug: right row counts, nothing in
     any of them. Treating this as a success is what stamped `complete` on
     leads that had found nothing, so they were never re-attempted."""
-    assert orchestrator_module._is_empty_parallel_result(
+    assert not _complete(
         {
             "headline": None, "current_title": None, "about_snippet": None, "country": None,
             "experience": [{}, {}, {}], "education": [{}], "languages": [{}], "certifications": [],
@@ -406,21 +410,47 @@ def test_rows_with_no_data_inside_do_not_count_as_a_find():
     )
 
 
-def test_a_single_real_value_anywhere_still_counts_as_a_find():
-    """Martin Godart's actual result -- Parallel did resolve country and
-    current_title, so the run must not be thrown away as empty."""
-    assert not orchestrator_module._is_empty_parallel_result(
-        {"country": "France", "current_title": "InfoGraphiste Web / Print", "experience": [{}, {}, {}]}
+def test_country_alone_is_not_the_profile():
+    """The Christopher Boyce case: a blocked LinkedIn profile still leaks its
+    location, and Country alone used to settle the lead as `complete`."""
+    complete, missing = orchestrator_module._parallel_completeness({"country": "United States"})
+    assert not complete
+    assert "headline/current_title" in missing
+
+
+def test_a_detected_section_that_came_back_empty_is_incomplete():
+    complete, missing = orchestrator_module._parallel_completeness(
+        {
+            "headline": "Voice Over Artist",
+            "profile_sections_detected": ["About", "Experience", "Skills"],
+            "about_snippet": "Twenty years behind the mic.",
+            "experience": [],
+            "skills": ["Voice Over"],
+        }
     )
-    assert not orchestrator_module._is_empty_parallel_result(
-        {"headline": None, "experience": [{"title": "Traductrice"}]}
+    assert not complete
+    assert missing == ["Experience section"]
+
+
+def test_every_detected_section_filled_is_complete():
+    assert _complete(
+        {
+            "headline": "Voice Over Artist",
+            "profile_sections_detected": ["About", "Experience", "Licenses & certifications"],
+            "about_snippet": "Twenty years behind the mic.",
+            "experience": [{"company": "Self-employed", "title": "Voice Actor"}],
+            "certifications": ["SAG-AFTRA"],
+        }
     )
 
 
-def test_blank_strings_are_not_content():
-    assert orchestrator_module._is_empty_parallel_result(
-        {"headline": "   ", "experience": [{"title": "", "company": None}]}
-    )
+def test_an_unmapped_heading_is_never_counted_against_completeness():
+    assert _complete({"current_title": "Translator", "profile_sections_detected": ["Recommendations", "Interests"]})
+
+
+def test_absence_prose_and_blank_strings_are_not_content():
+    assert not _complete({"headline": "   ", "experience": [{"title": "", "company": None}]})
+    assert not _complete({"headline": "No profile headline was found for Sergio Testing."})
 
 
 # --- the forcing mechanisms that make extraction complete ----------------
@@ -520,3 +550,14 @@ def test_the_page_audit_is_not_counted_as_profile_prose():
         ],
     }
     assert _looks_non_english(french), "an English heading list must not mask a French profile"
+
+
+# --- processor tier per platform ----------------------------------------------
+
+def test_linkedin_gets_pro_and_every_other_platform_gets_core():
+    from providers.parallel_client import processor_for
+    cfg = Config(brightdata_api_key="", dataset_id="", tavily_api_key="", claude_api_key="", groq_api_key="")
+    assert processor_for(cfg, {"Source": "LINKEDIN"}) == "pro"
+    assert processor_for(cfg, {"Source": " linkedin "}) == "pro"
+    for source in ["PROZ", "BODALGO", "OTHER", "", None]:
+        assert processor_for(cfg, {"Source": source}) == "core", source

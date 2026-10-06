@@ -53,10 +53,12 @@ class Config:
     # no-op rather than a hard failure, so Parallel is never a required
     # dependency -- same posture Clay had.
     parallel_api_key: str = ""
-    # Confirm the exact processor tier name against Parallel's current docs
-    # before this ever goes live -- "core" is a placeholder default, inert
-    # while parallel_api_key is unset.
+    # Processor tier per platform. LinkedIn gets "pro": for LinkedIn, Parallel
+    # IS the profile source, and a LinkedIn lead is not Enriched until Parallel
+    # returns the complete profile (see orchestrator.py's
+    # _parallel_completeness). Every other platform stays on "core".
     parallel_processor: str = "core"
+    parallel_linkedin_processor: str = "pro"
     # Whole retry+backoff sequence deadline for ONE Parallel call (see
     # core/resilience.py's RetryPolicy -- this bounds retry_with_backoff's
     # OUTER wait via Future.result(timeout=...), on top of whatever
@@ -198,6 +200,7 @@ def load_config(require_keys: bool = False) -> Config:
     groq_key = os.getenv("GROQ_API_KEY", "").strip()
     parallel_api_key = os.getenv("PARALLEL_API_KEY", "").strip()
     parallel_processor = os.getenv("PARALLEL_PROCESSOR", "core").strip()
+    parallel_linkedin_processor = os.getenv("PARALLEL_LINKEDIN_PROCESSOR", "pro").strip()
     parallel_deadline_seconds = float(os.getenv("PARALLEL_DEADLINE_SECONDS", "3700.0"))
     claude_websearch_deadline_seconds = float(os.getenv("CLAUDE_WEBSEARCH_DEADLINE_SECONDS", "300.0"))
 
@@ -233,6 +236,7 @@ def load_config(require_keys: bool = False) -> Config:
         groq_api_key=groq_key,
         parallel_api_key=parallel_api_key,
         parallel_processor=parallel_processor,
+        parallel_linkedin_processor=parallel_linkedin_processor,
         parallel_deadline_seconds=parallel_deadline_seconds,
         claude_websearch_deadline_seconds=claude_websearch_deadline_seconds,
         stage6_websearch_enabled=(os.getenv("STAGE6_WEBSEARCH_ENABLED", "false").strip().lower() == "true"),

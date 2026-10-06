@@ -81,3 +81,23 @@ def extract_tools_from_text(text_blob: str) -> List[str]:
         if any(re.search(rf"\b{re.escape(alias)}\b", lowered) for alias in aliases):
             matched.append(canonical)
     return matched
+
+
+def canonicalize_tools(names: List[str]) -> List[str]:
+    """Explicitly named tools (Parallel's `tools_software`, the Groq mapping)
+    -> de-duplicated list, renamed to the canonical name where one of
+    TOOL_ALIASES matches and kept as written otherwise. Unlike
+    extract_tools_from_text, an unknown tool is NOT dropped: these names were
+    listed as tools by the source itself, so the fixed alias list is only a
+    renaming table here, not a filter."""
+    result: List[str] = []
+    seen: set = set()
+    for raw in names:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        canonical = (extract_tools_from_text(name) or [name])[0]
+        if canonical.lower() not in seen:
+            seen.add(canonical.lower())
+            result.append(canonical)
+    return result

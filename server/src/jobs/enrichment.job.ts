@@ -324,10 +324,12 @@ export async function enrichLeadById(leadId: string) {
       | { verdict?: string; confidence?: number | null; input_name?: string; resolved_name?: string; reason?: string }
       | undefined;
 
-    const { fullyEnriched, unrecognizedStatus, identityFlagged, leadStatus } = computeEnrichmentVerdict({
+    const { fullyEnriched, unrecognizedStatus, identityFlagged, leadStatus, incompleteProfile } = computeEnrichmentVerdict({
       conclusion,
       enrichmentStatus: data?.enrichment_status,
       identityVerdict: identityMatch?.verdict,
+      source: lead.source,
+      parallelState: returnedFieldSources._parallel_fallback,
     });
 
     if (identityFlagged) {
@@ -343,7 +345,8 @@ export async function enrichLeadById(leadId: string) {
       );
     }
 
-    // On Hold is now driven entirely by the waterfall's own conclusion state
+    // On Hold is driven by the waterfall's own conclusion state, a LinkedIn
+    // lead Parallel never returned the complete profile for (incompleteProfile),
     // or the recruiter's own manual toggle -- never by field count/contact
     // presence (that was the old, corrected behavior). See
     // computeOnHoldTransition for the shared rules (MANUAL never
@@ -351,7 +354,7 @@ export async function enrichLeadById(leadId: string) {
     const { flags, onHoldReason } = computeOnHoldTransition({
       currentFlags: (lead.flags as string[]) || [],
       currentOnHoldReason: lead.onHoldReason,
-      outcome: conclusion === "timed_out" ? "timed_out" : "concluded_normally",
+      outcome: conclusion === "timed_out" ? "timed_out" : incompleteProfile ? "incomplete_profile" : "concluded_normally",
     });
 
     // Parallel's raw Task Run output (see orchestrator.py's parallel_fallback

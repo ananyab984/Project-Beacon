@@ -457,9 +457,11 @@ def test_empty_result_that_succeeds_on_retry_stops_retrying():
     assert calls["parallel"] == 2
 
 
-def test_a_result_with_some_real_content_is_accepted_immediately():
-    """Not every thin result is empty -- one populated field is enough to
-    settle as complete on the first try, matching test_success_is_never_re_called."""
+def test_a_country_only_result_is_merged_but_not_settled():
+    """Christopher Boyce's case: Parallel returned Country and nothing else.
+    Country is still real data and must land on the lead, but the result is
+    not the profile, so it must take the transient path (one more attempt)
+    rather than being stamped `complete` and never asked about again."""
     calls = {"parallel": 0}
     orch = make_orchestrator()
     orch.parallel = stub(
@@ -469,7 +471,9 @@ def test_a_result_with_some_real_content_is_accepted_immediately():
     )
     result = orch.process_lead(_linkedin_lead())
     assert calls["parallel"] == 1
-    assert result["field_sources"]["_parallel_fallback"] == "complete"
+    assert result["field_sources"]["_parallel_fallback"] == "failed_transient:1"
+    assert result["lead"]["Country_of_Residence"] == "Spain"
+    assert result["parallel_fallback"]["data"]["country"] == "Spain", "partial data must still reach Node"
 
 
 def test_success_is_never_re_called():
