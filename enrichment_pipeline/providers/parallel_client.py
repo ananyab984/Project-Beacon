@@ -15,6 +15,7 @@ request as every other stage, same as BrightData/Tavily/Claude.
 
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, List, Optional
 
@@ -37,6 +38,23 @@ log = get_logger(__name__)
 # pipeline is triggered per-lead or in small batches, not public traffic --
 # revisit alongside Node's own concurrency limit if that ever changes.
 _parallel_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="parallel")
+
+# Budget for CREATING one run (a quick POST), retries included.
+_CREATE_DEADLINE_SECONDS = 120.0
+# Longest single server-side long-poll on `result()`; looped until the run
+# finishes or parallel_deadline_seconds runs out.
+_RESULT_LONG_POLL_SECONDS = 600
+
+
+def _classify(exc: BaseException, what: str) -> Exception:
+    """A 4xx (other than 408/429) means Parallel understood the request and
+    refused it -- sending it again gets the same refusal, so it's a PERMANENT
+    ParallelError (re-raised at once by core/resilience, and the orchestrator
+    stops re-attempting the lead). Anything else is transient."""
+    status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and 400 <= status < 500 and status not in (408, 429):
+        return ParallelError(f"{what} ({status}): {exc}", status_code=status, permanent=True)
+    return TransientError(f"{what}: {exc}")
 
 
 class ParallelError(Exception):
@@ -459,13 +477,23 @@ class ParallelClient:
         # when PARALLEL_API_KEY is actually configured (see
         # EnrichmentOrchestrator.__init__ -- self.parallel stays None
         # otherwise, so this constructor never runs without the key set).
-        from parallel import Parallel
+        from parallel import APITimeoutError, Parallel
+        # SDK-internal helper -- the exact task spec `task_run.execute()`
+        # builds from `output=LeadProfile`. Tied to the parallel-web==1.3.3
+        # pin in requirements.txt; re-check this import on any SDK upgrade.
+        from parallel.lib._parsing._task_spec import build_task_spec_param
 
         self.config = config
         self._client = Parallel(api_key=config.parallel_api_key)
-        self._policy = RetryPolicy(
+        self._timeout_error = APITimeoutError
+        self._task_spec = lambda input_payload: build_task_spec_param(LeadProfile, input_payload)
+        self._sleep = time.sleep
+        # Only CREATING a run is retried (see enrich_profile) -- a quick POST,
+        # so its own short budget. Waiting is bounded separately by
+        # parallel_deadline_seconds.
+        self._create_policy = RetryPolicy(
             retries=config.max_retries,
-            deadline_seconds=config.parallel_deadline_seconds,
+            deadline_seconds=_CREATE_DEADLINE_SECONDS,
         )
 
     def enrich_profile(self, lead: Dict[str, Any], profile_link: str, processor: Optional[str] = None) -> Dict[str, Any]:
@@ -487,75 +515,94 @@ class ParallelClient:
         # only for the LinkedIn escalation to "pro" (see orchestrator.py's
         # PARALLEL_STATE_ESCALATE_PRO).
         processor = processor or self.config.parallel_processor
+        deadline = time.monotonic() + self.config.parallel_deadline_seconds
 
         def on_retry(exc: BaseException, attempt: int, delay: float) -> None:
             log.warning(
-                "Retry %d/%d calling Parallel for %s after %.1fs (%s)",
+                "Retry %d/%d creating Parallel run for %s after %.1fs (%s)",
                 attempt + 1, self.config.max_retries, profile_link, delay, exc,
             )
 
+        # Create ONCE, then wait on that same run. This used to retry the whole
+        # `task_run.execute()` (create + wait) on any transient error -- every
+        # retry created a NEW paid run, up to max_retries+1 per lead, including
+        # when only the result fetch had hiccupped while the original run was
+        # still working. Only the create is retried now, and only before any
+        # run_id exists.
         try:
-            result = retry_with_backoff(
-                lambda: self._run_once(input_payload, processor),
-                policy=self._policy,
+            run_id = retry_with_backoff(
+                lambda: self._create_run(input_payload, processor),
+                policy=self._create_policy,
                 on_retry=on_retry,
                 executor=_parallel_executor,
             )
-            log.info("Parallel enrichment complete for %s (processor=%s)", profile_link, processor)
-            return result
         except RetryExhaustedError as exc:
             cause = exc.cause
             if isinstance(cause, ParallelError):
                 raise cause from exc
             raise ParallelError(str(cause) if cause else str(exc)) from exc
 
-    def _run_once(self, input_payload: Dict[str, Any], processor: str) -> Dict[str, Any]:
+        log.info("Parallel run %s created for %s (processor=%s)", run_id, profile_link, processor)
+        started = time.monotonic()
+        content = self._wait_for_content(run_id, deadline)
+        log.info(
+            "Parallel enrichment complete for %s (processor=%s, run_id=%s, parallel_wait_ms=%d)",
+            profile_link, processor, run_id, int((time.monotonic() - started) * 1000),
+        )
+        return content
+
+    def _create_run(self, input_payload: Dict[str, Any], processor: str) -> str:
         try:
-            # Deliberately NOT passing our own `timeout=` here. Confirmed live
-            # (2026-09-07): a real "core"-processor Task Run for a LinkedIn
-            # profile routinely takes ~150-170s, and a guessed client-side
-            # cutoff (this used to pass 150s, then 240s) kept firing right as
-            # the real result was landing server-side -- the task was
-            # succeeding, our own too-short guess just wasn't waiting for it.
-            # `task_run.execute()` already has a well-engineered default
-            # (`parallel.lib._time.DEFAULT_EXECUTE_TIMEOUT_SECONDS` = 3600s,
-            # i.e. genuinely wait up to an hour for the task to actually
-            # finish, polling `task_run.result()` internally) -- deferring to
-            # that instead of re-guessing our own shorter number is what
-            # actually gets a real result for every lead instead of an
-            # arbitrary early cutoff. self._policy's outer deadline (see
-            # __init__) is kept comfortably above this 3600s ceiling so it
-            # can never truncate a still-genuinely-working call either.
-            run_result = self._client.task_run.execute(
+            run = self._client.task_run.create(
                 input=input_payload,
                 processor=processor,
-                output=LeadProfile,
+                task_spec=self._task_spec(input_payload),
             )
-        except Exception as exc:  # noqa: BLE001 -- SDK raises its own exception types we don't import here
-            # Classify before deciding anything downstream. A 4xx (other than
-            # 429) means Parallel understood us and refused: the input URL is
-            # malformed, unreachable, or not something it can research. Sending
-            # the identical payload again gets the identical refusal, so this
-            # is raised as a PERMANENT ParallelError -- which core/resilience
-            # re-raises immediately rather than burning the retry budget on
-            # it, and which stops the orchestrator ever re-attempting this
-            # lead. Everything else (timeout, connection reset, 429, 5xx) is
-            # transient and worth another go.
-            status = getattr(exc, "status_code", None)
-            if isinstance(status, int) and 400 <= status < 500 and status != 429:
-                raise ParallelError(
-                    f"Parallel rejected this input ({status}): {exc}",
-                    status_code=status,
-                    permanent=True,
-                ) from exc
-            raise TransientError(f"Parallel Task Run failed: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 -- SDK raises its own exception types
+            raise _classify(exc, "Parallel Task Run create failed") from exc
+        return run.run_id
 
-        output = getattr(run_result, "output", None)
-        content = getattr(output, "content", None) if output is not None else None
-        if not isinstance(content, dict):
-            # The run itself completed, it just produced nothing usable.
-            # Deliberately NOT permanent: this is the model returning an
-            # unexpected shape, which a fresh run can plausibly get right,
-            # and the orchestrator's attempt cap bounds what that can cost.
-            raise ParallelError("Parallel Task Run returned no usable content")
-        return content
+    def _wait_for_content(self, run_id: str, deadline: float) -> Dict[str, Any]:
+        """Long-poll `result()` for THIS run until it finishes or `deadline`
+        (parallel_deadline_seconds -- deliberately generous: a guessed short
+        cutoff once kept firing just as real ~150-170s runs were landing).
+
+        Our own loop, not the SDK's `execute()` wait: its 408 handling
+        (`timeout_retry_context` in parallel/lib/_time.py, 1.3.3) re-yields
+        inside a @contextmanager, which raises RuntimeError instead of
+        re-polling -- so a long run's first 408 used to look like a failure
+        and trigger a brand-new paid run."""
+        failures = 0
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ParallelError(
+                    f"Parallel run {run_id} not finished within {self.config.parallel_deadline_seconds:.0f}s"
+                )
+            api_timeout = max(1, min(int(remaining), _RESULT_LONG_POLL_SECONDS))
+            try:
+                run_result = self._client.task_run.result(run_id, api_timeout=api_timeout, timeout=api_timeout + 30)
+            except Exception as exc:  # noqa: BLE001
+                if getattr(exc, "status_code", None) == 408 or isinstance(exc, self._timeout_error):
+                    continue  # the run is still going -- not a failure
+                err = _classify(exc, f"Parallel run {run_id} result fetch failed")
+                if isinstance(err, ParallelError):
+                    raise err from exc  # permanent 4xx: unknown or rejected run
+                failures += 1
+                log.warning("Parallel run %s: result fetch failed (%s), re-polling the same run", run_id, exc)
+                self._sleep(min(30.0, 2.0 ** min(failures, 5)))
+                continue
+
+            run = getattr(run_result, "run", None)
+            if getattr(run, "status", None) == "failed":
+                # Not permanent: a fresh run on a LATER pass may succeed, and
+                # the orchestrator's attempt cap bounds that. Never re-created
+                # inside this call.
+                raise ParallelError(f"Parallel run {run_id} failed: {getattr(run, 'error', None)}")
+            output = getattr(run_result, "output", None)
+            content = getattr(output, "content", None) if output is not None else None
+            if not isinstance(content, dict):
+                # The run completed but produced nothing usable. Not permanent
+                # for the same reason as above.
+                raise ParallelError("Parallel Task Run returned no usable content")
+            return content
