@@ -34,6 +34,14 @@ export const STANDARD_TOOLS = [
   "Swift",
   "WinCaps",
   "ZooSub",
+  "SDL Trados Studio",
+  "Wordfast",
+  "Phrase",
+  "OmegaT",
+  "Reaper",
+  "Source-Connect",
+  "iZotope RX",
+  "Netflix Originator",
 ];
 
 // Real variant spellings a plain case-insensitive match against
@@ -55,89 +63,45 @@ const SYNONYMS: Record<string, string> = {
   "zoo sub": "ZooSub",
   "mac captions": "MacCaptions",
   "i media trans": "iMediaTrans",
+  trados: "SDL Trados Studio",
+  "sdl trados": "SDL Trados Studio",
+  "trados studio": "SDL Trados Studio",
+  "rws trados": "SDL Trados Studio",
+  "phrase tms": "Phrase",
+  "source connect": "Source-Connect",
+  izotope: "iZotope RX",
+  "izotope rx": "iZotope RX",
 };
 
 const CANONICAL_BY_LOWER = new Map(STANDARD_TOOLS.map((s) => [s.toLowerCase(), s]));
-
-// Keep in sync with enrichment_pipeline/parsers/tool_aliases.py's
-// TOOL_ALIASES -- alias PHRASES for substring-scanning free-flowing text
-// (matchToolsInText below), distinct from SYNONYMS above (which matches one
-// already-delimiter-split token exactly, not a substring within prose).
-const TOOL_ALIASES: Record<string, string[]> = {
-  "Ableton Live": ["ableton live", "ableton"],
-  "Adobe Audition": ["adobe audition", "audition"],
-  "Adobe Premiere Pro": ["adobe premiere pro", "premiere pro", "adobe premiere"],
-  Audacity: ["audacity"],
-  "Avid Media Composer": ["avid media composer"],
-  Cubase: ["cubase"],
-  "DaVinci Resolve": ["davinci resolve", "da vinci resolve", "resolve"],
-  "Final Cut Pro": ["final cut pro", "final cut", "fcpx"],
-  "Logic Pro": ["logic pro"],
-  Nuendo: ["nuendo"],
-  "Pro Tools": ["pro tools", "protools"],
-  "Studio One": ["studio one"],
-  XL8: ["xl8"],
-  Smartcat: ["smartcat", "smart cat"],
-  MemoQ: ["memoq", "memo q"],
-  MemSource: ["memsource", "mem source"],
-  DeepL: ["deepl", "deep l"],
-  Aegisub: ["aegisub"],
-  EZTitle: ["eztitle", "ez title", "eztitles"],
-  iMediaTrans: ["imediatrans", "i media trans"],
-  Jubler: ["jubler"],
-  MacCaptions: ["maccaptions", "mac captions"],
-  Ooona: ["ooona"],
-  PlintCore: ["plintcore", "plint core"],
-  Polaris: ["polaris"],
-  PXL: ["pxl"],
-  Sfera: ["sfera"],
-  "Subtitle Edit": ["subtitle edit"],
-  Swift: ["swift"],
-  WinCaps: ["wincaps"],
-  ZooSub: ["zoosub", "zoo sub"],
-};
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-/** Scans free-flowing text (not delimiter-split tokens) for any mention of
- *  a canonical tool, in declaration order -- mirrors
- *  enrichment_pipeline/parsers/tool_aliases.py's extract_tools_from_text.
- *
- *  Word-boundary match, not a bare substring check -- confirmed live: a
- *  plain `.includes()` check matched "avid" (the tool) inside the ordinary
- *  English adjective "avid" ("an avid translator"); the bare "avid" alias
- *  was removed for the same reason, keeping only the safe, equally
- *  matchable full phrase "Avid Media Composer". */
-export function matchToolsInText(text: string): string[] {
-  const lowered = text.toLowerCase();
-  const matched: string[] = [];
-  for (const [canonical, aliases] of Object.entries(TOOL_ALIASES)) {
-    if (!matched.includes(canonical) && aliases.some((alias) => new RegExp(`\\b${escapeRegExp(alias)}\\b`).test(lowered))) {
-      matched.push(canonical);
-    }
-  }
-  return matched;
-}
 
 /**
  * Splits a raw tools/software string/array into canonical STANDARD_TOOLS
  * values wherever possible. A token that's genuinely not a known tool or
  * synonym is kept as-is (trimmed) rather than dropped -- normalizes what it
  * recognizes without ever discarding real data.
+ *
+ * Splits on "," and ";" only: the pipeline joins tools with ", ", and a "/"
+ * or "|" belongs to a tool's own name ("Final Cut Pro X/7" used to become
+ * "Final Cut Pro X" and "7"). De-duplicates case-insensitively, so an
+ * unrecognised tool written two ways ("Reaper", "REAPER") is kept once.
  */
 export function normalizeToolsSoftware(raw: string[] | string | null | undefined): string[] {
   if (!raw) return [];
   const tokens = (Array.isArray(raw) ? raw : [raw])
-    .flatMap((s) => s.split(/[,;/|]+/))
+    .flatMap((s) => s.split(/[,;]+/))
     .map((s) => s.trim())
     .filter(Boolean);
 
-  const normalized = tokens.map((token) => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const token of tokens) {
     const lower = token.toLowerCase();
-    return CANONICAL_BY_LOWER.get(lower) ?? SYNONYMS[lower] ?? token;
-  });
-
-  return Array.from(new Set(normalized));
+    const name = CANONICAL_BY_LOWER.get(lower) ?? SYNONYMS[lower] ?? token;
+    if (!seen.has(name.toLowerCase())) {
+      seen.add(name.toLowerCase());
+      out.push(name);
+    }
+  }
+  return out;
 }

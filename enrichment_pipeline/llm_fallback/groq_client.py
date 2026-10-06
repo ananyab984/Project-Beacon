@@ -65,8 +65,8 @@ class GroqMappingClient:
         "Current_Title": ("current_title", "text", "the current role's job title"),
         "About_Snippet": ("about", "text", "the About/Bio/Summary text, complete"),
         "Country_of_Residence": ("country", "text", "the country the person is based in, as the data names it"),
-        "Services": ("services", "list", "services/specialties the profile lists (skills, services, specialties sections)"),
-        "Tools_Software": ("tools_software", "list", "every tool, software product or platform named anywhere in the data"),
+        "Services": ("services", "list", "kinds of WORK the person does or offers (e.g. Translation, Voice Over, Subtitling, Audio Engineering) -- never a software name"),
+        "Tools_Software": ("tools_software", "list", "every named software product, app or platform the person uses (e.g. SDL Trados, Pro Tools, memoQ, Netflix Originator), from anywhere in the data"),
         "Certifications": ("certifications", "list", "certifications, licences and credentials listed"),
         "Vendor_Experience": ("vendor_experience", "list", "every company/employer named in the work history"),
         "Source_Language": ("source_language", "text", "the language translated FROM, only when the data states a direction (e.g. 'English > Spanish')"),
@@ -99,7 +99,9 @@ class GroqMappingClient:
             "or add anything the data does not literally contain.\n"
             "- If the data has no value for a field, return null (or an empty list). Never a "
             "placeholder or a sentence about it being missing.\n"
-            "- When two providers disagree, prefer the more complete value.\n\n"
+            "- When two providers disagree, prefer the more complete value.\n"
+            "- A skills list mixes services and tools: put each item in exactly ONE of services or "
+            "tools_software (a software name is a tool, never a service).\n\n"
             f"Respond with ONLY a JSON object of exactly this shape:\n{{\n{schema_lines}\n}}"
         )
         body = {

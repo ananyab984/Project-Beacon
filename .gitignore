@@ -53,3 +53,7 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Research PoCs -- local only, never committed
+POC/
+POC's/

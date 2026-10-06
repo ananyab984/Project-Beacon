@@ -9,7 +9,7 @@
  */
 
 import assert from "node:assert";
-import { normalizeToolsSoftware, matchToolsInText } from "./normalizeToolsSoftware";
+import { normalizeToolsSoftware } from "./normalizeToolsSoftware";
 import { normalizeVendorExperience, canonicalizeVendorToken, matchVendorsInText } from "./normalizeVendorExperience";
 
 function test1_toolsCasingAndSpacingVariantsNormalize() {
@@ -20,7 +20,13 @@ function test1_toolsCasingAndSpacingVariantsNormalize() {
 }
 
 function test2_toolsUnknownTokenIsKeptNotDropped() {
-  assert.deepStrictEqual(normalizeToolsSoftware("SDL Trados"), ["SDL Trados"]);
+  assert.deepStrictEqual(normalizeToolsSoftware("Matecat"), ["Matecat"]);
+  // A newly-known tool is renamed to the pipeline's spelling.
+  assert.deepStrictEqual(normalizeToolsSoftware("SDL Trados"), ["SDL Trados Studio"]);
+}
+
+function test9_toolNamesKeepTheirOwnSlashAndDuplicatesCollapseCaseInsensitively() {
+  assert.deepStrictEqual(normalizeToolsSoftware("Final Cut Pro X/7, Reaper, REAPER"), ["Final Cut Pro X/7", "Reaper"]);
 }
 
 function test3_toolsEmptyOrNullReturnsEmptyArray() {
@@ -63,11 +69,6 @@ function test8_canonicalizeVendorTokenDoesNotSplitOnCommaWithinACompanyName() {
   assert.strictEqual(canonicalizeVendorToken("Freelancer"), null);
 }
 
-function test9_matchToolsInTextScansProseNotJustDelimitedTokens() {
-  assert.deepStrictEqual(matchToolsInText("Cut on Pro Tools and DaVinci Resolve daily."), ["DaVinci Resolve", "Pro Tools"]);
-  assert.deepStrictEqual(matchToolsInText("A regular bio with no tool names"), []);
-}
-
 function test11_btiAliasDoesNotFalsePositiveOnSubtitle() {
   // Regression: a plain substring check matched bare "bti" embedded inside
   // "subtitle"/"subtitling"/"subtitler" -- a near-universal word on this
@@ -75,11 +76,6 @@ function test11_btiAliasDoesNotFalsePositiveOnSubtitle() {
   // every lead regardless of its actual content.
   assert.deepStrictEqual(matchVendorsInText("Experienced subtitler and subtitling QA specialist"), []);
   assert.deepStrictEqual(matchVendorsInText("Long-time freelancer for BTI on subtitling projects"), ["BTI"]);
-}
-
-function test12_avidBareAliasRemovedDoesNotFalsePositiveOnCommonWord() {
-  assert.deepStrictEqual(matchToolsInText("An avid reader and translator"), []);
-  assert.deepStrictEqual(matchToolsInText("Editing on Avid Media Composer daily"), ["Avid Media Composer"]);
 }
 
 function test10_matchVendorsInTextScansProseForKnownVendorsOnly() {
@@ -97,10 +93,9 @@ function main() {
     test6_vendorArrayInputDedupesCaseInsensitively,
     test7_vendorEmploymentStatusLabelsAreDroppedNotKept,
     test8_canonicalizeVendorTokenDoesNotSplitOnCommaWithinACompanyName,
-    test9_matchToolsInTextScansProseNotJustDelimitedTokens,
+    test9_toolNamesKeepTheirOwnSlashAndDuplicatesCollapseCaseInsensitively,
     test10_matchVendorsInTextScansProseForKnownVendorsOnly,
     test11_btiAliasDoesNotFalsePositiveOnSubtitle,
-    test12_avidBareAliasRemovedDoesNotFalsePositiveOnCommonWord,
   ];
 
   let failed = 0;

@@ -37,7 +37,7 @@ from parsers.generic_parser import GenericParser
 from parsers.linkedin_parser import LinkedInParser
 from parsers.proz_parser import ProzParser
 from parsers.service_aliases import extract_services_from_text
-from parsers.tool_aliases import canonicalize_tools, extract_tools_from_text
+from parsers.tool_aliases import canonicalize_tools, extract_tools_from_text, known_tool
 from parsers.vendor_aliases import canonicalize_or_keep, extract_vendors_from_text
 from parsers.language_filter import NON_ENGLISH_MARKERS, looks_non_english_token
 
@@ -1435,7 +1435,7 @@ class EnrichmentOrchestrator:
 
     def _map_all_fields_via_groq(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], raw_sources: Dict[str, Any],
-    ) -> None:
+    ) -> set:
         """Groq formats ALL raw provider output this pass produced (Parallel
         + the Tier 1 scrape) into the canonical fields -- formatting only,
         see GroqMappingClient.map_profile. Runs after the deterministic
@@ -1465,10 +1465,10 @@ class EnrichmentOrchestrator:
         raw = {k: _strip_noise(v) for k, v in raw_sources.items() if has_content(v)}
         if not raw:
             logs.append("Stage 3.75: Groq mapping skipped: no raw provider data this pass")
-            return
+            return set()
         if not self.groq_mapper:
             logs.append("Stage 3.75: Groq mapping skipped: GROQ_API_KEY isn't set")
-            return
+            return set()
 
         raw_json = json.dumps(raw, ensure_ascii=False, default=str)
         if len(raw_json) > _GROQ_INPUT_CHAR_CAP:
@@ -1478,7 +1478,7 @@ class EnrichmentOrchestrator:
             mapped = self.groq_mapper.map_profile(raw_json)
         except GroqMappingError as exc:
             logs.append(f"Stage 3.75: Groq mapping failed, keeping the deterministic mapping only: {exc}")
-            return
+            return set()
 
         haystack = f" {_grounding_text(' '.join(_payload_strings(raw)))} "
 
@@ -1487,10 +1487,16 @@ class EnrichmentOrchestrator:
             return bool(text) and not _is_absence_prose(value) and f" {text} " in haystack
 
         dropped: list[str] = []
+        # What Groq classified as a tool -- lets _sort_tools_out_of_services
+        # move a tool this module has never heard of ("Matecat") out of
+        # Services, not just the ones known_tool recognises.
+        groq_tools: set = set()
         for field, value in mapped.items():
             if isinstance(value, list):
                 kept = [v for v in value if grounded(v)]
                 dropped += [f"{field}={v!r}" for v in value if v not in kept]
+                if field == "Tools_Software":
+                    groq_tools = {_grounding_text(v) for v in kept}
                 existing = [x.strip() for x in str(lead.get(field) or "").split(",") if x.strip()]
                 if field == "Tools_Software":
                     merged = canonicalize_tools(existing + kept)
@@ -1518,6 +1524,48 @@ class EnrichmentOrchestrator:
                 logs.append(f"Stage 3.75: {field} = {value[:120]!r} (Groq-formatted from raw provider data)")
         if dropped:
             logs.append(f"Stage 3.75: dropped {len(dropped)} Groq value(s) not found in the raw data: {dropped}")
+        return groq_tools
+
+    @staticmethod
+    def _sort_tools_out_of_services(
+        lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str], groq_tools: set,
+    ) -> None:
+        """Move tools out of Services into Tools_Software. Every skills list
+        a provider returns (Bright Data's `skills`, Parallel's `skills`) is
+        copied wholesale into Services by the parsers, so "Pro Tools" or "SDL
+        Trados" used to be stored as a SERVICE and Tools_Software stayed
+        empty. One pass here, after every source and the Groq formatting have
+        run, sorts the final Services value whatever put it there -- which
+        also cleans a lead whose Services was polluted on an earlier run.
+
+        An item is a tool if known_tool recognises it, or Groq classified it
+        as one (so an unlisted tool still moves). Services a recruiter
+        entered or imported ("existing"/"manual") is never touched, and
+        nothing moves when Tools_Software itself is a manual entry, since
+        Node keeps a manual field as-is and the moved tools would be lost."""
+        if field_sources.get("Services") in ("existing", "manual") or field_sources.get("Tools_Software") == "manual":
+            return
+        items = [x.strip() for x in str(lead.get("Services") or "").split(",") if x.strip()]
+        services: list[str] = []
+        tools: list[str] = []
+        for item in items:
+            canonical = known_tool(item)
+            if canonical or _grounding_text(item) in groq_tools:
+                tools.append(canonical or item)
+            else:
+                services.append(item)
+        if not tools:
+            return
+        existing_tools = [x.strip() for x in str(lead.get("Tools_Software") or "").split(",") if x.strip()]
+        lead["Tools_Software"] = ", ".join(canonicalize_tools(existing_tools + tools))
+        if field_sources.get("Tools_Software") in (None, "existing"):
+            field_sources["Tools_Software"] = field_sources.get("Services") or "llm_fallback"
+        lead["Services"] = ", ".join(services)
+        if not services:
+            # Node applies an EMPTY Services only from this source (see
+            # enrichment.job.ts), otherwise it would keep the old tool-laden value.
+            field_sources["Services"] = "llm_fallback"
+        logs.append(f"Stage 3.76: moved {tools} from Services to Tools_Software")
 
     def _infer_years_of_experience_from_text(
         self, lead: Dict[str, Any], field_sources: Dict[str, str], logs: list[str],
@@ -1611,10 +1659,11 @@ class EnrichmentOrchestrator:
         # Not gated by MAX_FIELDS_BEFORE_WEBSEARCH: it reads only data already
         # in hand, and a lead that LOOKS well enriched can still be missing
         # Tools_Software/Services that sit plainly in that data.
-        self._map_all_fields_via_groq(
+        groq_tools = self._map_all_fields_via_groq(
             lead, field_sources, logs,
             {"parallel": (parallel_fallback or {}).get("data"), provider_type: raw_scraped_data},
         )
+        self._sort_tools_out_of_services(lead, field_sources, logs, groq_tools)
         self._infer_years_of_experience_from_text(lead, field_sources, logs)
 
         post_stage3_audit = audit_lead_fields(lead)
