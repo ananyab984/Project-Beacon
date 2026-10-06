@@ -47,10 +47,12 @@ on_term() {
 trap on_term TERM INT
 
 graceful_exit() {
-  # uvicorn is configured with timeout_graceful_shutdown=25; give both
-  # children a bounded window to finish before hard-killing.
+  # Give both children a bounded window to finish before hard-killing:
+  # Node drains and requeues its in-flight leads (SHUTDOWN_DRAIN_MS), uvicorn
+  # finishes requests (PY_GRACEFUL_SHUTDOWN_SECONDS). Keep this above both and
+  # below the platform's own kill window (ECS stopTimeout; default 30s).
   local waited=0
-  while [ "$waited" -lt 30 ]; do
+  while [ "$waited" -lt "${SHUTDOWN_GRACE_SECONDS:-30}" ]; do
     if ! kill -0 "$PY_PID" 2>/dev/null && ! kill -0 "$NODE_PID" 2>/dev/null; then
       break
     fi

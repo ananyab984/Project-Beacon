@@ -118,11 +118,15 @@ processes, no Docker required).
 
 Run **exactly one instance**. Two is not a degraded configuration, it is a broken one:
 
-- `pollInFlight` (`server/src/jobs/enrichment.job.ts:59`) is an **in-memory** boolean
-  that caps enrichment at `POLL_CONCURRENCY = 8`. N replicas means N×8 concurrent calls
-  against a Python service whose own bulkheads assume 8.
-- The 9 cron jobs are unguarded, so every digest, reminder and Slack escalation fires
-  once per replica.
+- `pollInFlight` (`server/src/jobs/enrichment.job.ts`) is an **in-memory** boolean
+  that caps enrichment at `ENRICHMENT_CONCURRENCY`. N replicas means N× that many
+  concurrent calls against a Python service whose pools are sized for one.
+- Startup requeue (`requeueOrphanedEnrichments`) treats every lead left `IN_PROGRESS`
+  from before this boot as orphaned -- a second live backend's in-flight leads would be
+  requeued under it. The same applies to **any** second backend on the same database
+  (another Render service, a laptop running `npm run dev` with the prod `.env`).
+- The cron jobs claim each tick once per `NODE_ENV` (`cronLock.ts`), but a second
+  backend still splits the jobs unpredictably between the two.
 
 App Runner: min = max = 1. ECS: `desiredCount: 1` **and** `maximumPercent: 100`, so a
 rolling deploy cannot briefly run two.
@@ -132,23 +136,25 @@ rolling deploy cannot briefly run two.
 Path `/health`, and allow a generous start period — `prisma migrate deploy` walks 27
 migrations before Node listens. 120s is the configured default.
 
-### Never deploy mid-batch
+### Deploying mid-batch
 
-A deploy kills in-flight enrichment. A single lead can take ~70 minutes, and the
-platform's shutdown grace (~30s on Render) is nowhere near that. The lead is not lost —
-it sits in `IN_PROGRESS` until `stallOverdueEnrichments` sweeps it after
-`STALL_TIMEOUT_MS` (**80 minutes**, `enrichment.job.ts:553`) — but it is 80 minutes of
-nothing happening. Check for active enrichment before deploying.
+Safe now. On SIGTERM Node stops claiming, lets in-flight leads finish for
+`SHUTDOWN_DRAIN_MS`, then puts whatever is still running back to `PENDING` -- the next
+instance picks those up on its first tick (`index.ts`, `lib/gracefulShutdown.ts`). If
+the process is killed before that runs (a crash, an OOM), the next boot requeues them
+after `REQUEUE_DELAY_MS`. The 80-minute `stallOverdueEnrichments` sweep remains only as
+the net for a genuinely hung run. A lead that was mid-run starts over, but its paid
+Parallel work isn't repeated when the enrichment service outlived Node (separate Render
+services): the re-claimed lead collects the stored result (`waitWhileBusy` +
+`LeadRunRegistry`).
 
 ### Memory: 2GB minimum
 
 Python can hold up to 40 concurrent enrichment threads. 512MB will OOM.
 
-Related, and worth knowing before your first real load: the **bulk upload route has no
-concurrency cap**. `lead.routes.ts:644-646` fires `setImmediate(() =>
-enrichLeadById(...))` per CSV row, with none of the throttling the cron poller uses. A
-200-row import starts 200 concurrent 70-minute calls. **Do not make a large bulk upload
-the first thing you do on a new host.**
+Bulk uploads no longer fan out: they queue `PENDING` leads and the poller runs at most
+`ENRICHMENT_CONCURRENCY` at once. Size memory for that number (see "Enrichment
+throughput" below).
 
 ### Environment variables the image already sets
 
@@ -162,8 +168,7 @@ A leftover `ENRICHMENT_SERVICE_URL` in a Render dashboard or ECS task definition
 single easiest way to break this deployment: Node keeps calling the old public Python
 service, and the failure looks like a network error rather than a config mistake.
 
-If you ever must override it: **no trailing slash.** `enrichment.job.ts:141` builds
-`${url}/enrich` by plain concatenation.
+If you ever must override it, a trailing slash is now stripped (`config.ts`).
 
 ### Pre-flight: 10 variables
 
@@ -217,7 +222,10 @@ feature needs one, this is a dead end.
 
 1. Push to ECR.
 2. Task definition: 1 vCPU / 2–4 GB, one container, port 5001.
-3. Service: `desiredCount: 1`, `maximumPercent: 100`, `minimumHealthyPercent: 0`.
+3. Service: `desiredCount: 1`, `maximumPercent: 100`, `minimumHealthyPercent: 0`,
+   autoscaling off. Container `stopTimeout: 120` (the Fargate maximum) with
+   `SHUTDOWN_GRACE_SECONDS=110`, `SHUTDOWN_DRAIN_MS=90000`,
+   `PY_GRACEFUL_SHUTDOWN_SECONDS=100`, `REQUEUE_DELAY_MS=0`.
 4. ALB target group health check `/health`, healthy threshold generous enough for the
    migration window.
 5. Set the ALB idle timeout high (max 4000s) — it governs inbound traffic only, but a
@@ -284,16 +292,48 @@ verified — see below.
 
 ---
 
+## Enrichment throughput
+
+Each lead takes ~1-3 minutes (Parallel `core` dominates); throughput is how many run at
+once. One variable sets it for both processes -- the same container on AWS, both Render
+services on Render:
+
+| Variable | Default | What it does |
+|---|---|---|
+| `ENRICHMENT_CONCURRENCY` | 8 (1-128) | Node's poller width; Python's per-lead pools (`N+8`), provider pool (`max(20, 2N+8)`), request threads (`max(40, N+16)`). Node and Python **must** match. |
+| `SHUTDOWN_DRAIN_MS` | 20000 | SIGTERM: let in-flight leads finish this long, then requeue the rest. Below the platform's kill window. |
+| `REQUEUE_DELAY_MS` | 300000 | After boot, requeue leads an earlier process left `IN_PROGRESS`. 0 on AWS. |
+| `PY_GRACEFUL_SHUTDOWN_SECONDS` | 25 | uvicorn's grace for running requests. |
+| `SHUTDOWN_GRACE_SECONDS` | 30 | `start.sh`: how long both children get before SIGKILL. |
+| `BULK_UPLOAD_MAX_ROWS` | 2000 | Rows per bulk upload / Sheet import (the bulk routes accept 5MB bodies). |
+| `PARALLEL_LINKEDIN_PROCESSOR` | core | Back to `pro` without a code change if LinkedIn completeness drops. |
+
+The shutdown values must fit inside the platform's kill window: the defaults fit the
+usual 30s. On ECS raise them together with `stopTimeout` (Option B above); on Render a
+longer drain needs a longer shutdown delay on the service (`maxShutdownDelaySeconds` --
+confirm the setting and its limit in Render's docs before relying on it).
+
+At 32 or more, append `connection_limit=20&pool_timeout=20` to `DATABASE_URL` --
+Prisma's default pool (~2×CPU+1) times out under that many concurrent completions.
+
+**Raising it.** Never more than one backend per database (see "One replica only").
+Baseline 100 real leads at 8, then step 16 → 24 → 32 → 48 → 64, 100 leads each, and
+keep the highest step that passes all of:
+
+- average `enrichedFieldCount` (EnrichmentRun) within 5% of baseline;
+- On Hold rate (timeout/system_error) within 2 points;
+- LinkedIn complete-profile rate not clearly below baseline;
+- no sustained 429s in the logs (Tavily, Groq, Claude, Bright Data);
+- `executionTimeMs` and `parallel_wait_ms` p50 not rising -- if they rise, Parallel is
+  queuing us and more concurrency buys nothing;
+- Python memory under 75%; Parallel runs created = leads.
+
+Record the result here.
+
 ## Known follow-ups
 
 Deliberately **not** changed as part of containerizing:
 
-- **No SIGTERM handler in Node** (`server/src/index.ts`). On stop, Node dies without
-  `server.close()` or `prisma.$disconnect()`. Pre-existing; causes a stuck-lead window
-  recovered by the 80-minute stall sweep, not data loss.
-- **Trailing-slash bug** in `enrichment.job.ts:141` — unlike the keepalive code, it does
-  not normalise the URL.
-- **Uncapped bulk-upload fan-out** (`lead.routes.ts:644-646`) — the biggest OOM risk.
 - **`pandas` and `openpyxl`** are in `requirements.txt` but imported nowhere; dropping
   them would cut roughly 150–250MB, but it changes what Render builds too.
 - **`dist/` contains compiled test files** — `tsconfig.json` has no `exclude`.
