@@ -300,7 +300,7 @@ services on Render:
 
 | Variable | Default | What it does |
 |---|---|---|
-| `ENRICHMENT_CONCURRENCY` | 8 (1-128) | Node's poller width; Python's per-lead pools (`N+8`), provider pool (`max(20, 2N+8)`), request threads (`max(40, N+16)`). Node and Python **must** match. |
+| `ENRICHMENT_CONCURRENCY` | 16 (1-128) | Node's poller width; Python's per-lead pools (`N+8`), provider pool (`max(20, 2N+8)`), request threads (`max(40, N+16)`). Node and Python **must** match. |
 | `SHUTDOWN_DRAIN_MS` | 20000 | SIGTERM: let in-flight leads finish this long, then requeue the rest. Below the platform's kill window. |
 | `REQUEUE_DELAY_MS` | 300000 | After boot, requeue leads an earlier process left `IN_PROGRESS`. 0 on AWS. |
 | `PY_GRACEFUL_SHUTDOWN_SECONDS` | 25 | uvicorn's grace for running requests. |
@@ -313,12 +313,16 @@ usual 30s. On ECS raise them together with `stopTimeout` (Option B above); on Re
 longer drain needs a longer shutdown delay on the service (`maxShutdownDelaySeconds` --
 confirm the setting and its limit in Render's docs before relying on it).
 
-At 32 or more, append `connection_limit=20&pool_timeout=20` to `DATABASE_URL` --
-Prisma's default pool (~2×CPU+1) times out under that many concurrent completions.
+`server/src/prisma.ts` appends `connection_limit=20&pool_timeout=20` to `DATABASE_URL`
+unless it already sets `connection_limit` -- with 16-32+ leads in flight, Prisma's default pool
+(~2×CPU+1) times out under that many concurrent completions.
 
-**Raising it.** Never more than one backend per database (see "One replica only").
-Baseline 100 real leads at 8, then step 16 → 24 → 32 → 48 → 64, 100 leads each, and
-keep the highest step that passes all of:
+**Tuning it.** Never more than one backend per database (see "One replica only").
+The default is 16 (decided 2026-10-06): about what a 512 MB enrichment instance can
+hold -- at 0.1 CPU (Render free) CPU is the cap there, so 32 gains nothing on free and
+risks out-of-memory restarts. Run 100 real leads at 16 and compare against a run at 8
+(set the env var on both services); keep it only if it passes all of the checks below.
+On a 2 GB instance try 32, then 48 and 64, the same way:
 
 - average `enrichedFieldCount` (EnrichmentRun) within 5% of baseline;
 - On Hold rate (timeout/system_error) within 2 points;

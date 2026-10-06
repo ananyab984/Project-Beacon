@@ -206,12 +206,13 @@ export const config = {
   // How many leads are enriched at once. The SAME env var sizes the
   // enrichment service's pools (enrichment_pipeline/core/resilience.py), so
   // set it once for both (one container on AWS, an env group on Render).
-  // 1-128, default 8; raise stepwise per docs/DOCKER_DEPLOY.md.
+  // 1-128, default 16 (was 8) -- what a 512 MB enrichment instance can hold;
+  // 32+ needs ~2 GB (docs/DOCKER_DEPLOY.md). src/prisma.ts sizes the DB pool.
   // Most rows one bulk upload / Sheet import may carry (POST /bulk,
   // /check-bulk-duplicates, /import-from-sheet). Their JSON body limit is
   // sized for 2,000 rows (index.ts) -- raise both together.
   bulkUploadMaxRows: Math.max(1, parseInt(process.env.BULK_UPLOAD_MAX_ROWS || "2000", 10) || 2000),
-  enrichmentConcurrency: Math.min(128, Math.max(1, parseInt(process.env.ENRICHMENT_CONCURRENCY || "8", 10) || 8)),
+  enrichmentConcurrency: Math.min(128, Math.max(1, parseInt(process.env.ENRICHMENT_CONCURRENCY || "16", 10) || 16)),
   // After boot, wait this long before requeueing leads an earlier process
   // left IN_PROGRESS (a crash). Render's zero-downtime deploy keeps the old
   // instance running briefly, so 5 min there; 0 on AWS (stop-before-start,
