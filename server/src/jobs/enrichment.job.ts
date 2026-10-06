@@ -10,6 +10,7 @@ import { waitWhileBusy } from "../lib/waitWhileBusy";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
 import { computeEnrichmentVerdict } from "../lib/enrichmentVerdict";
 import { drainWithConcurrency } from "../lib/drainWithConcurrency";
+import { pickNextFair, type QueueHead } from "../lib/pickNextFair";
 import { countPopulatedFields } from "../lib/enrichmentCount";
 import { tierFromFieldSources } from "../lib/enrichmentTier";
 import { createNotification, formatEnrichmentCompleteSlackCard } from "../services/notification.service";
@@ -709,19 +710,35 @@ export async function pollPendingEnrichment() {
   }
 }
 
-/** Atomically claims the oldest eligible PENDING lead, or null when none is
- *  left. The re-checked `enrichmentStatus: "PENDING"` in the updateMany WHERE
- *  is the claim: if anything else (enrichLeadById called directly from
- *  lead.routes.ts) took the row between the read and the write, the update
- *  matches nothing and we just try the next one. */
+/** Atomically claims the next PENDING lead to enrich, or null when none is
+ *  left. "Next" is fair across uploaders (lib/pickNextFair.ts): the oldest
+ *  eligible lead of whoever has the fewest leads in flight, so one big upload
+ *  can't hold every slot while someone else's small one waits. The re-checked
+ *  `enrichmentStatus: "PENDING"` in the updateMany WHERE is the claim: if
+ *  anything else (another drain worker, or enrichLeadById called directly
+ *  from lead.routes.ts) took the row between the read and the write, the
+ *  update matches nothing and we just pick again. */
 async function claimNextPendingLead(): Promise<string | null> {
   if (stopClaiming) return null; // shutting down: let the drain wind down
   for (;;) {
-    const next = await prisma.lead.findFirst({
-      where: { enrichmentStatus: "PENDING", deletedAt: null, NOT: { flags: { has: "ON_HOLD" } } },
-      orderBy: { createdAt: "asc" },
-      select: { id: true },
-    });
+    const [inFlight, heads] = await Promise.all([
+      prisma.$queryRaw<{ owner: string; n: bigint }[]>`
+        SELECT COALESCE(created_by_recruiter_id, created_by_contractor_id, 'unowned') AS owner, COUNT(*) AS n
+        FROM leads
+        WHERE enrichment_status = 'IN_PROGRESS' AND deleted_at IS NULL
+        GROUP BY 1`,
+      // DISTINCT ON in SQL, not Prisma's `distinct` (which dedupes in memory
+      // after fetching every pending row).
+      prisma.$queryRaw<QueueHead[]>`
+        SELECT DISTINCT ON (owner) id, owner, created_at AS "createdAt"
+        FROM (
+          SELECT id, created_at, COALESCE(created_by_recruiter_id, created_by_contractor_id, 'unowned') AS owner
+          FROM leads
+          WHERE enrichment_status = 'PENDING' AND deleted_at IS NULL AND NOT ('ON_HOLD' = ANY(flags))
+        ) pending
+        ORDER BY owner, created_at`,
+    ]);
+    const next = pickNextFair(heads, new Map(inFlight.map((row) => [row.owner, Number(row.n)])));
     if (!next) return null;
     const { count } = await prisma.lead.updateMany({
       where: { id: next.id, enrichmentStatus: "PENDING", deletedAt: null },
