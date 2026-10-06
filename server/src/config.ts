@@ -116,7 +116,9 @@ export const config = {
   // Must match enrichment_pipeline/main.py's own --port default (8000, see its
   // argparse default and .env) -- a mismatch here means every enrichment call
   // fails with connection-refused and the lead just cycles PENDING forever.
-  enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction),
+  // Trailing slashes stripped: the call site appends "/enrich", and
+  // "https://host//enrich" 404s (docs/DOCKER_DEPLOY.md's known trailing-slash bug).
+  enrichmentServiceUrl: resolveEnv("ENRICHMENT_SERVICE_URL", "http://127.0.0.1:8000", isProduction).replace(/\/+$/, ""),
   // Shared secret proving a call to the enrichment service actually came
   // from this server, not an arbitrary caller who found the URL -- the
   // service has no other authentication and every call triggers real,

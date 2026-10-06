@@ -201,6 +201,62 @@ class LeadRequest(BaseModel):
     # Stripped out before building the lead dict; see `_find_pool_duplicate_
     # flag` below.
     Candidate_Pool: Optional[List[Dict[str, Any]]] = None
+    # Also not a lead field: the caller's id for this lead, so a repeated
+    # request for the SAME lead never runs a second waterfall (see
+    # LeadRunRegistry). Stripped out before building the lead dict.
+    Lead_Id: Optional[str] = None
+
+
+class LeadRunRegistry:
+    """At most one /enrich per lead at a time, and a response the caller never
+    received can still be collected by repeating the request.
+
+    Node retries /enrich when a call fails without a response (a dropped
+    connection, a proxy 502/504 between the two services). Python may still
+    be running -- or have just finished -- that lead, so a blind retry used
+    to start a second paid waterfall (Parallel, Bright Data, LLM calls) and
+    throw the first result away. Now a repeat for a lead that is still
+    running is refused (409, the caller waits and asks again), and a repeat
+    after it finished gets the stored result instead of a re-run.
+
+    ponytail: in-process state -- correct only because each environment runs
+    ONE Python process (uvicorn single worker, see run_server); a restart
+    forgets it, which costs at most a re-run, never a wrong answer. Results
+    are kept 30 min and at most `max_entries` (each can be tens of KB on a
+    512 MB instance); a caller retries within seconds to minutes, well
+    inside both.
+    """
+
+    def __init__(self, ttl_seconds: float = 1800.0, max_entries: int = 300, now=time.monotonic):
+        self._lock = threading.Lock()
+        self._inflight: set = set()
+        self._recent: Dict[str, Any] = {}  # lead_id -> (expires_at, result), oldest first
+        self._ttl = ttl_seconds
+        self._max = max_entries
+        self._now = now
+
+    def begin(self, lead_id: str):
+        """("cached", result) | ("busy", None) | ("run", None)."""
+        with self._lock:
+            now = self._now()
+            for key in [k for k, (expires, _) in self._recent.items() if expires <= now]:
+                del self._recent[key]
+            hit = self._recent.pop(lead_id, None)
+            if hit is not None:
+                return "cached", hit[1]
+            if lead_id in self._inflight:
+                return "busy", None
+            self._inflight.add(lead_id)
+            return "run", None
+
+    def finish(self, lead_id: str, result: Any = None) -> None:
+        """Always call after begin() returned "run"; pass the result on success."""
+        with self._lock:
+            self._inflight.discard(lead_id)
+            if result is not None:
+                self._recent[lead_id] = (self._now() + self._ttl, result)
+                while len(self._recent) > self._max:
+                    del self._recent[next(iter(self._recent))]
 
 
 class EnrichmentResponse(BaseModel):
@@ -337,14 +393,16 @@ def run_server(host: str, port: int, config) -> None:
             "stage6_websearch_enabled": config.stage6_websearch_enabled,
         }
 
-    @app.post("/enrich", response_model=EnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
-    def enrich_single_lead(payload: LeadRequest):
-        try:
-            lead_dict = payload.model_dump(exclude_unset=True)
-            known_field_sources = lead_dict.pop("Field_Sources", None)
-            candidate_pool = lead_dict.pop("Candidate_Pool", None)
-            result = orchestrator.process_lead(lead_dict, known_field_sources=known_field_sources)
+    lead_runs = LeadRunRegistry()
 
+    def run_once_per_lead(item: LeadRequest):
+        lead_dict = item.model_dump(exclude_unset=True)
+        known_field_sources = lead_dict.pop("Field_Sources", None)
+        candidate_pool = lead_dict.pop("Candidate_Pool", None)
+        lead_id = lead_dict.pop("Lead_Id", None)
+
+        def process():
+            result = orchestrator.process_lead(lead_dict, known_field_sources=known_field_sources)
             # Own try/except: this must never turn an otherwise-successful
             # enrichment into a 500, or slow the normal complete path down on
             # a dedup-side failure (bad pool shape, Groq outage) -- an
@@ -356,8 +414,29 @@ def run_server(host: str, port: int, config) -> None:
                         result["duplicate_flag"] = flag
                 except Exception as exc:
                     log.error("Duplicate-detection check failed for single-lead /enrich: %s", exc)
-
             return result
+
+        if not lead_id:
+            return process()
+        state, cached = lead_runs.begin(lead_id)
+        if state == "cached":
+            log.info("Lead %s: returning the stored result of a run whose response never reached the caller", lead_id)
+            return cached
+        if state == "busy":
+            raise HTTPException(status_code=409, detail="already_running", headers={"Retry-After": "15"})
+        result = None
+        try:
+            result = process()
+            return result
+        finally:
+            lead_runs.finish(lead_id, result)
+
+    @app.post("/enrich", response_model=EnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
+    def enrich_single_lead(payload: LeadRequest):
+        try:
+            return run_once_per_lead(payload)
+        except HTTPException:
+            raise
         except Exception as exc:
             log.exception("Error enriching lead: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -365,11 +444,7 @@ def run_server(host: str, port: int, config) -> None:
     @app.post("/enrich/batch", response_model=BatchEnrichmentResponse, dependencies=[Depends(verify_shared_secret)])
     def enrich_batch_leads(payload: List[LeadRequest]):
         try:
-            results = []
-            for item in payload:
-                lead_dict = item.model_dump(exclude_unset=True)
-                known_field_sources = lead_dict.pop("Field_Sources", None)
-                results.append(orchestrator.process_lead(lead_dict, known_field_sources=known_field_sources))
+            results = [run_once_per_lead(item) for item in payload]
             duplicate_candidates = find_duplicate_candidates(
                 [r["lead"] for r in results], threshold=config.dedup_match_threshold,
             )
@@ -379,6 +454,8 @@ def run_server(host: str, port: int, config) -> None:
                 "duplicate_review_queue": duplicate_candidates,
                 "dedup_threshold_used": config.dedup_match_threshold,
             }
+        except HTTPException:
+            raise
         except Exception as exc:
             log.exception("Error in batch enrichment: %s", exc)
             raise HTTPException(status_code=500, detail=str(exc)) from exc

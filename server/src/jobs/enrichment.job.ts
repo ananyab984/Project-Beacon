@@ -6,6 +6,7 @@ import { normalizeServices } from "../lib/normalizeServices";
 import { normalizeToolsSoftware } from "../lib/normalizeToolsSoftware";
 import { normalizeVendorExperience } from "../lib/normalizeVendorExperience";
 import { retryWithBackoff, isRetryableByDefault } from "../lib/retryWithBackoff";
+import { waitWhileBusy } from "../lib/waitWhileBusy";
 import { computeOnHoldTransition } from "../lib/onHoldTransition";
 import { computeEnrichmentVerdict } from "../lib/enrichmentVerdict";
 import { drainWithConcurrency } from "../lib/drainWithConcurrency";
@@ -164,11 +165,18 @@ export async function enrichLeadById(leadId: string) {
     // true` body is a normal 200 and never reaches this retry logic at all;
     // only genuine connectivity failures (service unreachable, Node's own
     // timeout firing) do.
-    const { data } = await retryWithBackoff(
+    //
+    // Retrying is also safe against double-paying: Lead_Id makes the
+    // enrichment service refuse a repeat while this lead is still running
+    // there (409 -> waitWhileBusy waits and asks again) and hand back the
+    // stored result once it has finished (main.py's LeadRunRegistry), so a
+    // dropped connection no longer starts a second waterfall.
+    const { data } = await waitWhileBusy(() => retryWithBackoff(
       (signal) =>
         axios.post(
           `${config.enrichmentServiceUrl}/enrich`,
           {
+            Lead_Id: lead.id,
             // Send everything we already have, not just email/name -- the
             // pipeline's own "never overwrite existing data" + critical-field
             // audit only work correctly if it can see the lead's real current
@@ -223,7 +231,7 @@ export async function enrichLeadById(leadId: string) {
       // resolve in ~150-170s, so this multi-thousand-second ceiling is a
       // safety net for a genuine outlier, not the expected per-lead wait.
       { isRetryable: isRetryableByDefault, deadlineMs: 4_400_000 }
-    );
+    ), Date.now() + 4_400_000);
 
     let enrichedEmail = lead.email;
     let enrichedContactNumber = lead.contactNumber;
