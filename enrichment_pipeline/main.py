@@ -330,6 +330,16 @@ def run_server(host: str, port: int, config) -> None:
         version="1.0.0",
     )
 
+    @app.on_event("startup")
+    async def size_request_threads() -> None:
+        # /enrich is a sync `def`, so each in-flight lead holds one AnyIO
+        # worker thread for its whole run (default 40). Room for every lead
+        # Node may send at once, plus /health and other short calls.
+        import anyio.to_thread
+        from core.resilience import ENRICHMENT_CONCURRENCY
+
+        anyio.to_thread.current_default_thread_limiter().total_tokens = max(40, ENRICHMENT_CONCURRENCY + 16)
+
     orchestrator = EnrichmentOrchestrator(config)
 
     # Served at BOTH paths on purpose. The platform's health check is what

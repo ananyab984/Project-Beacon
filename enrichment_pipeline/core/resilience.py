@@ -24,6 +24,7 @@ for a call already in flight.
 
 from __future__ import annotations
 
+import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
@@ -36,13 +37,31 @@ log = get_logger(__name__)
 
 T = TypeVar("T")
 
-# Sized for "triggered per-lead or in small batches," not public traffic --
-# revisit if this pipeline's concurrent load ever grows materially. A thread
-# left running past its own deadline (see module docstring) holds a slot
-# here until it finishes on its own; under a sustained upstream outage,
-# abandoned-but-still-running threads could pile up and new work would queue
-# behind them even though any single call's own deadline is still honored.
-_executor = ThreadPoolExecutor(max_workers=20, thread_name_prefix="resilience")
+
+def _enrichment_concurrency() -> int:
+    try:
+        n = int(os.getenv("ENRICHMENT_CONCURRENCY", "8"))
+    except ValueError:
+        n = 8
+    return min(128, max(1, n))
+
+
+# How many leads are enriched at once -- ONE knob for the whole pipeline, the
+# same env var Node's poller reads (server/src/config.ts enrichmentConcurrency)
+# in the same container / Render env group. If the two disagree, leads queue
+# inside these pools, which looks like a slow provider. Every per-lead pool is
+# sized from it, +8 headroom because single Add Lead calls /enrich directly,
+# outside Node's cap. Raise it stepwise while watching per-lead latency and
+# quality (docs/DOCKER_DEPLOY.md).
+ENRICHMENT_CONCURRENCY = _enrichment_concurrency()
+PER_LEAD_POOL_SIZE = ENRICHMENT_CONCURRENCY + 8
+
+# Every retried HTTP attempt (Bright Data, Tavily, Claude, Groq) runs here. A
+# lead uses at most one at a time (its stages are sequential), so the per-lead
+# size would do -- 2N+8 leaves room for threads left running past their own
+# deadline (see module docstring), which hold a slot until they finish on
+# their own; never below the historical 20.
+_executor = ThreadPoolExecutor(max_workers=max(20, 2 * ENRICHMENT_CONCURRENCY + 8), thread_name_prefix="resilience")
 
 
 class TransientError(Exception):

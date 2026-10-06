@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from config import Config
-from core.resilience import RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
+from core.resilience import PER_LEAD_POOL_SIZE, RetryExhaustedError, RetryPolicy, TransientError, retry_with_backoff
 from logger import get_logger
 
 log = get_logger(__name__)
@@ -34,10 +34,10 @@ log = get_logger(__name__)
 # slow Parallel calls (one per concurrently-processed lead -- see Node's
 # bounded-concurrency poller in server/src/jobs/enrichment.job.ts) can never
 # starve BrightData/Tavily/Claude calls for OTHER leads being processed at
-# the same time. A bulkhead, not a shared queue. Sized modestly: this
-# pipeline is triggered per-lead or in small batches, not public traffic --
-# revisit alongside Node's own concurrency limit if that ever changes.
-_parallel_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="parallel")
+# the same time. A bulkhead, not a shared queue: one worker per
+# concurrently-enriched lead (core/resilience.py's PER_LEAD_POOL_SIZE, which
+# follows ENRICHMENT_CONCURRENCY).
+_parallel_executor = ThreadPoolExecutor(max_workers=PER_LEAD_POOL_SIZE, thread_name_prefix="parallel")
 
 # Budget for CREATING one run (a quick POST), retries included.
 _CREATE_DEADLINE_SECONDS = 120.0

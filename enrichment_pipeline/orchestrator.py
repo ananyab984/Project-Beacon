@@ -10,6 +10,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Dict, Literal, Optional, TypedDict
 
 from config import Config
+from core.resilience import PER_LEAD_POOL_SIZE
 from core.dedup import (
     IDENTITY_AMBIGUOUS,
     IDENTITY_DIVERGENT,
@@ -52,8 +53,8 @@ log = get_logger(__name__)
 # HTTP attempt) and providers/parallel_client.py's `_parallel_executor`
 # (Parallel's own retry bulkhead) -- this pool only ever holds ONE
 # outstanding dispatch per lead being processed, for the span of Tier 1's
-# scrape, so 8 workers comfortably covers real concurrent load.
-_tier_overlap_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="tier-overlap")
+# scrape, so one worker per concurrently-enriched lead covers real load.
+_tier_overlap_executor = ThreadPoolExecutor(max_workers=PER_LEAD_POOL_SIZE, thread_name_prefix="tier-overlap")
 
 # Fields where a manually-typed value is frequently just an approximation (a
 # name spelling/nickname, a rough one-item service guess picked from a

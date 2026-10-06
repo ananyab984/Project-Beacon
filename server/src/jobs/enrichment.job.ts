@@ -32,14 +32,12 @@ function splitToArray(val: unknown): string[] | undefined {
 // test), the ceiling on concurrent /enrich calls from ANY ingestion path but
 // single Add Lead. A real Parallel call measured 150-170s (up to 486s for a
 // thin lead that falls through to Stage 6), so working them one at a time
-// took ~50-60 minutes per 20 leads. Raised from 4 to 8 now that pollInFlight below
-// makes total concurrency actually equal to this number instead of an
-// uncontrolled multiple of it (see that comment) -- 8 is the natural
-// ceiling, matching BOTH of the enrichment service's own bulkheads exactly
-// (`_parallel_executor` in providers/parallel_client.py and
-// `_tier_overlap_executor` in orchestrator.py, each `max_workers=8`), so this
-// uses the capacity that's already provisioned there without exceeding it.
-const POLL_CONCURRENCY = 8;
+// took ~50-60 minutes per 20 leads. pollInFlight below makes total
+// concurrency actually equal to this number instead of an uncontrolled
+// multiple of it (see that comment). Set by ENRICHMENT_CONCURRENCY, which
+// also sizes the enrichment service's own pools (`_parallel_executor`,
+// `_tier_overlap_executor`) so the two always match.
+const POLL_CONCURRENCY = config.enrichmentConcurrency;
 
 // node-cron does not prevent overlapping invocations of the same scheduled
 // callback -- it fires on the wall-clock schedule regardless of whether the

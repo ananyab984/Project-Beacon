@@ -203,6 +203,11 @@ export const config = {
   // default; raise it only together with that window (Render
   // maxShutdownDelaySeconds, ECS stopTimeout).
   shutdownDrainMs: parseInt(process.env.SHUTDOWN_DRAIN_MS || "20000", 10),
+  // How many leads are enriched at once. The SAME env var sizes the
+  // enrichment service's pools (enrichment_pipeline/core/resilience.py), so
+  // set it once for both (one container on AWS, an env group on Render).
+  // 1-128, default 8; raise stepwise per docs/DOCKER_DEPLOY.md.
+  enrichmentConcurrency: Math.min(128, Math.max(1, parseInt(process.env.ENRICHMENT_CONCURRENCY || "8", 10) || 8)),
   // After boot, wait this long before requeueing leads an earlier process
   // left IN_PROGRESS (a crash). Render's zero-downtime deploy keeps the old
   // instance running briefly, so 5 min there; 0 on AWS (stop-before-start,
