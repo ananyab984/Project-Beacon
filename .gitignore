@@ -54,6 +54,15 @@ Thumbs.db
 *.sln
 *.sw?
 
+# Testing & Coverage
+coverage/
+*.coverage
+test-results/
+
+# Scratch files
+scratch_*
+*.scratch.*
+
 # Research PoCs -- local only, never committed
 POC/
 POC's/

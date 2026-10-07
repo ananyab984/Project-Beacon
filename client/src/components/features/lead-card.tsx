@@ -32,7 +32,7 @@ export function LeadCard({
             <span className="text-sm font-semibold text-foreground truncate">{label}</span>
             {!lead.identityResolved && (
               <Badge variant="outline" className="border-warning/40 text-warning text-[10px] px-1.5 py-0 font-medium">
-                unresolved identity
+                Pending contact details
               </Badge>
             )}
           </div>
@@ -80,13 +80,32 @@ export function LeadCard({
       {lead.flags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {lead.flags.map((f) => (
-            <Badge key={f} variant="outline" className={cn(
-              "text-[10px] px-1.5 py-0 font-medium",
-              f === "DNC" && "border-destructive/40 text-destructive",
-              f === "HIGH_PRIORITY" && "border-warning/40 text-warning",
-              f === "WATCHING" && "border-accent/40 text-accent",
-              f === "ON_HOLD" && "border-muted-foreground/30 text-muted-foreground",
-            )}>
+            <Badge
+              key={f}
+              variant="outline"
+              className={cn(
+                "text-[10px] px-1.5 py-0 font-medium",
+                f === "DNC" && "border-destructive/40 text-destructive",
+                f === "HIGH_PRIORITY" && "border-warning/40 text-warning",
+                f === "WATCHING" && "border-accent/40 text-accent",
+                f === "ON_HOLD" && "border-muted-foreground/30 text-muted-foreground",
+              )}
+              title={
+                f === "ON_HOLD"
+                  ? !lead.profileLink || lead.profileLink.trim() === ""
+                    ? "On Hold: Profile Link Needed"
+                    : lead.onHoldReason === "INCOMPLETE_PROFILE"
+                    ? "On Hold: Incomplete Profile"
+                    : lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED"
+                    ? "On Hold: System Error / Stalled"
+                    : lead.onHoldReason === "TIMEOUT"
+                    ? "On Hold: Enrichment Timed Out"
+                    : lead.onHoldReason === "MANUAL"
+                    ? "On Hold: Manual Hold"
+                    : "On Hold: Pending Review"
+                  : undefined
+              }
+            >
               {f}
             </Badge>
           ))}

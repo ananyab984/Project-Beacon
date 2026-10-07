@@ -8,10 +8,8 @@ import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
 import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { candidateRoleOf } from "../lib/messageTemplates";
-import { applyLinkFor } from "../lib/onboarding/applyLinkFor";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { getDraftingOrchestrator } from "../drafting/instance";
-import { isThinProfileDraft } from "../drafting/evaluator";
 import { assertContractorOwnsLead } from "./lead.routes";
 
 export const conversationRouter = Router();
@@ -113,6 +111,7 @@ conversationRouter.post(
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
     if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    if (lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted — no actions can be taken on it");
     // Security fix: this had no ownership check at all -- a contractor could
     // pass any leadId (found by guessing/knowing it, since nothing here
     // validated it) and a conversation would be created with THEM as its
@@ -192,9 +191,9 @@ conversationRouter.post(
       include: { lead: true },
     });
     if (!conversation) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+    if (conversation.lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted — no actions can be taken on it");
 
     let draft: { subject: string | null; body: string };
-    let lowDataWarning = false;
     try {
       // Previously omitted Headline/About_Snippet/Current_Title/
       // Tools_Software/Certifications entirely -- LinkedIn drafts were
@@ -202,7 +201,7 @@ conversationRouter.post(
       // shares the exact same payload builder (and gets Parallel's richer
       // data) as the email route. Drafting runs in-process (server/src/drafting/)
       // -- no network hop, no DRAFTING_SERVICE_URL to misconfigure.
-      const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin", false, applyLinkFor("linkedin", conversation.lead));
+      const result = await getDraftingOrchestrator().processDraft(buildDraftLeadPayload(conversation.lead), "linkedin", false, conversation.lead.id);
       draft = { subject: result.subject, body: result.body };
       if (result.verdict === "INELIGIBLE" || !draft.body.trim()) {
         const reason = result.flags[0] || "missing required lead data";
@@ -212,7 +211,6 @@ conversationRouter.post(
           `Cannot draft for this lead yet (${reason}) — add the missing info to the lead first`
         );
       }
-      lowDataWarning = isThinProfileDraft(result.flags);
     } catch (err: any) {
       if (err instanceof ApiError) throw err;
       throw new ApiError(
@@ -222,7 +220,7 @@ conversationRouter.post(
       );
     }
 
-    return res.json({ draft: { body: draft.body }, lowDataWarning });
+    return res.json({ draft: { body: draft.body } });
   })
 );
 
@@ -252,6 +250,7 @@ conversationRouter.post(
     if (role !== "owner" && conversation.recruiterId !== req.user!.id) {
       throw new ApiError(403, "FORBIDDEN", "You do not have permission to send messages in this conversation");
     }
+    if (conversation.lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted — no actions can be taken on it");
 
     if (conversation.channel !== ConversationChannel.LINKEDIN && conversation.channel !== ConversationChannel.EMAIL) {
       throw new ApiError(

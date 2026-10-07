@@ -22,7 +22,7 @@ import { RefreshCw } from "lucide-react";
  *    wrapping it was never the right answer at this width.
  */
 
-export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "queued" | "pending" | "needs_review";
+export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "pending" | "needs_review";
 
 /** Real, measured Parallel `core` durations this session, against the live
  *  API, no mocks: 233s / 247s / 256s / 263s / 486s (one outlier). There is no
@@ -43,12 +43,11 @@ export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "queue
 const TYPICAL_MS = 4 * 60_000;
 const TYPICAL_CAP = 85;
 const OUTLIER_MS = 8 * 60_000;
-const OUTLIER_CAP = 96;
+const OUTLIER_CAP = 95;
 
-/** Elapsed-time estimate of enrichment progress, 0-96, or `null` with no
- *  `startedAt`. Only meaningful for an IN_PROGRESS lead: a re-queued PENDING
- *  lead still carries its PREVIOUS run's startedAt, so callers must gate on
- *  status, not on startedAt being present (see `genuinelyRunning` below). Pure
+/** Elapsed-time estimate of enrichment progress, 0-95, or `null` if the lead
+ *  hasn't actually started yet (still queued -- `startedAt` is stamped only
+ *  once enrichLeadById's call begins, never for a merely-PENDING lead). Pure
  *  and pass `now` in explicitly so a re-render is the only thing that makes
  *  the number move -- no internal clock to fake out in a test. */
 export function estimateEnrichmentProgress(startedAt: string | null | undefined, now: number): number | null {
@@ -76,11 +75,6 @@ export function enrichmentStatusKindOf(lead: ApiLead): EnrichmentStatusKind {
   // progress forever -- the one outcome that most needs a human was the one
   // that looked like it needed nothing.
   if (lead.enrichmentStatus === "FLAGGED_REVIEW") return "needs_review";
-  // Waiting for one of pollPendingEnrichment's slots, not running. Folding
-  // this into "enriching" is what made a retried lead read "Enriching (96%)"
-  // the instant it was re-queued: the estimate ran off the timestamp of its
-  // PREVIOUS run, which every re-queue path leaves in place.
-  if (lead.enrichmentStatus === "PENDING") return "queued";
   return "enriching";
 }
 
@@ -101,54 +95,74 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
   const kind = enrichmentStatusKindOf(lead);
   const fieldCount = lead.enrichedFieldCount ?? 0;
   // A retry only makes sense for a hold the system placed, never a
-  // recruiter's own deliberate one.
-  const canRetry = kind === "on_hold" && lead.onHoldReason !== "MANUAL";
+  const [now, setNow] = useState(() => Date.now());
+  const elapsed = lead.enrichmentStartedAt ? now - new Date(lead.enrichmentStartedAt).getTime() : 0;
+  const isPastOutlier = kind === "enriching" && elapsed > OUTLIER_MS;
+  const isStalledOrSystemError =
+    kind === "pending" ||
+    lead.enrichmentStatus === "STALLED" ||
+    lead.onHoldReason === "SYSTEM_ERROR" ||
+    lead.onHoldReason === "TIMEOUT";
+
+  // A retry is available for stalled runs, system-placed holds, or if an in-flight run has exceeded the outlier window.
+  // It always routes to the main pipeline to pick up from where it left off, never Autumn.
+  const canRetry =
+    isStalledOrSystemError ||
+    (kind === "on_hold" && lead.onHoldReason !== "MANUAL") ||
+    isPastOutlier;
   // Server-side truth, not local click state -- so the button is still
   // disabled after a reload or a trip to another page mid-run.
   const reenriching = lead.reenrichment?.status === "RUNNING";
   const missingContact = !lead.email && !lead.contactNumber;
 
-  // Ticks this row every few seconds while it's genuinely in flight, purely
-  // to move `now` forward so estimateEnrichmentProgress recomputes -- the
-  // underlying data (enrichmentStartedAt) never changes, only the clock does.
-  // Gated on IN_PROGRESS, not merely on a startedAt being present: a queued
-  // lead keeps its previous run's startedAt (see enrichmentStatusKindOf).
-  // claimNextPendingLead stamps a fresh one at claim time, so the estimate
-  // starts from 0 the moment work actually begins. Scoped tightly so a table
-  // of 200 mostly-idle rows isn't running 200 live timers.
-  const genuinelyRunning =
-    kind === "enriching" && lead.enrichmentStatus === "IN_PROGRESS" && !!lead.enrichmentStartedAt;
-  const [now, setNow] = useState(() => Date.now());
+  // Only ticks when genuinely in flight and not past outlier
+  const genuinelyRunning = lead.enrichmentStatus === "IN_PROGRESS" && !!lead.enrichmentStartedAt;
   useEffect(() => {
     if (!genuinelyRunning) return;
     const id = setInterval(() => setNow(Date.now()), 3000);
     return () => clearInterval(id);
   }, [genuinelyRunning]);
 
-  const progressPct = genuinelyRunning ? estimateEnrichmentProgress(lead.enrichmentStartedAt, now) : null;
+  const progressPct = genuinelyRunning && !isPastOutlier ? estimateEnrichmentProgress(lead.enrichmentStartedAt, now) : null;
 
   const tone: Record<EnrichmentStatusKind, string> = {
     on_hold: "text-warning",
     enriched: "text-emerald-400",
     enriching: "text-amber-400",
-    queued: "text-muted-foreground",
     pending: "text-muted-foreground",
     needs_review: "text-warning",
   };
   const label: Record<EnrichmentStatusKind, string> = {
     on_hold: `On Hold (${fieldCount})`,
     enriched: `Enriched (${fieldCount})`,
-    // IN_PROGRESS with no startedAt (a row predating the column) keeps the
-    // plain ellipsis rather than a fabricated "0%".
-    enriching: progressPct != null ? `Enriching (${progressPct}%)` : "Enriching…",
-    queued: "Queued",
+    // If running, show percentage; if past outlier window, indicate taking longer instead of freezing at 96%;
+    // if pending/queued, show ellipsis
+    enriching: isPastOutlier
+      ? "Halted (taking longer)"
+      : progressPct != null
+      ? `Enriching (${progressPct}%)`
+      : "Enriching…",
     pending: "Stalled",
     needs_review: `Check identity (${fieldCount})`,
   };
-  // Opens the details dialog: this kind is actionable by definition, and the
-  // dialog is where the resolved-vs-submitted names can be compared.
+  // Opens the details dialog: these kinds are actionable by definition; for
+  // "pending" (Stalled) the dialog shows the on-hold reason so the user is
+  // never left clueless about why enrichment didn't proceed.
   const countsShown = kind === "on_hold" || kind === "enriched" || kind === "needs_review";
-  const interactive = countsShown;
+  const interactive = countsShown || kind === "pending";
+
+  const onHoldReasonLabel =
+    !lead.profileLink || lead.profileLink.trim() === ""
+      ? "Profile Link Needed"
+      : lead.onHoldReason === "INCOMPLETE_PROFILE"
+      ? "Incomplete Profile"
+      : lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED"
+      ? "System Error / Stalled"
+      : lead.onHoldReason === "TIMEOUT"
+      ? "Enrichment Timed Out"
+      : lead.onHoldReason === "MANUAL"
+      ? "Manual Hold"
+      : "Pending Review";
 
   return (
     <div className="inline-flex items-center gap-1.5 whitespace-nowrap">
@@ -164,11 +178,13 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
           onClick={() => onOpenDetails(lead)}
           className={`font-semibold text-xs hover:underline cursor-pointer ${tone[kind]}`}
           title={
-            `${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found` +
-            (kind === "on_hold" ? " — open to review or resume" : "") +
-            (kind === "needs_review"
-              ? " — the resolved profile may be a different person; open to check"
-              : "")
+            kind === "pending"
+              ? `Enrichment stalled: ${onHoldReasonLabel} — click to view reason and retry`
+              : kind === "on_hold"
+              ? `On Hold: ${onHoldReasonLabel} (${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} fields found) — click to review or resume`
+              : kind === "needs_review"
+              ? `Check identity (${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} fields found) — the resolved profile may be a different person; open to check`
+              : `${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found`
           }
         >
           {label[kind]}
@@ -177,13 +193,13 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
         <span
           className={`font-semibold text-xs ${tone[kind]}`}
           title={
-            kind === "queued"
-              ? "Waiting for a free enrichment slot"
-              : kind !== "enriching"
-                ? "Enrichment didn't conclude"
+            kind !== "enriching"
+              ? "Enrichment didn't conclude"
+              : isPastOutlier
+                ? "Enrichment is taking longer than usual — still in progress"
                 : progressPct != null
                   ? "Estimated from elapsed time -- a typical run takes about 4 minutes"
-                  : "Running"
+                  : "Queued, not yet started"
           }
         >
           {label[kind]}
@@ -194,22 +210,30 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
           onClick={() => onRetry(lead.id)}
           disabled={retryPending}
           className="text-xs text-destructive hover:underline cursor-pointer disabled:opacity-50"
-          title="Enrichment didn't conclude — click to retry"
+          title="Retry enrichment pipeline (picks up from where it left off)"
         >
           · Retry
         </button>
       )}
       <button
-        onClick={() => onReenrich(lead)}
-        disabled={reenriching}
+        onClick={() => {
+          if (isStalledOrSystemError) {
+            onRetry(lead.id);
+          } else {
+            onReenrich(lead);
+          }
+        }}
+        disabled={isStalledOrSystemError ? retryPending : reenriching}
         className="shrink-0 rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground cursor-pointer disabled:opacity-50 disabled:cursor-default disabled:hover:bg-transparent"
         title={
-          reenriching
+          isStalledOrSystemError
+            ? "Retry enrichment pipeline (picks up from where it left off)"
+            : reenriching
             ? "An Autumn re-enrichment run is already in progress for this lead"
             : "Re-research this profile with Autumn (takes a few minutes)"
         }
       >
-        <RefreshCw className={`h-3.5 w-3.5 ${reenriching ? "animate-spin" : ""}`} />
+        <RefreshCw className={`h-3.5 w-3.5 ${(isStalledOrSystemError ? retryPending : reenriching) ? "animate-spin" : ""}`} />
       </button>
     </div>
   );

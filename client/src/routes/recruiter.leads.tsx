@@ -730,7 +730,13 @@ function LeadsPage() {
                                 : "Profile data still incomplete"
                             }
                           />
-                          <span className="font-medium">{label}</span>
+                          <button
+                            type="button"
+                            onClick={() => setDetailsLead(l)}
+                            className="font-medium text-left hover:underline cursor-pointer"
+                          >
+                            {label}
+                          </button>
                           <LeadNotifyBell leadId={l.id} />
                         </div>
                       </td>
@@ -868,6 +874,7 @@ function LeadsPage() {
         lead={detailsLead}
         onSave={(id, patch) => enrichMutation.mutateAsync({ id, patch })}
         onToggleHold={(id, hold) => (hold ? holdMutation : unholdMutation).mutateAsync(id)}
+        onRetry={(id) => retryEnrichmentMutation.mutateAsync(id)}
       />
 
       <ReenrichmentModal {...reenrichment.modalProps} />

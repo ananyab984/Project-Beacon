@@ -468,7 +468,7 @@ export async function enrichLeadById(leadId: string) {
     // details would simply be untrue. Fires regardless of entry path (poll
     // job or immediate Add-Lead/bulk-upload call) since both funnel through
     // this same function.
-    if (fullyEnriched && leadWriteCount > 0 && lead.createdByContractorId) {
+    if (fullyEnriched && leadWriteCount > 0 && lead.createdByContractorId && !lead.deletedAt) {
       const leadName = enrichedDisplayName || lead.maskedLabel || "your lead";
       createNotification({
         recipientId: lead.createdByContractorId,
@@ -616,29 +616,25 @@ export async function stallOverdueEnrichments() {
       // wait out.
       OR: [{ enrichmentStartedAt: { lt: cutoff } }, { enrichmentStartedAt: null }],
     },
-    select: { id: true, flags: true, onHoldReason: true },
+    select: { id: true, flags: true, onHoldReason: true, profileLink: true },
   });
   if (overdue.length === 0) return;
 
-  // Also flags ON_HOLD/SYSTEM_ERROR (reusing that reason -- a stall is,
-  // semantically, the pipeline failing to conclude for a technical reason,
-  // same bucket as a genuine crash) so this folds into the same "On Hold (n)"
-  // display and poll-exclusion as timeout/system_error, instead of a
-  // separately-labeled STALLED status that the poll job would otherwise
-  // still leave un-excluded. enrichmentStatus stays STALLED (distinct from
-  // plain PENDING) purely as an internal diagnostic of *how* it got here.
-  // updateMany can't merge each row's own flags array, so this is a
-  // per-lead loop -- batch size here is small (a genuinely stuck lead is
-  // rare), not a hot path like pollPendingEnrichment below.
   for (const lead of overdue) {
+    const hasLink = !!(lead.profileLink && lead.profileLink.trim() !== "");
     const { flags, onHoldReason } = computeOnHoldTransition({
       currentFlags: lead.flags,
       currentOnHoldReason: lead.onHoldReason,
-      outcome: "system_error",
+      outcome: hasLink ? "system_error" : "incomplete_profile",
     });
     await prisma.lead.update({
       where: { id: lead.id },
-      data: { enrichmentStatus: "STALLED", flags: flags as any, onHoldReason },
+      data: {
+        enrichmentStatus: "STALLED",
+        flags: flags as any,
+        onHoldReason,
+        enrichmentStartedAt: null,
+      },
     });
   }
   console.warn(`[enrichment.job] Marked ${overdue.length} lead(s) STALLED after exceeding the ${STALL_TIMEOUT_MS / 60_000}min timeout: ${overdue.map((l) => l.id).join(", ")}`);

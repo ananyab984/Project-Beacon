@@ -364,23 +364,26 @@ export async function runAutumnReenrichment(runId: string): Promise<void> {
     // re-enrichment only ever runs on a lead a recruiter already has open and
     // deliberately re-ran, well past initial dedup review, so a fuzzy-match
     // check at this point has no one left to usefully flag it to.
-    const reenrichedName = (mapped.updates as { displayName?: unknown }).displayName as string | undefined;
-    const leadName = reenrichedName || current.displayName || current.fullName || current.maskedLabel || "your lead";
-    resolveLeadNotificationRecipients(current, { includeOwners: true })
-      .then((recipients) => {
-        for (const { recipientId, role } of recipients) {
-          const basePath = basePathForRole(role);
-          createNotification({
-            recipientId,
-            type: "ENRICHMENT_COMPLETE",
-            title: `Enrichment finished for ${leadName}`,
-            body: `re-enrichment finished for ${leadName} -- their profile has been refreshed.`,
-            slackCard: formatEnrichmentCompleteSlackCard(leadName, basePath),
-            link: `${basePath}/leads`,
-          }).catch((err) => console.error(`[reenrichment] enrichment-complete notify failed for lead ${lead.id} -> ${recipientId}:`, err));
-        }
-      })
-      .catch((err) => console.error(`[reenrichment] enrichment-complete recipient resolution failed for lead ${lead.id}:`, err));
+    // Guard: skip fan-out if the lead was deleted while the run was in flight.
+    if (!current.deletedAt) {
+      const reenrichedName = (mapped.updates as { displayName?: unknown }).displayName as string | undefined;
+      const leadName = reenrichedName || current.displayName || current.fullName || current.maskedLabel || "your lead";
+      resolveLeadNotificationRecipients(current, { includeOwners: true })
+        .then((recipients) => {
+          for (const { recipientId, role } of recipients) {
+            const basePath = basePathForRole(role);
+            createNotification({
+              recipientId,
+              type: "ENRICHMENT_COMPLETE",
+              title: `Enrichment finished for ${leadName}`,
+              body: `re-enrichment finished for ${leadName} -- their profile has been refreshed.`,
+              slackCard: formatEnrichmentCompleteSlackCard(leadName, basePath),
+              link: `${basePath}/leads`,
+            }).catch((err) => console.error(`[reenrichment] enrichment-complete notify failed for lead ${lead.id} -> ${recipientId}:`, err));
+          }
+        })
+        .catch((err) => console.error(`[reenrichment] enrichment-complete recipient resolution failed for lead ${lead.id}:`, err));
+    }
   } catch (err: any) {
     const status = err?.response?.status;
     const message =

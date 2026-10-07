@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import type { ApiLead } from "@/lib/api-types";
 
@@ -17,6 +18,8 @@ interface Props {
    *  "· Hold"/"· Resume" links, which put the control on a row that has no
    *  room to explain what it means. */
   onToggleHold: (id: string, hold: boolean) => Promise<unknown>;
+  /** Retries the main enrichment pipeline (picking up from where it left off). */
+  onRetry?: (id: string) => Promise<unknown>;
 }
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -142,9 +145,10 @@ const FIELD_DEFS: Array<{ label: string; key: string; sourceKey: string; kind: F
  * are pre-filled; anything still missing is an empty, directly-editable
  * input -- the recruiter can add a contact (or fix anything else) and save
  * straight from here instead of the "On Hold" manual-enrichment flow. */
-export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onToggleHold }: Props) {
+export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onToggleHold, onRetry }: Props) {
   const [values, setValues] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   // Held locally so the toggle flips immediately: the parent passes the same
   // `lead` object until its query refetches, so reading the flag straight off
   // the prop would leave the control showing the pre-click state.
@@ -159,7 +163,7 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
       initial[f.key] = f.kind === "list" ? formatList(raw) : raw != null ? String(raw).trim() : "";
     }
     setValues(initial);
-    setOnHold((lead.flags ?? []).includes("ON_HOLD"));
+    setOnHold((lead.flags ?? []).includes("ON_HOLD") || lead.enrichmentStatus === "STALLED" || lead.onHoldReason != null);
   }, [lead]);
 
   if (!lead) return null;
@@ -290,7 +294,7 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
 
         <div className="grid grid-cols-[130px_1fr] gap-3 items-start">
           <Label className="text-muted-foreground text-xs pt-2">Enrichment Status</Label>
-          <div>
+          <div className="w-full">
             <div className="inline-flex rounded-md border border-border p-0.5">
               {([false, true] as const).map((hold) => (
                 <button
@@ -312,12 +316,66 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
                 </button>
               ))}
             </div>
-            <p className="mt-1 text-[10px] text-muted-foreground">
-              Mark as on hold if enrichment is incomplete or needs follow-up.
-            </p>
-            {onHold && lead.onHoldReason === "INCOMPLETE_PROFILE" && (
-              <p className="mt-1 text-[10px] text-warning">
-                Parallel didn't return the complete LinkedIn profile, even after retrying (including once on its "pro" tier where core made no progress). Re-enrich or fill it in manually.
+            {onHold ? (
+              <div className="mt-2.5 rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs">
+                <div className="flex items-center gap-2 font-semibold text-warning">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>
+                    Reason on hold:{" "}
+                    {!lead.profileLink || lead.profileLink.trim() === ""
+                      ? "Profile Link Needed"
+                      : lead.onHoldReason === "INCOMPLETE_PROFILE"
+                      ? "Incomplete Profile"
+                      : lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED"
+                      ? "System Error / Stalled"
+                      : lead.onHoldReason === "TIMEOUT"
+                      ? "Enrichment Timed Out"
+                      : lead.onHoldReason === "MANUAL"
+                      ? "Manual Hold"
+                      : "Pending Review"}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] text-warning/90 leading-relaxed">
+                  {!lead.profileLink || lead.profileLink.trim() === ""
+                    ? "This profile has no profile link. Leads without a profile link cannot be enriched and remain on hold so they never enter an enrichment loop. Add a profile link to enable enrichment."
+                    : lead.onHoldReason === "INCOMPLETE_PROFILE"
+                    ? "Parallel didn't return the complete profile even after attempting extraction. Re-enrich or fill in missing details manually below."
+                    : lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED"
+                    ? "Enrichment halted or encountered a system error during execution. Click Retry below to run the pipeline again and pick up where it left off."
+                    : lead.onHoldReason === "TIMEOUT"
+                    ? "Enrichment reached the maximum execution timeout before completing all scraping stages. Click Retry below to re-run."
+                    : lead.onHoldReason === "MANUAL"
+                    ? "This lead was placed on hold manually for team review."
+                    : "This lead is currently on hold. Review fields or resume enrichment."}
+                </p>
+                {onRetry && (lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED" || lead.onHoldReason === "TIMEOUT") && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={retrying}
+                    onClick={async () => {
+                      setRetrying(true);
+                      try {
+                        await onRetry(lead.id);
+                        toast.success("Queued for pipeline retry (picking up from where it left off)");
+                        onOpenChange(false);
+                      } catch (err: any) {
+                        toast.error(err?.message ?? "Failed to retry enrichment");
+                      } finally {
+                        setRetrying(false);
+                      }
+                    }}
+                    className="mt-2.5 h-7 text-xs border-warning/40 text-warning hover:bg-warning/20 hover:text-warning"
+                  >
+                    <RefreshCw className={`mr-1.5 h-3 w-3 ${retrying ? "animate-spin" : ""}`} />
+                    Retry Enrichment Pipeline
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <p className="mt-1 text-[10px] text-muted-foreground">
+                Mark as on hold if enrichment is incomplete or needs follow-up.
               </p>
             )}
           </div>
@@ -422,7 +480,20 @@ export function EnrichmentDetailsDialog({ open, onOpenChange, lead, onSave, onTo
                       <div key={key} className="grid grid-cols-[130px_1fr] gap-3 items-start">
                         <Label className="text-muted-foreground text-[11px] pt-0.5">{key}</Label>
                         <span className="text-xs break-words text-foreground/80">
-                          {typeof value === "object" ? JSON.stringify(value) : String(value)}
+                          {typeof value === "string" && /^https?:\/\//i.test(value) ? (
+                            <a
+                              href={value}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-primary underline hover:text-primary/80 break-all"
+                            >
+                              {value}
+                            </a>
+                          ) : typeof value === "object" ? (
+                            JSON.stringify(value)
+                          ) : (
+                            String(value)
+                          )}
                         </span>
                       </div>
                     ))}

@@ -14,7 +14,7 @@ import { api } from "@/lib/api";
 import type { ApiLead, ApiUser, LeadPriority, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Mail, Link2, Phone, MapPin, Clock, X } from "lucide-react";
+import { Mail, Link2, Phone, MapPin, Clock, X, AlertCircle } from "lucide-react";
 
 const STAGES: LeadStage[] = ["NEW", "CONTACTED", "REPLIED", "NEGOTIATING", "INVITE_SENT", "ONBOARDED", "COLD"];
 
@@ -295,6 +295,41 @@ function LeadDetailDialog({
               </DialogTitle>
               <DialogDescription>Card details and full activity timeline.</DialogDescription>
             </DialogHeader>
+
+            {((lead.flags ?? []).includes("ON_HOLD") || lead.onHoldReason) && (
+              <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-xs">
+                <div className="flex items-center gap-2 font-semibold text-warning">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>
+                    Reason on hold:{" "}
+                    {!lead.profileLink || lead.profileLink.trim() === ""
+                      ? "Profile Link Needed"
+                      : lead.onHoldReason === "INCOMPLETE_PROFILE"
+                      ? "Incomplete Profile"
+                      : lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED"
+                      ? "System Error / Stalled"
+                      : lead.onHoldReason === "TIMEOUT"
+                      ? "Enrichment Timed Out"
+                      : lead.onHoldReason === "MANUAL"
+                      ? "Manual Hold"
+                      : "Pending Review"}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[11px] text-warning/90 leading-relaxed">
+                  {!lead.profileLink || lead.profileLink.trim() === ""
+                    ? "This profile has no profile link. Leads without a profile link cannot be enriched and remain on hold so they never enter an enrichment loop."
+                    : lead.onHoldReason === "INCOMPLETE_PROFILE"
+                    ? "Parallel didn't return the complete profile even after attempting extraction."
+                    : lead.onHoldReason === "SYSTEM_ERROR" || lead.enrichmentStatus === "STALLED"
+                    ? "Enrichment halted or encountered a system error during execution."
+                    : lead.onHoldReason === "TIMEOUT"
+                    ? "Enrichment reached the maximum timeout before finishing."
+                    : lead.onHoldReason === "MANUAL"
+                    ? "This lead was placed on hold manually."
+                    : "This lead is currently on hold."}
+                </p>
+              </div>
+            )}
 
             <div className="rounded-lg border border-border bg-card p-3 space-y-2">
               <Row icon={<MapPin className="h-3.5 w-3.5" />} label="Country" value={lead.country ?? "—"} />

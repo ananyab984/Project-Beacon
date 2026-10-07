@@ -1626,7 +1626,9 @@ export class UnipileService {
             // subscribing recruiters above but via createdByContractorId
             // instead of an opt-in LeadNotificationSubscription row.
             const lead = await prisma.lead.findUnique({ where: { id: conversation.leadId } });
-            if (subs.length > 0 || lead?.createdByContractorId) {
+            // Never notify for a deleted lead -- it's in the recycle bin and
+            // no recruiter action is possible on it anyway.
+            if (!lead?.deletedAt && (subs.length > 0 || lead?.createdByContractorId)) {
               const leadName = lead?.fullName ?? lead?.maskedLabel ?? "a lead";
               const excerpt = messageText.length > 200 ? `${messageText.slice(0, 200)}…` : messageText;
               // Subscribers aren't only recruiters -- an owner can switch the

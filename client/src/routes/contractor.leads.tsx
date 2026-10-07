@@ -368,7 +368,13 @@ function MyLeadsPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
-                        <span className="font-medium">{label}</span>
+                        <button
+                          type="button"
+                          onClick={() => setDetailsLead(l)}
+                          className="font-medium text-left hover:underline cursor-pointer"
+                        >
+                          {label}
+                        </button>
                         {l.dupFlagged && (
                           <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">duplicate</Badge>
                         )}
@@ -445,6 +451,7 @@ function MyLeadsPage() {
         lead={detailsLead}
         onSave={(id, patch) => enrichMutation.mutateAsync({ id, patch })}
         onToggleHold={(id, hold) => (hold ? holdMutation : unholdMutation).mutateAsync(id)}
+        onRetry={(id) => retryEnrichmentMutation.mutateAsync(id)}
       />
 
       <ReenrichmentModal {...reenrichment.modalProps} />

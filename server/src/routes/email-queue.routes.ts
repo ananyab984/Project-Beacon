@@ -5,28 +5,13 @@ import { authenticateJwt } from "../middleware/auth";
 import { requireRole } from "../middleware/rbac";
 import { asyncHandler } from "../lib/asyncHandler";
 import { ApiError, toApiError } from "../lib/apiError";
-import { normalizeEmail, validateEmailFormat } from "../lib/normalize";
 import { UnipileService, findReplyAnchor, resolveReplySubject } from "../services/unipile.service";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { candidateRoleOf } from "../lib/messageTemplates";
-import { applyLinkFor } from "../lib/onboarding/applyLinkFor";
 import { getDraftingOrchestrator } from "../drafting/instance";
-import { isThinProfileDraft } from "../drafting/evaluator";
 import { assertContractorOwnsLead } from "./lead.routes";
 
 export const emailQueueRouter = Router();
-
-/** A recruiter-typed recipient, normalized, or a 400 if it isn't an email.
- *  The TO field reached three paths with no check at all (autosave stored
- *  "test", send handed it straight to Unipile, generate-draft silently
- *  ignored it), so every one of them now goes through this. */
-function requireValidEmail(raw: string): string {
-  const email = normalizeEmail(raw);
-  if (!validateEmailFormat(email)) {
-    throw new ApiError(400, "INVALID_EMAIL", `"${raw.trim()}" is not a valid email address`);
-  }
-  return email;
-}
 
 emailQueueRouter.use(authenticateJwt);
 emailQueueRouter.use(requireRole("owner", "recruiter", "contractor"));
@@ -94,7 +79,7 @@ emailQueueRouter.get(
 );
 
 const EMAIL_QUEUE_ITEM_INCLUDE_LEAD = {
-  lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } },
+  lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true, deletedAt: true } },
 };
 
 /** Add a lead to the recruiter's queue via this page's own "Search Lead" ->
@@ -176,11 +161,6 @@ emailQueueRouter.patch(
   asyncHandler(async (req: Request, res: Response) => {
     const schema = z.object({ subject: z.string().optional(), body: z.string().optional(), to: z.string().optional() });
     const patch = schema.parse(req.body);
-    // Empty clears the field. A LinkedIn profile URL is the one non-email
-    // value this field legitimately carries (see /send's LINKEDIN branch).
-    if (patch.to && patch.to.trim() && !/^https?:\/\//i.test(patch.to.trim())) {
-      patch.to = requireValidEmail(patch.to);
-    }
 
     // Ownership check folded into the lookup itself: a not-found row and a
     // not-owned row both 404 identically, so we never leak whether some other
@@ -210,6 +190,7 @@ emailQueueRouter.post(
       include: { lead: true },
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
+    if (item.lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted — no actions can be taken on it");
 
     // Regenerating after send overwrites subject/body with a fresh draft
     // while the real email already went out with the old ones -- the queue
@@ -229,7 +210,7 @@ emailQueueRouter.post(
     // never reached generate-draft at all (only /send read it), so it could
     // never unblock a NO_EMAIL-ineligible lead no matter what was typed.
     const manualToRaw = typeof req.body?.to === "string" ? req.body.to.trim() : "";
-    const manualTo = manualToRaw ? requireValidEmail(manualToRaw) : null;
+    const manualTo = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualToRaw) ? manualToRaw : null;
     const effectiveEmail = item.lead.email || manualTo;
 
     // Fill-only, never overwrite: if the lead had no email on file yet, a
@@ -240,11 +221,6 @@ emailQueueRouter.post(
     }
 
     let draft: { subject: string | null; body: string };
-    // NO_EMAIL/NO_LINKEDIN_PROFILE (missing contact info) is the only case
-    // that blocks drafting entirely -- thin *content* (few enrichment facts)
-    // still gets a real, honestly-grounded draft from whatever facts exist;
-    // see lowDataWarning below instead of refusing it here.
-    let lowDataWarning = false;
     try {
       // Drafting runs in-process (server/src/drafting/) -- no network hop,
       // no DRAFTING_SERVICE_URL to misconfigure.
@@ -252,7 +228,7 @@ emailQueueRouter.post(
         buildDraftLeadPayload(item.lead, effectiveEmail),
         "email",
         false,
-        applyLinkFor("email", item.lead)
+        item.lead.id
       );
       draft = { subject: result.subject, body: result.body };
       // INELIGIBLE means the pipeline correctly refused to draft anything
@@ -266,7 +242,6 @@ emailQueueRouter.post(
           `Cannot draft for this lead yet (${reason}) — add the missing info to the lead first`
         );
       }
-      lowDataWarning = isThinProfileDraft(result.flags);
     } catch (err: any) {
       if (err instanceof ApiError) throw err;
       // Never fabricate a fallback draft here -- surface the failure and let
@@ -284,12 +259,9 @@ emailQueueRouter.post(
         subject: draft.subject ?? item.subject,
         body: draft.body,
         aiGenerated: true,
-        // Kept untouched from here on (autosave only writes body), so the
-        // AI-draft edit rate can tell what the recruiter changed.
-        aiDraftText: draft.body,
       },
     });
-    return res.json({ item: updated, lowDataWarning });
+    return res.json({ item: updated });
   })
 );
 
@@ -320,6 +292,7 @@ emailQueueRouter.post(
       include: { lead: true },
     });
     if (!item) throw new ApiError(404, "EMAIL_QUEUE_ITEM_NOT_FOUND", "Email queue item not found");
+    if (item.lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted — no actions can be taken on it");
 
     let target: string;
     try {
@@ -330,7 +303,6 @@ emailQueueRouter.post(
       } else {
         target = to || item.lead.email || "";
         if (!target) throw new ApiError(400, "MISSING_EMAIL", "Lead has no email address");
-        target = requireValidEmail(target);
         const resolvedReplyToMessageId = replyToMessageId ?? (await findReplyAnchor(item.leadId, req.user!.id));
         // When the recruiter explicitly picked which message this reply
         // answers, the subject must match THAT thread, not whatever's
@@ -388,6 +360,12 @@ emailQueueRouter.post(
           results.push({ id, success: false, error: "EMAIL_QUEUE_ITEM_NOT_FOUND" });
           continue;
         }
+        // Silently skip deleted leads -- the recruiter may have selected a
+        // batch that contained one that was deleted since the page loaded.
+        if (item.lead.deletedAt) {
+          results.push({ id, success: false, error: "LEAD_DELETED" });
+          continue;
+        }
         // An already-delivered item has nothing left to send -- re-sending
         // it would re-thread onto whatever findReplyAnchor currently
         // resolves to (which has likely moved on since the original send),
@@ -407,8 +385,7 @@ emailQueueRouter.post(
           await UnipileService.sendLinkedInMessage(req.user!.id, item.leadId, target, item.body);
           sentChannel = "LINKEDIN";
         } else if (item.lead.email) {
-          // Throws INVALID_EMAIL, reported per item by the catch below.
-          target = requireValidEmail(item.lead.email);
+          target = item.lead.email;
           const replyToMessageId = await findReplyAnchor(item.leadId, req.user!.id);
           await UnipileService.sendEmail(req.user!.id, item.leadId, target, item.subject, item.body, undefined, replyToMessageId);
           sentChannel = "EMAIL";
