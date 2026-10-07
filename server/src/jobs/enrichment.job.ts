@@ -595,7 +595,7 @@ export async function enrichLeadById(leadId: string) {
 // truly orphaned (the axios call itself never returned control at all --
 // process crash/restart mid-call), never one still working within its own
 // documented budget.
-const STALL_TIMEOUT_MS = 80 * 60_000;
+const STALL_TIMEOUT_MS = 30 * 60_000;
 
 /** Finds leads stuck in IN_PROGRESS past STALL_TIMEOUT_MS and marks them
  *  STALLED so they stop looking like they're still actively enriching.
