@@ -67,52 +67,19 @@ for (const status of ["enrichment_complete", "enrichment_partial", "garbage", un
   );
 }
 
-// --- identity flagging --------------------------------------------------
+// --- no identity flagging ------------------------------------------------
+// A name mismatch never changes a lead's status: recruiters own who a lead is.
 const OK = { conclusion: "exhausted_no_match", enrichmentStatus: "enrichment_complete" };
+const ok = computeEnrichmentVerdict(OK);
+assert.equal(ok.leadStatus, "COMPLETE");
+assert.equal(ok.fullyEnriched, true);
 
-// No verdict, or "unknown", is NOT a flag: no comparison was made, so there
-// is nothing for a human to adjudicate.
-for (const v of [undefined, null, "unknown", "confirmed"]) {
-  const r = computeEnrichmentVerdict({ ...OK, identityVerdict: v });
-  assert.equal(r.identityFlagged, false, `verdict ${String(v)} must not flag`);
-  assert.equal(r.leadStatus, "COMPLETE");
-  assert.equal(r.fullyEnriched, true);
-}
-
-// Both failure shapes flag, and neither can be "fully enriched" -- the fields
-// that came back may describe somebody else entirely.
-for (const v of ["ambiguous", "divergent"]) {
-  const r = computeEnrichmentVerdict({ ...OK, identityVerdict: v });
-  assert.equal(r.identityFlagged, true, `verdict ${v} must flag`);
-  assert.equal(r.leadStatus, "FLAGGED_REVIEW");
-  assert.equal(r.fullyEnriched, false, "a flagged identity is never fully enriched");
-  // FLAGGED_REVIEW is terminal, so the poll job (which claims only PENDING)
-  // does not re-run the paid waterfall on it.
-  assert.notEqual(r.leadStatus, "PENDING");
-}
-
-// A timeout outranks an identity flag -- it must go back to PENDING to be
-// retried, not sit in FLAGGED_REVIEW waiting for a human.
-const timedOutFlagged = computeEnrichmentVerdict({
-  conclusion: "timed_out",
-  enrichmentStatus: "enrichment_partial",
-  identityVerdict: "divergent",
-});
-assert.equal(timedOutFlagged.leadStatus, "PENDING");
-assert.equal(timedOutFlagged.fullyEnriched, false);
-
-// leadStatus is only ever one of the three the schema allows.
+// leadStatus is only ever COMPLETE or PENDING, and a non-timeout always concludes.
 for (const conclusion of ["exhausted_no_match", "short_circuit_success", "timed_out", undefined]) {
-  for (const identityVerdict of [undefined, "unknown", "confirmed", "ambiguous", "divergent"]) {
-    for (const enrichmentStatus of ["enrichment_complete", "enrichment_partial", "weird"]) {
-      const r = computeEnrichmentVerdict({ conclusion, enrichmentStatus, identityVerdict });
-      assert.ok(
-        ["COMPLETE", "PENDING", "FLAGGED_REVIEW"].includes(r.leadStatus),
-        `bad leadStatus ${r.leadStatus}`
-      );
-      // The invariant that keeps costs bounded, restated across every combo.
-      if (conclusion !== "timed_out") assert.notEqual(r.leadStatus, "PENDING");
-    }
+  for (const enrichmentStatus of ["enrichment_complete", "enrichment_partial", "weird"]) {
+    const r = computeEnrichmentVerdict({ conclusion, enrichmentStatus });
+    assert.ok(["COMPLETE", "PENDING"].includes(r.leadStatus), `bad leadStatus ${r.leadStatus}`);
+    if (conclusion !== "timed_out") assert.notEqual(r.leadStatus, "PENDING");
   }
 }
 

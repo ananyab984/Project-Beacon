@@ -1,3 +1,5 @@
+import { BulkOnHoldActions } from "@/components/features/bulk-on-hold-actions";
+import { invalidateLeadData } from "@/lib/invalidateLeadData";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
@@ -352,6 +354,7 @@ function LeadsPage() {
         return;
       }
       invalidateLeads();
+      invalidateLeadData(queryClient);
       setSelected(new Set());
       toast.success(
         `Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`,
@@ -579,6 +582,12 @@ function LeadsPage() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
+            <BulkOnHoldActions
+              selectedLeads={scoped.filter((l) => selected.has(l.id))}
+              onMarkEnriched={handleMarkEnriched}
+              onClearHold={(id) => unholdMutation.mutateAsync(id)}
+              onDone={() => setSelected(new Set())}
+            />
             <Button
               variant="outline"
               size="sm"

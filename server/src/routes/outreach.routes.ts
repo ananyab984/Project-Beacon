@@ -30,6 +30,9 @@ outreachRouter.post("/send", authenticateJwt, requireRole("owner", "recruiter", 
       return res.status(404).json({ error: "LEAD_NOT_FOUND", message: "Lead not found" });
     }
     assertContractorOwnsLead(req.user!.role, userId, lead);
+    if (lead.deletedAt) {
+      return res.status(400).json({ error: "LEAD_DELETED", message: "This lead has been deleted. Restore it first." });
+    }
 
     let result: any;
 

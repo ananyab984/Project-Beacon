@@ -28,7 +28,14 @@ escalationRouter.get(
       orderBy: [{ priority: "asc" }, { createdAt: "desc" }],
     });
 
-    return res.json({ escalations });
+    // Escalation.leadId is a plain string (no relation), so hide deleted leads' escalations by hand.
+    const deleted = await prisma.lead.findMany({
+      where: { id: { in: escalations.map((e) => e.leadId).filter((id): id is string => !!id) }, deletedAt: { not: null } },
+      select: { id: true },
+    });
+    const deletedIds = new Set(deleted.map((l) => l.id));
+
+    return res.json({ escalations: escalations.filter((e) => !e.leadId || !deletedIds.has(e.leadId)) });
   })
 );
 

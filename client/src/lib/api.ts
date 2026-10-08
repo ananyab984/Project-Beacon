@@ -29,6 +29,12 @@ import type {
   ApiRequestError,
   UserRole,
   WorkStatus,
+  ApiFollowUpSequence,
+  ApiFollowUpExecution,
+  FollowUpSequenceStatus,
+  FollowUpStepStatus,
+  FollowUpTriggerType,
+  FollowUpChannel,
 } from "@/lib/api-types";
 import { getNeonToken } from "@/lib/neon-auth";
 import { shouldReauthenticate } from "@/lib/authRedirect";
@@ -317,6 +323,10 @@ export const api = {
 
   async retryLeadEnrichment(id: string): Promise<{ lead: ApiLead }> {
     return request(`/api/leads/${id}/retry-enrichment`, { method: "POST" });
+  },
+
+  async retryLeadsEnrichment(ids: string[]): Promise<{ requeued: number; skipped: number }> {
+    return request(`/api/leads/bulk-retry-enrichment`, { method: "POST", body: JSON.stringify({ ids }) });
   },
 
   // Dispatches an Autumn.ai research task and returns immediately -- the run

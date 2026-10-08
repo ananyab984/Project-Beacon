@@ -22,13 +22,6 @@ export interface EnrichmentVerdictInput {
   conclusion: string | null | undefined;
   /** `PipelineResult.enrichment_status` from orchestrator.py. */
   enrichmentStatus: string | null | undefined;
-  /**
-   * `PipelineResult.identity_match.verdict` from orchestrator.py -- whether
-   * the person the scrapers returned is the person we went looking for.
-   * Absent on a response from a service old enough not to send it, which is
-   * treated as "no claim made" rather than as a problem.
-   */
-  identityVerdict?: string | null | undefined;
   /** Lead.source. Only LINKEDIN is held to the Parallel bar below. */
   source?: string | null | undefined;
   /**
@@ -54,20 +47,8 @@ export interface EnrichmentVerdict {
    * caller logs this; it is never silently swallowed.
    */
   unrecognizedStatus: boolean;
-  /**
-   * The resolved identity did not match the submitted one well enough to act
-   * on unreviewed -- either an initial expanded ("Danny M" -> "Danny
-   * Miller") or the names diverge outright. A human adjudicates; nothing is
-   * auto-corrected, because both causes can be either right or wrong.
-   */
-  identityFlagged: boolean;
-  /**
-   * What to store in Lead.enrichmentStatus. FLAGGED_REVIEW is terminal like
-   * COMPLETE -- pollPendingEnrichment claims only PENDING, so a flagged lead
-   * is not re-run on a loop -- and the schema already reserves it for exactly
-   * this ("ambiguous identities (Danny M)").
-   */
-  leadStatus: "COMPLETE" | "PENDING" | "FLAGGED_REVIEW";
+  /** What to store in Lead.enrichmentStatus. COMPLETE is terminal (retry control): pollPendingEnrichment claims only PENDING. */
+  leadStatus: "COMPLETE" | "PENDING";
   /**
    * A LinkedIn lead whose Parallel result never came back complete, with no
    * Parallel attempt left. The caller puts it On Hold (INCOMPLETE_PROFILE) so
@@ -87,7 +68,7 @@ const TRANSIENT_PREFIX = "failed_transient:";
 const ESCALATE_PRO = "escalate_pro";
 
 export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): EnrichmentVerdict {
-  const { conclusion, enrichmentStatus, identityVerdict, source, parallelState } = input;
+  const { conclusion, enrichmentStatus, source, parallelState } = input;
 
   const concluded = conclusion !== "timed_out";
 
@@ -102,13 +83,6 @@ export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): Enrichm
   // along with it -- orchestrator.py's own _timed_out_result() already
   // reports `enrichment_partial`, but this does not depend on that staying
   // true, since the two fields are produced independently.
-  // "unknown" is NOT a flag: it means there was no name on one side to
-  // compare, so no claim was made either way. Sending a human to adjudicate a
-  // comparison that never happened is noise, and the lead's thinness is
-  // already reported by enrichment_status. Likewise an absent verdict, from a
-  // service predating this field.
-  const identityFlagged = identityVerdict === "ambiguous" || identityVerdict === "divergent";
-
   // LinkedIn is not enriched until Parallel returned the complete profile.
   // While an attempt is left, the lead goes back to PENDING so
   // pollPendingEnrichment makes it -- the orchestrator has always recorded
@@ -128,16 +102,11 @@ export function computeEnrichmentVerdict(input: EnrichmentVerdictInput): Enrichm
 
   const leadStatus: EnrichmentVerdict["leadStatus"] = !concluded || retryParallel
     ? "PENDING"
-    : identityFlagged
-      ? "FLAGGED_REVIEW"
-      : "COMPLETE";
+    : "COMPLETE";
 
   return {
-    // A flagged identity cannot be "fully enriched" however many fields came
-    // back: the fields may well describe somebody else.
-    fullyEnriched: fullyEnriched && concluded && !identityFlagged && !parallelIncomplete,
+    fullyEnriched: fullyEnriched && concluded && !parallelIncomplete,
     unrecognizedStatus,
-    identityFlagged,
     leadStatus,
     incompleteProfile: concluded && parallelIncomplete && !retryParallel,
   };

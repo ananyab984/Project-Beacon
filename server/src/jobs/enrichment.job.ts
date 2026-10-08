@@ -40,6 +40,11 @@ function splitToArray(val: unknown): string[] | undefined {
 // `_tier_overlap_executor`) so the two always match.
 const POLL_CONCURRENCY = config.enrichmentConcurrency;
 
+/** A failed call is retried automatically this many times in total, with a growing delay, before the
+ *  lead is parked On Hold (SYSTEM_ERROR). Completeness matters more than latency. */
+const MAX_ENRICHMENT_ATTEMPTS = 3;
+const ENRICHMENT_RETRY_BACKOFF_MS = 2 * 60_000;
+
 // node-cron does not prevent overlapping invocations of the same scheduled
 // callback -- it fires on the wall-clock schedule regardless of whether the
 // previous pollPendingEnrichment call has resolved. The atomic updateMany
@@ -335,7 +340,6 @@ export async function enrichLeadById(leadId: string) {
     //                      a lead that ran every stage and found nothing must
     //                      still come to rest (COMPLETE) or the full paid
     //                      waterfall re-runs on it every few minutes forever.
-    //                      FLAGGED_REVIEW is terminal in the same way.
     //   `fullyEnriched` -- did it actually come back enriched? The pipeline's
     //                      OWN verdict (orchestrator.py: `enrichment_complete`
     //                      iff every one of core/schema.py's CRITICAL_FIELDS
@@ -353,30 +357,17 @@ export async function enrichLeadById(leadId: string) {
     // live table read 139/139 COMPLETE -- "COMPLETE" meant "did not time
     // out", never "is enriched". See lib/enrichmentVerdict.ts.
     const conclusion = data?.conclusion as "short_circuit_success" | "exhausted_no_match" | "timed_out" | null | undefined;
-    // `identity_match` answers a question nothing else in this response does:
-    // is this the person we went looking for? A lead whose profileLink points
-    // at someone else comes back looking beautifully complete -- every field
-    // populated, just about the wrong human. See core/dedup.py's
-    // score_identity_match ("Danny M" case).
-    const identityMatch = data?.identity_match as
-      | { verdict?: string; confidence?: number | null; input_name?: string; resolved_name?: string; reason?: string }
-      | undefined;
+    // identity_match is still returned by the pipeline (confidence is stored below) but no longer
+    // changes the lead's status: recruiters own who a lead is; we only dedup.
+    const identityMatch = data?.identity_match as { confidence?: number | null } | undefined;
 
-    const { fullyEnriched, unrecognizedStatus, identityFlagged, leadStatus, incompleteProfile } = computeEnrichmentVerdict({
+    const { fullyEnriched, unrecognizedStatus, leadStatus, incompleteProfile } = computeEnrichmentVerdict({
       conclusion,
       enrichmentStatus: data?.enrichment_status,
-      identityVerdict: identityMatch?.verdict,
       source: lead.source,
       parallelState: returnedFieldSources._parallel_fallback,
     });
 
-    if (identityFlagged) {
-      console.warn(
-        `[enrichment.job] lead ${lead.id} flagged for identity review (${identityMatch?.verdict}, ` +
-          `confidence ${identityMatch?.confidence}): submitted ${JSON.stringify(identityMatch?.input_name)} vs ` +
-          `resolved ${JSON.stringify(identityMatch?.resolved_name)} -- ${identityMatch?.reason}`
-      );
-    }
     if (unrecognizedStatus) {
       console.error(
         `[enrichment.job] lead ${lead.id}: unrecognized enrichment_status ${JSON.stringify(data?.enrichment_status)} -- treating as not fully enriched`
@@ -442,6 +433,8 @@ export async function enrichLeadById(leadId: string) {
         // enrichmentStatus: "COMPLETE" }`), so a lead missing email/phone/YoE
         // no longer reaches every recruiter as a finished record.
         identityResolved: fullyEnriched,
+        enrichmentAttempts: 0,
+        enrichmentRetryAfter: null,
         // Deliberately `concluded`, NOT `fullyEnriched`: this is the retry
         // switch, and a concluded-but-thin lead must stop being re-claimed by
         // pollPendingEnrichment rather than re-running the paid waterfall
@@ -537,15 +530,29 @@ export async function enrichLeadById(leadId: string) {
     // the retry-enrichment action to try again). Never downgrades an
     // existing MANUAL hold's reason -- a system-level failure must not
     // silently override a recruiter's own deliberate hold.
-    const { flags, onHoldReason } = computeOnHoldTransition({
-      currentFlags: (lead.flags as string[]) ?? [],
-      currentOnHoldReason: lead.onHoldReason,
-      outcome: "system_error",
-    });
-    await prisma.lead.updateMany({
-      where: { id: lead.id, deletedAt: null },
-      data: { enrichmentStatus: "PENDING", flags: flags as any, onHoldReason },
-    }).catch(() => {});
+    // A failed call is usually transient (the service restarting, a provider blip), so requeue it
+    // with backoff and only park it On Hold once MAX_ENRICHMENT_ATTEMPTS have failed.
+    const attempts = (lead.enrichmentAttempts ?? 0) + 1;
+    if (attempts < MAX_ENRICHMENT_ATTEMPTS) {
+      await prisma.lead.updateMany({
+        where: { id: lead.id, deletedAt: null },
+        data: {
+          enrichmentStatus: "PENDING",
+          enrichmentAttempts: attempts,
+          enrichmentRetryAfter: new Date(Date.now() + ENRICHMENT_RETRY_BACKOFF_MS * attempts),
+        },
+      }).catch(() => {});
+    } else {
+      const { flags, onHoldReason } = computeOnHoldTransition({
+        currentFlags: (lead.flags as string[]) ?? [],
+        currentOnHoldReason: lead.onHoldReason,
+        outcome: "system_error",
+      });
+      await prisma.lead.updateMany({
+        where: { id: lead.id, deletedAt: null },
+        data: { enrichmentStatus: "PENDING", flags: flags as any, onHoldReason, enrichmentAttempts: attempts },
+      }).catch(() => {});
+    }
 
     // Same EnrichmentRun bookkeeping as the try path's success case, so a
     // connectivity failure counts toward the Enrichment Evaluation dashboard
@@ -708,6 +715,19 @@ export async function pollPendingEnrichment() {
   }
 }
 
+let healthCheckedAt = 0;
+let healthy = true;
+/** Cached ~15s so 8 workers don't each probe it. */
+async function enrichmentServiceHealthy(): Promise<boolean> {
+  if (Date.now() - healthCheckedAt < 15_000) return healthy;
+  healthCheckedAt = Date.now();
+  healthy = await axios
+    .get(`${config.enrichmentServiceUrl}/health`, { timeout: 5_000 })
+    .then(() => true, () => false);
+  if (!healthy) console.warn("[enrichment.job] enrichment service unhealthy -- not claiming new leads this tick");
+  return healthy;
+}
+
 /** Atomically claims the next PENDING lead to enrich, or null when none is
  *  left. "Next" is fair across uploaders (lib/pickNextFair.ts): the oldest
  *  eligible lead of whoever has the fewest leads in flight, so one big upload
@@ -718,6 +738,9 @@ export async function pollPendingEnrichment() {
  *  update matches nothing and we just pick again. */
 async function claimNextPendingLead(): Promise<string | null> {
   if (stopClaiming) return null; // shutting down: let the drain wind down
+  // While the enrichment service is down, claiming only burns each lead's attempts; leave them
+  // PENDING and let the next tick (every 3 min) try again.
+  if (!(await enrichmentServiceHealthy())) return null;
   for (;;) {
     const [inFlight, heads] = await Promise.all([
       prisma.$queryRaw<{ owner: string; n: bigint }[]>`
@@ -733,6 +756,7 @@ async function claimNextPendingLead(): Promise<string | null> {
           SELECT id, created_at, COALESCE(created_by_recruiter_id, created_by_contractor_id, 'unowned') AS owner
           FROM leads
           WHERE enrichment_status = 'PENDING' AND deleted_at IS NULL AND NOT ('ON_HOLD' = ANY(flags))
+            AND (enrichment_retry_after IS NULL OR enrichment_retry_after <= now())
         ) pending
         ORDER BY owner, created_at`,
     ]);

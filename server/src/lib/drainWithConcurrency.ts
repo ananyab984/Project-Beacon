@@ -26,7 +26,17 @@ export async function drainWithConcurrency<T>(
   fn: (item: T) => Promise<void>
 ): Promise<void> {
   const worker = async () => {
-    for (let item = await claimNext(); item !== null; item = await claimNext()) {
+    for (;;) {
+      // A failed claim (e.g. a DB pool timeout) ends THIS worker only; the others keep draining and the
+      // next tick restarts the pool, instead of one error rejecting the drain and letting a second pool stack up.
+      let item: T | null;
+      try {
+        item = await claimNext();
+      } catch (err) {
+        console.error("[drainWithConcurrency] claimNext failed, stopping this worker:", err);
+        return;
+      }
+      if (item === null) return;
       await fn(item);
     }
   };

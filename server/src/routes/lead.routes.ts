@@ -477,7 +477,7 @@ leadRouter.post(
         maskedLabel: `Lead #${Date.now().toString(36).toUpperCase()}`,
         identityResolved: false,
         emailVerified: !!parsed.email,
-        enrichmentStatus: hasContact ? "IN_PROGRESS" : "PENDING",
+        enrichmentStatus: "PENDING", // claimed by the capped enrichment pool, not enriched inline
         flags: hasContact ? [] : ["ON_HOLD"],
         createdByContractorId: role === "contractor" ? req.user!.id : undefined,
         createdByRecruiterId: role !== "contractor" ? req.user!.id : undefined,
@@ -518,7 +518,9 @@ leadRouter.post(
 
     // 2. Trigger background enrichment pipeline immediately
     setImmediate(() => {
-      enrichLeadById(lead.id).catch((err) => console.error("Immediate enrichment error:", err));
+      // A lead with contact info goes through the capped pool; one without (born On Hold, which the
+      // poller skips) keeps its direct run.
+      (hasContact ? pollPendingEnrichment() : enrichLeadById(lead.id)).catch((err) => console.error("Immediate enrichment error:", err));
     });
 
     // NEW_LEAD is reserved for a genuine external application landing via the
@@ -802,10 +804,10 @@ leadRouter.patch(
           })
         )
       );
-      await prisma.lead.updateMany({ where: { id: { in: ids } }, data: { stage } });
+      await prisma.lead.updateMany({ where: { id: { in: ids }, deletedAt: null }, data: { stage } });
     }
     if (recruiterId) {
-      await prisma.lead.updateMany({ where: { id: { in: ids } }, data: { assignedRecruiterId: recruiterId, assignedAt: new Date() } });
+      await prisma.lead.updateMany({ where: { id: { in: ids }, deletedAt: null }, data: { assignedRecruiterId: recruiterId, assignedAt: new Date() } });
     }
     return res.json({ updated: ids.length });
   })
@@ -832,7 +834,7 @@ leadRouter.patch(
     const schema = z.object({
       displayName: z.string().max(160).nullable().optional(),
       identityResolved: z.boolean().optional(),
-      enrichmentStatus: z.enum(["PENDING", "IN_PROGRESS", "COMPLETE", "FLAGGED_REVIEW"]).optional(),
+      enrichmentStatus: z.enum(["PENDING", "IN_PROGRESS", "COMPLETE"]).optional(),
       flags: z.array(z.enum(LEAD_FLAGS)).optional(),
       services: z.array(z.string()).optional(),
       sourceLanguage: z.string().nullable().optional(),
@@ -1284,6 +1286,43 @@ leadRouter.post(
   })
 );
 
+// POST /api/leads/bulk-retry-enrichment -- /:id/retry-enrichment for many leads at once (the
+// recruiter multi-selects On Hold leads). Leads still IN_PROGRESS, deleted, or (for a contractor)
+// not theirs are skipped and reported, not failed.
+leadRouter.post(
+  "/bulk-retry-enrichment",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { ids } = z.object({ ids: z.array(z.string().uuid()).min(1).max(500) }).parse(req.body);
+    const leads = await prisma.lead.findMany({
+      where: {
+        id: { in: ids },
+        deletedAt: null,
+        enrichmentStatus: { not: "IN_PROGRESS" },
+        ...(req.user!.role.toLowerCase() === "contractor" ? { createdByContractorId: req.user!.id } : {}),
+      },
+      select: { id: true, flags: true },
+    });
+    await prisma.$transaction(
+      leads.map((l) =>
+        prisma.lead.update({
+          where: { id: l.id },
+          data: {
+            enrichmentStatus: "PENDING",
+            flags: l.flags.filter((f) => f !== "ON_HOLD"),
+            onHoldReason: null,
+            enrichmentStartedAt: null,
+            enrichmentAttempts: 0,
+            enrichmentRetryAfter: null,
+          },
+        })
+      )
+    );
+    setImmediate(() => pollPendingEnrichment().catch((err) => console.error("Bulk retry enrichment kick failed:", err)));
+    return res.json({ requeued: leads.length, skipped: ids.length - leads.length });
+  })
+);
+
 // POST /api/leads/:id/retry-enrichment — human-triggered retry for a lead On
 // Hold because the waterfall didn't conclude (STALLED/TIMEOUT/SYSTEM_ERROR;
 // never shown in the UI for MANUAL, whose only exit is the flags toggle).
@@ -1312,7 +1351,7 @@ leadRouter.post(
     // and nothing about this lead is running yet.
     const updated = await prisma.lead.update({
       where: { id: lead.id },
-      data: { enrichmentStatus: "PENDING", flags, onHoldReason: null, enrichmentStartedAt: null },
+      data: { enrichmentStatus: "PENDING", flags, onHoldReason: null, enrichmentStartedAt: null, enrichmentAttempts: 0, enrichmentRetryAfter: null },
     });
     // Start now if a slot is free, rather than on the next 3-minute tick. A
     // no-op while a drain is already running -- its workers pick this up.
@@ -1502,6 +1541,14 @@ leadRouter.post(
       where: { id: { in: leadIds }, deletedAt: null },
       data: { deletedAt: new Date(), deletedByUserId: req.user!.id },
     });
+
+    // Scheduled follow-ups must not fire for a deleted lead (nor all at once after a restore).
+    if (result.count > 0) {
+      await prisma.followUpExecution.updateMany({
+        where: { leadId: { in: leadIds }, status: "PENDING" },
+        data: { status: "SKIPPED", error: "Lead was deleted" },
+      });
+    }
 
     return res.json({ deletedCount: result.count });
   })

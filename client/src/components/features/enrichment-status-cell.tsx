@@ -22,7 +22,7 @@ import { RefreshCw } from "lucide-react";
  *    wrapping it was never the right answer at this width.
  */
 
-export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "pending" | "needs_review";
+export type EnrichmentStatusKind = "on_hold" | "enriched" | "enriching" | "pending";
 
 /** Real, measured Parallel `core` durations this session, against the live
  *  API, no mocks: 233s / 247s / 256s / 263s / 486s (one outlier). There is no
@@ -68,13 +68,6 @@ export function enrichmentStatusKindOf(lead: ApiLead): EnrichmentStatusKind {
   if ((lead.flags ?? []).includes("ON_HOLD")) return "on_hold";
   if (lead.enrichmentStatus === "COMPLETE") return "enriched";
   if (lead.enrichmentStatus === "STALLED") return "pending";
-  // The run finished, but the person the scrapers resolved did not match the
-  // one submitted (see Lead.linkedinMatchConfidence, the "Danny M" case).
-  // Without its own kind this fell through to "enriching", so a lead that had
-  // actually concluded sat on the recruiter's screen claiming to be in
-  // progress forever -- the one outcome that most needs a human was the one
-  // that looked like it needed nothing.
-  if (lead.enrichmentStatus === "FLAGGED_REVIEW") return "needs_review";
   return "enriching";
 }
 
@@ -130,7 +123,6 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
     enriched: "text-emerald-400",
     enriching: "text-amber-400",
     pending: "text-muted-foreground",
-    needs_review: "text-warning",
   };
   const label: Record<EnrichmentStatusKind, string> = {
     on_hold: `On Hold (${fieldCount})`,
@@ -143,12 +135,11 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
       ? `Enriching (${progressPct}%)`
       : "Enriching…",
     pending: "Stalled",
-    needs_review: `Check identity (${fieldCount})`,
   };
   // Opens the details dialog: these kinds are actionable by definition; for
   // "pending" (Stalled) the dialog shows the on-hold reason so the user is
   // never left clueless about why enrichment didn't proceed.
-  const countsShown = kind === "on_hold" || kind === "enriched" || kind === "needs_review";
+  const countsShown = kind === "on_hold" || kind === "enriched";
   const interactive = countsShown || kind === "pending";
 
   const onHoldReasonLabel =
@@ -182,8 +173,6 @@ export function EnrichmentStatusCell({ lead, onOpenDetails, onRetry, retryPendin
               ? `Enrichment stalled: ${onHoldReasonLabel} — click to view reason and retry`
               : kind === "on_hold"
               ? `On Hold: ${onHoldReasonLabel} (${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} fields found) — click to review or resume`
-              : kind === "needs_review"
-              ? `Check identity (${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} fields found) — the resolved profile may be a different person; open to check`
               : `${fieldCount} of ${ENRICHMENT_FIELD_TOTAL} enrichment fields found`
           }
         >

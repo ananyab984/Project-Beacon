@@ -1,3 +1,4 @@
+import { invalidateLeadData } from "@/lib/invalidateLeadData";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -25,8 +26,7 @@ export function RecycleBinList() {
   const restoreMutation = useMutation({
     mutationFn: (id: string) => api.restoreLead(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["leads-bin"] });
-      queryClient.invalidateQueries({ queryKey: ["leads"] });
+      invalidateLeadData(queryClient);
       toast.success("Lead restored");
     },
     onError: (err: any) => toast.error(err?.message ?? "Failed to restore lead"),

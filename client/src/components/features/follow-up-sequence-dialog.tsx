@@ -380,7 +380,7 @@ export function FollowUpSequenceDialog({ open, setOpen, sequence, onSuccess }: F
                         placeholder="e.g. Following up on {{lead.targetLanguage}} opportunity"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Variables: {{lead.fullName}}, {{lead.displayName}}, {{lead.firstName}}, {{lead.email}}, {{lead.targetLanguage}}, {{lead.services}}, {{recruiter.name}}, {{applyUrl}}
+                        {"Variables: {{lead.fullName}}, {{lead.displayName}}, {{lead.firstName}}, {{lead.email}}, {{lead.targetLanguage}}, {{lead.services}}, {{recruiter.name}}, {{applyUrl}}"}
                       </p>
                     </div>
                   )}
@@ -396,7 +396,7 @@ export function FollowUpSequenceDialog({ open, setOpen, sequence, onSuccess }: F
                       rows={4}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Variables: {{lead.fullName}}, {{lead.displayName}}, {{lead.firstName}}, {{lead.email}}, {{lead.targetLanguage}}, {{lead.services}}, {{recruiter.name}}, {{applyUrl}}
+                      {"Variables: {{lead.fullName}}, {{lead.displayName}}, {{lead.firstName}}, {{lead.email}}, {{lead.targetLanguage}}, {{lead.services}}, {{recruiter.name}}, {{applyUrl}}"}
                     </p>
                   </div>
 

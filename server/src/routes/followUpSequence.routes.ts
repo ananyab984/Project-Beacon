@@ -263,7 +263,7 @@ followUpSequenceRouter.post(
     if (sequence.status !== "ACTIVE") throw new ApiError(400, "SEQUENCE_INACTIVE", "Sequence is not active");
 
     const lead = await prisma.lead.findUnique({ where: { id: leadId } });
-    if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+    if (!lead || lead.deletedAt) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
 
     // Check ownership for contractors
     if (req.user!.role.toLowerCase() === "contractor" && lead.createdByContractorId !== req.user!.id) {
@@ -337,6 +337,8 @@ followUpSequenceRouter.post(
     if (execution.recruiterId !== req.user!.id && role !== "owner") {
       throw new ApiError(403, "FORBIDDEN", "You can only retry your own executions");
     }
+
+    if (execution.lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted. Restore it first.");
 
     await prisma.followUpExecution.update({
       where: { id: req.params.id },

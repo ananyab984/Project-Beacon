@@ -445,6 +445,10 @@ model Lead {
   // generic one would reset on any unrelated field write while a run is
   // stuck, masking exactly the staleness this needs to detect.
   enrichmentStartedAt DateTime?        @map("enrichment_started_at")
+  /// Failed waterfall calls since the last success/manual retry (transient errors are retried automatically).
+  enrichmentAttempts  Int              @default(0) @map("enrichment_attempts")
+  /// Backoff: the poller doesn't re-claim this PENDING lead before this time.
+  enrichmentRetryAfter DateTime?       @map("enrichment_retry_after")
   promotedToGlobalAt DateTime?        @map("promoted_to_global_at")
   justEnrichedUntil  DateTime?        @map("just_enriched_until") // repo: transient "recently enriched" highlight window
   // Stamped by PATCH /:id (see resolveManualFieldSources) whenever a recruiter

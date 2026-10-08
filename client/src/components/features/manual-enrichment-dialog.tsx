@@ -39,9 +39,11 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   lead: LeadForEnrichment | null;
   onMarkEnriched: (id: string, updatedData: Partial<LeadForEnrichment>) => Promise<unknown>;
+  /** Set when this dialog is stepping through several selected leads ("Lead 2 of 7"). */
+  queue?: { index: number; total: number; onSkip: () => void };
 }
 
-export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriched }: Props) {
+export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriched, queue }: Props) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -172,6 +174,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
             </Badge>
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground pt-1">
+            {queue && <strong className="mr-1.5 text-foreground">Lead {queue.index + 1} of {queue.total}.</strong>}
             Review and update candidate skills, contact info, and language pair to promote this lead.
           </DialogDescription>
         </DialogHeader>
@@ -284,6 +287,11 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
         </div>
 
         <DialogFooter className="gap-2">
+          {queue && (
+            <Button variant="ghost" size="sm" onClick={queue.onSkip} disabled={saving} className="text-xs mr-auto">
+              Skip
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={handleSaveOnly} disabled={saving} className="text-xs">
             Save Draft
           </Button>

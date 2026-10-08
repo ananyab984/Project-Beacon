@@ -1,3 +1,4 @@
+import { BulkOnHoldActions } from "@/components/features/bulk-on-hold-actions";
 import { createFileRoute } from "@tanstack/react-router";
 import { parseCsvLeads, mapRowsToLeads } from "@/lib/g3-mock";
 import * as XLSX from "xlsx";
@@ -310,6 +311,12 @@ function MyLeadsPage() {
             </Button>
           </div>
           <div className="flex items-center gap-2">
+            <BulkOnHoldActions
+              selectedLeads={all.filter((l) => selected.has(l.id))}
+              onMarkEnriched={handleMarkEnriched}
+              onClearHold={(id) => unholdMutation.mutateAsync(id)}
+              onDone={() => setSelected(new Set())}
+            />
             <Button
               variant="outline"
               size="sm"

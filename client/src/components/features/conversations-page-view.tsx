@@ -434,7 +434,7 @@ export function ConversationsPageView() {
                       </div>
                       <Button
                         onClick={handleGenerateLinkedInDraft}
-                        disabled={isGeneratingDraft}
+                        disabled={isGeneratingDraft || !!conv.lead?.deletedAt}
                         size="sm"
                         className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
                       >
@@ -485,8 +485,14 @@ export function ConversationsPageView() {
                   )}
                 </div>
 
+                {conv.lead?.deletedAt && (
+                  <div className="shrink-0 border-t border-destructive/40 bg-destructive/10 px-3.5 py-2 text-xs text-destructive">
+                    This lead has been deleted. The conversation is kept for reference, but you can't send messages until the lead is restored from the recycle bin.
+                  </div>
+                )}
+
                 {/* Bottom Chat Composer Box */}
-                <div className="shrink-0 p-3 pt-1 space-y-1 bg-card">
+                <div className={`shrink-0 p-3 pt-1 space-y-1 bg-card ${conv.lead?.deletedAt ? "pointer-events-none opacity-50" : ""}`}>
                   <div className="rounded-xl border border-amber-500/40 bg-[#1e1b18] p-3 shadow-lg focus-within:border-amber-500 transition-all space-y-2">
                     <Textarea
                       value={draft}
@@ -499,7 +505,7 @@ export function ConversationsPageView() {
                       }}
                       placeholder="Type your message..."
                       className="min-h-[65px] max-h-[120px] resize-none border-0 bg-transparent p-0 text-xs leading-relaxed text-foreground placeholder:text-muted-foreground/60 focus-visible:ring-0 shadow-none"
-                      disabled={sending}
+                      disabled={sending || !!conv.lead?.deletedAt}
                     />
                     <div className="flex items-center justify-between gap-3 pt-1 border-t border-border/30">
                       <div className="flex items-center gap-3 text-muted-foreground">
@@ -537,7 +543,7 @@ export function ConversationsPageView() {
                         </span>
                         <Button
                           type="button"
-                          disabled={sending || !draft.trim()}
+                          disabled={sending || !draft.trim() || !!conv.lead?.deletedAt}
                           className="h-8 px-4 bg-[#f97316] hover:bg-[#ea580c] text-black gap-1.5 font-bold text-xs cursor-pointer shadow-md rounded-lg transition-transform active:scale-95 disabled:opacity-50"
                           onClick={initiateSend}
                         >

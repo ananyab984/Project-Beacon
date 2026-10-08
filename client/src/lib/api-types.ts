@@ -26,7 +26,7 @@ export type LeadPriority = "P0" | "P1" | "P2" | "P3";
 export type LeadFlagType = "DNC" | "ON_HOLD" | "WATCHING" | "HIGH_PRIORITY";
 export type Availability = "AVAILABLE_NOW" | "AVAILABLE_FROM" | "UNAVAILABLE" | "UNKNOWN";
 export type EnrichmentStatus =
-  "PENDING" | "IN_PROGRESS" | "COMPLETE" | "FLAGGED_REVIEW" | "STALLED";
+  "PENDING" | "IN_PROGRESS" | "COMPLETE" | "STALLED";
 /** Body of POST /api/leads and POST /api/leads/bulk.
  *
  *  Deliberately NOT `Partial<ApiLead> & { source: LeadSource }` (which is what
@@ -333,6 +333,8 @@ export interface ApiEmailQueueItem {
     email?: string | null;
     profileLink?: string | null;
     replyCategoryId?: string | null;
+    /** Set when the lead is in the recycle bin: the thread stays visible but can't be messaged. */
+    deletedAt?: string | null;
     replyClassificationSource?: "AUTO" | "MANUAL" | null;
   };
   recruiterId: string;
@@ -381,6 +383,8 @@ export interface ApiConversation {
     email?: string | null;
     profileLink?: string | null;
     replyCategoryId?: string | null;
+    /** Set when the lead is in the recycle bin: the thread stays visible but can't be messaged. */
+    deletedAt?: string | null;
     replyClassificationSource?: "AUTO" | "MANUAL" | null;
   };
   recruiterId: string;

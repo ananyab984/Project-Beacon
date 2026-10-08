@@ -1,3 +1,4 @@
+import { ApiError } from "../lib/apiError";
 import axios from "axios";
 import FormData from "form-data";
 import crypto from "crypto";
@@ -647,6 +648,14 @@ export class UnipileService {
     return remoteDeleteError ? { ...updated, remoteDeleteFailed: true, remoteDeleteError } : updated;
   }
 
+  /** A soft-deleted lead can't be messaged until it is restored from the recycle bin. */
+  private static async assertLeadNotDeleted(leadId: string) {
+    const lead = await prisma.lead.findUnique({ where: { id: leadId }, select: { deletedAt: true } });
+    if (lead?.deletedAt) {
+      throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted. Restore it from the recycle bin to message it again.");
+    }
+  }
+
   /**
    * Smart LinkedIn message outreach with automatic 1st-degree DM or 2nd/3rd degree Invite fallback
    */
@@ -658,6 +667,7 @@ export class UnipileService {
     preferredAccountId?: string
   ) {
     this.assertLiveSendsAllowed();
+    await this.assertLeadNotDeleted(leadId);
 
     // 1. Find user's active LinkedIn account
     let connectedAcc: any = null;
@@ -858,6 +868,7 @@ export class UnipileService {
     replyToMessageId?: string | null
   ) {
     this.assertLiveSendsAllowed();
+    await this.assertLeadNotDeleted(leadId);
 
     // Find active Email account
     let connectedAcc: any = null;

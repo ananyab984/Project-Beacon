@@ -31,8 +31,8 @@ def _sizes(value):
     return json.loads(out.stdout.strip().splitlines()[-1])
 
 
-def test_default_is_16_plus_single_add_headroom():
-    assert _sizes(None) == {"n": 16, "resilience": 40, "tier_overlap": 24, "parallel": 24}
+def test_default_is_8_plus_single_add_headroom():
+    assert _sizes(None) == {"n": 8, "resilience": 24, "tier_overlap": 16, "parallel": 16}
 
 
 def test_pools_follow_the_setting():
@@ -42,4 +42,4 @@ def test_pools_follow_the_setting():
 def test_out_of_range_or_garbage_is_clamped():
     assert _sizes("500")["n"] == 128
     assert _sizes("0")["n"] == 1
-    assert _sizes("lots")["n"] == 16
+    assert _sizes("lots")["n"] == 8

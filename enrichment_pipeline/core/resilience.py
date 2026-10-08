@@ -40,9 +40,9 @@ T = TypeVar("T")
 
 def _enrichment_concurrency() -> int:
     try:
-        n = int(os.getenv("ENRICHMENT_CONCURRENCY", "16"))
+        n = int(os.getenv("ENRICHMENT_CONCURRENCY", "8"))
     except ValueError:
-        n = 16
+        n = 8
     return min(128, max(1, n))
 
 
@@ -51,8 +51,8 @@ def _enrichment_concurrency() -> int:
 # in the same container / Render env group. If the two disagree, leads queue
 # inside these pools, which looks like a slow provider. Every per-lead pool is
 # sized from it, +8 headroom because single Add Lead calls /enrich directly,
-# outside Node's cap. Default 16 (decided 2026-10-06; was 8) -- what a 512 MB
-# Render instance can hold; 32+ needs ~2 GB (docs/DOCKER_DEPLOY.md).
+# outside Node's cap. Default 8 (decided 2026-10-08; was 16): every lead must
+# finish, latency is secondary. 32+ needs ~2 GB (docs/DOCKER_DEPLOY.md).
 ENRICHMENT_CONCURRENCY = _enrichment_concurrency()
 PER_LEAD_POOL_SIZE = ENRICHMENT_CONCURRENCY + 8
 

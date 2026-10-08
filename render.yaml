@@ -20,7 +20,7 @@ services:
       # Must equal g3-server's ENRICHMENT_CONCURRENCY (sizes this service's
       # per-lead pools). Raise both together, stepwise.
       - key: ENRICHMENT_CONCURRENCY
-        value: "16"
+        value: "8"
       - key: BRIGHTDATA_API_KEY
         sync: false
       - key: DATASET_ID
@@ -109,7 +109,7 @@ services:
         sync: false
       # Must equal g3-enrichment-pipeline's ENRICHMENT_CONCURRENCY.
       - key: ENRICHMENT_CONCURRENCY
-        value: "16"
+        value: "8"
       # Render keeps the old instance briefly during a deploy: wait 5 min
       # before requeueing leads an earlier process left IN_PROGRESS.
       - key: REQUEUE_DELAY_MS

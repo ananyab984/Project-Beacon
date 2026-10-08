@@ -88,6 +88,10 @@ async function processExecution(execution: any) {
     }
   }
 
+  // The query filters deleted leads, but a lead can be deleted between claim and send.
+  const current = await prisma.lead.findUnique({ where: { id: lead.id }, select: { deletedAt: true } });
+  if (current?.deletedAt) return;
+
   // Check DNC flag
   if (lead.flags.includes("DNC")) {
     await prisma.followUpExecution.update({

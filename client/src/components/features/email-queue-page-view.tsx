@@ -509,7 +509,7 @@ export function EmailQueuePageView() {
                   <SaveStatus state={saveState} savedAt={savedAt} />
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={saveDraft} disabled={selected.status === "SENT"} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
+                  <Button variant="outline" size="sm" onClick={saveDraft} disabled={selected.status === "SENT" || !!selected.lead?.deletedAt} className="h-8 text-xs"><Save className="h-3.5 w-3.5" />Save draft</Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -529,7 +529,7 @@ export function EmailQueuePageView() {
                   ) : (
                     <Button
                       size="sm"
-                      disabled={sending || toInvalid}
+                      disabled={sending || toInvalid || !!selected.lead?.deletedAt}
                       className="h-8 text-xs bg-primary text-primary-foreground hover:bg-primary/90"
                       onClick={initiateSend}
                     >
@@ -540,6 +540,11 @@ export function EmailQueuePageView() {
                 </div>
               </div>
             </div>
+            {selected.lead?.deletedAt && (
+              <div className="border-b border-destructive/40 bg-destructive/10 px-4 py-2 text-xs text-destructive">
+                This lead has been deleted. The conversation is kept for reference, but you can't send or draft messages until the lead is restored from the recycle bin.
+              </div>
+            )}
             {/* One single scroll region for the whole panel -- SENT items
                 used to also nest EmailRepliesSection's own capped scroll
                 area inside this one, which is the "split sections" problem.
@@ -553,7 +558,7 @@ export function EmailQueuePageView() {
                 // `subject`/`body` above) -- those track the in-progress
                 // compose box, which can point at a different address than
                 // whatever this item was actually dispatched to.
-                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={selected.to || candidateEmail(selected)} subject={selected.subject} body={selected.body} sentAt={selected.sentAt} />
+                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={selected.to || candidateEmail(selected)} subject={selected.subject} body={selected.body} sentAt={selected.sentAt} leadDeleted={!!selected.lead?.deletedAt} />
               ) : (
                 <div className="space-y-3">
                   <div>
@@ -607,7 +612,7 @@ export function EmailQueuePageView() {
                         <div className="absolute inset-x-0 top-3 z-10 flex justify-center">
                           <Button
                             onClick={handleGenerateDraft}
-                            disabled={isGeneratingDraft || toInvalid}
+                            disabled={isGeneratingDraft || toInvalid || !!selected.lead?.deletedAt}
                             className="h-8 text-xs bg-primary text-primary-foreground font-semibold gap-1.5 shadow-xs"
                           >
                             {isGeneratingDraft ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
@@ -691,8 +696,8 @@ type ThreadMessage = {
 // only the newest message expanded -- matching how Gmail itself collapses
 // everything but the latest message in a thread. Click any row to toggle it.
 function EmailThread({
-  leadId, candidateName, to, subject, body, sentAt,
-}: { leadId: string; candidateName: string; to: string; subject: string; body: string; sentAt: string | null }) {
+  leadId, candidateName, to, subject, body, sentAt, leadDeleted,
+}: { leadId: string; candidateName: string; to: string; subject: string; body: string; sentAt: string | null; leadDeleted?: boolean }) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["email-replies", leadId],
@@ -916,7 +921,7 @@ function EmailThread({
                           <Button
                             size="sm"
                             onClick={sendReply}
-                            disabled={isSendingReply || !replyDraft.trim() || !conversationId}
+                            disabled={isSendingReply || !replyDraft.trim() || !conversationId || leadDeleted}
                             className="h-7 text-xs bg-primary text-primary-foreground gap-1.5"
                           >
                             {isSendingReply ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
@@ -949,7 +954,7 @@ function EmailThread({
                   <Button
                     size="sm"
                     onClick={sendReply}
-                    disabled={isSendingReply || !replyDraft.trim() || !conversationId}
+                    disabled={isSendingReply || !replyDraft.trim() || !conversationId || leadDeleted}
                     className="h-7 text-xs bg-primary text-primary-foreground gap-1.5"
                   >
                     {isSendingReply ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}

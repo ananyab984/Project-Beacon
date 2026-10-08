@@ -255,12 +255,12 @@ export async function getOutreachFunnelLeadIds(
 
   const [outboundEvents, inboundEvents, negotiating, dnc, onboarded] = await Promise.all([
     prisma.interactionEvent.findMany({
-      where: { ...interactionWhere, direction: "OUTBOUND" },
+      where: { ...interactionWhere, direction: "OUTBOUND", lead: { deletedAt: null } },
       select: { leadId: true },
       distinct: ["leadId"],
     }),
     prisma.interactionEvent.findMany({
-      where: { ...interactionWhere, direction: "INBOUND" },
+      where: { ...interactionWhere, direction: "INBOUND", lead: { deletedAt: null } },
       select: { leadId: true },
       distinct: ["leadId"],
     }),
@@ -327,7 +327,7 @@ reportsRouter.get(
     // event-derived categories), not an independent createdAt sort -- so the
     // top of the list matches "most recently contacted/replied" intuition.
     const leads = await prisma.lead.findMany({
-      where: { id: { in: leadIds } },
+      where: { id: { in: leadIds }, deletedAt: null },
       select: {
         id: true,
         displayName: true,

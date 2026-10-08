@@ -84,12 +84,28 @@ async function test5_aSlowItemDoesNotHoldUpTheOtherSlots() {
   assert.strictEqual(order[order.length - 1], "slow", `the fast items should all finish first, got ${order}`);
 }
 
+async function test6_aFailedClaimDoesNotRejectOrStopTheOtherWorkers() {
+  const queue = [1, 2, 3, 4, 5, 6];
+  let claims = 0;
+  const done: number[] = [];
+  const claimNext = async () => {
+    // The first claim throws (e.g. a DB pool timeout); every other worker must still drain the queue.
+    if (claims++ === 0) throw new Error("pool timeout");
+    return queue.shift() ?? null;
+  };
+  await drainWithConcurrency(3, claimNext, async (n) => {
+    done.push(n);
+  });
+  assert.deepStrictEqual(done.sort(), [1, 2, 3, 4, 5, 6]);
+}
+
 const tests = [
   test1_neverClaimsMoreThanItCanWorkOn,
   test2_everyItemIsProcessedExactlyOnce,
   test3_itemsArrivingMidDrainArePickedUp,
   test4_emptyQueueDoesNothing,
   test5_aSlowItemDoesNotHoldUpTheOtherSlots,
+  test6_aFailedClaimDoesNotRejectOrStopTheOtherWorkers,
 ];
 
 (async () => {

@@ -30,7 +30,7 @@ export async function getEmailQueueForRecruiter(recruiterId: string) {
   // "Search Lead" -> add action.
   const items = await prisma.emailQueueItem.findMany({
     where: { recruiterId, addedManually: true },
-    include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
+    include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true, deletedAt: true } } },
   });
 
   // Sort by most recent activity (matching how /api/conversations orders
@@ -100,6 +100,7 @@ const EMAIL_QUEUE_ITEM_INCLUDE_LEAD = {
 export async function addLeadToEmailQueue(leadId: string, recruiterId: string, requesterRole: string) {
   const lead = await prisma.lead.findUnique({ where: { id: leadId } });
   if (!lead) throw new ApiError(404, "LEAD_NOT_FOUND", "Lead not found");
+  if (lead.deletedAt) throw new ApiError(400, "LEAD_DELETED", "This lead has been deleted. Restore it first.");
   assertContractorOwnsLead(requesterRole, recruiterId, lead);
 
   // Fast path: already explicitly in the queue, nothing to change -- avoids
@@ -333,7 +334,7 @@ emailQueueRouter.post(
         sentAt: new Date(),
         sentChannel: channel,
       },
-      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true } } },
+      include: { lead: { select: { fullName: true, displayName: true, email: true, profileLink: true, replyCategoryId: true, replyClassificationSource: true, deletedAt: true } } },
     });
     return res.json({ success: true, item: updated });
   })
