@@ -39,16 +39,15 @@ function test1_leadRoutesNeverAutoCreatesAnEmailQueueItem() {
   );
 }
 
-function test2_linkedInConversationAutoCreateIsStillThere() {
-  // Guards against overcorrecting: removing the queue auto-add must not
-  // also silently remove the wanted LinkedIn conversation auto-create.
+function test2_leadCreationNoLongerAutoCreatesLinkedInThreads() {
+  // 937a7d1 removed the LinkedIn-conversation auto-create: a thread now exists only once a recruiter
+  // starts it (Conversations -> Search Lead / Add).
   const source = readFileSync(path.join(__dirname, "lead.routes.ts"), "utf8");
-  const occurrences = source.match(/prisma\.conversation\.create/g) ?? [];
-  assert.strictEqual(occurrences.length, 2, "expected exactly one LinkedIn-conversation auto-create in each of the single-lead and bulk-create paths");
+  assert.strictEqual(source.match(/prisma\.conversation\.create/g)?.length ?? 0, 0, "lead creation must not auto-create conversations");
 }
 
 async function main() {
-  const tests = [test1_leadRoutesNeverAutoCreatesAnEmailQueueItem, test2_linkedInConversationAutoCreateIsStillThere];
+  const tests = [test1_leadRoutesNeverAutoCreatesAnEmailQueueItem, test2_leadCreationNoLongerAutoCreatesLinkedInThreads];
   let failed = 0;
   for (const t of tests) {
     try {
