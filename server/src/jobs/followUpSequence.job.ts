@@ -123,7 +123,7 @@ async function processExecution(execution: any) {
         throw new Error("AI drafting ineligible, falling back to template");
       }
     } catch (aiErr) {
-      console.warn(`[follow-up-sequence] AI drafting failed for execution ${execution.id}, using template:`, aiErr?.message || aiErr);
+      console.warn(`[follow-up-sequence] AI drafting failed for execution ${execution.id}, using template:`, (aiErr as Error)?.message || aiErr);
       subject = renderTemplate(step.subjectTemplate, lead, recruiter);
       body = renderTemplate(step.bodyTemplate, lead, recruiter);
     }
@@ -186,7 +186,7 @@ async function processExecution(execution: any) {
     type: "FOLLOW_UP_SEQUENCE_STEP",
     title: `Follow-up sent to ${leadName}`,
     body: `Step ${step.stepOrder} of "${step.sequence.name}" sent via ${step.channel}.`,
-    slackCard: formatFollowUpSequenceSlackCard(leadName, step.sequence.name, step.stepOrder, step.channel),
+    slackCard: formatFollowUpSequenceSlackCard(leadName, step.sequence.name, step.stepOrder, step.channel, `/recruiter/conversations?leadId=${lead.id}`),
     link: `/recruiter/conversations?leadId=${lead.id}`,
   });
 

@@ -505,6 +505,22 @@ export function formatFollowUpDueSlackCard(leadName: string, daysSince: number, 
   };
 }
 
+/** FOLLOW_UP_SEQUENCE_STEP's Slack card -- a sequence step was auto-sent
+ *  (jobs/followUpSequence.job.ts). */
+export function formatFollowUpSequenceSlackCard(leadName: string, sequenceName: string, stepOrder: number, channel: string, link: string): SlackCard {
+  return {
+    emoji: "📨",
+    headline: "Follow-up sent",
+    color: DUE_DATE_REMINDER_COLOR,
+    fields: [
+      { label: "Lead", value: leadName },
+      { label: "Sequence", value: sequenceName },
+      { label: "Step", value: `${stepOrder} via ${channel}` },
+    ],
+    button: { text: "Open Conversation", path: link },
+  };
+}
+
 /** LEAD_PLACED's Slack card -- a lead reached ONBOARDED (lead.routes.ts's
  *  stage-sync block). */
 export function formatLeadPlacedSlackCard(leadName: string, clientName: string | null | undefined, basePath: string): SlackCard {

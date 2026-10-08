@@ -8,7 +8,7 @@ import { ApiError } from "../lib/apiError";
 import { getDraftingOrchestrator } from "../drafting/instance";
 import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
 import { UnipileService } from "../services/unipile.service";
-import { createNotification, formatFollowUpSequenceSlackCard } from "../services/notification.service";
+import { createNotification } from "../services/notification.service";
 
 export const followUpSequenceRouter = Router();
 followUpSequenceRouter.use(authenticateJwt);
@@ -78,7 +78,7 @@ followUpSequenceRouter.post(
         z.object({
           stepOrder: z.number().int().positive(),
           triggerType: z.enum(["TIME_BASED", "STAGE_CHANGE", "REPLY_RECEIVED", "MANUAL"]).default("TIME_BASED"),
-          triggerConfig: z.record(z.unknown()).optional(),
+          triggerConfig: z.record(z.string(), z.any()).optional(),
           channel: z.enum(["EMAIL", "LINKEDIN"]),
           subjectTemplate: z.string().max(200).optional(),
           bodyTemplate: z.string().min(1).max(5000),
@@ -143,7 +143,7 @@ followUpSequenceRouter.patch(
           id: z.string().uuid().optional(),
           stepOrder: z.number().int().positive(),
           triggerType: z.enum(["TIME_BASED", "STAGE_CHANGE", "REPLY_RECEIVED", "MANUAL"]).optional(),
-          triggerConfig: z.record(z.unknown()).optional().nullable(),
+          triggerConfig: z.record(z.string(), z.any()).optional().nullable(),
           channel: z.enum(["EMAIL", "LINKEDIN"]).optional(),
           subjectTemplate: z.string().max(200).optional().nullable(),
           bodyTemplate: z.string().min(1).max(5000).optional(),
