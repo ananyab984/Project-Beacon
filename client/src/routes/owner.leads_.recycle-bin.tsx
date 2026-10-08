@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft, Trash2 } from "lucide-react";
-import { RecycleBinList } from "@/components/features/recycle-bin-list";
+import { RecycleBinCount, RecycleBinList } from "@/components/features/recycle-bin-list";
 
 export const Route = createFileRoute("/owner/leads_/recycle-bin")({
   head: () => ({
@@ -27,7 +27,7 @@ function RecycleBinPage() {
 
       <div>
         <h1 className="flex items-center gap-2 text-lg font-semibold">
-          <Trash2 className="h-4 w-4 text-muted-foreground" /> Recycle Bin
+          <Trash2 className="h-4 w-4 text-muted-foreground" /> Recycle Bin <RecycleBinCount />
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Deleted leads stay here for 30 days from their own deletion date, then are permanently removed. Restore any of them before then.

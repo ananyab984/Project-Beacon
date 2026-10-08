@@ -27,7 +27,7 @@ conversationRouter.get(
   asyncHandler(async (req: Request, res: Response) => {
     const role = req.user!.role.toLowerCase();
     const wantsOwn = req.query.scope === "own";
-    const where = role === "owner" && !wantsOwn ? {} : { recruiterId: req.user!.id };
+    const where = role === "owner" && !wantsOwn ? {} : { recruiterId: req.user!.id, addedManually: true };
 
     const conversations = await prisma.conversation.findMany({
       where,
@@ -144,7 +144,12 @@ conversationRouter.post(
         messages: { orderBy: { sentAt: "asc" } },
       },
     });
-    if (existing) return res.json({ conversation: existing });
+    if (existing) {
+      // An old auto-created (hidden) thread: the recruiter explicitly adding
+      // it again is the intent addedManually captures, so un-hide it.
+      if (!existing.addedManually) await prisma.conversation.update({ where: { id: existing.id }, data: { addedManually: true } });
+      return res.json({ conversation: { ...existing, addedManually: true } });
+    }
 
     // The findFirst above is a fast path for the common case, not what
     // closes the race -- two near-simultaneous requests to open the same
@@ -173,6 +178,22 @@ conversationRouter.post(
     });
 
     return res.status(201).json({ conversation });
+  })
+);
+
+// DELETE /api/conversations/:id — remove one thread (and its messages, via
+// the schema's onDelete: Cascade) from the list. Recruiters can delete their
+// own; an owner can delete any. The lead itself is untouched.
+conversationRouter.delete(
+  "/:id",
+  requireRole("owner", "recruiter"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const isOwner = req.user!.role.toLowerCase() === "owner";
+    const { count } = await prisma.conversation.deleteMany({
+      where: { id: req.params.id, ...(isOwner ? {} : { recruiterId: req.user!.id }) },
+    });
+    if (count === 0) throw new ApiError(404, "CONVERSATION_NOT_FOUND", "Conversation not found");
+    return res.json({ success: true });
   })
 );
 

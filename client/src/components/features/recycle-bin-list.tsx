@@ -70,3 +70,17 @@ export function RecycleBinList() {
     </div>
   );
 }
+
+/** Number of leads currently in the recycle bin; renders nothing when empty.
+ *  Shares the ["leads-bin"] cache with RecycleBinList, so it stays in step
+ *  with every delete/restore (invalidateLeadData refreshes that key). */
+export function RecycleBinCount({ className = "" }: { className?: string }) {
+  const { data } = useQuery({ queryKey: ["leads-bin"], queryFn: () => api.getBinLeads() });
+  const count = data?.leads.length ?? 0;
+  if (count === 0) return null;
+  return (
+    <span className={`rounded-full bg-primary px-1.5 text-[10px] font-semibold tabular-nums text-primary-foreground ${className}`}>
+      {count}
+    </span>
+  );
+}

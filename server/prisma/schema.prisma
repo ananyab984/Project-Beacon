@@ -1196,6 +1196,10 @@ model Conversation {
   // this conversation, used to correlate inbound-reply webhooks back to the
   // correct thread instead of guessing "the recruiter's most recent conversation."
   unipileChatId String?             @unique @map("unipile_chat_id")
+  // false = auto-created by an old lead-creation side effect, never chosen by
+  // the recruiter; hidden from the Conversations list (same as
+  // EmailQueueItem.addedManually).
+  addedManually Boolean             @default(true) @map("added_manually")
 
   messages ConversationMessage[]
 

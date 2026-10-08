@@ -657,6 +657,10 @@ export const api = {
     return request("/api/conversations", { method: "POST", body: JSON.stringify({ leadId }) });
   },
 
+  async deleteConversation(id: string): Promise<{ success: boolean }> {
+    return request(`/api/conversations/${id}`, { method: "DELETE" });
+  },
+
   async generateLinkedInDraft(id: string) {
     return request<{ draft: { body: string }; lowDataWarning: boolean }>(`/api/conversations/${id}/generate-draft`, {
       method: "POST",

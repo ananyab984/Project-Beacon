@@ -4,6 +4,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { EnrichmentStatusCell } from "@/components/features/enrichment-status-cell";
 import type { ApiLead, ApiUser, LeadSource, LeadStage, LeadTimelineEvent } from "@/lib/api-types";
+import { RecycleBinCount } from "@/components/features/recycle-bin-list";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -462,8 +463,9 @@ function LeadsPage() {
           {/* Delete lives only in the Global Leads scope -- this is its recycle bin. */}
           {scope === "global" && (
             <Button asChild variant="outline" size="icon" className="h-8 w-8" title="Recycle Bin">
-              <Link to="/recruiter/leads/recycle-bin">
+              <Link to="/recruiter/leads/recycle-bin" className="relative">
                 <Trash2 className="h-3.5 w-3.5" />
+                <RecycleBinCount className="absolute -right-2 -top-2" />
                 <span className="sr-only">Recycle Bin</span>
               </Link>
             </Button>

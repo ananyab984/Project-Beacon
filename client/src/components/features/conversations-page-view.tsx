@@ -17,6 +17,7 @@ import {
   Lock,
   MessageCircle,
   MessageCircleQuestion,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
@@ -85,6 +86,15 @@ export function ConversationsPageView() {
     onError: (err: any) => {
       toast.error(`Failed to update classification: ${err.message}`);
     },
+  });
+
+  const deleteConversationMutation = useMutation({
+    mutationFn: (convId: string) => api.deleteConversation(convId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      toast.success("Conversation deleted");
+    },
+    onError: (err: any) => toast.error(`Failed to delete conversation: ${err.message}`),
   });
 
   const [id, setId] = useState<string | undefined>(undefined);
@@ -382,6 +392,21 @@ export function ConversationsPageView() {
                   </div>
                   <div className="flex items-center gap-2">
                     <Badge variant="outline" className="gap-1 text-[10px]"><Linkedin className="h-3 w-3" />LinkedIn</Badge>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                      title="Delete conversation"
+                      disabled={deleteConversationMutation.isPending}
+                      onClick={() => {
+                        if (window.confirm(`Delete the conversation with ${candidateName(conv)}? Its messages are removed from this list; the lead itself is not deleted.`)) {
+                          deleteConversationMutation.mutate(conv.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span className="sr-only">Delete conversation</span>
+                    </Button>
                     {replyClassificationEnabled && (
                       <select
                         className="h-6 rounded-md border border-border bg-background px-1.5 text-[10px]"

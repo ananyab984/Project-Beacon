@@ -495,27 +495,9 @@ leadRouter.post(
     // creation, so every new/imported lead showed up in the queue with no
     // explicit action taken -- confirmed live: a recruiter who had only
     // added leads, never touched the queue, found several names already
-    // sitting in it.
-    if (role !== "contractor") {
-      // Auto-create conversation thread only for an actual LinkedIn lead --
-      // `parsed.profileLink` alone used to be enough, which is the same gap
-      // fixed for the explicit "Search Lead" path in conversation.routes.ts's
-      // POST / (a proz.com/bodalgo.com link was enough to trip this before).
-      const isLinkedInLead =
-        parsed.source === "LINKEDIN" && !!parsed.profileLink && /linkedin\.com/i.test(parsed.profileLink);
-      if (isLinkedInLead) {
-        await prisma.conversation.create({
-          data: {
-            leadId: lead.id,
-            recruiterId: req.user!.id,
-            candidateName: lead.fullName || "Candidate",
-            candidateRole: candidateRoleOf(parsed.services, parsed.targetLanguage),
-            channel: "LINKEDIN",
-          },
-        }).catch(() => {});
-      }
-    }
-
+    // sitting in it. LinkedIn Conversations follow the same rule: a thread is
+    // only created by the page's own "Search Lead" -> add action, or by the
+    // first message actually sent/received (unipile.service syncToConversation).
     // 2. Trigger background enrichment pipeline immediately
     setImmediate(() => {
       // A lead with contact info goes through the capped pool; one without (born On Hold, which the
@@ -550,7 +532,7 @@ export async function createLeadsFromRows(rows: BulkRow[], userId: string, role:
   // One read of the table for the whole upload (findDuplicateLead's rules,
   // see buildDuplicateIndex) instead of up to four queries per row.
   const duplicates = await loadDuplicateIndex();
-  const toCreate: { result: BulkResult; data: Prisma.LeadCreateManyInput; conversation?: Prisma.ConversationCreateManyInput }[] = [];
+  const toCreate: { result: BulkResult; data: Prisma.LeadCreateManyInput }[] = [];
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -596,18 +578,9 @@ export async function createLeadsFromRows(rows: BulkRow[], userId: string, role:
         }
 
         const hasContact = !!(row.email || row.contactNumber || row.profileLink);
-        // Id generated here so the conversation below can point at the lead
-        // before either is inserted (createMany returns no ids).
         const leadId = randomUUID();
         const result: BulkResult = { index: i, status: "accepted", leadId };
         results.push(result);
-
-        // Auto-create a conversation thread only -- NOT an EmailQueueItem, see
-        // the single-lead create above for why: the queue is opt-in via its
-        // own "Search Lead" -> add action, not something a bulk import should
-        // silently populate for the recruiter who ran it.
-        const isLinkedInLead =
-          role !== "contractor" && row.source === "LINKEDIN" && !!row.profileLink && /linkedin\.com/i.test(row.profileLink);
 
         toCreate.push({
           result,
@@ -629,15 +602,6 @@ export async function createLeadsFromRows(rows: BulkRow[], userId: string, role:
             dupFlagged: false,
             dupFlaggedField: undefined,
           },
-          conversation: isLinkedInLead
-            ? {
-                leadId,
-                recruiterId: userId,
-                candidateName: row.fullName || "Candidate",
-                candidateRole: candidateRoleOf(row.services, row.targetLanguage),
-                channel: "LINKEDIN",
-              }
-            : undefined,
         });
 
         // See the single-create route above: NEW_LEAD is reserved for the
@@ -652,23 +616,16 @@ export async function createLeadsFromRows(rows: BulkRow[], userId: string, role:
   // row still only fails itself, as it did before.
   for (let start = 0; start < toCreate.length; start += BULK_INSERT_CHUNK) {
     const chunk = toCreate.slice(start, start + BULK_INSERT_CHUNK);
-    let inserted = chunk;
     try {
       await prisma.lead.createMany({ data: chunk.map((c) => c.data) });
     } catch {
-      inserted = [];
       for (const c of chunk) {
         try {
           await prisma.lead.create({ data: c.data as Prisma.LeadUncheckedCreateInput });
-          inserted.push(c);
         } catch (err: any) {
           Object.assign(c.result, { status: "error", leadId: undefined, message: err.message });
         }
       }
-    }
-    const conversations = inserted.flatMap((c) => (c.conversation ? [c.conversation] : []));
-    if (conversations.length > 0) {
-      await prisma.conversation.createMany({ data: conversations }).catch((err) => console.error("Bulk conversation create failed:", err));
     }
   }
 
