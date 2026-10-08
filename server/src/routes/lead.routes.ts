@@ -1,3 +1,6 @@
+import { buildDraftLeadPayload } from "../lib/draftLeadPayload";
+import { applyLinkFor } from "../lib/onboarding/applyLinkFor";
+import { getDraftingOrchestrator } from "../drafting/instance";
 import { mustRetryThroughPipeline } from "../lib/pipelineRetryRouting";
 import { Router, Request, Response } from "express";
 import { ownedLeadsWhere } from "../lib/ownedLeads";
@@ -1244,6 +1247,52 @@ leadRouter.post(
   })
 );
 
+// POST /api/leads/:id/follow-up-draft -- the AI-written follow-up a recruiter reviews (edit, send as is, or discard)
+// when the "time to follow up" reminder is opened. Nothing is sent here: it only returns the text.
+leadRouter.post(
+  "/:id/follow-up-draft",
+  requireRole("owner", "recruiter", "contractor"),
+  asyncHandler(async (req: Request, res: Response) => {
+    const { channel } = z.object({ channel: z.enum(["email", "linkedin"]) }).parse(req.body);
+    const lead = await requireActiveLead(req.params.id);
+    assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
+
+    if (lead.flags.includes("DNC")) throw new ApiError(409, "LEAD_DNC", "This lead is marked Do Not Contact.");
+    if (channel === "email" && !lead.email) throw new ApiError(422, "NO_EMAIL", "This lead has no email address.");
+    if (channel === "linkedin" && !lead.profileLink) throw new ApiError(422, "NO_PROFILE_LINK", "This lead has no LinkedIn profile link.");
+
+    const last = await prisma.interactionEvent.findFirst({ where: { leadId: lead.id, direction: "OUTBOUND" }, orderBy: { occurredAt: "desc" } });
+    if (!last) throw new ApiError(409, "NOTHING_SENT", "Nothing has been sent to this lead yet, so there is nothing to follow up on.");
+    const replied = await prisma.interactionEvent.findFirst({ where: { leadId: lead.id, direction: "INBOUND", occurredAt: { gt: last.occurredAt } } });
+    if (replied) throw new ApiError(409, "ALREADY_REPLIED", "This lead has replied since your last message, so no follow-up is needed.");
+
+    const daysSince = Math.floor((Date.now() - last.occurredAt.getTime()) / 86_400_000);
+    const previous = await prisma.conversationMessage.findFirst({
+      where: { sender: "ME", conversation: { leadId: lead.id, channel: channel === "email" ? "EMAIL" : "LINKEDIN" } },
+      orderBy: { sentAt: "desc" },
+      select: { text: true },
+    });
+
+    try {
+      const draft = await getDraftingOrchestrator().draftFollowUp({
+        channel,
+        firstName: buildDraftLeadPayload(lead).First_Name || "there",
+        services: lead.services,
+        sourceLanguage: lead.sourceLanguage,
+        targetLanguage: lead.targetLanguage,
+        daysSince,
+        step: daysSince >= 7 ? 2 : 1,
+        previousMessage: previous?.text ?? null,
+        applyUrl: applyLinkFor(channel, lead),
+      });
+      return res.json({ subject: draft.subject, body: draft.body, daysSince, step: daysSince >= 7 ? 2 : 1 });
+    } catch {
+      // Never fabricate a fallback: the recruiter can write the follow-up by hand.
+      throw new ApiError(502, "DRAFTING_FAILED", "Could not generate a follow-up draft -- write it manually.");
+    }
+  })
+);
+
 // POST /api/leads/bulk-retry-enrichment -- /:id/retry-enrichment for many leads at once (the
 // recruiter multi-selects On Hold leads). Leads still IN_PROGRESS, deleted, or (for a contractor)
 // not theirs are skipped and reported, not failed.
@@ -1504,14 +1553,6 @@ leadRouter.post(
       where: { id: { in: leadIds }, deletedAt: null },
       data: { deletedAt: new Date(), deletedByUserId: req.user!.id },
     });
-
-    // Scheduled follow-ups must not fire for a deleted lead (nor all at once after a restore).
-    if (result.count > 0) {
-      await prisma.followUpExecution.updateMany({
-        where: { leadId: { in: leadIds }, status: "PENDING" },
-        data: { status: "SKIPPED", error: "Lead was deleted" },
-      });
-    }
 
     return res.json({ deletedCount: result.count });
   })

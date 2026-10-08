@@ -29,12 +29,6 @@ import type {
   ApiRequestError,
   UserRole,
   WorkStatus,
-  ApiFollowUpSequence,
-  ApiFollowUpExecution,
-  FollowUpSequenceStatus,
-  FollowUpStepStatus,
-  FollowUpTriggerType,
-  FollowUpChannel,
 } from "@/lib/api-types";
 import { getNeonToken } from "@/lib/neon-auth";
 import { shouldReauthenticate } from "@/lib/authRedirect";
@@ -323,6 +317,11 @@ export const api = {
 
   async retryLeadEnrichment(id: string): Promise<{ lead: ApiLead }> {
     return request(`/api/leads/${id}/retry-enrichment`, { method: "POST" });
+  },
+
+  /** The AI-written follow-up for a lead who hasn't replied. Only returns text; nothing is sent. */
+  async getFollowUpDraft(leadId: string, channel: "email" | "linkedin"): Promise<{ subject: string | null; body: string; daysSince: number; step: 1 | 2 }> {
+    return request(`/api/leads/${leadId}/follow-up-draft`, { method: "POST", body: JSON.stringify({ channel }) });
   },
 
   async retryLeadsEnrichment(ids: string[]): Promise<{ requeued: number; skipped: number }> {
@@ -1050,98 +1049,4 @@ export const api = {
     return request(`/api/reply-categories/${id}`, { method: "DELETE" });
   },
 
-  // -------------------- Follow-up Sequences --------------------
-
-  /** List all follow-up sequences for current user (owner sees all) */
-  async getFollowUpSequences(): Promise<{ sequences: ApiFollowUpSequence[] }> {
-    return request("/api/follow-up-sequences");
-  },
-
-  /** Get a single follow-up sequence with steps */
-  async getFollowUpSequence(id: string): Promise<{ sequence: ApiFollowUpSequence }> {
-    return request(`/api/follow-up-sequences/${id}`);
-  },
-
-  /** Create a follow-up sequence with steps */
-  async createFollowUpSequence(data: {
-    name: string;
-    description?: string;
-    isGlobal?: boolean;
-    steps: Array<{
-      stepOrder: number;
-      triggerType: FollowUpTriggerType;
-      triggerConfig?: Record<string, any>;
-      channel: FollowUpChannel;
-      subjectTemplate?: string;
-      bodyTemplate: string;
-      useAiDraft?: boolean;
-      isActive?: boolean;
-    }>;
-  }): Promise<{ sequence: ApiFollowUpSequence }> {
-    return request("/api/follow-up-sequences", {
-      method: "POST",
-      body: JSON.stringify(data),
-    });
-  },
-
-  /** Update a follow-up sequence (including steps diffing) */
-  async updateFollowUpSequence(
-    id: string,
-    data: {
-      name?: string;
-      description?: string | null;
-      status?: FollowUpSequenceStatus;
-      isGlobal?: boolean;
-      steps?: Array<{
-        id?: string;
-        stepOrder: number;
-        triggerType?: FollowUpTriggerType;
-        triggerConfig?: Record<string, any> | null;
-        channel?: FollowUpChannel;
-        subjectTemplate?: string | null;
-        bodyTemplate?: string;
-        useAiDraft?: boolean;
-        isActive?: boolean;
-      }>;
-    }
-  ): Promise<{ sequence: ApiFollowUpSequence }> {
-    return request(`/api/follow-up-sequences/${id}`, {
-      method: "PATCH",
-      body: JSON.stringify(data),
-    });
-  },
-
-  /** Archive (soft delete) a follow-up sequence */
-  async deleteFollowUpSequence(id: string): Promise<{ success: boolean }> {
-    return request(`/api/follow-up-sequences/${id}`, { method: "DELETE" });
-  },
-
-  /** Enroll a lead in a follow-up sequence */
-  async enrollLeadInSequence(sequenceId: string, leadId: string, recruiterId?: string): Promise<{ executions: ApiFollowUpExecution[] }> {
-    return request(`/api/follow-up-sequences/${sequenceId}/enroll`, {
-      method: "POST",
-      body: JSON.stringify({ leadId, recruiterId }),
-    });
-  },
-
-  /** Get executions for a sequence (optionally filtered by lead/status) */
-  async getFollowUpExecutions(
-    sequenceId: string,
-    filters?: { leadId?: string; status?: FollowUpStepStatus }
-  ): Promise<{ executions: ApiFollowUpExecution[] }> {
-    const params = new URLSearchParams();
-    if (filters?.leadId) params.set("leadId", filters.leadId);
-    if (filters?.status) params.set("status", filters.status);
-    return request(`/api/follow-up-sequences/${sequenceId}/executions${params.toString() ? `?${params}` : ""}`);
-  },
-
-  /** Retry a failed execution */
-  async retryFollowUpExecution(executionId: string): Promise<{ success: boolean }> {
-    return request(`/api/follow-up-executions/${executionId}/retry`, { method: "POST" });
-  },
-
-  /** Skip an execution */
-  async skipFollowUpExecution(executionId: string): Promise<{ success: boolean }> {
-    return request(`/api/follow-up-executions/${executionId}/skip`, { method: "POST" });
-  },
 };

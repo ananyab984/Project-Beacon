@@ -494,30 +494,14 @@ export function formatHighPriorityFlagSlackCard(leadName: string, basePath: stri
 export function formatFollowUpDueSlackCard(leadName: string, daysSince: number, link: string): SlackCard {
   return {
     emoji: "🔔",
-    headline: "Time to follow up",
+    headline: "Follow-up ready to review",
     color: DUE_DATE_REMINDER_COLOR,
     fields: [
       { label: "Lead", value: leadName },
       { label: "Days since contact", value: String(daysSince) },
     ],
-    note: "No reply yet -- consider sending a follow-up.",
-    button: { text: "Open Email Queue", path: link },
-  };
-}
-
-/** FOLLOW_UP_SEQUENCE_STEP's Slack card -- a sequence step was auto-sent
- *  (jobs/followUpSequence.job.ts). */
-export function formatFollowUpSequenceSlackCard(leadName: string, sequenceName: string, stepOrder: number, channel: string, link: string): SlackCard {
-  return {
-    emoji: "📨",
-    headline: "Follow-up sent",
-    color: DUE_DATE_REMINDER_COLOR,
-    fields: [
-      { label: "Lead", value: leadName },
-      { label: "Sequence", value: sequenceName },
-      { label: "Step", value: `${stepOrder} via ${channel}` },
-    ],
-    button: { text: "Open Conversation", path: link },
+    note: "No reply yet. A follow-up is drafted -- review, edit, send or discard it.",
+    button: { text: "Review follow-up", path: link },
   };
 }
 

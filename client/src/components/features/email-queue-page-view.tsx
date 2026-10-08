@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { isAcceptableRecipient } from "@/lib/utils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEmailQueueStore } from "@/stores/useEmailQueueStore";
@@ -164,6 +165,25 @@ export function EmailQueuePageView() {
       markDirty();
     });
   }
+
+  // Opened from a "Review follow-up" reminder (?leadId=...): select that lead's sent email and load the AI-written
+  // follow-up, which the thread below opens in its follow-up box for the recruiter to edit, send as is, or discard.
+  const { leadId: followUpLeadId } = useSearch({ strict: false }) as { leadId?: string };
+  const [followUp, setFollowUp] = useState<{ leadId: string; body: string; step: number; daysSince: number } | null>(null);
+  const followUpHandled = useRef(false);
+  useEffect(() => {
+    if (!followUpLeadId || followUpHandled.current || emailQueue.length === 0) return;
+    followUpHandled.current = true;
+    const target = emailQueue.find((e) => e.leadId === followUpLeadId);
+    if (!target) {
+      toast.error("This lead isn't in your Email Queue.");
+      return;
+    }
+    pick(target.id);
+    api.getFollowUpDraft(followUpLeadId, "email")
+      .then((d) => setFollowUp({ leadId: followUpLeadId, body: d.body, step: d.step, daysSince: d.daysSince }))
+      .catch((err) => toast.error(err?.message ?? "Could not prepare the follow-up draft"));
+  }, [followUpLeadId, emailQueue]);
 
   // Auto-select the first item on initial load, and re-select whenever the
   // currently selected item disappears from the list (e.g. a newly-added
@@ -558,7 +578,7 @@ export function EmailQueuePageView() {
                 // `subject`/`body` above) -- those track the in-progress
                 // compose box, which can point at a different address than
                 // whatever this item was actually dispatched to.
-                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={selected.to || candidateEmail(selected)} subject={selected.subject} body={selected.body} sentAt={selected.sentAt} leadDeleted={!!selected.lead?.deletedAt} />
+                <EmailThread leadId={selected.leadId} candidateName={candidateName(selected)} to={selected.to || candidateEmail(selected)} subject={selected.subject} body={selected.body} sentAt={selected.sentAt} leadDeleted={!!selected.lead?.deletedAt} followUp={followUp?.leadId === selected.leadId ? followUp : null} onFollowUpDone={() => setFollowUp(null)} />
               ) : (
                 <div className="space-y-3">
                   <div>
@@ -696,8 +716,13 @@ type ThreadMessage = {
 // only the newest message expanded -- matching how Gmail itself collapses
 // everything but the latest message in a thread. Click any row to toggle it.
 function EmailThread({
-  leadId, candidateName, to, subject, body, sentAt, leadDeleted,
-}: { leadId: string; candidateName: string; to: string; subject: string; body: string; sentAt: string | null; leadDeleted?: boolean }) {
+  leadId, candidateName, to, subject, body, sentAt, leadDeleted, followUp, onFollowUpDone,
+}: {
+  leadId: string; candidateName: string; to: string; subject: string; body: string; sentAt: string | null; leadDeleted?: boolean;
+  /** An AI-written follow-up to review (from a reminder): opens the follow-up box pre-filled. */
+  followUp?: { body: string; step: number; daysSince: number } | null;
+  onFollowUpDone?: () => void;
+}) {
   const queryClient = useQueryClient();
   const { data, isLoading } = useQuery({
     queryKey: ["email-replies", leadId],
@@ -787,6 +812,14 @@ function EmailThread({
     setReplyDraft("");
   }
 
+  // Open the follow-up box pre-filled with the AI draft when arriving from a reminder.
+  useEffect(() => {
+    if (!followUp) return;
+    setActiveReplyId(FOLLOW_UP_ID);
+    setReplyDraft(followUp.body);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followUp]);
+
   async function sendReply() {
     if (!conversationId || !replyDraft.trim()) return;
     setIsSendingReply(true);
@@ -808,6 +841,7 @@ function EmailThread({
       toast.success(activeReplyId === FOLLOW_UP_ID ? "Follow-up sent" : "Reply sent");
       setActiveReplyId(null);
       setReplyDraft("");
+      onFollowUpDone?.();
     } catch (err: any) {
       toast.error(err.message || "Failed to send reply");
     } finally {
@@ -939,6 +973,12 @@ function EmailThread({
           <div className="pt-1.5">
             {activeReplyId === FOLLOW_UP_ID ? (
               <div className="space-y-1.5">
+                {followUp && (
+                  <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+                    <strong className="text-amber-300">AI-drafted follow-up{followUp.step === 2 ? " (final)" : ""}.</strong>{" "}
+                    {followUp.daysSince} days since your last message, no reply. Edit it, send it as is, or discard it.
+                  </div>
+                )}
                 <div className="relative">
                   <Textarea
                     value={replyDraft}
@@ -948,8 +988,8 @@ function EmailThread({
                   />
                 </div>
                 <div className="flex items-center justify-end gap-2">
-                  <button onClick={() => setActiveReplyId(null)} className="text-[11px] text-muted-foreground hover:underline">
-                    Cancel
+                  <button onClick={() => { setActiveReplyId(null); setReplyDraft(""); onFollowUpDone?.(); }} className="text-[11px] text-muted-foreground hover:underline">
+                    {followUp ? "Discard" : "Cancel"}
                   </button>
                   <Button
                     size="sm"

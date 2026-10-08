@@ -7,7 +7,6 @@ import { purgeExpiredRecycleBinLeads } from "./recycleBinPurge.job";
 import { sendDailyDemandSummary, sendWeeklyContractorDigest } from "./contractorDigest.job";
 import { sendFollowUpNudges } from "./followup-nudge.job";
 import { sendWeeklyTeamHealthDigest } from "./ownerDigest.job";
-import { processFollowUpSequences } from "./followUpSequence.job";
 import { runOncePerTick } from "./cronLock";
 
 /** Starts all recurring background work in-process (node-cron). No queue/Redis
@@ -32,11 +31,6 @@ export function startBackgroundJobs() {
   // Hourly: nudge recruiters about outreach sent 3+/7+ days ago with no reply.
   cron.schedule("0 * * * *", () => {
     runOncePerTick("follow_up_nudges", sendFollowUpNudges).catch((err) => console.error("[jobs] follow-up nudge scan failed:", err));
-  });
-
-  // Every minute: process pending follow-up sequence executions
-  cron.schedule("* * * * *", () => {
-    runOncePerTick("follow_up_sequences", processFollowUpSequences).catch((err) => console.error("[jobs] follow-up sequence processing failed:", err));
   });
 
   // Monthly, 3am on the 1st: recompute every recruiter's score snapshot.

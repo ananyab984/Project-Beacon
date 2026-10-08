@@ -112,6 +112,55 @@ function parseDraftJson(text: string): Record<string, any> {
   return { body: text };
 }
 
+export interface FollowUpInput {
+  channel: "email" | "linkedin";
+  firstName: string;
+  services: string[];
+  sourceLanguage: string | null;
+  targetLanguage: string | null;
+  /** Days since our last message with no reply. */
+  daysSince: number;
+  /** 1 = first nudge, 2 = the final one. */
+  step: 1 | 2;
+  /** Our last message to them, for context only -- never to be repeated. */
+  previousMessage: string | null;
+  applyUrl: string;
+}
+
+/** The prompt for a follow-up to a lead who hasn't replied. Pure so it can be tested without a model. */
+export function buildFollowUpPrompt(input: FollowUpInput): [system: string, user: string] {
+  const email = input.channel === "email";
+  const system = `You write short, polite follow-up messages for ${BRAND.company}, a localization company recruiting freelance linguists.
+The candidate has not replied to our earlier message. Write ONE follow-up that a recruiter will review before sending.
+
+RULES
+- Use only the facts given below. Never invent employers, rates, credentials, deadlines or promises.
+- Do not repeat the earlier message; refer to it briefly ("I wrote a few days ago").
+- Warm and low-pressure. No guilt, no urgency tricks, no exclamation marks.
+- ${input.step === 2 ? "This is the LAST follow-up: say so gently and make it easy to say no or to apply later." : "This is the first follow-up: a light check-in that restates the opportunity in one line."}
+- ${email ? "Email: 3-5 short sentences. Include a subject line." : "LinkedIn message: at most 2-3 short sentences (under 300 characters), no subject."}
+- Mention the apply link once, exactly as given.
+Reply as JSON: ${email ? '{"subject": "...", "body": "..."}' : '{"body": "..."}'}`;
+  const facts = [
+    `First name: ${input.firstName}`,
+    input.services.length ? `Services: ${input.services.join(", ")}` : null,
+    input.sourceLanguage || input.targetLanguage ? `Languages: ${[input.sourceLanguage, input.targetLanguage].filter(Boolean).join(" -> ")}` : null,
+    `Days since our last message: ${input.daysSince}`,
+    `Apply link: ${input.applyUrl}`,
+  ].filter(Boolean).join("\n");
+  const user = `FACTS\n${facts}\n\nOUR EARLIER MESSAGE (context only, do not repeat)\n${input.previousMessage?.trim() || "(not available)"}`;
+  return [system, user];
+}
+
+export async function generateFollowUp(client: ClaudeClient, cfg: DraftingConfig, input: FollowUpInput) {
+  const [system, user] = buildFollowUpPrompt(input);
+  const completion = await client.chat(system, user, { model: cfg.genModel, temperature: 0.4, jsonMode: true, maxTokens: 500 });
+  const data = parseDraftJson(completion.text);
+  const body = ensureLinks((data.body || "").trim(), input.channel, input.applyUrl);
+  const subject = input.channel === "email" ? (data.subject || "Following up").trim() : null;
+  return { subject, body, model: completion.model };
+}
+
 /** Generate an outreach email draft, personalized from the lead's real enriched facts. */
 export async function generateEmail(
   client: ClaudeClient,

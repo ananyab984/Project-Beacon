@@ -5,7 +5,7 @@
 import { randomBytes } from "crypto";
 import type { DraftingConfig } from "./config";
 import { ClaudeClient } from "./claudeClient";
-import { Draft, generateEmail, generateLinkedin } from "./draftGenerator";
+import { Draft, FollowUpInput, generateEmail, generateFollowUp, generateLinkedin } from "./draftGenerator";
 import { EditLogResult, logRecruiterEdit } from "./editLogger";
 import { checkChannelEligibility, fromRecord } from "./leads";
 import { Evaluation, evaluate } from "./evaluator";
@@ -41,6 +41,12 @@ export class DraftingOrchestrator {
     this.config = config;
     this.client = config.apiKey ? new ClaudeClient(config) : null;
     this.rateCardService = new RateCardService(rateCard);
+  }
+
+  /** A review-before-send follow-up for a lead who hasn't replied (see POST /api/leads/:id/follow-up-draft). */
+  async draftFollowUp(input: FollowUpInput) {
+    if (!this.client) throw new Error("CLAUDE_API_KEY is not configured.");
+    return generateFollowUp(this.client, this.config, input);
   }
 
   async processDraft(

@@ -41,6 +41,7 @@ export async function sendFollowUpNudges() {
 
   for (const event of events) {
     if (!event.recruiterId) continue; // defensive -- outbound sends always set this today
+    if (event.lead.flags.includes("DNC")) continue; // never prompt a follow-up to a Do Not Contact lead
 
     const reply = await prisma.interactionEvent.findFirst({
       where: { leadId: event.leadId, direction: "INBOUND", occurredAt: { gt: event.occurredAt } },
@@ -49,20 +50,25 @@ export async function sendFollowUpNudges() {
 
     const daysSince = Math.floor((Date.now() - event.occurredAt.getTime()) / 86_400_000);
     const step = daysSince >= FOLLOW_UP_STEP_2_DAYS ? 2 : 1;
-    const link = `/recruiter/email-queue?leadId=${event.leadId}&followupStep=${step}&evt=${event.id}`;
+    // Opens the page the recruiter sent from; it shows the AI-drafted follow-up to review (edit / send / discard).
+    const query = `?leadId=${event.leadId}&followupStep=${step}&evt=${event.id}`;
+    const link = `${event.channel === "LINKEDIN_DM" ? "/recruiter/conversations" : "/recruiter/email-queue"}${query}`;
 
     // Guards against re-notifying the same send+step on the next hourly run
     // -- link encodes both the interaction event and the step, so a lead
     // that later crosses from step 1 to step 2 still gets a second nudge.
-    const alreadyNotified = await prisma.notification.findFirst({ where: { type: "FOLLOW_UP_DUE", link } });
+    // (Reminders sent before LinkedIn leads got their own link all pointed at the email queue -- count those too.)
+    const alreadyNotified = await prisma.notification.findFirst({
+      where: { type: "FOLLOW_UP_DUE", link: { in: [link, `/recruiter/email-queue${query}`] } },
+    });
     if (alreadyNotified) continue;
 
     const leadName = event.lead.displayName || event.lead.fullName || event.lead.maskedLabel || "this lead";
     await createNotification({
       recipientId: event.recruiterId,
       type: "FOLLOW_UP_DUE",
-      title: `Time to follow up with ${leadName}`,
-      body: `it's been ${daysSince} days since your last outreach to ${leadName} with no reply yet. Consider sending a follow-up.`,
+      title: `Review follow-up for ${leadName}`,
+      body: `It's been ${daysSince} days since your last message to ${leadName} with no reply. A follow-up is drafted for you to review: edit it, send it as is, or discard it.`,
       slackCard: formatFollowUpDueSlackCard(leadName, daysSince, link),
       link,
     }).catch((err) => console.error(`[followup-nudge.job] notify failed for lead ${event.leadId}:`, err));

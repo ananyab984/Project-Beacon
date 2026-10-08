@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useSearch } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -140,7 +141,27 @@ export function ConversationsPageView() {
   const pickConv = (convId: string) => {
     setId(convId);
     setDraft("");
+    setFollowUp(null);
   };
+
+  // Opened from a "Review follow-up" reminder (?leadId=...): select that lead's thread and put the AI-written
+  // follow-up in the message box for the recruiter to edit, send as is, or discard.
+  const { leadId: followUpLeadId } = useSearch({ strict: false }) as { leadId?: string };
+  const [followUp, setFollowUp] = useState<{ step: number; daysSince: number } | null>(null);
+  const followUpHandled = useRef(false);
+  useEffect(() => {
+    if (!followUpLeadId || followUpHandled.current || isLoading) return;
+    followUpHandled.current = true;
+    const target = filtered.find((c: ApiConversation) => c.leadId === followUpLeadId);
+    if (!target) {
+      toast.error("No LinkedIn conversation found for this lead.");
+      return;
+    }
+    setId(target.id);
+    api.getFollowUpDraft(followUpLeadId, "linkedin")
+      .then((d) => { setDraft(d.body); setFollowUp({ step: d.step, daysSince: d.daysSince }); })
+      .catch((err) => toast.error(err?.message ?? "Could not prepare the follow-up draft"));
+  }, [followUpLeadId, filtered, isLoading]);
 
   const handleGenerateLinkedInDraft = async () => {
     if (!conv) return;
@@ -236,6 +257,7 @@ export function ConversationsPageView() {
       await queryClient.invalidateQueries({ queryKey: ["conversations"] });
       toast.success("Message dispatched via LinkedIn!");
       setDraft("");
+      setFollowUp(null);
       setSelectAccountDialogOpen(false);
     } catch (err: any) {
       if (err.code === "ACCOUNT_NOT_CONNECTED" || err.message?.includes("connect")) {
@@ -513,6 +535,18 @@ export function ConversationsPageView() {
                 {conv.lead?.deletedAt && (
                   <div className="shrink-0 border-t border-destructive/40 bg-destructive/10 px-3.5 py-2 text-xs text-destructive">
                     This lead has been deleted. The conversation is kept for reference, but you can't send messages until the lead is restored from the recycle bin.
+                  </div>
+                )}
+
+                {followUp && (
+                  <div className="shrink-0 flex items-center justify-between gap-3 border-t border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs text-amber-200">
+                    <span>
+                      <strong className="text-amber-300">AI-drafted follow-up{followUp.step === 2 ? " (final)" : ""}.</strong>{" "}
+                      {followUp.daysSince} days since your last message, no reply. Edit it, send it as is, or discard it.
+                    </span>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => { setDraft(""); setFollowUp(null); }}>
+                      Discard
+                    </Button>
                   </div>
                 )}
 
