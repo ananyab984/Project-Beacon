@@ -143,7 +143,12 @@ function LeadsPage() {
   const deleteMutation = useMutation({
     mutationFn: (leadIds: string[]) => api.deleteLeads(leadIds),
     onSuccess: (data) => {
+      if (data.deletedCount === 0) {
+        toast.error("No leads were deleted — they may already be deleted or you lack permission");
+        return;
+      }
       queryClient.invalidateQueries({ queryKey: ["leads"] });
+      queryClient.invalidateQueries({ queryKey: ["leads", "mine"] });
       setSelected(new Set());
       toast.success(`Deleted ${data.deletedCount} lead${data.deletedCount > 1 ? "s" : ""} successfully!`);
     },
@@ -192,6 +197,7 @@ function LeadsPage() {
 
   function invalidateLeads() {
     queryClient.invalidateQueries({ queryKey: ["leads"] });
+    queryClient.invalidateQueries({ queryKey: ["leads", "mine"] });
     queryClient.invalidateQueries({ queryKey: ["email-queue"] });
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   }

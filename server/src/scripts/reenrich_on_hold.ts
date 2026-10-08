@@ -3,12 +3,19 @@
  * Finds all leads with a valid profileLink that are currently on hold/stalled,
  * runs them through enrichLeadById with concurrency=5,
  * and clears onHoldReason / ON_HOLD flags upon successful completion.
+ * 
+ * Includes graceful shutdown: on SIGTERM/SIGINT, waits for in-flight enrichments
+ * to complete (up to 5 min) before exiting, so no lead is left IN_PROGRESS.
  */
 import { PrismaClient, EnrichmentStatus, LeadFlagType, OnHoldReason } from "@prisma/client";
-import { enrichLeadById } from "../jobs/enrichment.job";
+import { enrichLeadById, stopClaimingEnrichments, waitForActiveEnrichments } from "../jobs/enrichment.job";
 
 const prisma = new PrismaClient();
 const CONCURRENCY = 5;
+
+// Track in-flight enrichments for graceful shutdown
+const inFlightScriptLeadIds = new Set<string>();
+let scriptShuttingDown = false;
 
 async function drainWithConcurrency(
   ids: string[],
@@ -18,15 +25,47 @@ async function drainWithConcurrency(
   async function worker() {
     while (idx < ids.length) {
       const i = idx++;
-      await fn(ids[i], i).catch((err) =>
-        console.error(`  ✗ Error on lead ${ids[i]}:`, err?.message ?? err)
-      );
+      if (scriptShuttingDown) break;
+      const id = ids[i];
+      inFlightScriptLeadIds.add(id);
+      try {
+        await fn(id, i).catch((err) =>
+          console.error(`  ✗ Error on lead ${id}:`, err?.message ?? err)
+        );
+      } finally {
+        inFlightScriptLeadIds.delete(id);
+      }
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 }
 
+async function waitForScriptInFlight(timeoutMs = 300000): Promise<void> {
+  const start = Date.now();
+  while (inFlightScriptLeadIds.size > 0 && Date.now() - start < timeoutMs) {
+    console.log(`[shutdown] Waiting for ${inFlightScriptLeadIds.size} in-flight enrichments...`);
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  if (inFlightScriptLeadIds.size > 0) {
+    console.warn(`[shutdown] Timeout reached, ${inFlightScriptLeadIds.size} enrichments still in flight: ${[...inFlightScriptLeadIds].join(", ")}`);
+  }
+}
+
 async function main() {
+  // Graceful shutdown handlers
+  const shutdown = async (signal: string) => {
+    console.log(`\n[${signal}] Received, draining in-flight enrichments...`);
+    scriptShuttingDown = true;
+    stopClaimingEnrichments(); // Stop the job's poller from claiming new
+    await waitForScriptInFlight();
+    await waitForActiveEnrichments(120000); // Also wait for job's in-flight
+    console.log("[shutdown] Done, exiting.");
+    await prisma.$disconnect();
+    process.exit(0);
+  };
+  process.once("SIGTERM", () => shutdown("SIGTERM"));
+  process.once("SIGINT", () => shutdown("SIGINT"));
+
   console.log("============================================================");
   console.log("RE-ENRICHING ON-HOLD & STALLED LEADS");
   console.log("============================================================\n");
@@ -61,6 +100,7 @@ async function main() {
   await drainWithConcurrency(
     leads.map((l) => l.id),
     async (id, i) => {
+      if (scriptShuttingDown) return;
       const l = leads[i];
       console.log(`[${i + 1}/${total}] ➔ Starting: ${l.fullName ?? "Unknown"} (${l.profileLink})`);
       await enrichLeadById(id);

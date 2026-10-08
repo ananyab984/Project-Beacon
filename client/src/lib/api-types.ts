@@ -595,6 +595,58 @@ export interface ApiEnrichmentEvaluation {
 export type EnrichmentRunOutcome =
   "ENRICHED" | "PARTIALLY_ENRICHED" | "NOTHING_FOUND" | "TIMED_OUT" | "SYSTEM_ERROR";
 
+export type FollowUpSequenceStatus = "ACTIVE" | "PAUSED" | "COMPLETED" | "ARCHIVED";
+export type FollowUpStepStatus = "PENDING" | "SCHEDULED" | "SENT" | "FAILED" | "SKIPPED";
+export type FollowUpTriggerType = "TIME_BASED" | "STAGE_CHANGE" | "REPLY_RECEIVED" | "MANUAL";
+export type FollowUpChannel = "EMAIL" | "LINKEDIN";
+
+export interface ApiFollowUpStep {
+  id: string;
+  sequenceId: string;
+  stepOrder: number;
+  triggerType: FollowUpTriggerType;
+  triggerConfig: Record<string, any>;
+  channel: FollowUpChannel;
+  subjectTemplate: string | null;
+  bodyTemplate: string;
+  useAiDraft: boolean;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiFollowUpSequence {
+  id: string;
+  name: string;
+  description: string | null;
+  status: FollowUpSequenceStatus;
+  ownerId: string;
+  owner?: { id: string; name: string };
+  isGlobal: boolean;
+  createdAt: string;
+  updatedAt: string;
+  steps: ApiFollowUpStep[];
+}
+
+export interface ApiFollowUpExecution {
+  id: string;
+  stepId: string;
+  step?: ApiFollowUpStep;
+  leadId: string;
+  lead?: { id: string; fullName: string | null; displayName: string | null; email: string | null; profileLink: string | null; stage: string };
+  recruiterId: string;
+  recruiter?: { id: string; name: string };
+  status: FollowUpStepStatus;
+  scheduledAt: string | null;
+  sentAt: string | null;
+  subject: string | null;
+  body: string | null;
+  error: string | null;
+  interactionEventId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 /** Shape of every thrown error from the `request()` helper in api.ts. */
 export interface ApiRequestError extends Error {
   code?: string;

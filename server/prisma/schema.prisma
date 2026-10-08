@@ -256,6 +256,33 @@ enum EmailQueueStatus {
   SENT
 }
 
+enum FollowUpSequenceStatus {
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum FollowUpStepStatus {
+  PENDING
+  SCHEDULED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum FollowUpTriggerType {
+  TIME_BASED
+  STAGE_CHANGE
+  REPLY_RECEIVED
+  MANUAL
+}
+
+enum FollowUpChannel {
+  EMAIL
+  LINKEDIN
+}
+
 enum ClientDemandPriority {
   STANDARD
   HIGH
@@ -341,6 +368,10 @@ model User {
   requirementsAssigned         Requirement[]            @relation("RequirementAssignee")
   requirementAssignmentsAsRec  RequirementAssignment[]  @relation("RequirementAssignmentRecruiter")
   requirementAssignmentsMade   RequirementAssignment[]  @relation("RequirementAssignedBy")
+
+  // Follow-up sequences
+  followUpSequencesOwned FollowUpSequence[] @relation("FollowUpSequenceOwner")
+  followUpExecutions     FollowUpExecution[] @relation("FollowUpExecutionRecruiter")
 
   // Notifications
   notifications             Notification[]
@@ -515,17 +546,18 @@ model Lead {
   deletedBy       User?     @relation("DeletedBy", fields: [deletedByUserId], references: [id])
 
   // relations
-  vendorMatches        LeadVendorMatch[]
-  stageHistory         StageHistory[]
-  flagEvents           LeadFlagEvent[]
-  interactionEvents    InteractionEvent[]
-  manualActivityLogs   ManualActivityLog[]
-  emailQueueItems      EmailQueueItem[]
-  conversations        Conversation[]
-  classificationEvents ReplyClassificationEvent[]
-  reenrichmentRuns     ReenrichmentRun[]
-  enrichmentRuns       EnrichmentRun[]
+  vendorMatches            LeadVendorMatch[]
+  stageHistory             StageHistory[]
+  flagEvents               LeadFlagEvent[]
+  interactionEvents        InteractionEvent[]
+  manualActivityLogs       ManualActivityLog[]
+  emailQueueItems          EmailQueueItem[]
+  conversations            Conversation[]
+  classificationEvents     ReplyClassificationEvent[]
+  reenrichmentRuns         ReenrichmentRun[]
+  enrichmentRuns           EnrichmentRun[]
   notificationSubscriptions LeadNotificationSubscription[]
+  followUpExecutions       FollowUpExecution[]
 
   @@index([enrichmentStatus])
   @@index([assignedRecruiterId])
@@ -1070,6 +1102,72 @@ model EmailQueueItem {
   @@map("email_queue_items")
 }
 
+/// Follow-up Sequence — owner/recruiter defined multi-step outreach automation
+model FollowUpSequence {
+  id          String                @id @default(uuid())
+  name        String
+  description String?
+  status      FollowUpSequenceStatus @default(ACTIVE)
+  ownerId     String                @map("owner_id")
+  owner       User                  @relation("FollowUpSequenceOwner", fields: [ownerId], references: [id])
+  isGlobal    Boolean               @default(false) @map("is_global") // true = available to all recruiters
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  steps       FollowUpStep[]
+
+  @@index([ownerId, status])
+  @@map("follow_up_sequences")
+}
+
+/// Individual step in a follow-up sequence
+model FollowUpStep {
+  id              String              @id @default(uuid())
+  sequenceId      String              @map("sequence_id")
+  sequence        FollowUpSequence    @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+  stepOrder       Int                 @map("step_order")
+  triggerType     FollowUpTriggerType @default(TIME_BASED) @map("trigger_type")
+  triggerConfig   Json?               @map("trigger_config") // e.g. { daysAfter: 3 }, { stage: "CONTACTED" }, { replyCategory: "INTERESTED" }
+  channel         FollowUpChannel
+  subjectTemplate String?             @map("subject_template") // for email
+  bodyTemplate    String              @map("body_template")
+  useAiDraft      Boolean             @default(true) @map("use_ai_draft") // if true, AI personalizes template per lead
+  isActive        Boolean             @default(true) @map("is_active")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  executions      FollowUpExecution[]
+
+  @@unique([sequenceId, stepOrder])
+  @@index([sequenceId])
+  @@map("follow_up_steps")
+}
+
+/// Execution record for a specific lead going through a sequence step
+model FollowUpExecution {
+  id          String               @id @default(uuid())
+  stepId      String               @map("step_id")
+  step        FollowUpStep         @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  leadId      String               @map("lead_id")
+  lead        Lead                 @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  recruiterId String               @map("recruiter_id")
+  recruiter   User                 @relation("FollowUpExecutionRecruiter", fields: [recruiterId], references: [id])
+  status      FollowUpStepStatus   @default(PENDING)
+  scheduledAt DateTime?            @map("scheduled_at")
+  sentAt      DateTime?            @map("sent_at")
+  subject     String?              // rendered subject (for email)
+  body        String?              // rendered body (AI-drafted or template)
+  error       String?
+  interactionEventId String?       @map("interaction_event_id") // link to sent message
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+
+  @@unique([stepId, leadId])
+  @@index([leadId, status])
+  @@index([recruiterId, status])
+  @@map("follow_up_executions")
+}
+
 // ----------------------------------------------------------------------------
 // CONVERSATIONS — multi-channel candidate messaging
 // (recruiter-mock.ts Conversation). Confirms outreach spans LinkedIn,
@@ -1264,6 +1362,8 @@ enum NotificationType {
   DUPLICATE_REVIEW_NEEDED
   DNC_CONFIRMATION_NEEDED
   FOLLOW_UP_DUE
+  FOLLOW_UP_SEQUENCE_STEP
+  FOLLOW_UP_SEQUENCE_COMPLETED
   LEAD_PLACED
   WEEKLY_TEAM_HEALTH_SUMMARY
   CLIENT_STATUS_UPDATE

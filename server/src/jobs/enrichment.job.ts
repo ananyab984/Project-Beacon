@@ -594,8 +594,10 @@ export async function enrichLeadById(leadId: string) {
 // 73.3-minute retry deadline, so this can only ever catch a lead that is
 // truly orphaned (the axios call itself never returned control at all --
 // process crash/restart mid-call), never one still working within its own
-// documented budget.
-const STALL_TIMEOUT_MS = 30 * 60_000;
+// documented budget. The original 80-minute value was correct; 30 minutes
+// was a regression that caused false-positive stalls on legitimate slow
+// leads (Stage 6 web search, slow Parallel runs).
+const STALL_TIMEOUT_MS = 80 * 60_000;
 
 /** Finds leads stuck in IN_PROGRESS past STALL_TIMEOUT_MS and marks them
  *  STALLED so they stop looking like they're still actively enriching.

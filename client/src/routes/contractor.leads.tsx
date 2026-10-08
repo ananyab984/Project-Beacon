@@ -79,6 +79,8 @@ function MyLeadsPage() {
   const leadsQuery = useQuery({
     queryKey: ["leads", "mine"],
     queryFn: () => api.getMyLeads(),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
   });
   const all = leadsQuery.data?.leads ?? [];
 
@@ -146,6 +148,7 @@ function MyLeadsPage() {
 
   function invalidateLeads() {
     queryClient.invalidateQueries({ queryKey: ["leads"] });
+    queryClient.invalidateQueries({ queryKey: ["leads", "mine"] });
   }
 
   const enrichMutation = useMutation({

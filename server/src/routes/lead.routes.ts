@@ -204,7 +204,6 @@ leadRouter.get(
   "/",
   requireRole("owner", "recruiter"),
   asyncHandler(async (req: Request, res: Response) => {
-    const role = req.user!.role.toLowerCase() as Role;
     const limit = Math.min(parseInt(String(req.query.limit ?? "25"), 10) || 25, 100);
     const cursor = req.query.cursor as string | undefined;
     const dateRangeDays: Record<string, number> = { "24h": 1, "7d": 7, "30d": 30 };
@@ -222,21 +221,10 @@ leadRouter.get(
       since,
     });
 
-    // Contractors are walled off: they only see their own submitted leads.
-    if (role === "contractor") {
-      where.createdByContractorId = req.user!.id;
-    } else if (role === "recruiter") {
-      // Recruiters see the global (identity-resolved, complete) pool + their own assigned/created leads.
-      const scopeConditions = [
-        { identityResolved: true, enrichmentStatus: "COMPLETE" as const },
-        { assignedRecruiterId: req.user!.id },
-        { createdByRecruiterId: req.user!.id },
-      ];
-      where.AND = [
-        ...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []),
-        { OR: scopeConditions },
-      ];
-    }
+    // Both Owner and Recruiter see the SAME Global Leads pool:
+    // all non-deleted leads matching the query filters.
+    // Contractors are excluded from this endpoint entirely (use /mine).
+    // No role-based scoping here — Global Leads = same for everyone.
 
     const leads = await prisma.lead.findMany({
       where,

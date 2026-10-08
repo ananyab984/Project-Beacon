@@ -169,6 +169,8 @@ function LeadsPage() {
   const mineQuery = useQuery({
     queryKey: ["leads", "mine"],
     queryFn: () => api.getMyLeads(),
+    refetchInterval: 10_000,
+    staleTime: 5_000,
   });
   const recruitersQuery = useQuery({
     queryKey: ["users", "RECRUITER"],
@@ -249,6 +251,7 @@ function LeadsPage() {
 
   function invalidateLeads() {
     queryClient.invalidateQueries({ queryKey: ["leads"] });
+    queryClient.invalidateQueries({ queryKey: ["leads", "mine"] });
     queryClient.invalidateQueries({ queryKey: ["email-queue"] });
     queryClient.invalidateQueries({ queryKey: ["conversations"] });
   }
@@ -344,6 +347,10 @@ function LeadsPage() {
   const deleteMutation = useMutation({
     mutationFn: (leadIds: string[]) => api.deleteLeads(leadIds),
     onSuccess: (data) => {
+      if (data.deletedCount === 0) {
+        toast.error("No leads were deleted — they may already be deleted or you lack permission");
+        return;
+      }
       invalidateLeads();
       setSelected(new Set());
       toast.success(

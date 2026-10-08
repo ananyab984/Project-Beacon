@@ -24,6 +24,7 @@ import { healthHandler } from "./lib/health";
 import { replyCategoriesRouter } from "./routes/replyCategories.routes";
 import { notificationRouter } from "./routes/notification.routes";
 import { systemSettingsRouter } from "./routes/system-settings.routes";
+import { followUpSequenceRouter } from "./routes/followUpSequence.routes";
 import { notFoundHandler, errorHandler } from "./middleware/errorHandler";
 import { startBackgroundJobs, stopBackgroundJobs } from "./jobs";
 import {
@@ -107,6 +108,7 @@ app.use("/api/faq", faqRouter);
 app.use("/api/reply-categories", replyCategoriesRouter);
 app.use("/api/notifications", notificationRouter);
 app.use("/api/system-settings", systemSettingsRouter);
+app.use("/api/follow-up-sequences", followUpSequenceRouter);
 app.use("/api", evaluationRouter);
 // Deliberately NOT under /api: this is a public link a candidate opens in a
 // browser, and every character counts against the LinkedIn note cap.
