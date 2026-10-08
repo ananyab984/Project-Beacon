@@ -2,8 +2,8 @@
 -- The enum value stays in Postgres (dropping it means recreating the type); nothing writes it any more.
 UPDATE "leads"
 SET "enrichment_status" = 'COMPLETE',
-    "identity_resolved" = ("email" IS NOT NULL OR "contact_number" IS NOT NULL) AND NOT ('ON_HOLD' = ANY("flags")),
+    "identity_resolved" = ("email_address" IS NOT NULL OR "contact_number" IS NOT NULL) AND NOT ('ON_HOLD' = ANY("flags")),
     "promoted_to_global_at" = CASE
-      WHEN ("email" IS NOT NULL OR "contact_number" IS NOT NULL) AND NOT ('ON_HOLD' = ANY("flags"))
+      WHEN ("email_address" IS NOT NULL OR "contact_number" IS NOT NULL) AND NOT ('ON_HOLD' = ANY("flags"))
       THEN COALESCE("promoted_to_global_at", now()) END
 WHERE "enrichment_status" = 'FLAGGED_REVIEW';
