@@ -67,7 +67,7 @@ export function startBackgroundJobs() {
     runOncePerTick("weekly_team_health_digest", sendWeeklyTeamHealthDigest).catch((err) => console.error("[jobs] weekly owner team-health digest failed:", err));
   });
 
-  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, follow-up nudges: hourly, follow-up sequences: every minute, due-date reminders: daily, recycle bin purge: daily, contractor demand summary: daily, contractor digest: weekly, owner team-health digest: weekly, scoring: monthly)");
+  console.log("[jobs] background jobs scheduled (enrichment: */3min, escalations: hourly, follow-up nudges: hourly, due-date reminders: daily, recycle bin purge: daily, contractor demand summary: daily, contractor digest: weekly, owner team-health digest: weekly, scoring: monthly)");
 }
 
 /** Stops every scheduled job in this process (graceful shutdown). */

@@ -1048,5 +1048,4 @@ export const api = {
   async deleteReplyCategory(id: string): Promise<{ success: boolean }> {
     return request(`/api/reply-categories/${id}`, { method: "DELETE" });
   },
-
 };

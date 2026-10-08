@@ -342,8 +342,6 @@ model User {
   requirementAssignmentsAsRec  RequirementAssignment[]  @relation("RequirementAssignmentRecruiter")
   requirementAssignmentsMade   RequirementAssignment[]  @relation("RequirementAssignedBy")
 
-  // Follow-up sequences
-
   // Notifications
   notifications             Notification[]
   notificationPreferences   NotificationPreference[]
@@ -521,16 +519,16 @@ model Lead {
   deletedBy       User?     @relation("DeletedBy", fields: [deletedByUserId], references: [id])
 
   // relations
-  vendorMatches            LeadVendorMatch[]
-  stageHistory             StageHistory[]
-  flagEvents               LeadFlagEvent[]
-  interactionEvents        InteractionEvent[]
-  manualActivityLogs       ManualActivityLog[]
-  emailQueueItems          EmailQueueItem[]
-  conversations            Conversation[]
-  classificationEvents     ReplyClassificationEvent[]
-  reenrichmentRuns         ReenrichmentRun[]
-  enrichmentRuns           EnrichmentRun[]
+  vendorMatches        LeadVendorMatch[]
+  stageHistory         StageHistory[]
+  flagEvents           LeadFlagEvent[]
+  interactionEvents    InteractionEvent[]
+  manualActivityLogs   ManualActivityLog[]
+  emailQueueItems      EmailQueueItem[]
+  conversations        Conversation[]
+  classificationEvents ReplyClassificationEvent[]
+  reenrichmentRuns     ReenrichmentRun[]
+  enrichmentRuns       EnrichmentRun[]
   notificationSubscriptions LeadNotificationSubscription[]
 
   @@index([enrichmentStatus])
