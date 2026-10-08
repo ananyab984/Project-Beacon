@@ -1,3 +1,4 @@
+import { mustRetryThroughPipeline } from "../lib/pipelineRetryRouting";
 import { Router, Request, Response } from "express";
 import { ownedLeadsWhere } from "../lib/ownedLeads";
 import { z } from "zod";
@@ -1330,6 +1331,11 @@ leadRouter.post(
   asyncHandler(async (req: Request, res: Response) => {
     const lead = await requireActiveLead(req.params.id);
     assertContractorOwnsLead(req.user!.role, req.user!.id, lead);
+
+    // Stalled / system-error / timeout leads go back through the normal pipeline (Parallel), never Autumn.
+    if (mustRetryThroughPipeline(lead)) {
+      throw new ApiError(409, "USE_RETRY_ENRICHMENT", "This lead's enrichment run didn't finish. Use Retry enrichment to re-run it through the pipeline.");
+    }
 
     // The in-flight lock. The button is disabled client-side while a run is
     // active, but that alone can't stop a second tab, a stale page, or a
