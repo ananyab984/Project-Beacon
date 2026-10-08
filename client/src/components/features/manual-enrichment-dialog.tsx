@@ -40,7 +40,7 @@ interface Props {
   lead: LeadForEnrichment | null;
   onMarkEnriched: (id: string, updatedData: Partial<LeadForEnrichment>) => Promise<unknown>;
   /** Set when this dialog is stepping through several selected leads ("Lead 2 of 7"). */
-  queue?: { index: number; total: number; onSkip: () => void };
+  queue?: { index: number; total: number; onSkip: () => void; swipe?: "left" | "right" | null };
 }
 
 export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriched, queue }: Props) {
@@ -155,7 +155,21 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto overflow-x-hidden">
+        {/* Keyed on the lead so each card in a queue slides in fresh; `swipe` flings the current one off
+            (right = marked Enriched, left = skipped/saved), Tinder-style. */}
+        <div
+          key={lead.id}
+          className={`grid gap-4 ${
+            queue?.swipe === "right"
+              ? "translate-x-[130%] rotate-12 opacity-0 transition-all duration-300 ease-in"
+              : queue?.swipe === "left"
+                ? "-translate-x-[130%] -rotate-12 opacity-0 transition-all duration-300 ease-in"
+                : queue
+                  ? "animate-in fade-in-0 slide-in-from-right-24 duration-300"
+                  : ""
+          }`}
+        >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-lg">
             <span className={`grid h-7 w-7 place-items-center rounded-lg ${hasContact ? "bg-accent/15 text-accent" : "bg-warning/15 text-warning"}`}>
@@ -300,6 +314,7 @@ export function ManualEnrichmentDialog({ open, onOpenChange, lead, onMarkEnriche
             Mark as Enriched
           </Button>
         </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

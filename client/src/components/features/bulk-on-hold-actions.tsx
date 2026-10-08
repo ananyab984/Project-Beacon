@@ -59,16 +59,25 @@ export function BulkOnHoldActions({ selectedLeads, onMarkEnriched, onClearHold, 
   const [queue, setQueue] = useState<ApiLead[] | null>(null);
   const [index, setIndex] = useState(0);
   // Set once the dialog's own save succeeded, so its follow-up onOpenChange(false) means "next card", not "closed".
-  const advancing = useRef(false);
+  const advancing = useRef<"left" | "right" | null>(null);
+  const [swipe, setSwipe] = useState<"left" | "right" | null>(null);
 
-  const next = () => {
-    if (queue && index + 1 < queue.length) setIndex(index + 1);
-    else {
-      setQueue(null);
-      setIndex(0);
-      invalidateLeadData(queryClient);
-      onDone();
-    }
+  const finish = () => {
+    setQueue(null);
+    setIndex(0);
+    invalidateLeadData(queryClient);
+    onDone();
+  };
+
+  // Fling the current card off in `dir`, then bring in the next one (or finish after the last).
+  const swipeToNext = (dir: "left" | "right") => {
+    if (swipe) return;
+    setSwipe(dir);
+    setTimeout(() => {
+      setSwipe(null);
+      if (queue && index + 1 < queue.length) setIndex(index + 1);
+      else finish();
+    }, 300);
   };
 
   if (held.length === 0) return null;
@@ -86,17 +95,18 @@ export function BulkOnHoldActions({ selectedLeads, onMarkEnriched, onClearHold, 
       <ManualEnrichmentDialog
         open={!!current}
         lead={current ? toLeadForEnrichment(current) : null}
-        queue={queue ? { index, total: queue.length, onSkip: next } : undefined}
+        queue={queue ? { index, total: queue.length, onSkip: () => swipeToNext("left"), swipe } : undefined}
         onMarkEnriched={async (id, updated) => {
           await onMarkEnriched(id, updated);
           if (updated.enrichment_status === "complete") await onClearHold(id);
-          advancing.current = true;
+          advancing.current = updated.enrichment_status === "complete" ? "right" : "left";
         }}
         onOpenChange={(o) => {
           if (o) return;
           if (advancing.current) {
-            advancing.current = false;
-            next();
+            const dir = advancing.current;
+            advancing.current = null;
+            swipeToNext(dir);
           } else {
             setQueue(null);
             setIndex(0);
