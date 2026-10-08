@@ -716,16 +716,23 @@ export async function pollPendingEnrichment() {
 }
 
 let healthCheckedAt = 0;
-let healthy = true;
-/** Cached ~15s so 8 workers don't each probe it. */
-async function enrichmentServiceHealthy(): Promise<boolean> {
-  if (Date.now() - healthCheckedAt < 15_000) return healthy;
-  healthCheckedAt = Date.now();
-  healthy = await axios
+let lastHealthy = true;
+let healthProbe: Promise<boolean> | null = null;
+/** Cached ~15s, and concurrent callers share one in-flight probe -- the 8 workers all ask at the instant the
+ *  pool starts, and must all get the fresh answer rather than the stale one. */
+function enrichmentServiceHealthy(): Promise<boolean> {
+  if (Date.now() - healthCheckedAt < 15_000) return Promise.resolve(lastHealthy);
+  healthProbe ??= axios
     .get(`${config.enrichmentServiceUrl}/health`, { timeout: 5_000 })
-    .then(() => true, () => false);
-  if (!healthy) console.warn("[enrichment.job] enrichment service unhealthy -- not claiming new leads this tick");
-  return healthy;
+    .then(() => true, () => false)
+    .then((ok) => {
+      lastHealthy = ok;
+      healthCheckedAt = Date.now();
+      healthProbe = null;
+      if (!ok) console.warn("[enrichment.job] enrichment service unhealthy -- not claiming new leads this tick");
+      return ok;
+    });
+  return healthProbe;
 }
 
 /** Atomically claims the next PENDING lead to enrich, or null when none is
@@ -755,8 +762,10 @@ async function claimNextPendingLead(): Promise<string | null> {
         FROM (
           SELECT id, created_at, COALESCE(created_by_recruiter_id, created_by_contractor_id, 'unowned') AS owner
           FROM leads
+          -- enrichment_retry_after is a UTC timestamp WITHOUT time zone (how Prisma stores DateTime), so compare
+          -- against UTC explicitly; plain now() is converted through the session time zone and would skew it.
           WHERE enrichment_status = 'PENDING' AND deleted_at IS NULL AND NOT ('ON_HOLD' = ANY(flags))
-            AND (enrichment_retry_after IS NULL OR enrichment_retry_after <= now())
+            AND (enrichment_retry_after IS NULL OR enrichment_retry_after <= (now() AT TIME ZONE 'UTC'))
         ) pending
         ORDER BY owner, created_at`,
     ]);
